@@ -72,6 +72,13 @@
 .vis-item.vis-point.lane-4 .vis-dot { border-color: var(--lane-4-border) !important; background: var(--lane-4-border) !important; }
 .vis-item.vis-point.lane-5 .vis-dot { border-color: var(--lane-5-border) !important; background: var(--lane-5-border) !important; }
 
+.vis-item.vis-point.lane-0,
+.vis-item.vis-point.lane-1,
+.vis-item.vis-point.lane-2,
+.vis-item.vis-point.lane-3,
+.vis-item.vis-point.lane-4,
+.vis-item.vis-point.lane-5 { background-color: #fff !important; }
+
 .vis-labelset .vis-label.lane-0 { box-shadow: inset 4px 0 0 var(--lane-0-border); }
 .vis-labelset .vis-label.lane-1 { box-shadow: inset 4px 0 0 var(--lane-1-border); }
 .vis-labelset .vis-label.lane-2 { box-shadow: inset 4px 0 0 var(--lane-2-border); }
@@ -88,9 +95,28 @@
   font-size: 12px;
 }
 
+.vis-item.vis-point {
+  background-color: #fff !important;
+  border: 1px solid var(--accent) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.vis-item.vis-point.lane-0 { border-color: var(--lane-0-border) !important; }
+.vis-item.vis-point.lane-1 { border-color: var(--lane-1-border) !important; }
+.vis-item.vis-point.lane-2 { border-color: var(--lane-2-border) !important; }
+.vis-item.vis-point.lane-3 { border-color: var(--lane-3-border) !important; }
+.vis-item.vis-point.lane-4 { border-color: var(--lane-4-border) !important; }
+.vis-item.vis-point.lane-5 { border-color: var(--lane-5-border) !important; }
+
 .vis-item.vis-point .vis-dot {
   border-color: var(--accent) !important;
   background: var(--accent);
+  border-width: 7px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+.vis-item.vis-point .vis-item-content {
+  font-weight: 600;
 }
 
 .vis-current-time {

@@ -1,7 +1,7 @@
 import { readdir, readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, relative, basename, extname } from 'node:path';
+import { join, relative, basename, dirname, extname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
@@ -10,7 +10,8 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CONFIG_PATH = join(ROOT, 'timelines.config.json');
 const OUT_DIR = join(ROOT, 'public', 'data');
 const OUT_FILE = join(OUT_DIR, 'notes.json');
-const SOURCES_DIR_IN = join(ROOT, 'data');
+const SOURCES_SUBDIR = (process.env.TIMELINES_SOURCES_SUBDIR ?? '').replace(/^\/+|\/+$/g, '');
+const SOURCES_DIR_IN = SOURCES_SUBDIR ? join(ROOT, 'data', SOURCES_SUBDIR) : join(ROOT, 'data');
 const SOURCES_DIR_OUT = join(OUT_DIR, 'sources');
 
 type Config = {
@@ -155,16 +156,18 @@ function unitToMs(unit: string): number {
   }
 }
 
+const STATIC_ONLY = /^(1|true|yes)$/i.test(process.env.TIMELINES_STATIC_ONLY ?? '');
+
 async function buildOnce(): Promise<void> {
   const config = await loadConfig();
   const notesDir = expandHome(config.notesDir);
 
-  if (!existsSync(notesDir)) {
+  if (!STATIC_ONLY && !existsSync(notesDir)) {
     console.error(`[build-data] notesDir not found: ${notesDir}`);
     return;
   }
 
-  const files = await walk(notesDir);
+  const files = STATIC_ONLY ? [] : await walk(notesDir);
   const notes: Note[] = [];
   let skipped = 0;
 
@@ -236,7 +239,19 @@ async function buildOnce(): Promise<void> {
   const notesChanged = await writeIfChanged(OUT_FILE, notesPayload);
 
   const autoViews = await collectStandaloneSources();
-  const mergedConfig = { ...config, views: [...(config as any).views, ...autoViews] };
+  const baseViews = STATIC_ONLY
+    ? [] // hide markdown-driven views in static mode
+    : (config as any).views ?? [];
+  let defaultView: string = (config as any).defaultView;
+  if (STATIC_ONLY) {
+    const firstSrc = (autoViews[0] as any)?.id;
+    if (firstSrc) defaultView = firstSrc;
+  }
+  const mergedConfig = {
+    ...config,
+    defaultView,
+    views: [...baseViews, ...autoViews],
+  };
   const configOut = join(OUT_DIR, 'config.json');
   const configChanged = await writeIfChanged(configOut, JSON.stringify(mergedConfig, null, 2));
 
@@ -261,15 +276,31 @@ async function writeIfChanged(path: string, content: string): Promise<boolean> {
   return true;
 }
 
+async function* walkJsonFiles(dir: string): AsyncGenerator<string> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+    const abs = join(dir, e.name);
+    if (e.isDirectory()) {
+      yield* walkJsonFiles(abs);
+    } else if (e.isFile() && extname(e.name).toLowerCase() === '.json') {
+      yield abs;
+    }
+  }
+}
+
 async function collectStandaloneSources(): Promise<unknown[]> {
   if (!existsSync(SOURCES_DIR_IN)) return [];
   await mkdir(SOURCES_DIR_OUT, { recursive: true });
-  const entries = await readdir(SOURCES_DIR_IN, { withFileTypes: true });
   const views: unknown[] = [];
-  for (const e of entries) {
-    if (!e.isFile() || extname(e.name).toLowerCase() !== '.json') continue;
-    const stem = basename(e.name, extname(e.name));
-    const inPath = join(SOURCES_DIR_IN, e.name);
+  for await (const inPath of walkJsonFiles(SOURCES_DIR_IN)) {
+    const rel = relative(SOURCES_DIR_IN, inPath).replace(/\\/g, '/');
+    const id = rel.slice(0, -extname(rel).length);
     let raw: string;
     try {
       raw = await readFile(inPath, 'utf8');
@@ -280,22 +311,23 @@ async function collectStandaloneSources(): Promise<unknown[]> {
     try {
       parsed = JSON.parse(raw);
     } catch (err) {
-      console.warn(`[build-data] skipping invalid JSON: ${e.name}`);
+      console.warn(`[build-data] skipping invalid JSON: ${rel}`);
       continue;
     }
     if (!Array.isArray(parsed.items)) {
-      console.warn(`[build-data] skipping ${e.name}: missing "items" array`);
+      console.warn(`[build-data] skipping ${rel}: missing "items" array`);
       continue;
     }
-    const outPath = join(SOURCES_DIR_OUT, `${stem}.json`);
+    const outPath = join(SOURCES_DIR_OUT, `${id}.json`);
+    await mkdir(dirname(outPath), { recursive: true });
     await writeIfChanged(outPath, raw);
     views.push({
-      id: `src:${stem}`,
-      name: parsed.name || stem,
+      id: `src:${id}`,
+      name: parsed.name || basename(id),
       description: parsed.description ?? '',
       filter: {},
       groupBy: parsed.groupBy,
-      source: { type: 'json', id: stem },
+      source: { type: 'json', id },
     });
   }
   return views;
@@ -329,7 +361,7 @@ async function main() {
       if (timer) clearTimeout(timer);
       timer = setTimeout(run, 1000);
     };
-    const watchPaths = [CONFIG_PATH, join(SOURCES_DIR_IN, '*.json')];
+    const watchPaths = [CONFIG_PATH, join(SOURCES_DIR_IN, '**', '*.json')];
     if (watchNotes) watchPaths.unshift(join(notesDir, '**/*.md'));
 
     chokidar
@@ -347,8 +379,8 @@ async function main() {
       .on('unlink', trigger);
     console.log(
       watchNotes
-        ? `[build-data] watching ${notesDir}/**/*.md + ${relative(ROOT, SOURCES_DIR_IN)}/*.json + config`
-        : `[build-data] watching ${relative(ROOT, SOURCES_DIR_IN)}/*.json + config (notes excluded — use 'npm run dev:notes' to include)`,
+        ? `[build-data] watching ${notesDir}/**/*.md + ${relative(ROOT, SOURCES_DIR_IN)}/**/*.json + config`
+        : `[build-data] watching ${relative(ROOT, SOURCES_DIR_IN)}/**/*.json + config (notes excluded — use 'npm run dev:notes' to include)`,
     );
   }
 }

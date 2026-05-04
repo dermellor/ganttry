@@ -4,5 +4,10 @@ public/data/notes.json
 public/data/config.json
 public/data/sources/
 .vite
+.netlify
+.env
+.env.local
+.env.netlify
+.env.*.local
 *.log
 .DS_Store

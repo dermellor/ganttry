@@ -164,8 +164,8 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
     const deps = extractDependsOn(raw.metadata);
     if (deps.length) dependencies.set(id, deps);
 
-    let endIso: string | undefined = raw.end;
-    if (!endIso) {
+    let endIso: string | undefined = raw.type === 'point' ? undefined : raw.end;
+    if (!endIso && raw.type !== 'point') {
       const ms = durationToMs(raw.duration);
       if (ms && ms > 0) {
         const startMs = new Date(raw.start).getTime();

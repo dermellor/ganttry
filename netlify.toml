@@ -1,0 +1,21 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # Acme-instance defaults — override per branch in the Netlify UI.
+  TIMELINES_SOURCES_SUBDIR = "Acme"
+  TIMELINES_STATIC_ONLY = "true"
+  VITE_BRAND_MODE = "fixed"
+  VITE_DEFAULT_BRAND = "Acme"
+
+# Skip secret scan for non-sensitive build vars that contain "AUTH" / "TOKEN" prefixes.
+# (Real secrets — GOOGLE_CLIENT_*, AUTH_SECRET — live as runtime-only env vars in
+# the Netlify dashboard, not in this file.)
+# SECRETS_SCAN_OMIT_KEYS = ""
+
+# Edge function as global auth gate.
+[[edge_functions]]
+  function = "auth"
+  path = "/*"

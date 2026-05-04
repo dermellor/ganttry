@@ -1,9 +1,16 @@
 import type { TimelineFile, TimelineFileItem } from './types';
 
-export async function loadSourceFromApi(id: string): Promise<TimelineFile> {
-  const res = await fetch(`/api/source/${id}`);
-  if (!res.ok) throw new Error(`Load failed (${res.status})`);
-  return res.json();
+export type LoadResult = { file: TimelineFile; editable: boolean };
+
+export async function loadSource(id: string): Promise<LoadResult> {
+  // Try the dev API first; fall back to the static copy for production builds.
+  const apiRes = await fetch(`/api/source/${id}`).catch(() => null);
+  if (apiRes && apiRes.ok) {
+    return { file: await apiRes.json(), editable: true };
+  }
+  const staticRes = await fetch(`/data/sources/${id}.json`);
+  if (!staticRes.ok) throw new Error(`Load failed (${staticRes.status})`);
+  return { file: await staticRes.json(), editable: false };
 }
 
 export async function saveSourceToApi(id: string, file: TimelineFile): Promise<void> {

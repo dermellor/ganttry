@@ -148,3 +148,60 @@ CSS custom properties in `src/styles/brands.css`. Body attribute `data-brand="ma
 - mark radius (round vs. square)
 
 Brand persists in `localStorage`. Acme fonts must be present at `public/fonts/acme/` (copy from `~/.claude/skills/graphics/fonts/acme/`).
+
+Two build-time env vars control how the brand selector behaves:
+
+| Var                  | Values                          | Effect                                              |
+| -------------------- | ------------------------------- | --------------------------------------------------- |
+| `VITE_BRAND_MODE`    | `select` (default) \| `fixed`   | `fixed` hides the dropdown and disables persistence |
+| `VITE_DEFAULT_BRAND` | `marcel-mellor` \| `Acme`    | brand applied on first load (and locked in `fixed`) |
+
+## Deploy: Netlify (Acme-internal instance)
+
+A stripped-down, read-only deploy lives on Netlify for Acme colleagues. All
+config-as-code lives in [`netlify.toml`](netlify.toml); secrets go into the
+Netlify dashboard.
+
+### What gets deployed
+
+- Sources: `data/acme/*.json` only (`TIMELINES_SOURCES_SUBDIR=Acme`).
+- Notes scan disabled (`TIMELINES_STATIC_ONLY=true`); no Markdown-driven views.
+- Brand locked to Acme (`VITE_BRAND_MODE=fixed`, `VITE_DEFAULT_BRAND=Acme`).
+- Editor is read-only — `loadSource()` falls back from `/api/source/<id>` to
+  the static `/data/sources/<id>.json`, and `isEditableView()` returns false
+  when the API isn't reachable.
+
+To add a Acme-visible timeline locally: drop the JSON into `data/acme/`,
+commit, push.
+
+### Auth gate (Netlify Edge Function)
+
+[`netlify/edge-functions/auth.ts`](netlify/edge-functions/auth.ts) gates every
+request. Pattern mirrors `~/Development/sales-cockpit` (Google OAuth +
+Acme-domain whitelist), but adapted to a static Vite site:
+
+1. `/auth/login` → redirect to Google with `hd=Acme.de`, signed state cookie.
+2. `/auth/callback` → token exchange → `userinfo` → domain check → signed
+   session cookie (HMAC-SHA256, 24 h, `HttpOnly; Secure; SameSite=Lax`).
+3. Any other path without a valid session → 302 to `/auth/login?redirect=…`.
+
+Set `AUTH_REQUIRED=true` in the Netlify dashboard to activate the gate; leave
+unset/`false` for local previews. Required runtime env vars:
+
+| Var                     | Where                  | Notes                                            |
+| ----------------------- | ---------------------- | ------------------------------------------------ |
+| `AUTH_REQUIRED`         | dashboard              | `true` to gate the site                          |
+| `GOOGLE_CLIENT_ID`      | dashboard              | OAuth web client                                 |
+| `GOOGLE_CLIENT_SECRET`  | dashboard (secret)     | OAuth client secret                              |
+| `AUTH_SECRET`           | dashboard (secret)     | `openssl rand -base64 32`                        |
+| `ALLOWED_EMAIL_DOMAINS` | dashboard              | comma-separated, default `Acme.de,Acme.com` |
+
+### Google OAuth setup (one-time)
+
+1. Google Cloud Console → APIs & Services → Credentials → **Create credentials → OAuth client ID** → Web application.
+2. Authorized redirect URIs: `https://<your-netlify-site>.netlify.app/auth/callback` (and any custom domain).
+3. Authorized JavaScript origins: the same origins without the path.
+4. Paste the client ID and secret into Netlify env vars.
+
+If the site moves to a new domain, add the new redirect URI in the Google
+Cloud Console — otherwise the callback returns `redirect_uri_mismatch`.

@@ -16,7 +16,7 @@ import {
   findItemIndex,
   generateNewId,
   isoDateOnly,
-  loadSourceFromApi,
+  loadSource,
   parseDependsOn,
   saveSourceToApi,
 } from './editor';
@@ -24,6 +24,7 @@ import {
 const els = {
   timeline: document.getElementById('timeline') as HTMLDivElement,
   viewSelect: document.getElementById('view-select') as HTMLSelectElement,
+  brandControl: document.getElementById('brand-control') as HTMLLabelElement,
   brandSelect: document.getElementById('brand-select') as HTMLSelectElement,
   exportBtn: document.getElementById('export-btn') as HTMLButtonElement,
   status: document.getElementById('status') as HTMLSpanElement,
@@ -34,6 +35,9 @@ const els = {
   detailClose: document.getElementById('detail-close') as HTMLButtonElement,
 };
 
+const BRAND_MODE = (import.meta.env.VITE_BRAND_MODE ?? 'select') as 'select' | 'fixed';
+const DEFAULT_BRAND = (import.meta.env.VITE_DEFAULT_BRAND ?? 'marcel-mellor') as string;
+
 let timeline: Timeline | null = null;
 let arrows: DependencyArrows | null = null;
 let itemsDs: DataSet<TimelineItem> | null = null;
@@ -43,6 +47,7 @@ let config: Config | null = null;
 let activeView: View | null = null;
 let activeSourceId: string | null = null;
 let activeSourceFile: TimelineFile | null = null;
+let activeSourceEditable = false;
 let activeBuild: {
   items: TimelineItem[];
   groups: TimelineGroup[];
@@ -69,7 +74,7 @@ function setStatus(text: string): void {
 }
 
 function isEditableView(): boolean {
-  return !!activeSourceFile && !!activeSourceId;
+  return !!activeSourceFile && !!activeSourceId && activeSourceEditable;
 }
 
 function rebuildAndApply(): void {
@@ -112,9 +117,13 @@ async function renderTimeline(view: View) {
   let sourceFile: TimelineFile | null = null;
   let sourceId: string | null = null;
 
+  let sourceEditable = false;
+
   if (view.source?.type === 'json') {
     try {
-      sourceFile = await loadSourceFromApi(view.source.id);
+      const loaded = await loadSource(view.source.id);
+      sourceFile = loaded.file;
+      sourceEditable = loaded.editable;
     } catch (err) {
       setStatus(`Konnte Quelle ${view.source.id} nicht laden: ${err instanceof Error ? err.message : err}`);
       return;
@@ -131,6 +140,7 @@ async function renderTimeline(view: View) {
   activeView = view;
   activeSourceFile = sourceFile;
   activeSourceId = sourceId;
+  activeSourceEditable = sourceEditable;
 
   itemsDs = new DataSet<TimelineItem>(built!.items);
   groupsDs = new DataSet<TimelineGroup>(built!.groups);
@@ -252,7 +262,10 @@ function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) =>
   const newEnd = item.end ? isoDateOnly(item.end) : undefined;
 
   src.start = newStart;
-  if (newEnd) {
+  if (src.type === 'point') {
+    delete src.end;
+    delete src.duration;
+  } else if (newEnd) {
     src.end = newEnd;
     delete src.duration;
   } else {
@@ -390,7 +403,13 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
       <div class="field">
         <label for="f-type">Type</label>
         <select id="f-type" name="type">
-          ${['', 'point', 'range', 'background', 'box'].map((t) => `<option value="${t}"${(item.type ?? '') === t ? ' selected' : ''}>${t || '(auto)'}</option>`).join('')}
+          ${[
+            ['', 'Automatisch'],
+            ['point', 'Meilenstein'],
+            ['range', 'Zeitraum'],
+            ['background', 'Phase (Hintergrund)'],
+            ['box', 'Markierung'],
+          ].map(([t, label]) => `<option value="${t}"${(item.type ?? '') === t ? ' selected' : ''}>${label}</option>`).join('')}
         </select>
       </div>
       <div class="field full">
@@ -421,6 +440,17 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
   `;
 
   const form = els.detailBody.querySelector('form') as HTMLFormElement;
+  const typeSelect = form.querySelector<HTMLSelectElement>('#f-type')!;
+  const endField = form.querySelector<HTMLElement>('#f-end')!.closest('.field') as HTMLElement;
+  const durField = form.querySelector<HTMLElement>('#f-duration')!.closest('.field') as HTMLElement;
+  const syncTypeFields = () => {
+    const isPoint = typeSelect.value === 'point';
+    endField.hidden = isPoint;
+    durField.hidden = isPoint;
+  };
+  syncTypeFields();
+  typeSelect.addEventListener('change', syncTypeFields);
+
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     saveItemFromForm(id, form);
@@ -448,7 +478,17 @@ function saveItemFromForm(id: string, form: HTMLFormElement): void {
   const endVal = get('end');
   const durVal = get('duration');
 
-  if (durVal) {
+  const typeVal = get('type');
+  if (typeVal) {
+    item.type = typeVal as TimelineFileItem['type'];
+  } else {
+    delete item.type;
+  }
+
+  if (item.type === 'point') {
+    delete item.duration;
+    delete item.end;
+  } else if (durVal) {
     item.duration = durVal;
     delete item.end;
   } else {
@@ -459,13 +499,6 @@ function saveItemFromForm(id: string, form: HTMLFormElement): void {
 
   const grp = get('group');
   if (grp) item.group = grp;
-
-  const typeVal = get('type');
-  if (typeVal) {
-    item.type = typeVal as TimelineFileItem['type'];
-  } else {
-    delete item.type;
-  }
 
   const body = String(fd.get('body') ?? '');
   if (body) item.body = body;
@@ -528,7 +561,9 @@ function hideDetail() {
 
 function applyBrand(brand: string) {
   document.body.dataset.brand = brand;
-  localStorage.setItem('timelines.brand', brand);
+  if (BRAND_MODE === 'select') {
+    localStorage.setItem('timelines.brand', brand);
+  }
   els.brandSelect.value = brand;
 }
 
@@ -572,9 +607,16 @@ async function bootstrap() {
     .join('');
 
   const savedView = localStorage.getItem('timelines.view') ?? cfg.defaultView;
-  const savedBrand = localStorage.getItem('timelines.brand') ?? 'marcel-mellor';
+  const brand =
+    BRAND_MODE === 'fixed'
+      ? DEFAULT_BRAND
+      : localStorage.getItem('timelines.brand') ?? DEFAULT_BRAND;
 
-  applyBrand(savedBrand);
+  if (BRAND_MODE === 'fixed') {
+    els.brandControl.hidden = true;
+  }
+
+  applyBrand(brand);
   applyView(cfg.views.some((v) => v.id === savedView) ? savedView : cfg.defaultView);
 
   els.viewSelect.addEventListener('change', () => applyView(els.viewSelect.value));
