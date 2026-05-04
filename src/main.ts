@@ -613,7 +613,7 @@ async function bootstrap() {
       : localStorage.getItem('timelines.brand') ?? DEFAULT_BRAND;
 
   if (BRAND_MODE === 'fixed') {
-    els.brandControl.hidden = true;
+    els.brandControl.remove();
   }
 
   applyBrand(brand);
