@@ -1,0 +1,109 @@
+/* vis-timeline overrides keyed to brand CSS variables */
+
+.vis-timeline {
+  border: 1px solid var(--border) !important;
+  border-radius: 8px;
+  background: var(--surface);
+  font-family: var(--font-body) !important;
+  font-size: 12px;
+  visibility: visible !important;
+}
+
+.vis-panel.vis-center,
+.vis-panel.vis-left,
+.vis-panel.vis-right,
+.vis-panel.vis-top,
+.vis-panel.vis-bottom {
+  border-color: var(--border) !important;
+}
+
+.vis-time-axis .vis-grid.vis-minor {
+  border-color: var(--grid-line) !important;
+}
+
+.vis-time-axis .vis-grid.vis-major {
+  border-color: var(--grid-line-major) !important;
+}
+
+.vis-time-axis .vis-text {
+  color: var(--axis-text) !important;
+  font-family: var(--font-body) !important;
+}
+
+.vis-time-axis .vis-text.vis-major {
+  font-weight: 500;
+}
+
+.vis-labelset .vis-label {
+  border-color: var(--border) !important;
+  color: var(--fg) !important;
+  font-family: var(--font-body) !important;
+}
+
+.vis-labelset .vis-label .vis-inner {
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.vis-foreground .vis-group {
+  border-color: var(--grid-line) !important;
+}
+
+.vis-item {
+  background-color: var(--item-bg) !important;
+  border-color: var(--item-border) !important;
+  color: var(--item-fg) !important;
+  border-radius: 6px;
+  font-family: var(--font-body) !important;
+}
+
+.vis-item.lane-0 { background-color: var(--lane-0-bg) !important; border-color: var(--lane-0-border) !important; }
+.vis-item.lane-1 { background-color: var(--lane-1-bg) !important; border-color: var(--lane-1-border) !important; }
+.vis-item.lane-2 { background-color: var(--lane-2-bg) !important; border-color: var(--lane-2-border) !important; }
+.vis-item.lane-3 { background-color: var(--lane-3-bg) !important; border-color: var(--lane-3-border) !important; }
+.vis-item.lane-4 { background-color: var(--lane-4-bg) !important; border-color: var(--lane-4-border) !important; }
+.vis-item.lane-5 { background-color: var(--lane-5-bg) !important; border-color: var(--lane-5-border) !important; }
+
+.vis-item.vis-point.lane-0 .vis-dot { border-color: var(--lane-0-border) !important; background: var(--lane-0-border) !important; }
+.vis-item.vis-point.lane-1 .vis-dot { border-color: var(--lane-1-border) !important; background: var(--lane-1-border) !important; }
+.vis-item.vis-point.lane-2 .vis-dot { border-color: var(--lane-2-border) !important; background: var(--lane-2-border) !important; }
+.vis-item.vis-point.lane-3 .vis-dot { border-color: var(--lane-3-border) !important; background: var(--lane-3-border) !important; }
+.vis-item.vis-point.lane-4 .vis-dot { border-color: var(--lane-4-border) !important; background: var(--lane-4-border) !important; }
+.vis-item.vis-point.lane-5 .vis-dot { border-color: var(--lane-5-border) !important; background: var(--lane-5-border) !important; }
+
+.vis-labelset .vis-label.lane-0 { box-shadow: inset 4px 0 0 var(--lane-0-border); }
+.vis-labelset .vis-label.lane-1 { box-shadow: inset 4px 0 0 var(--lane-1-border); }
+.vis-labelset .vis-label.lane-2 { box-shadow: inset 4px 0 0 var(--lane-2-border); }
+.vis-labelset .vis-label.lane-3 { box-shadow: inset 4px 0 0 var(--lane-3-border); }
+.vis-labelset .vis-label.lane-4 { box-shadow: inset 4px 0 0 var(--lane-4-border); }
+.vis-labelset .vis-label.lane-5 { box-shadow: inset 4px 0 0 var(--lane-5-border); }
+
+.vis-item.vis-selected {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.vis-item .vis-item-content {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.vis-item.vis-point .vis-dot {
+  border-color: var(--accent) !important;
+  background: var(--accent);
+}
+
+.vis-current-time {
+  background: var(--accent) !important;
+}
+
+.timeline-arrows {
+  color: var(--fg-muted);
+}
+
+.timeline-arrows .dep-arrow {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 1.25;
+  opacity: 0.55;
+}

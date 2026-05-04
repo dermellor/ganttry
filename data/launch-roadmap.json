@@ -1,0 +1,193 @@
+{
+  "name": "Launch-Roadmap (5 Tracks)",
+  "description": "Cross-funktionaler Produkt-Launch über fünf parallele Tracks mit teilweisen Abhängigkeiten. Abhängigkeiten stehen im 'dependsOn'-Metadatenfeld und werden im Detail-Panel angezeigt.",
+  "groups": [
+    { "id": "1-strategy", "content": "1 — Strategy" },
+    { "id": "2-design", "content": "2 — Design" },
+    { "id": "3-engineering", "content": "3 — Engineering" },
+    { "id": "4-marketing", "content": "4 — Marketing" },
+    { "id": "5-ops", "content": "5 — Ops & Sales" }
+  ],
+  "items": [
+    {
+      "id": "S-1",
+      "start": "2026-01-05",
+      "duration": "1w",
+      "content": "Vision Workshop",
+      "group": "1-strategy",
+      "title": "2-tägiger Workshop, Outcome: Vision Statement",
+      "body": "## Vision Workshop\n\n- Stakeholder: CEO, Head of Product, Lead Designer, CTO\n- Ergebnis: Einseitiges Vision-Doc + Top-3 OKRs",
+      "metadata": { "owner": "Product Lead", "dependsOn": [] }
+    },
+    {
+      "id": "S-2",
+      "start": "2026-01-12",
+      "duration": "5w",
+      "content": "Market Research",
+      "group": "1-strategy",
+      "body": "Wettbewerbsanalyse, TAM/SAM/SOM, Trend-Mapping.",
+      "metadata": { "owner": "Strategy Team", "dependsOn": ["S-1"] }
+    },
+    {
+      "id": "S-3",
+      "start": "2026-02-16",
+      "duration": "1w",
+      "content": "Roadmap Review",
+      "group": "1-strategy",
+      "metadata": { "owner": "Product Lead", "dependsOn": ["S-2"] }
+    },
+    {
+      "id": "S-4",
+      "start": "2026-04-06",
+      "content": "Quarterly Strategy Sync",
+      "group": "1-strategy",
+      "type": "point",
+      "metadata": { "dependsOn": ["S-3"] }
+    },
+
+    {
+      "id": "D-1",
+      "start": "2026-01-19",
+      "duration": "4w",
+      "content": "User Interviews",
+      "group": "2-design",
+      "body": "12 qualitative Interviews mit Bestand + Prospects.",
+      "metadata": { "owner": "Design Research", "dependsOn": ["S-2"] }
+    },
+    {
+      "id": "D-2",
+      "start": "2026-02-16",
+      "duration": "4w",
+      "content": "Wireframes",
+      "group": "2-design",
+      "metadata": { "owner": "UX Lead", "dependsOn": ["D-1"] }
+    },
+    {
+      "id": "D-3",
+      "start": "2026-03-16",
+      "duration": "4w",
+      "content": "Visual Design",
+      "group": "2-design",
+      "metadata": { "owner": "Brand & UI", "dependsOn": ["D-2"] }
+    },
+    {
+      "id": "D-4",
+      "start": "2026-05-04",
+      "duration": "2w",
+      "content": "Design QA",
+      "group": "2-design",
+      "metadata": { "owner": "UI Lead", "dependsOn": ["E-3"] }
+    },
+
+    {
+      "id": "E-1",
+      "start": "2026-02-02",
+      "duration": "3w",
+      "content": "Tech Spike",
+      "group": "3-engineering",
+      "body": "Validierung kritischer Architektur-Entscheidungen, ADR-Drafts.",
+      "metadata": { "owner": "Tech Lead", "dependsOn": [] }
+    },
+    {
+      "id": "E-2",
+      "start": "2026-02-23",
+      "duration": "3w",
+      "content": "API Design",
+      "group": "3-engineering",
+      "metadata": { "owner": "Backend Lead", "dependsOn": ["E-1", "D-2"] }
+    },
+    {
+      "id": "E-3",
+      "start": "2026-03-16",
+      "duration": "8w",
+      "content": "Build Sprint 1 + 2",
+      "group": "3-engineering",
+      "body": "Frontend + Backend, integrierte CI, Feature-Flags.",
+      "metadata": { "owner": "Engineering", "dependsOn": ["E-2", "D-3"] }
+    },
+    {
+      "id": "E-4",
+      "start": "2026-05-15",
+      "content": "Code Freeze",
+      "group": "3-engineering",
+      "type": "point",
+      "metadata": { "dependsOn": ["E-3"] }
+    },
+
+    {
+      "id": "M-1",
+      "start": "2026-02-02",
+      "duration": "4w",
+      "content": "Brand Concept",
+      "group": "4-marketing",
+      "metadata": { "owner": "Marketing Lead", "dependsOn": ["S-1"] }
+    },
+    {
+      "id": "M-2",
+      "start": "2026-03-02",
+      "duration": "8w",
+      "content": "Content Production",
+      "group": "4-marketing",
+      "body": "Video, Blog, Social, Press Kit.",
+      "metadata": { "owner": "Content Team", "dependsOn": ["M-1", "D-3"] }
+    },
+    {
+      "id": "M-3",
+      "start": "2026-05-18",
+      "duration": "4w",
+      "content": "Launch Campaign",
+      "group": "4-marketing",
+      "metadata": { "owner": "Growth", "dependsOn": ["M-2", "E-4"] }
+    },
+    {
+      "id": "M-4",
+      "start": "2026-06-15",
+      "content": "Launch Day",
+      "group": "4-marketing",
+      "type": "point",
+      "metadata": { "dependsOn": ["M-3"] }
+    },
+
+    {
+      "id": "O-1",
+      "start": "2026-02-23",
+      "duration": "2w",
+      "content": "Pricing Workshop",
+      "group": "5-ops",
+      "metadata": { "owner": "Finance + Sales", "dependsOn": ["S-3"] }
+    },
+    {
+      "id": "O-2",
+      "start": "2026-03-30",
+      "duration": "5w",
+      "content": "Sales Enablement",
+      "group": "5-ops",
+      "body": "Decks, Demo-Skripte, Battle Cards.",
+      "metadata": { "owner": "Sales Ops", "dependsOn": ["O-1", "D-3"] }
+    },
+    {
+      "id": "O-3",
+      "start": "2026-05-04",
+      "duration": "4w",
+      "content": "Support Training",
+      "group": "5-ops",
+      "metadata": { "owner": "Customer Success", "dependsOn": ["E-3"] }
+    },
+    {
+      "id": "O-4",
+      "start": "2026-06-01",
+      "duration": "2w",
+      "content": "Beta Customer Onboarding",
+      "group": "5-ops",
+      "metadata": { "owner": "CS Lead", "dependsOn": ["E-4"] }
+    },
+    {
+      "id": "O-5",
+      "start": "2026-06-15",
+      "content": "GA Readiness",
+      "group": "5-ops",
+      "type": "point",
+      "metadata": { "dependsOn": ["M-4", "O-4"] }
+    }
+  ]
+}

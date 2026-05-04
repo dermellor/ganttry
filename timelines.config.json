@@ -1,0 +1,51 @@
+{
+  "$schema": "./schema/config.schema.json",
+  "notesDir": "~/_NOTIZEN",
+  "defaultView": "all",
+  "dateFields": ["date", "scheduled", "created"],
+  "filenameDatePatterns": [
+    "^(\\d{4})-(\\d{2})-(\\d{2})",
+    "^(\\d{4})(\\d{2})(\\d{2})"
+  ],
+  "views": [
+    {
+      "id": "all",
+      "name": "Alle Notizen",
+      "description": "Alle Notizen mit erkennbarem Datum",
+      "filter": {},
+      "groupBy": "categories[0]"
+    },
+    {
+      "id": "kurzbeitraege",
+      "name": "Kurzbeiträge",
+      "description": "LinkedIn-Kurzbeiträge nach Veröffentlichungsdatum",
+      "filter": {
+        "filenameContains": "Kurzbeitrag"
+      },
+      "dateFields": ["scheduled", "date", "created"],
+      "groupBy": "status"
+    },
+    {
+      "id": "trends",
+      "name": "Trends",
+      "description": "Notizen mit Kategorie Trends",
+      "filter": {
+        "categories": ["Trends"]
+      },
+      "groupBy": "trends[0]"
+    },
+    {
+      "id": "drafts",
+      "name": "Drafts",
+      "description": "Notizen mit status: open oder draft: true",
+      "filter": {
+        "anyOf": [
+          { "status": ["open"] },
+          { "draft": true }
+        ]
+      },
+      "dateFields": ["scheduled", "date", "created"],
+      "groupBy": "categories[0]"
+    }
+  ]
+}

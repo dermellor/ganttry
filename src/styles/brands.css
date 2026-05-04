@@ -1,0 +1,137 @@
+/* ========================================================
+ * Brand: marcel-mellor (Default)
+ * ======================================================== */
+
+@font-face {
+  font-family: 'ABCFavorit';
+  src: url('https://www.marcelmellor.com/fonts/ABCFavorit-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'ABCFavorit';
+  src: url('https://www.marcelmellor.com/fonts/ABCFavorit-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+[data-brand='marcel-mellor'] {
+  --bg: #fbfbfb;
+  --surface: #ffffff;
+  --fg: #2c3333;
+  --fg-muted: #2f0d5b99;
+  --border: rgba(47, 13, 91, 0.15);
+  --hover: rgba(47, 13, 91, 0.06);
+  --accent: #2f0d5b;
+  --accent-soft: #c1b6ce;
+  --accent-strong: #2f0d5b;
+  --warning: #ffa800;
+  --highlight: #f5e3cf;
+  --success: #94d825;
+  --magenta: #f32ed4;
+
+  --font-body: 'ABCFavorit', system-ui, -apple-system, sans-serif;
+  --font-headline: 'ABCFavorit', Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --headline-weight: 500;
+  --mark-radius: 50%;
+
+  --item-bg: #ffffff;
+  --item-fg: #2f0d5b;
+  --item-border: #2f0d5b;
+  --item-bg-active: #f5e3cf;
+  --grid-line: rgba(47, 13, 91, 0.08);
+  --grid-line-major: rgba(47, 13, 91, 0.18);
+  --axis-text: #2f0d5b;
+
+  --lane-0-border: #2f0d5b;
+  --lane-0-bg: #e5dcef;
+  --lane-1-border: #ffa800;
+  --lane-1-bg: #ffe7be;
+  --lane-2-border: #f32ed4;
+  --lane-2-bg: #fcc8f4;
+  --lane-3-border: #94d825;
+  --lane-3-bg: #e1f0bd;
+  --lane-4-border: #e8ac68;
+  --lane-4-bg: #f5e3cf;
+  --lane-5-border: #c1b6ce;
+  --lane-5-bg: #efeaf3;
+}
+
+/* ========================================================
+ * Brand: Acme
+ * ======================================================== */
+
+@font-face {
+  font-family: 'PX Grotesk';
+  src: url('/fonts/acme/Px-Grotesk-Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PX Grotesk';
+  src: url('/fonts/acme/Px-Grotesk-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PX Grotesk';
+  src: url('/fonts/acme/Px-Grotesk-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Tiempos Headline';
+  src: url('/fonts/acme/tiempos-headline-light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+[data-brand='Acme'] {
+  --bg: #fcfcfc;
+  --surface: #ffffff;
+  --fg: #202020;
+  --fg-muted: #646464;
+  --border: rgba(32, 32, 32, 0.1);
+  --hover: rgba(32, 32, 32, 0.04);
+  --accent: #315dff;
+  --accent-soft: #ebf2ff;
+  --accent-strong: #0046d2;
+  --warning: #ffbd00;
+  --highlight: #deff00;
+  --success: #00bd82;
+  --magenta: #8642fe;
+
+  --font-body: 'PX Grotesk', system-ui, -apple-system, sans-serif;
+  --font-headline: 'Tiempos Headline', Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --headline-weight: 300;
+  --mark-radius: 0;
+
+  --item-bg: #f9fdec;
+  --item-fg: #202020;
+  --item-border: #202020;
+  --item-bg-active: #deff00;
+  --grid-line: rgba(32, 32, 32, 0.06);
+  --grid-line-major: rgba(32, 32, 32, 0.16);
+  --axis-text: #202020;
+
+  --lane-0-border: #315dff;
+  --lane-0-bg: #ebf2ff;
+  --lane-1-border: #00bd82;
+  --lane-1-bg: #e1f8ec;
+  --lane-2-border: #8642fe;
+  --lane-2-bg: #f3efff;
+  --lane-3-border: #ff7200;
+  --lane-3-bg: #ffeadc;
+  --lane-4-border: #006660;
+  --lane-4-bg: #dff7f4;
+  --lane-5-border: #a5bb42;
+  --lane-5-bg: #effdc1;
+}

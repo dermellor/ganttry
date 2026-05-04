@@ -1,0 +1,30 @@
+{
+  "name": "timelines",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "build:data": "tsx scripts/build-data.ts",
+    "watch:data": "tsx scripts/build-data.ts --watch",
+    "watch:data:notes": "tsx scripts/build-data.ts --watch --watch-notes",
+    "dev": "npm run build:data && concurrently -n data,vite -c yellow,cyan \"npm run watch:data\" \"vite\"",
+    "dev:notes": "npm run build:data && concurrently -n data,vite -c yellow,cyan \"npm run watch:data:notes\" \"vite\"",
+    "build": "npm run build:data && vite build",
+    "export": "npm run build:data && tsx scripts/export-view.ts",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vis-timeline": "^7.7.3",
+    "vis-data": "^7.1.9",
+    "marked": "^14.1.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0",
+    "typescript": "^5.5.0",
+    "tsx": "^4.19.0",
+    "gray-matter": "^4.0.3",
+    "chokidar": "^3.6.0",
+    "concurrently": "^9.0.0",
+    "@types/node": "^22.0.0"
+  }
+}
