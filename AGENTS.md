@@ -2,6 +2,16 @@
 
 Generic timeline viewer for `~/_NOTIZEN`. Reads frontmatter dates from Markdown notes, builds timelines via [vis-timeline](https://visjs.github.io/vis-timeline/), and ships with a brand switcher (marcel-mellor / Acme).
 
+## Ports
+
+Belegt im 3120er-Block (siehe [`~/Development/PORTS.md`](../PORTS.md)).
+
+| Port | Service                       |
+| ---- | ----------------------------- |
+| 3120 | Vite dev server (Timeline UI) |
+
+Crasht bei Port-Konflikt (`strictPort: true`), kein Auto-Fallback.
+
 ## Architecture
 
 Two-step:
@@ -43,7 +53,13 @@ File shape:
     }
   ],
   "groups": [
-    { "id": "Phase 1", "content": "Phase 1: Discovery" }
+    { "id": "Phase 1", "content": "Phase 1: Discovery" },
+    {
+      "id": "comm",
+      "content": "Kommunikation",
+      "nestedGroups": ["comm-product", "comm-tech"],  // optional: children rendered indented under parent, collapse-/expandierbar
+      "showNested": true                              // optional, default true
+    }
   ]                                      // optional, derived from items if missing
 }
 ```
@@ -64,6 +80,16 @@ When generating a roadmap (whether for this project or invoked from elsewhere �
 - **Dependencies live in `metadata.dependsOn: ["id1", "id2"]`.** The viewer renders curved Bezier arrows from each source item's right edge to the target's left edge as an SVG overlay. Off-screen sources/targets simply hide the arrow until they scroll into view. Make sure dependency target items have explicit `id`s so they can be referenced.
 - **Bodies are Markdown.** Use them for owner notes, success criteria, links — they show up as the side panel content when the item is clicked.
 - **Dates as `YYYY-MM-DD`** without time component unless precision matters. `duration` accepts `Nh|d|w|mo|y` or raw milliseconds.
+
+## Editing JSON timelines
+
+When the active view points to a `data/*.json` file, the viewer becomes editable:
+
+- **Drag** an item left/right to move start, drag the right edge to resize, drag vertically to switch group. Persists on drop.
+- **Double-click** on empty timeline space to add a new item (defaults: 1-week duration, current group, content "Neuer Eintrag"). Form opens for further edits.
+- **Click** an item to open the edit form in the side panel: title, start/end, duration, group, type, body (Markdown), `dependsOn` IDs, owner, plus a free-form metadata JSON box. Save writes back; Delete removes the item.
+
+Persistence path: viewer → `PUT /api/source/<id>` → middleware writes `data/<id>.json` → watcher copies to `public/data/sources/<id>.json`. The middleware lives in `vite.config.ts`; only available under `npm run dev`/`npm run dev:notes`. Builds (`npm run build`) and exported HTML have no edit endpoint.
 
 ## Configuration: `timelines.config.json`
 

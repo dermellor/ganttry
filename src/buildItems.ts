@@ -14,7 +14,13 @@ export type TimelineItem = {
   className?: string;
 };
 
-export type TimelineGroup = { id: string; content: string; className?: string };
+export type TimelineGroup = {
+  id: string;
+  content: string;
+  className?: string;
+  nestedGroups?: string[];
+  showNested?: boolean;
+};
 
 const LANE_COUNT = 6;
 
@@ -145,7 +151,10 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
   const dependencies = new Map<string, string[]>();
 
   for (const declared of file.groups ?? []) {
-    groupSet.set(declared.id, { id: declared.id, content: escapeHtml(declared.content) });
+    const g: TimelineGroup = { id: declared.id, content: escapeHtml(declared.content) };
+    if (declared.nestedGroups && declared.nestedGroups.length > 0) g.nestedGroups = [...declared.nestedGroups];
+    if (typeof declared.showNested === 'boolean') g.showNested = declared.showNested;
+    groupSet.set(declared.id, g);
   }
 
   let auto = 0;

@@ -62,7 +62,12 @@ export type TimelineFile = {
   description?: string;
   groupBy?: string;
   items: TimelineFileItem[];
-  groups?: { id: string; content: string }[];
+  groups?: {
+    id: string;
+    content: string;
+    nestedGroups?: string[];
+    showNested?: boolean;
+  }[];
 };
 
 export type Config = {

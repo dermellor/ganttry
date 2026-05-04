@@ -7,8 +7,8 @@
     "build:data": "tsx scripts/build-data.ts",
     "watch:data": "tsx scripts/build-data.ts --watch",
     "watch:data:notes": "tsx scripts/build-data.ts --watch --watch-notes",
-    "dev": "npm run build:data && concurrently -n data,vite -c yellow,cyan \"npm run watch:data\" \"vite\"",
-    "dev:notes": "npm run build:data && concurrently -n data,vite -c yellow,cyan \"npm run watch:data:notes\" \"vite\"",
+    "dev": "bash scripts/dev-prep.sh && npm run build:data && concurrently -n data,vite -c yellow,cyan \"npm run watch:data\" \"vite\"",
+    "dev:notes": "bash scripts/dev-prep.sh && npm run build:data && concurrently -n data,vite -c yellow,cyan \"npm run watch:data:notes\" \"vite\"",
     "build": "npm run build:data && vite build",
     "export": "npm run build:data && tsx scripts/export-view.ts",
     "preview": "vite preview"

@@ -2,6 +2,7 @@ node_modules
 dist
 public/data/notes.json
 public/data/config.json
+public/data/sources/
 .vite
 *.log
 .DS_Store
