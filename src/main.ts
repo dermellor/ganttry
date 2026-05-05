@@ -20,6 +20,12 @@ import {
   parseDependsOn,
   saveSourceToApi,
 } from './editor';
+import {
+  onExternalUrlStateChange,
+  readUrlState,
+  writeUrlState,
+  type UrlState,
+} from './urlState';
 
 const els = {
   timeline: document.getElementById('timeline') as HTMLDivElement,
@@ -60,6 +66,27 @@ let activeBuild: {
 } | null = null;
 let activeFormItemId: string | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let currentBrand = DEFAULT_BRAND;
+let selectedItemId: string | null = null;
+let userWindow: { start: Date; end: Date } | null = null;
+let pendingItem: string | null = null;
+let pendingWindow: { start: Date; end: Date } | null = null;
+let suppressUrlSync = false;
+
+function syncUrl(): void {
+  if (suppressUrlSync || !activeView) return;
+  const state: UrlState = { view: activeView.id };
+  if (selectedItemId) state.item = selectedItemId;
+  if (userWindow) {
+    state.from = isoDateOnly(userWindow.start);
+    state.to = isoDateOnly(userWindow.end);
+  }
+  if (milestonesOnly) state.milestones = true;
+  if (BRAND_MODE === 'select' && currentBrand && currentBrand !== DEFAULT_BRAND) {
+    state.brand = currentBrand;
+  }
+  writeUrlState(state);
+}
 
 async function loadConfig(): Promise<Config> {
   const res = await fetch('/data/config.json');
@@ -225,6 +252,9 @@ async function renderTimeline(view: View) {
     ? { updateTime: true, updateGroup: true, add: true, remove: true, overrideItems: false }
     : false;
 
+  const initialStart = pendingWindow?.start ?? new Date(focusMin - padding);
+  const initialEnd = pendingWindow?.end ?? new Date(focusMax + padding);
+
   timeline = new Timeline(els.timeline, itemsDs, useGroups ? groupsDs : undefined, {
     stack: true,
     horizontalScroll: true,
@@ -237,8 +267,8 @@ async function renderTimeline(view: View) {
     zoomMax: 1000 * 60 * 60 * 24 * 365 * 30,
     height: `${containerHeight}px`,
     verticalScroll: true,
-    start: new Date(focusMin - padding),
-    end: new Date(focusMax + padding),
+    start: initialStart,
+    end: initialEnd,
     editable,
     onMove: handleMove,
     onAdd: handleAdd,
@@ -282,17 +312,39 @@ async function renderTimeline(view: View) {
 
   timeline.on('select', (props: { items: string[] }) => {
     const id = props.items[0];
-    if (!id) return;
-    if (isEditableView() && activeSourceFile) {
-      const item = activeSourceFile.items.find((it) => it.id === id);
-      if (item) {
-        showItemForm(item);
-        return;
-      }
+    if (!id) {
+      selectedItemId = null;
+      syncUrl();
+      return;
     }
-    const note = built!.details.get(id);
-    if (note) showDetail(note);
+    selectedItemId = id;
+    syncUrl();
+    showDetailForId(id);
   });
+
+  timeline.on('rangechanged', (props: { start: Date; end: Date; byUser: boolean }) => {
+    if (!props.byUser) return;
+    userWindow = { start: new Date(props.start), end: new Date(props.end) };
+    syncUrl();
+  });
+
+  if (pendingItem) {
+    const id = pendingItem;
+    pendingItem = null;
+    setTimeout(() => {
+      try {
+        timeline?.setSelection([id]);
+      } catch {
+        /* item may not exist in this build */
+      }
+      selectedItemId = id;
+      showDetailForId(id);
+    }, 0);
+  }
+  if (pendingWindow) {
+    userWindow = pendingWindow;
+    pendingWindow = null;
+  }
 
   setStatus(statusFor(view, built!));
 }
@@ -378,6 +430,18 @@ function handleRemove(item: TimelineItem, callback: (item: TimelineItem | null) 
   rebuildAndApply();
   schedulePersist();
   hideDetail();
+}
+
+function showDetailForId(id: string): void {
+  if (isEditableView() && activeSourceFile) {
+    const item = activeSourceFile.items.find((it) => it.id === id);
+    if (item) {
+      showItemForm(item);
+      return;
+    }
+  }
+  const note = activeBuild?.details.get(id);
+  if (note) showDetail(note);
 }
 
 function showDetail(note: DetailNote) {
@@ -611,10 +675,12 @@ function hideDetail() {
 
 function applyBrand(brand: string) {
   document.body.dataset.brand = brand;
+  currentBrand = brand;
   if (BRAND_MODE === 'select') {
     localStorage.setItem('timelines.brand', brand);
   }
   els.brandSelect.value = brand;
+  syncUrl();
 }
 
 async function applyView(viewId: string) {
@@ -625,6 +691,7 @@ async function applyView(viewId: string) {
   els.viewSelect.value = viewId;
   hideDetail();
   await renderTimeline(view);
+  syncUrl();
 }
 
 async function handleExport() {
@@ -661,18 +728,45 @@ async function bootstrap() {
     .map((v) => `<option value="${v.id}">${escapeHtml(v.name)}</option>`)
     .join('');
 
+  const urlState = readUrlState();
+
   const savedView = localStorage.getItem('timelines.view') ?? cfg.defaultView;
-  const brand =
-    BRAND_MODE === 'fixed'
-      ? DEFAULT_BRAND
-      : localStorage.getItem('timelines.brand') ?? DEFAULT_BRAND;
+  const initialView = urlState.view && cfg.views.some((v) => v.id === urlState.view)
+    ? urlState.view
+    : cfg.views.some((v) => v.id === savedView)
+      ? savedView
+      : cfg.defaultView;
+
+  let brand: string;
+  if (BRAND_MODE === 'fixed') {
+    brand = DEFAULT_BRAND;
+  } else {
+    brand = urlState.brand ?? localStorage.getItem('timelines.brand') ?? DEFAULT_BRAND;
+  }
 
   if (BRAND_MODE === 'fixed') {
     els.brandControl.remove();
   }
 
+  if (urlState.milestones != null) {
+    milestonesOnly = !!urlState.milestones;
+    localStorage.setItem(MILESTONES_ONLY_KEY, String(milestonesOnly));
+  }
+
+  pendingItem = urlState.item ?? null;
+  if (urlState.from && urlState.to) {
+    const startD = new Date(urlState.from);
+    const endD = new Date(urlState.to);
+    if (!Number.isNaN(startD.getTime()) && !Number.isNaN(endD.getTime())) {
+      pendingWindow = { start: startD, end: endD };
+    }
+  }
+
+  suppressUrlSync = true;
   applyBrand(brand);
-  applyView(cfg.views.some((v) => v.id === savedView) ? savedView : cfg.defaultView);
+  await applyView(initialView);
+  suppressUrlSync = false;
+  syncUrl();
 
   els.milestonesOnly.checked = milestonesOnly;
   els.milestonesOnly.addEventListener('change', () => {
@@ -683,12 +777,86 @@ async function bootstrap() {
       setStatus(statusFor(activeView, activeBuild));
       timeline?.redraw();
     }
+    syncUrl();
   });
 
-  els.viewSelect.addEventListener('change', () => applyView(els.viewSelect.value));
+  els.viewSelect.addEventListener('change', () => {
+    selectedItemId = null;
+    userWindow = null;
+    pendingItem = null;
+    pendingWindow = null;
+    applyView(els.viewSelect.value);
+  });
   els.brandSelect.addEventListener('change', () => applyBrand(els.brandSelect.value));
-  els.detailClose.addEventListener('click', hideDetail);
+  els.detailClose.addEventListener('click', () => {
+    selectedItemId = null;
+    timeline?.setSelection([]);
+    hideDetail();
+    syncUrl();
+  });
   els.exportBtn.addEventListener('click', handleExport);
+
+  onExternalUrlStateChange((state) => applyExternalState(state));
+}
+
+async function applyExternalState(state: UrlState): Promise<void> {
+  if (!config) return;
+  suppressUrlSync = true;
+  try {
+    if (BRAND_MODE === 'select') {
+      const brand = state.brand ?? DEFAULT_BRAND;
+      if (brand !== currentBrand) applyBrand(brand);
+    }
+
+    const wantMilestones = !!state.milestones;
+    if (wantMilestones !== milestonesOnly) {
+      milestonesOnly = wantMilestones;
+      els.milestonesOnly.checked = wantMilestones;
+      localStorage.setItem(MILESTONES_ONLY_KEY, String(wantMilestones));
+      if (activeView && activeBuild) {
+        applyBuildToDataSets();
+        setStatus(statusFor(activeView, activeBuild));
+        timeline?.redraw();
+      }
+    }
+
+    const targetViewId = state.view ?? config.defaultView;
+    const targetWindow = state.from && state.to
+      ? (() => {
+          const s = new Date(state.from!);
+          const e = new Date(state.to!);
+          return !Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime())
+            ? { start: s, end: e }
+            : null;
+        })()
+      : null;
+
+    if (activeView?.id !== targetViewId) {
+      pendingItem = state.item ?? null;
+      pendingWindow = targetWindow;
+      await applyView(targetViewId);
+    } else {
+      if (state.item && state.item !== selectedItemId) {
+        selectedItemId = state.item;
+        try {
+          timeline?.setSelection([state.item]);
+        } catch {
+          /* ignore */
+        }
+        showDetailForId(state.item);
+      } else if (!state.item && selectedItemId) {
+        timeline?.setSelection([]);
+        selectedItemId = null;
+        hideDetail();
+      }
+      if (targetWindow && timeline) {
+        timeline.setWindow(targetWindow.start, targetWindow.end, { animation: false });
+        userWindow = targetWindow;
+      }
+    }
+  } finally {
+    suppressUrlSync = false;
+  }
 }
 
 bootstrap().catch((err) => {

@@ -224,6 +224,16 @@ When the active view points to a `data/*.json` file, the viewer becomes editable
 
 Persistence path: viewer → `PUT /api/source/<id>` → middleware writes `data/<id>.json` → watcher copies to `public/data/sources/<id>.json`. The middleware lives in `vite.config.ts`; only available under `npm run dev`/`npm run dev:notes`. Builds (`npm run build`) and exported HTML have no edit endpoint.
 
+## URL state
+
+Selected view, opened item, visible time window, milestones-only filter, and (in `select` brand mode) the brand are encoded in the location hash so links can be shared and back/forward navigation works. Format:
+
+```
+#view=<id>&item=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&m=1&brand=<name>
+```
+
+Only non-default values are written. Switching views via the dropdown clears `item` and `from`/`to`. Hash changes from outside the app (paste, back/forward) re-apply state without reload.
+
 ## Configuration: `timelines.config.json`
 
 ```jsonc
