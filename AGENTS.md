@@ -86,6 +86,134 @@ When generating a roadmap (whether for this project or invoked from elsewhere �
 - **Bodies are Markdown.** Use them for owner notes, success criteria, links — they show up as the side panel content when the item is clicked.
 - **Dates as `YYYY-MM-DD`** without time component unless precision matters. `duration` accepts `Nh|d|w|mo|y` or raw milliseconds.
 
+## Google Sheets als Datenquelle
+
+Sheets werden bidirektional synchronisiert (Read + Write), aber nur **lokal** auf
+deiner Maschine. Die Live-Site auf Netlify kennt das Sheet nicht und serviert
+nur das committete JSON-Cache.
+
+### Setup (einmalig)
+
+1. **OAuth-Client:** entweder den existierenden Web-Client unter
+   `~/Development/client_secret_*.json` wiederverwenden oder einen neuen Desktop-
+   Client in der Google Cloud Console anlegen. Datei nach
+   `.scripts/client_secret.json` legen (oder Pfad via
+   `TIMELINES_GOOGLE_CLIENT_SECRET=...` setzen). `.scripts/` ist gitignored.
+2. **Sheets API aktivieren:** im GCP-Projekt unter „APIs & Services → Library"
+   die Google Sheets API einschalten.
+3. **Authorisieren:**
+
+   ```bash
+   npm run sheets:auth
+   ```
+
+   Öffnet den Browser, du gewährst Zugriff, das Token landet in
+   `.scripts/google-token.json` (gitignored, refresht sich automatisch).
+
+### Sheet anlegen (feste Konventionen)
+
+Im Sheet braucht es zwei Tabs (Namen konfigurierbar, Default `Items` und
+`Groups`). Erste Zeile = Header, Reihenfolge der Spalten egal, fehlende Spalten
+sind ok außer den Pflichtfeldern.
+
+**Tab `Items`** (Pflichtspalten fett):
+
+| Spalte        | Bedeutung                                                |
+| ------------- | -------------------------------------------------------- |
+| `id`          | Item-ID (für `dependsOn`-Referenzen)                     |
+| **`start`**   | `YYYY-MM-DD`                                             |
+| `end`         | `YYYY-MM-DD` (alternativ zu `duration`)                  |
+| `duration`    | `7d`, `2w`, `90m`, ISO `P7D` …                           |
+| **`content`** | Item-Titel                                               |
+| `group`       | Group-ID (matched gegen Groups-Tab oder freier String)   |
+| `type`        | `point` \| `range` \| `background` \| `box`              |
+| `title`       | Tooltip-Text                                             |
+| `body`        | Markdown für Detail-Panel                                |
+| `dependsOn`   | komma-getrennte IDs                                      |
+| `owner`       | Owner-Name (landet in `metadata.owner`)                  |
+| `className`   | optional CSS-Klasse                                      |
+| `metadata`    | freies JSON-Objekt für Extra-Felder                      |
+
+**Tab `Groups`** (optional):
+
+| Spalte         | Bedeutung                                            |
+| -------------- | ---------------------------------------------------- |
+| `id`           | Group-ID (Pflicht)                                   |
+| `content`      | Anzeigename                                          |
+| `nestedGroups` | komma-getrennte Child-Group-IDs                      |
+| `showNested`   | `true` / `false`                                     |
+
+### Konfig-Eintrag
+
+In `timelines.config.json`:
+
+```jsonc
+{
+  "sheets": [
+    {
+      "id": "team-roadmap",
+      "name": "Team Roadmap",
+      "spreadsheetId": "1AbC...xyz",
+      "itemsSheet": "Items",        // optional, default "Items"
+      "groupsSheet": "Groups",      // optional, default "Groups"
+      "groupBy": "group"            // optional
+    }
+  ]
+}
+```
+
+`id` wird zu `src:<id>` als View-ID. Gepullt wird beim Build und (im Watch-
+Modus) alle 60 s. Polling-Intervall via `TIMELINES_SHEETS_POLL_SECONDS=120`
+änderbar (min 15 s).
+
+### Sync-Verhalten
+
+- **Pull:** `npm run dev` (oder `npm run build`) zieht jedes konfigurierte
+  Sheet und schreibt nach `data/<id>.json`. Die Datei sollte committed werden,
+  damit Netlify-Builds dieselben Daten haben.
+- **Push:** Edits in der UI (Drag, Form, Add, Delete) gehen via PUT-Endpoint
+  → schreibt JSON lokal **und** überschreibt das Sheet (Items + Groups Tabs
+  werden geleert und neu geschrieben — Spalten außerhalb der Konvention gehen
+  verloren, frei strukturierte Extras gehören in die `metadata`-Spalte).
+- **Konflikte:** Last-write-wins. Wenn jemand das Sheet extern ändert während
+  du die UI offen hast, überschreibt der nächste Edit-Save deine Änderung.
+  Polling lädt externe Änderungen nach max. 60 s in den lokalen Cache, aber
+  nicht in eine offene Edit-Session.
+- **Production (Netlify):** Per-User Google OAuth mit Sheets-Scope.
+  Jeder Kollege autorisiert einmal (Google-Login enthält Sheets-Consent),
+  danach liest/schreibt die Edge Function mit dem jeweiligen User-Token.
+  Edits werden mit dem persönlichen Google-Account dem Sheet zugeordnet
+  (sichtbar in der Versionshistorie). Fallback auf statisches
+  `data/<id>.json` wenn `SHEETS_ENABLED` nicht gesetzt ist.
+
+### Production-Setup (Netlify + Sheets)
+
+Zusätzlich zu den bestehenden Auth-Env-Vars:
+
+| Var               | Where     | Notes                                                          |
+| ----------------- | --------- | -------------------------------------------------------------- |
+| `SHEETS_ENABLED`  | dashboard | `true` aktiviert Sheets-Scope im OAuth und die API-Proxy-Funktion |
+| `SHEETS_CONFIG`   | dashboard | JSON-Array der Sheet-Einträge (gleiche Struktur wie `timelines.config.json → sheets`, nur als Env-Var) |
+
+Beispiel `SHEETS_CONFIG`:
+```json
+[{"id":"team-roadmap","spreadsheetId":"1AbC...xyz","name":"Team Roadmap"}]
+```
+
+Die Edge Function `sheets-api` liest `SHEETS_CONFIG`, matched die `id` gegen
+den Request-Pfad (`/api/source/<id>`), und nutzt das Google-Token des
+eingeloggten Users für die Sheets-API. Nicht-Sheet-Sources fallen weiter auf
+die statische Datei zurück (read-only).
+
+Das Google-Sheet selbst muss mit allen Kollegen geteilt sein (Editor-Recht),
+damit deren persönliche Tokens darauf zugreifen können.
+
+### Manueller Sync
+
+```bash
+npm run sheets:sync   # einmaliger Pull aller konfigurierten Sheets
+```
+
 ## Editing JSON timelines
 
 When the active view points to a `data/*.json` file, the viewer becomes editable:

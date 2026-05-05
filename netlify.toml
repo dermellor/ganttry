@@ -15,7 +15,13 @@
   # in the Netlify dashboard, not in this file.)
   SECRETS_SCAN_OMIT_KEYS = "ALLOWED_EMAIL_DOMAINS,AUTH_REQUIRED"
 
-# Edge function as global auth gate.
+# Edge function as global auth gate (runs first on all paths).
 [[edge_functions]]
   function = "auth"
   path = "/*"
+
+# Sheets API proxy — runs after auth, handles sheet-backed sources.
+# Falls through to static files for non-sheet sources.
+[[edge_functions]]
+  function = "sheets-api"
+  path = "/api/source/*"

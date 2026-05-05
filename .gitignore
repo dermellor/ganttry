@@ -9,5 +9,6 @@ public/data/sources/
 .env.local
 .env.netlify
 .env.*.local
+.scripts/
 *.log
 .DS_Store

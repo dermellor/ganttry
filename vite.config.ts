@@ -2,12 +2,34 @@ import { defineConfig, type Plugin } from 'vite';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, dirname, sep } from 'node:path';
+import { pushSheet } from './scripts/sheets/sync';
 
 const SOURCES_SUBDIR = (process.env.TIMELINES_SOURCES_SUBDIR ?? '').replace(/^\/+|\/+$/g, '');
 const SOURCES_DIR = SOURCES_SUBDIR
   ? resolve(__dirname, 'data', SOURCES_SUBDIR)
   : resolve(__dirname, 'data');
+const CONFIG_PATH = resolve(__dirname, 'timelines.config.json');
 const ID_SEGMENT = /^[a-zA-Z0-9_-]+$/;
+
+type SheetConfig = {
+  id: string;
+  spreadsheetId: string;
+  itemsSheet?: string;
+  groupsSheet?: string;
+  name?: string;
+  description?: string;
+  groupBy?: string;
+};
+
+async function loadSheetConfigs(): Promise<SheetConfig[]> {
+  try {
+    const raw = await readFile(CONFIG_PATH, 'utf8');
+    const cfg = JSON.parse(raw) as { sheets?: SheetConfig[] };
+    return cfg.sheets ?? [];
+  } catch {
+    return [];
+  }
+}
 
 function timelinesApi(): Plugin {
   return {
@@ -50,7 +72,7 @@ function timelinesApi(): Plugin {
         // PUT
         let body = '';
         for await (const chunk of req) body += chunk;
-        let json: unknown;
+        let json: any;
         try {
           json = JSON.parse(body);
         } catch (err) {
@@ -59,16 +81,42 @@ function timelinesApi(): Plugin {
           res.end(JSON.stringify({ error: 'invalid JSON', detail: String(err) }));
           return;
         }
-        if (!json || typeof json !== 'object' || !Array.isArray((json as any).items)) {
+        if (!json || typeof json !== 'object' || !Array.isArray(json.items)) {
           res.statusCode = 400;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ error: 'expected object with "items" array' }));
           return;
         }
+
         await mkdir(dirname(filePath), { recursive: true });
         await writeFile(filePath, `${JSON.stringify(json, null, 2)}\n`);
+
+        const sheets = await loadSheetConfigs();
+        const sheetCfg = sheets.find((s) => s.id === id);
+        if (sheetCfg) {
+          try {
+            await pushSheet(sheetCfg, json);
+          } catch (err) {
+            console.warn(`[timelines-api] sheet write-back failed for "${id}":`, err);
+            res.setHeader('Content-Type', 'application/json');
+            res.end(
+              JSON.stringify({
+                ok: true,
+                sheetWriteBack: 'failed',
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+            return;
+          }
+        }
+
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ ok: true }));
+        res.end(
+          JSON.stringify({
+            ok: true,
+            sheetWriteBack: sheetCfg ? 'ok' : undefined,
+          }),
+        );
       });
     },
   };

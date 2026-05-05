@@ -4,32 +4,46 @@
 // domains (default Acme.de, Acme.com) get past the gate. Sessions are
 // signed JWT-style cookies (HMAC-SHA256), no external auth service required.
 //
+// When SHEETS_ENABLED=true (Netlify env), the OAuth flow also requests the
+// Google Sheets scope and stores the user's access/refresh tokens in the
+// session cookie, enabling per-user read/write to configured sheets.
+//
 // Required runtime env vars (set in Netlify dashboard):
 //   AUTH_REQUIRED          — "true" to enable the gate (any other value = pass through)
 //   GOOGLE_CLIENT_ID       — OAuth client (web application type)
 //   GOOGLE_CLIENT_SECRET   — OAuth client secret
 //   AUTH_SECRET            — random 32+ byte string, used to sign cookies
 //   ALLOWED_EMAIL_DOMAINS  — comma-separated, default "Acme.de,Acme.com"
+//
+// Optional:
+//   SHEETS_ENABLED         — "true" to include Sheets scope in OAuth
 
 import type { Context, Config } from '@netlify/edge-functions';
+import {
+  COOKIE_NAME,
+  STATE_COOKIE,
+  SESSION_MAX_AGE,
+  STATE_MAX_AGE,
+  type SessionPayload,
+  type StatePayload,
+  sign,
+  verify,
+  parseCookies,
+  cookieString,
+  readSession,
+  firstAllowedDomain,
+  isAllowedDomain,
+  allowedDomains,
+  mustEnv,
+  nowSec,
+  escapeHtml,
+} from './_shared/session.ts';
 
-const COOKIE_NAME = 'tl_session';
-const STATE_COOKIE = 'tl_oauth_state';
-const SESSION_MAX_AGE = 24 * 60 * 60; // 24h
-const STATE_MAX_AGE = 10 * 60; // 10m
+const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 
-type SessionPayload = {
-  email: string;
-  sub: string;
-  name?: string;
-  exp: number;
-};
-
-type StatePayload = {
-  state: string;
-  redirect: string;
-  exp: number;
-};
+function sheetsEnabled(): boolean {
+  return Deno.env.get('SHEETS_ENABLED') === 'true';
+}
 
 export default async function handler(req: Request, _ctx: Context): Promise<Response | void> {
   if (Deno.env.get('AUTH_REQUIRED') !== 'true') {
@@ -76,15 +90,18 @@ async function handleLogin(url: URL): Promise<Response> {
     exp: nowSec() + STATE_MAX_AGE,
   } satisfies StatePayload);
 
+  const scopes = ['openid', 'email', 'profile'];
+  if (sheetsEnabled()) scopes.push(SHEETS_SCOPE);
+
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: `${url.origin}/auth/callback`,
     response_type: 'code',
-    scope: 'openid email profile',
+    scope: scopes.join(' '),
     state,
-    prompt: 'select_account',
+    prompt: sheetsEnabled() ? 'consent' : 'select_account',
     hd: firstAllowedDomain(),
-    access_type: 'online',
+    access_type: sheetsEnabled() ? 'offline' : 'online',
   });
 
   const headers = new Headers({
@@ -129,7 +146,11 @@ async function handleCallback(req: Request, url: URL): Promise<Response> {
   if (!tokenRes.ok) {
     return redirectToError(url, `token_exchange_failed_${tokenRes.status}`);
   }
-  const tokens = (await tokenRes.json()) as { access_token?: string };
+  const tokens = (await tokenRes.json()) as {
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number;
+  };
   if (!tokens.access_token) return redirectToError(url, 'no_access_token');
 
   const userRes = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
@@ -152,12 +173,24 @@ async function handleCallback(req: Request, url: URL): Promise<Response> {
     return redirectToError(url, 'domain_not_allowed');
   }
 
-  const session = await sign({
+  const sessionPayload: SessionPayload = {
     email,
     sub: user.sub ?? email,
     name: user.name,
     exp: nowSec() + SESSION_MAX_AGE,
-  } satisfies SessionPayload);
+  };
+
+  if (sheetsEnabled() && tokens.access_token) {
+    sessionPayload.google_access_token = tokens.access_token;
+    if (tokens.refresh_token) {
+      sessionPayload.google_refresh_token = tokens.refresh_token;
+    }
+    if (tokens.expires_in) {
+      sessionPayload.google_token_expiry = nowSec() + tokens.expires_in;
+    }
+  }
+
+  const session = await sign(sessionPayload);
 
   const headers = new Headers({
     Location: `${url.origin}${statePayload.redirect}`,
@@ -201,139 +234,4 @@ function redirectToError(url: URL, reason: string): Response {
   const headers = new Headers({ Location: target.toString() });
   headers.append('Set-Cookie', cookieString(STATE_COOKIE, '', 0));
   return new Response(null, { status: 302, headers });
-}
-
-// ---------- session helpers ----------
-
-async function readSession(req: Request): Promise<SessionPayload | null> {
-  const cookies = parseCookies(req.headers.get('cookie'));
-  const raw = cookies[COOKIE_NAME];
-  if (!raw) return null;
-  const payload = (await verify(raw)) as SessionPayload | null;
-  if (!payload) return null;
-  if (!payload.email || !isAllowedDomain(payload.email)) return null;
-  if (payload.exp < nowSec()) return null;
-  return payload;
-}
-
-// ---------- crypto / encoding ----------
-
-let cachedKey: Promise<CryptoKey> | null = null;
-function getKey(): Promise<CryptoKey> {
-  if (!cachedKey) {
-    const secret = mustEnv('AUTH_SECRET');
-    cachedKey = crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign', 'verify'],
-    );
-  }
-  return cachedKey;
-}
-
-async function sign(payload: object): Promise<string> {
-  const json = JSON.stringify(payload);
-  const data = new TextEncoder().encode(json);
-  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', await getKey(), data));
-  return `${b64urlEncode(data)}.${b64urlEncode(sig)}`;
-}
-
-async function verify(token: string): Promise<unknown | null> {
-  const dot = token.indexOf('.');
-  if (dot <= 0) return null;
-  const payloadB64 = token.slice(0, dot);
-  const sigB64 = token.slice(dot + 1);
-  const payload = b64urlDecode(payloadB64);
-  const sig = b64urlDecode(sigB64);
-  if (!payload || !sig) return null;
-  const ok = await crypto.subtle.verify('HMAC', await getKey(), sig, payload);
-  if (!ok) return null;
-  try {
-    return JSON.parse(new TextDecoder().decode(payload));
-  } catch {
-    return null;
-  }
-}
-
-function b64urlEncode(bytes: Uint8Array): string {
-  let str = '';
-  for (let i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
-  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function b64urlDecode(s: string): Uint8Array | null {
-  if (!/^[A-Za-z0-9_-]*$/.test(s)) return null;
-  const padded = s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4);
-  try {
-    const bin = atob(padded);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  } catch {
-    return null;
-  }
-}
-
-// ---------- misc ----------
-
-function parseCookies(header: string | null): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!header) return out;
-  for (const pair of header.split(/;\s*/)) {
-    const eq = pair.indexOf('=');
-    if (eq <= 0) continue;
-    const k = pair.slice(0, eq).trim();
-    const v = pair.slice(eq + 1).trim();
-    if (k) out[k] = decodeURIComponent(v);
-  }
-  return out;
-}
-
-function cookieString(name: string, value: string, maxAge: number): string {
-  const parts = [
-    `${name}=${encodeURIComponent(value)}`,
-    'Path=/',
-    'HttpOnly',
-    'Secure',
-    'SameSite=Lax',
-    `Max-Age=${maxAge}`,
-  ];
-  return parts.join('; ');
-}
-
-function allowedDomains(): string[] {
-  const raw = Deno.env.get('ALLOWED_EMAIL_DOMAINS') ?? 'Acme.de,Acme.com';
-  return raw
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-}
-
-function firstAllowedDomain(): string {
-  return allowedDomains()[0] ?? 'Acme.de';
-}
-
-function isAllowedDomain(email: string): boolean {
-  const at = email.lastIndexOf('@');
-  if (at < 0) return false;
-  const domain = email.slice(at + 1).toLowerCase();
-  return allowedDomains().includes(domain);
-}
-
-function mustEnv(name: string): string {
-  const v = Deno.env.get(name);
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
-
-function nowSec(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
-  );
 }
