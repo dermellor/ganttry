@@ -85,6 +85,25 @@ body {
   outline-offset: 2px;
 }
 
+.control-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.control-toggle input[type="checkbox"] {
+  accent-color: var(--accent, #2f0d5b);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.control-toggle:focus-within {
+  outline: 2px solid var(--accent, #2f0d5b);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .export-btn {
   font: inherit;
   font-size: 13px;

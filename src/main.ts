@@ -26,6 +26,7 @@ const els = {
   viewSelect: document.getElementById('view-select') as HTMLSelectElement,
   brandControl: document.getElementById('brand-control') as HTMLLabelElement,
   brandSelect: document.getElementById('brand-select') as HTMLSelectElement,
+  milestonesOnly: document.getElementById('milestones-only') as HTMLInputElement,
   exportBtn: document.getElementById('export-btn') as HTMLButtonElement,
   status: document.getElementById('status') as HTMLSpanElement,
   detail: document.getElementById('detail') as HTMLElement,
@@ -34,6 +35,9 @@ const els = {
   detailBody: document.getElementById('detail-body') as HTMLElement,
   detailClose: document.getElementById('detail-close') as HTMLButtonElement,
 };
+
+const MILESTONES_ONLY_KEY = 'timelines.milestonesOnly';
+let milestonesOnly = localStorage.getItem(MILESTONES_ONLY_KEY) === 'true';
 
 const BRAND_MODE = (import.meta.env.VITE_BRAND_MODE ?? 'select') as 'select' | 'fixed';
 const DEFAULT_BRAND = (import.meta.env.VITE_DEFAULT_BRAND ?? 'marcel-mellor') as string;
@@ -77,20 +81,65 @@ function isEditableView(): boolean {
   return !!activeSourceFile && !!activeSourceId && activeSourceEditable;
 }
 
+function filterBuildForDisplay(build: NonNullable<typeof activeBuild>): {
+  items: TimelineItem[];
+  groups: TimelineGroup[];
+} {
+  if (!milestonesOnly) return { items: build.items, groups: build.groups };
+  const items = build.items.filter((it) => it.type === 'point');
+  const referenced = new Set<string>();
+  for (const it of items) if (it.group) referenced.add(it.group);
+  const keep = new Set<string>();
+  const visit = (id: string): boolean => {
+    if (keep.has(id)) return true;
+    const g = build.groups.find((x) => x.id === id);
+    if (!g) return false;
+    let kept = referenced.has(id);
+    if (g.nestedGroups) {
+      for (const child of g.nestedGroups) {
+        if (visit(child)) kept = true;
+      }
+    }
+    if (kept) keep.add(id);
+    return kept;
+  };
+  for (const g of build.groups) visit(g.id);
+  const groups = build.groups
+    .filter((g) => keep.has(g.id))
+    .map((g) =>
+      g.nestedGroups
+        ? { ...g, nestedGroups: g.nestedGroups.filter((c) => keep.has(c)) }
+        : g,
+    );
+  return { items, groups };
+}
+
 function rebuildAndApply(): void {
   if (!activeView || !activeSourceFile || !timeline) return;
   const built = buildFromJson(activeView, activeSourceFile);
   activeBuild = built;
+  applyBuildToDataSets();
+  if (arrows) arrows.setDependencies(built.dependencies);
+  setStatus(statusFor(activeView, built));
+}
+
+function applyBuildToDataSets(): void {
+  if (!activeBuild) return;
+  const filtered = filterBuildForDisplay(activeBuild);
   if (itemsDs) {
     itemsDs.clear();
-    itemsDs.add(built.items);
+    itemsDs.add(filtered.items);
   }
   if (groupsDs) {
     groupsDs.clear();
-    groupsDs.add(built.groups);
+    groupsDs.add(filtered.groups);
   }
-  if (arrows) arrows.setDependencies(built.dependencies);
-  setStatus(`${built.items.length} items in „${activeView.name}" · ${built.groups.length} groups`);
+}
+
+function statusFor(view: View, build: NonNullable<typeof activeBuild>): string {
+  const filtered = filterBuildForDisplay(build);
+  const suffix = milestonesOnly ? ' · nur Meilensteine' : '';
+  return `${filtered.items.length} items in „${view.name}" · ${filtered.groups.length} groups${suffix}`;
 }
 
 function schedulePersist(): void {
@@ -142,8 +191,9 @@ async function renderTimeline(view: View) {
   activeSourceId = sourceId;
   activeSourceEditable = sourceEditable;
 
-  itemsDs = new DataSet<TimelineItem>(built!.items);
-  groupsDs = new DataSet<TimelineGroup>(built!.groups);
+  const filtered = filterBuildForDisplay(built!);
+  itemsDs = new DataSet<TimelineItem>(filtered.items);
+  groupsDs = new DataSet<TimelineGroup>(filtered.groups);
 
   if (arrows) {
     arrows.dispose();
@@ -156,7 +206,7 @@ async function renderTimeline(view: View) {
     els.timeline.innerHTML = '';
   }
 
-  const useGroups = built!.groups.length > 0;
+  const useGroups = filtered.groups.length > 0;
 
   const now = Date.now();
   const yearMs = 365 * 24 * 3600 * 1000;
@@ -244,7 +294,7 @@ async function renderTimeline(view: View) {
     if (note) showDetail(note);
   });
 
-  setStatus(`${built!.items.length} items in „${view.name}"${useGroups ? ` · ${built!.groups.length} groups` : ''}`);
+  setStatus(statusFor(view, built!));
 }
 
 function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) => void): void {
@@ -585,7 +635,12 @@ async function handleExport() {
   els.exportBtn.textContent = 'Exportiere…';
   try {
     const { exportTimelineHtml } = await import('./export');
-    await exportTimelineHtml({ view: activeView, build: activeBuild, brand });
+    const filtered = filterBuildForDisplay(activeBuild);
+    await exportTimelineHtml({
+      view: activeView,
+      build: { ...activeBuild, items: filtered.items, groups: filtered.groups },
+      brand,
+    });
   } catch (err) {
     console.error(err);
     alert(`Export fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
@@ -618,6 +673,17 @@ async function bootstrap() {
 
   applyBrand(brand);
   applyView(cfg.views.some((v) => v.id === savedView) ? savedView : cfg.defaultView);
+
+  els.milestonesOnly.checked = milestonesOnly;
+  els.milestonesOnly.addEventListener('change', () => {
+    milestonesOnly = els.milestonesOnly.checked;
+    localStorage.setItem(MILESTONES_ONLY_KEY, String(milestonesOnly));
+    if (activeView && activeBuild) {
+      applyBuildToDataSets();
+      setStatus(statusFor(activeView, activeBuild));
+      timeline?.redraw();
+    }
+  });
 
   els.viewSelect.addEventListener('change', () => applyView(els.viewSelect.value));
   els.brandSelect.addEventListener('change', () => applyBrand(els.brandSelect.value));
