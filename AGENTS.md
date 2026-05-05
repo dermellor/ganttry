@@ -10,6 +10,11 @@ Belegt im 3120er-Block (siehe [`~/Development/PORTS.md`](../PORTS.md)).
 | ---- | ----------------------------- |
 | 3120 | Vite dev server (Timeline UI) |
 
+URLs:
+
+- `https://timelines.localhost` — primärer Zugang über Caddy (HTTPS, von PM2 verwaltet)
+- `http://localhost:3120` — direkt auf Vite
+
 Crasht bei Port-Konflikt (`strictPort: true`), kein Auto-Fallback.
 
 ## Architecture
