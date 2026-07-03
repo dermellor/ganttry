@@ -9,6 +9,8 @@
   TIMELINES_STATIC_ONLY = "true"
   VITE_BRAND_MODE = "fixed"
   VITE_DEFAULT_BRAND = "Acme"
+  # Public base URL for JIRA browse links (not a secret).
+  VITE_JIRA_BASE_URL = "https://your-org.atlassian.net"
   # Tell Netlify's secret scanner that these aren't secrets — their values
   # legitimately appear in code defaults and docs.
   # (Real secrets — GOOGLE_CLIENT_*, AUTH_SECRET — live as runtime-only env vars
@@ -22,6 +24,17 @@
 
 # Sheets API proxy — runs after auth, handles sheet-backed sources.
 # Falls through to static files for non-sheet sources.
+# /api/sources is the discovery endpoint (list of configured sheet sources).
 [[edge_functions]]
   function = "sheets-api"
   path = "/api/source/*"
+
+[[edge_functions]]
+  function = "sheets-api"
+  path = "/api/sources"
+
+# JIRA issue-picker proxy — powers the editor autosuggest. Runs after auth.
+# Inactive unless JIRA_ENABLED=true and JIRA_* credentials are set.
+[[edge_functions]]
+  function = "jira-api"
+  path = "/api/jira/search"

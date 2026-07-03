@@ -37,6 +37,7 @@ import {
   mustEnv,
   nowSec,
   escapeHtml,
+  hasValidMcpToken,
 } from './_shared/session.ts';
 
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
@@ -57,6 +58,10 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
   if (path === '/auth/callback') return handleCallback(req, url);
   if (path === '/auth/logout') return handleLogout(url);
   if (path === '/auth/error') return errorPage(url.searchParams.get('reason') ?? 'unknown');
+
+  // Headless MCP client: a valid X-MCP-Token passes the gate without a Google
+  // login. Downstream functions (sheets-api) use the service identity for data.
+  if (hasValidMcpToken(req)) return;
 
   const session = await readSession(req);
   if (!session) {

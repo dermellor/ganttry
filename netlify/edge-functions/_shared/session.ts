@@ -159,6 +159,50 @@ export function escapeHtml(s: string): string {
   );
 }
 
+// ---------- MCP service-token bypass ----------
+//
+// Allows a headless client (the Timelines MCP server) to pass the auth gate and
+// read/write sheet sources without an interactive Google login. The request
+// carries `X-MCP-Token: <MCP_API_TOKEN>`; sheet access then uses a stored
+// service refresh token instead of a per-user session token.
+
+export const MCP_TOKEN_HEADER = 'x-mcp-token';
+
+/** Constant-time string comparison — avoids leaking token length/prefix via timing. */
+export function constantTimeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  // Compare against a fixed-length digest so lengths never short-circuit.
+  let diff = ab.length ^ bb.length;
+  const len = Math.max(ab.length, bb.length);
+  for (let i = 0; i < len; i++) {
+    diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0);
+  }
+  return diff === 0;
+}
+
+/** True when the request presents a valid MCP token (and one is configured). */
+export function hasValidMcpToken(req: Request): boolean {
+  const configured = Deno.env.get('MCP_API_TOKEN');
+  if (!configured) return false;
+  const presented = req.headers.get(MCP_TOKEN_HEADER);
+  if (!presented) return false;
+  return constantTimeEqual(presented, configured);
+}
+
+/**
+ * Mint a Google access token for the MCP service identity from the stored
+ * refresh token (SHEETS_SERVICE_REFRESH_TOKEN). Returns null if not configured
+ * or the refresh fails.
+ */
+export async function getServiceAccessToken(): Promise<string | null> {
+  const refreshToken = Deno.env.get('SHEETS_SERVICE_REFRESH_TOKEN');
+  if (!refreshToken) return null;
+  const result = await refreshGoogleToken(refreshToken);
+  return result?.access_token ?? null;
+}
+
 // ---------- Google token refresh ----------
 
 export async function refreshGoogleToken(

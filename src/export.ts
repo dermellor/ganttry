@@ -1,5 +1,6 @@
 import type { View } from './types';
 import { escapeHtml, type DetailNote, type TimelineGroup, type TimelineItem } from './buildItems';
+import { JIRA_BASE_URL } from './jira';
 
 import visJsRaw from 'vis-timeline/standalone/umd/vis-timeline-graph2d.min.js?raw';
 import visCssRaw from 'vis-timeline/styles/vis-timeline-graph2d.min.css?raw';
@@ -106,9 +107,24 @@ function clientScript(): string {
       if (v == null || v === '') return;
       pairs.push([k, Array.isArray(v) ? v.map(String).join(', ') : String(v)]);
     });
-    elDetailMeta.innerHTML = pairs.map(function (p) {
+    var metaHtml = pairs.map(function (p) {
       return '<dt>' + escapeHtml(p[0]) + '</dt><dd>' + escapeHtml(p[1]) + '</dd>';
     }).join('');
+    var jira = Array.isArray(fm.jira) ? fm.jira : [];
+    if (jira.length) {
+      var base = (payload.jiraBaseUrl || '').replace(/\\/+$/, '');
+      var refs = jira.map(function (entry) {
+        var key = typeof entry === 'string' ? entry : (entry && entry.key) || '';
+        var sum = (entry && entry.summary) || '';
+        if (!key) return '';
+        var label = sum ? key + ' – ' + sum : key;
+        return base
+          ? '<a class="jira-ref" href="' + escapeHtml(base + '/browse/' + key) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(label) + '</a>'
+          : '<span class="jira-ref">' + escapeHtml(label) + '</span>';
+      }).join('');
+      metaHtml += '<dt>JIRA</dt><dd class="jira-refs">' + refs + '</dd>';
+    }
+    elDetailMeta.innerHTML = metaHtml;
     var bodyHtml = (window.marked && note.body) ? window.marked.parse(note.body) : escapeHtml(note.body || '');
     elDetailBody.innerHTML = bodyHtml;
     elDetail.hidden = false;
@@ -144,6 +160,7 @@ function buildHtml(args: ExportArgs): string {
     items: build.items,
     groups: build.groups,
     details: detailsObj,
+    jiraBaseUrl: JIRA_BASE_URL,
   });
   const title = `${view.name} — Timeline`;
   return `<!doctype html>

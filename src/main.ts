@@ -26,6 +26,14 @@ import {
   writeUrlState,
   type UrlState,
 } from './urlState';
+import {
+  isJiraKey,
+  jiraLinksHtml,
+  normalizeKey,
+  readJiraIssues,
+  searchJira,
+  type JiraIssue,
+} from './jira';
 
 const els = {
   timeline: document.getElementById('timeline') as HTMLDivElement,
@@ -65,6 +73,9 @@ let activeBuild: {
   dependencies: Map<string, string[]>;
 } | null = null;
 let activeFormItemId: string | null = null;
+// Linked JIRA issues for the form currently open. Mutated by the autosuggest
+// chips; read back in saveItemFromForm.
+let formJiraIssues: JiraIssue[] = [];
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let currentBrand = DEFAULT_BRAND;
 let selectedItemId: string | null = null;
@@ -265,6 +276,11 @@ async function renderTimeline(view: View) {
     tooltip: { followMouse: false, overflowMethod: 'cap' },
     zoomMin: 1000 * 60 * 60 * 6,
     zoomMax: 1000 * 60 * 60 * 24 * 365 * 30,
+    snap: (date: Date) => {
+      const d = new Date(date);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    },
     height: `${containerHeight}px`,
     verticalScroll: true,
     start: initialStart,
@@ -459,9 +475,15 @@ function showDetail(note: DetailNote) {
     metaPairs.push([key, Array.isArray(v) ? v.map(String).join(', ') : String(v)]);
   }
 
-  els.detailMeta.innerHTML = metaPairs
-    .map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`)
-    .join('');
+  const jiraIssues = readJiraIssues(fm);
+
+  els.detailMeta.innerHTML =
+    metaPairs
+      .map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`)
+      .join('') +
+    (jiraIssues.length
+      ? `<dt>JIRA</dt><dd class="jira-refs">${jiraLinksHtml(jiraIssues, escapeHtml)}</dd>`
+      : '');
 
   const bodyHtml = marked.parse(note.body || '', { async: false }) as string;
   els.detailBody.innerHTML = bodyHtml;
@@ -485,9 +507,10 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
   const metadata = (item.metadata ?? {}) as Record<string, unknown>;
   const dependsOn = Array.isArray(metadata.dependsOn) ? (metadata.dependsOn as unknown[]).map(String) : [];
   const owner = typeof metadata.owner === 'string' ? metadata.owner : '';
+  formJiraIssues = readJiraIssues(metadata);
 
   const otherMeta = Object.fromEntries(
-    Object.entries(metadata).filter(([k]) => k !== 'dependsOn' && k !== 'owner')
+    Object.entries(metadata).filter(([k]) => k !== 'dependsOn' && k !== 'owner' && k !== 'jira')
   );
   const metaJson = Object.keys(otherMeta).length ? JSON.stringify(otherMeta, null, 2) : '';
 
@@ -507,7 +530,7 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
         <input id="f-end" name="end" type="date" value="${isoDateOnly(item.end ?? '')}" />
       </div>
       <div class="field">
-        <label for="f-duration">Duration <small>(z. B. 7d, 2w, 90m — überschreibt End)</small></label>
+        <label for="f-duration">Duration</label>
         <input id="f-duration" name="duration" value="${escapeHtml(typeof item.duration === 'string' ? item.duration : item.duration != null ? String(item.duration) : '')}" placeholder="leer = End nutzen" />
       </div>
       <div class="field">
@@ -527,12 +550,20 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
         </select>
       </div>
       <div class="field full">
-        <label for="f-body">Body (Markdown)</label>
+        <label for="f-body">Body</label>
         <textarea id="f-body" name="body" rows="6">${escapeHtml(item.body ?? '')}</textarea>
       </div>
       <div class="field full">
         <label for="f-deps">Depends on <small>(IDs, komma-getrennt)</small></label>
         <input id="f-deps" name="dependsOn" value="${escapeHtml(dependsOn.join(', '))}" placeholder="z. B. S-1, D-2" />
+      </div>
+      <div class="field full jira-field">
+        <label for="f-jira">JIRA <small>(Tickets verlinken)</small></label>
+        <div class="jira-chips" data-role="jira-chips"></div>
+        <div class="jira-suggest">
+          <input id="f-jira" type="text" autocomplete="off" placeholder="Ticket suchen oder Key eingeben (z. B. PROJ-123)…" />
+          <ul class="jira-suggest-list" data-role="jira-list" hidden></ul>
+        </div>
       </div>
       <div class="field">
         <label for="f-owner">Owner</label>
@@ -557,10 +588,13 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
   const typeSelect = form.querySelector<HTMLSelectElement>('#f-type')!;
   const endField = form.querySelector<HTMLElement>('#f-end')!.closest('.field') as HTMLElement;
   const durField = form.querySelector<HTMLElement>('#f-duration')!.closest('.field') as HTMLElement;
+  // A point (Meilenstein) has no extent. End/Duration stay editable: entering
+  // one promotes the item to a range on save (see saveItemFromForm). Just flag
+  // the point state visually so the interaction reads cleanly.
   const syncTypeFields = () => {
     const isPoint = typeSelect.value === 'point';
-    endField.hidden = isPoint;
-    durField.hidden = isPoint;
+    endField.classList.toggle('is-muted', isPoint);
+    durField.classList.toggle('is-muted', isPoint);
   };
   syncTypeFields();
   typeSelect.addEventListener('change', syncTypeFields);
@@ -573,8 +607,153 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
     deleteItem(id);
   });
 
+  wireJiraAutosuggest(form);
+
   els.detail.hidden = false;
   setTimeout(() => timeline?.redraw(), 0);
+}
+
+// Renders the JIRA chip list (the linked-issue pills) into the form, with a
+// remove button per chip. Re-rendered whenever formJiraIssues changes.
+function renderJiraChips(form: HTMLFormElement): void {
+  const wrap = form.querySelector<HTMLElement>('[data-role="jira-chips"]');
+  if (!wrap) return;
+  wrap.innerHTML = formJiraIssues
+    .map(
+      (iss, i) =>
+        `<span class="jira-chip" title="${escapeHtml(iss.summary || iss.key)}">` +
+        `<span class="jira-chip-key">${escapeHtml(iss.key)}</span>` +
+        (iss.summary ? `<span class="jira-chip-sum">${escapeHtml(iss.summary)}</span>` : '') +
+        `<button type="button" class="jira-chip-x" data-remove="${i}" aria-label="Entfernen">×</button>` +
+        `</span>`,
+    )
+    .join('');
+  wrap.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.remove);
+      formJiraIssues.splice(idx, 1);
+      renderJiraChips(form);
+    });
+  });
+}
+
+function addJiraIssue(form: HTMLFormElement, issue: JiraIssue): void {
+  if (!issue.key) return;
+  if (formJiraIssues.some((i) => i.key === issue.key)) return;
+  formJiraIssues.push(issue);
+  renderJiraChips(form);
+}
+
+function wireJiraAutosuggest(form: HTMLFormElement): void {
+  renderJiraChips(form);
+
+  const input = form.querySelector<HTMLInputElement>('#f-jira');
+  const list = form.querySelector<HTMLUListElement>('[data-role="jira-list"]');
+  if (!input || !list) return;
+
+  let debounce: ReturnType<typeof setTimeout> | null = null;
+  let activeIndex = -1;
+  let current: JiraIssue[] = [];
+
+  const closeList = () => {
+    list.hidden = true;
+    list.innerHTML = '';
+    activeIndex = -1;
+    current = [];
+  };
+
+  const renderList = (issues: JiraIssue[]) => {
+    current = issues;
+    activeIndex = -1;
+    if (!issues.length) {
+      closeList();
+      return;
+    }
+    list.innerHTML = issues
+      .map(
+        (iss, i) =>
+          `<li class="jira-suggest-item" data-i="${i}" role="option">` +
+          `<span class="jira-suggest-key">${escapeHtml(iss.key)}</span>` +
+          `<span class="jira-suggest-sum">${escapeHtml(iss.summary)}</span>` +
+          `</li>`,
+      )
+      .join('');
+    list.hidden = false;
+    list.querySelectorAll<HTMLLIElement>('.jira-suggest-item').forEach((li) => {
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        pick(Number(li.dataset.i));
+      });
+    });
+  };
+
+  const highlight = () => {
+    list.querySelectorAll<HTMLLIElement>('.jira-suggest-item').forEach((li, i) => {
+      li.classList.toggle('is-active', i === activeIndex);
+    });
+  };
+
+  const pick = (i: number) => {
+    const issue = current[i];
+    if (issue) addJiraIssue(form, issue);
+    input.value = '';
+    closeList();
+    input.focus();
+  };
+
+  const commitRaw = () => {
+    const raw = input.value.trim();
+    if (!raw) return;
+    if (isJiraKey(raw)) {
+      addJiraIssue(form, { key: normalizeKey(raw), summary: '' });
+      input.value = '';
+      closeList();
+    }
+  };
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    if (debounce) clearTimeout(debounce);
+    if (q.length < 2) {
+      closeList();
+      return;
+    }
+    debounce = setTimeout(async () => {
+      const issues = await searchJira(q);
+      // Ignore stale results if the field changed meanwhile.
+      if (input.value.trim() === q) renderList(issues);
+    }, 220);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (list.hidden) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitRaw();
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIndex = Math.min(activeIndex + 1, current.length - 1);
+      highlight();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+      highlight();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIndex >= 0) pick(activeIndex);
+      else commitRaw();
+    } else if (e.key === 'Escape') {
+      closeList();
+    }
+  });
+
+  input.addEventListener('blur', () => {
+    // Let a mousedown on a suggestion fire first, then close.
+    setTimeout(closeList, 120);
+  });
 }
 
 function saveItemFromForm(id: string, form: HTMLFormElement): void {
@@ -599,16 +778,21 @@ function saveItemFromForm(id: string, form: HTMLFormElement): void {
     delete item.type;
   }
 
-  if (item.type === 'point') {
-    delete item.duration;
-    delete item.end;
-  } else if (durVal) {
+  if (durVal) {
     item.duration = durVal;
     delete item.end;
+  } else if (endVal) {
+    item.end = endVal;
+    delete item.duration;
   } else {
     delete item.duration;
-    if (endVal) item.end = endVal;
-    else delete item.end;
+    delete item.end;
+  }
+
+  // A point has no extent — but if the user gave it one, honour that and
+  // promote it to a range instead of silently dropping the value.
+  if (item.type === 'point' && (item.end || item.duration)) {
+    delete item.type;
   }
 
   const grp = get('group');
@@ -627,13 +811,16 @@ function saveItemFromForm(id: string, form: HTMLFormElement): void {
   if (owner) meta.owner = owner;
   else delete meta.owner;
 
+  if (formJiraIssues.length) meta.jira = formJiraIssues.map((i) => ({ key: i.key, summary: i.summary }));
+  else delete meta.jira;
+
   const metaJsonRaw = get('metadata');
   if (metaJsonRaw) {
     try {
       const extra = JSON.parse(metaJsonRaw);
       if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
         for (const [k, v] of Object.entries(extra)) {
-          if (k === 'dependsOn' || k === 'owner') continue;
+          if (k === 'dependsOn' || k === 'owner' || k === 'jira') continue;
           meta[k] = v;
         }
       }
@@ -643,7 +830,7 @@ function saveItemFromForm(id: string, form: HTMLFormElement): void {
     }
   } else {
     for (const k of Object.keys(meta)) {
-      if (k === 'dependsOn' || k === 'owner') continue;
+      if (k === 'dependsOn' || k === 'owner' || k === 'jira') continue;
       delete meta[k];
     }
   }

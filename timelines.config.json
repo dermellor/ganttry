@@ -12,6 +12,11 @@
       "id": "sheets-test",
       "name": "Sheets Test",
       "spreadsheetId": "1sqaU3UHCFD_dMx_FhHPT3-Qadqv6ePX5vqsKmqjM-gI"
+    },
+    {
+      "id": "acme/timeline-example-timeline-v1",
+      "name": "Example Timeline (v1)",
+      "spreadsheetId": "1FtAjYXyf5F66aRybBzgU_H4QAyhVH6ci7ygKfcSnUgY"
     }
   ],
   "views": [

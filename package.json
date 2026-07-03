@@ -13,14 +13,17 @@
     "dev:notes": "bash scripts/dev-prep.sh && npm run build:data && concurrently -n data,vite -c yellow,cyan \"npm run watch:data:notes\" \"vite\"",
     "build": "npm run build:data && vite build",
     "export": "npm run build:data && tsx scripts/export-view.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "mcp": "tsx scripts/mcp/server.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
     "google-auth-library": "^10.6.2",
     "googleapis": "^171.4.0",
     "marked": "^14.1.0",
     "vis-data": "^7.1.9",
-    "vis-timeline": "^7.7.3"
+    "vis-timeline": "^7.7.3",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

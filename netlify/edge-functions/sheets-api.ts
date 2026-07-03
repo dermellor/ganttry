@@ -13,6 +13,8 @@ import type { Context, Config } from '@netlify/edge-functions';
 import {
   readSession,
   getValidAccessToken,
+  getServiceAccessToken,
+  hasValidMcpToken,
   sign,
   cookieString,
   COOKIE_NAME,
@@ -147,11 +149,23 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
   if (Deno.env.get('AUTH_REQUIRED') !== 'true') return;
 
   const url = new URL(req.url);
+  const mcp = hasValidMcpToken(req);
+  const configs = loadSheetConfigs();
+
+  // Discovery endpoint — list configured sheet sources (no data, just metadata).
+  if (url.pathname === '/api/sources') {
+    if (!mcp && !(await readSession(req))) {
+      return jsonResponse({ error: 'unauthorized' }, 401);
+    }
+    return jsonResponse({
+      sources: configs.map((s) => ({ id: s.id, name: s.name, description: s.description })),
+    });
+  }
+
   const match = url.pathname.match(/^\/api\/source\/([a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)$/);
   if (!match) return;
 
   const sourceId = match[1];
-  const configs = loadSheetConfigs();
   const cfg = configs.find((s) => s.id === sourceId);
   if (!cfg) return; // not a sheet source — fall through to static
 
@@ -159,35 +173,43 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
     return jsonResponse({ error: 'method not allowed' }, 405);
   }
 
-  const session = await readSession(req);
-  if (!session) {
-    return jsonResponse({ error: 'unauthorized' }, 401);
-  }
-
-  if (!session.google_access_token) {
-    return jsonResponse(
-      { error: 'no_sheets_token', message: 'Re-login required to access sheets' },
-      403,
-    );
-  }
-
+  // Resolve a Google access token from either the MCP service identity or the
+  // logged-in user's session (per-user attribution when a human edits).
   let accessToken: string;
-  let updatedSession: SessionPayload | null = null;
-  try {
-    const result = await getValidAccessToken(session);
-    accessToken = result.accessToken;
-    updatedSession = result.updatedSession;
-  } catch (err) {
-    return jsonResponse(
-      { error: 'token_refresh_failed', message: String(err) },
-      403,
-    );
-  }
-
   const responseHeaders = new Headers();
-  if (updatedSession) {
-    const newCookie = await sign(updatedSession);
-    responseHeaders.append('Set-Cookie', cookieString(COOKIE_NAME, newCookie, SESSION_MAX_AGE));
+
+  if (mcp) {
+    const serviceToken = await getServiceAccessToken();
+    if (!serviceToken) {
+      return jsonResponse(
+        { error: 'mcp_service_token_unavailable', message: 'SHEETS_SERVICE_REFRESH_TOKEN missing or refresh failed' },
+        503,
+      );
+    }
+    accessToken = serviceToken;
+  } else {
+    const session = await readSession(req);
+    if (!session) {
+      return jsonResponse({ error: 'unauthorized' }, 401);
+    }
+    if (!session.google_access_token) {
+      return jsonResponse(
+        { error: 'no_sheets_token', message: 'Re-login required to access sheets' },
+        403,
+      );
+    }
+    let updatedSession: SessionPayload | null = null;
+    try {
+      const result = await getValidAccessToken(session);
+      accessToken = result.accessToken;
+      updatedSession = result.updatedSession;
+    } catch (err) {
+      return jsonResponse({ error: 'token_refresh_failed', message: String(err) }, 403);
+    }
+    if (updatedSession) {
+      const newCookie = await sign(updatedSession);
+      responseHeaders.append('Set-Cookie', cookieString(COOKIE_NAME, newCookie, SESSION_MAX_AGE));
+    }
   }
 
   const itemsSheet = cfg.itemsSheet ?? 'Items';
@@ -254,5 +276,5 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
 }
 
 export const config: Config = {
-  path: '/api/source/*',
+  path: ['/api/source/*', '/api/sources'],
 };

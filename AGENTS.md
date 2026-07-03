@@ -214,6 +214,75 @@ damit deren persönliche Tokens darauf zugreifen können.
 npm run sheets:sync   # einmaliger Pull aller konfigurierten Sheets
 ```
 
+## MCP server (Claude Code)
+
+Ein stdio-MCP-Server (`scripts/mcp/server.ts`) erlaubt Claude Code, die
+Sheets-basierten Timelines auszulesen und zu manipulieren. Er arbeitet **immer
+gegen die Live-Site** (`TIMELINES_LIVE_URL`, Default
+`https://example-timelines.netlify.app`): jeder Read/Write geht durch
+`/api/source(s)` → `sheets-api` Edge Function → Google Sheet. Damit bleibt das
+Sheet Single Source of Truth und Änderungen sind sofort live.
+
+**Nur Sheets-basierte Timelines** sind exponiert. Datei-basierte Sources sind
+auf der Live-Site read-only und daher nicht manipulierbar.
+
+### Tools
+
+| Tool                | Wirkung                                                        |
+| ------------------- | ------------------------------------------------------------- |
+| `list_timelines`    | listet alle Sheet-Timelines (id, name, description)           |
+| `get_timeline`      | komplette Timeline (items + groups) per id                    |
+| `add_item`          | Item anhängen (Pflicht: `start`, `content`)                   |
+| `update_item`       | Item patchen (nur übergebene Felder; `metadata` wird gemergt) |
+| `delete_item`       | Item per id entfernen                                         |
+| `add_group`         | Group hinzufügen                                              |
+| `update_group`      | Group patchen                                                 |
+| `delete_group`      | Group entfernen                                               |
+| `replace_timeline`  | ganze Timeline ersetzen (Bulk)                               |
+
+Die granularen Item-/Group-Tools laufen read-modify-write: der Server holt die
+Timeline, mutiert im Speicher und schreibt sie per PUT zurück (analog zum
+Web-Editor). `dependsOn` und `owner` liegen unter `metadata`.
+
+### Auth: Service-Token-Bypass
+
+Der Server hängt an jeden Request den Header `X-MCP-Token: <MCP_API_TOKEN>`.
+Die `auth`-Edge-Function lässt Requests mit gültigem Token ohne Google-Login
+durch (konstant-zeit-Vergleich). Serverseitig holt sich `sheets-api` dann ein
+Google-Access-Token aus `SHEETS_SERVICE_REFRESH_TOKEN` (statt aus der
+User-Session), um auf das Sheet zuzugreifen — Sheet-Edits werden also dem
+Account dieses Refresh-Tokens zugeschrieben.
+
+### Konfiguration
+
+Server-seitig (lokal, gelesen aus `process.env` → `~/_AGENTS/.env` →
+`.env.local`):
+
+| Var                  | Bedeutung                                                    |
+| -------------------- | ----------------------------------------------------------- |
+| `MCP_API_TOKEN`      | Bypass-Token, muss der Netlify-Env-Var entsprechen          |
+| `TIMELINES_LIVE_URL` | Ziel-Site (Default `https://example-timelines.netlify.app`) |
+
+Registrierung als user-global MCP (aus jedem Verzeichnis nutzbar):
+
+```bash
+claude mcp add -s user timelines -- \
+  <repo>/node_modules/.bin/tsx <repo>/scripts/mcp/server.ts
+```
+
+(oder direkt als `mcpServers.timelines`-Eintrag in `~/.claude.json`.)
+
+### Netlify-Env (zusätzlich zu den Sheets-Vars)
+
+| Var                            | Where              | Notes                                                                 |
+| ------------------------------ | ------------------ | --------------------------------------------------------------------- |
+| `MCP_API_TOKEN`                | dashboard (secret) | aktiviert den Bypass; identisch mit dem lokalen Server-Token          |
+| `SHEETS_SERVICE_REFRESH_TOKEN` | dashboard (secret) | Google-Refresh-Token für den headless Sheet-Zugriff (Service-Identity)|
+
+Voraussetzung: `SHEETS_ENABLED=true` **und** `AUTH_REQUIRED=true` müssen gesetzt
+sein (sonst greift `sheets-api` nicht). Ist `MCP_API_TOKEN` nicht gesetzt, ist
+der Bypass inaktiv und der Server bleibt für Menschen per Google-Login gated.
+
 ## Editing JSON timelines
 
 When the active view points to a `data/*.json` file, the viewer becomes editable:
@@ -223,6 +292,36 @@ When the active view points to a `data/*.json` file, the viewer becomes editable
 - **Click** an item to open the edit form in the side panel: title, start/end, duration, group, type, body (Markdown), `dependsOn` IDs, owner, plus a free-form metadata JSON box. Save writes back; Delete removes the item.
 
 Persistence path: viewer → `PUT /api/source/<id>` → middleware writes `data/<id>.json` → watcher copies to `public/data/sources/<id>.json`. The middleware lives in `vite.config.ts`; only available under `npm run dev`/`npm run dev:notes`. Builds (`npm run build`) and exported HTML have no edit endpoint.
+
+## JIRA linking
+
+The edit form has a **JIRA** field for linking issues to an item. Type two or
+more characters to get an autosuggest dropdown (live query against JIRA Cloud's
+issue picker); pick a suggestion or paste a key like `PROJ-123` and press Enter.
+Linked issues render as removable chips, and the detail panel (live, exported,
+and read-only Netlify) shows them as clickable `…/browse/<KEY>` links.
+
+Links are stored per item in `metadata.jira` as `[{ "key": "PROJ-123",
+"summary": "…" }]` — the summary is cached so links stay readable without a live
+JIRA call. Because it lives in `metadata`, it round-trips through Google Sheets
+(the free-form `metadata` column) unchanged.
+
+**How the autosuggest is served:**
+
+- **Locally:** Vite dev middleware `GET /api/jira/search?q=` (in `vite.config.ts`)
+  proxies the issue picker. Credentials come from `process.env`, then
+  `~/_AGENTS/.env`, then `.env.local` (all gitignored): `JIRA_BASE_URL`,
+  `JIRA_EMAIL`, `JIRA_API_TOKEN` (Atlassian API token). Without them the field
+  still works for pasting raw keys — only the live search is disabled.
+- **Production (Netlify):** the `jira-api` Edge Function
+  (`netlify/edge-functions/jira-api.ts`) proxies the same picker behind the
+  auth gate, using a shared service-account token. Activated by
+  `JIRA_ENABLED=true` plus `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN`
+  (runtime-only env vars in the dashboard — the token is a secret).
+
+The picker-response parsing is shared by both runtimes in
+`scripts/jira/picker.ts`. Browse-link rendering uses the public, build-time
+`VITE_JIRA_BASE_URL` (default `https://your-org.atlassian.net`).
 
 ## URL state
 
