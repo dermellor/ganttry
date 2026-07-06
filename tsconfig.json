@@ -11,7 +11,9 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "allowJs": true
+    "allowJs": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
   "include": ["src", "scripts"]
 }

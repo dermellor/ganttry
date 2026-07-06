@@ -1,19 +1,16 @@
-// One-time (and re-runnable) migration: loads the Sheet-backed timelines into
-// Supabase via replaceTimeline. Only the timelines listed under `sheets` in
-// timelines.config.json are DB-backed — file-based standalone timelines in
-// data/ stay read-only static sources and are intentionally NOT imported.
-//
-// Source of each timeline's data is its committed data/<id>.json (the last
-// sheet pull). Pass explicit ids to import a subset. Run: npm run db:import
+// Re-seed / refresh DB-backed timelines from their committed data/<id>.json.
+// Default set = the timelines already present in the DB (so file-based examples
+// stay out). Pass explicit ids to seed a new timeline. Run: npm run db:import
+//   npm run db:import                         # refresh all DB timelines
+//   npm run db:import -- acme/mein-plan     # seed/refresh one by id
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { getServiceClient } from './client.js';
-import { replaceTimeline } from './timeline-repo.js';
+import { getServiceClient } from './client.ts';
+import { listTimelines, replaceTimeline } from './timeline-repo.ts';
 import type { TimelineFile } from '../../src/types';
 
 const ROOT = process.cwd();
-const CONFIG_PATH = join(ROOT, 'timelines.config.json');
 
 /** Give every item a stable id so it can be addressed individually. */
 function ensureItemIds(file: TimelineFile): void {
@@ -28,17 +25,6 @@ function ensureItemIds(file: TimelineFile): void {
   }
 }
 
-async function sheetBackedIds(): Promise<string[]> {
-  try {
-    const cfg = JSON.parse(await readFile(CONFIG_PATH, 'utf8')) as {
-      sheets?: { id: string }[];
-    };
-    return (cfg.sheets ?? []).map((s) => s.id);
-  } catch {
-    return [];
-  }
-}
-
 async function main() {
   const db = getServiceClient();
   if (!db) {
@@ -49,10 +35,11 @@ async function main() {
     process.exit(1);
   }
 
+  // Default: refresh the timelines already in the DB. Explicit ids seed new ones.
   const explicit = process.argv.slice(2);
-  const ids = explicit.length ? explicit : await sheetBackedIds();
+  const ids = explicit.length ? explicit : (await listTimelines(db)).map((t) => t.id);
   if (ids.length === 0) {
-    console.warn('[import] no sheet-backed timelines configured — nothing to import.');
+    console.warn('[import] DB is empty — pass a timeline id to seed one, e.g. `npm run db:import -- <id>`.');
     return;
   }
 

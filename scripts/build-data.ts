@@ -168,8 +168,8 @@ async function syncTimelinesOnce(): Promise<void> {
   let listTimelines: (db: any) => Promise<{ id: string }[]>;
   let getTimeline: (db: any, id: string) => Promise<any>;
   try {
-    ({ getServiceClient } = (await import('./db/client.js')) as any);
-    ({ listTimelines, getTimeline } = (await import('./db/timeline-repo.js')) as any);
+    ({ getServiceClient } = (await import('./db/client.ts')) as any);
+    ({ listTimelines, getTimeline } = (await import('./db/timeline-repo.ts')) as any);
   } catch (err) {
     console.warn('[build-data] db pull skipped (module load failed):', err);
     return;

@@ -19,7 +19,7 @@ import {
   updatePhases,
   upsertGroup,
   type TimelineGroupDecl,
-} from './timeline-repo.js';
+} from './timeline-repo.ts';
 
 export type ApiRequest = {
   method: string;
