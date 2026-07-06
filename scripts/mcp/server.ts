@@ -111,8 +111,15 @@ async function listSources(): Promise<Array<{ id: string; name?: string; descrip
   return data.sources ?? [];
 }
 
+// Encode each path segment but keep the "/" separators — timeline ids like
+// "acme/<name>" must stay real path segments (encodeURIComponent would turn
+// the slash into %2F, which the /api/source/* route doesn't match → 404).
+function encodeId(id: string): string {
+  return id.split('/').map(encodeURIComponent).join('/');
+}
+
 async function getTimeline(id: string): Promise<TimelineFile> {
-  const data = (await api(`/api/source/${encodeURIComponent(id)}`)) as TimelineFile;
+  const data = (await api(`/api/source/${encodeId(id)}`)) as TimelineFile;
   if (!data || !Array.isArray(data.items)) {
     throw new Error(`Source "${id}" is not a sheet-backed timeline (no editable items returned).`);
   }
@@ -120,7 +127,7 @@ async function getTimeline(id: string): Promise<TimelineFile> {
 }
 
 async function putTimeline(id: string, file: TimelineFile): Promise<void> {
-  await api(`/api/source/${encodeURIComponent(id)}`, {
+  await api(`/api/source/${encodeId(id)}`, {
     method: 'PUT',
     body: JSON.stringify(file),
   });
