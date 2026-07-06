@@ -1,6 +1,64 @@
-import type { TimelineFile, TimelineFileItem } from './types';
+import type { TimelineFile, TimelineFileItem, TimelinePhase } from './types';
 
 export type LoadResult = { file: TimelineFile; editable: boolean };
+
+/** Thrown when an item PATCH is rejected because it changed server-side (409). */
+export class ConflictError extends Error {
+  constructor(message = 'version conflict') {
+    super(message);
+    this.name = 'ConflictError';
+  }
+}
+
+async function apiJson(res: Response): Promise<any> {
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 409) throw new ConflictError((data as any).message || 'version conflict');
+  if (!res.ok) throw new Error((data as any).error || `HTTP ${res.status}`);
+  return data;
+}
+
+/** Create a new item; returns the stored item (with version). */
+export async function apiAddItem(sourceId: string, item: TimelineFileItem): Promise<TimelineFileItem> {
+  return apiJson(
+    await fetch(`/api/source/${sourceId}/item`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item),
+    }),
+  );
+}
+
+/** Patch an item with optimistic locking. Throws ConflictError on stale version. */
+export async function apiUpdateItem(
+  sourceId: string,
+  itemId: string,
+  patch: Partial<TimelineFileItem>,
+  version?: number,
+): Promise<TimelineFileItem> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (version != null) headers['If-Match'] = String(version);
+  return apiJson(
+    await fetch(`/api/source/${sourceId}/item/${itemId}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(patch),
+    }),
+  );
+}
+
+export async function apiDeleteItem(sourceId: string, itemId: string): Promise<void> {
+  await apiJson(await fetch(`/api/source/${sourceId}/item/${itemId}`, { method: 'DELETE' }));
+}
+
+export async function apiPutPhases(sourceId: string, phases: TimelinePhase[]): Promise<void> {
+  await apiJson(
+    await fetch(`/api/source/${sourceId}/phases`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phases }),
+    }),
+  );
+}
 
 export async function loadSource(id: string): Promise<LoadResult> {
   // Try the dev API first; fall back to the static copy for production builds.

@@ -12,3 +12,6 @@ public/data/sources/
 .scripts/
 *.log
 .DS_Store
+
+# Supabase CLI link state (contains connection secrets)
+supabase/.temp/

@@ -20,7 +20,11 @@ import {
   generateNewId,
   isoDateOnly,
   loadSource,
-  saveSourceToApi,
+  apiAddItem,
+  apiUpdateItem,
+  apiDeleteItem,
+  apiPutPhases,
+  ConflictError,
 } from './editor';
 import {
   onExternalUrlStateChange,
@@ -70,6 +74,12 @@ let activeSourceId: string | null = null;
 let activeSourceFile: TimelineFile | null = null;
 let activeSourceEditable = false;
 let activeBuild: BuildResult | null = null;
+// Snapshot of the last successfully persisted state, diffed on persist() so we
+// only send the items/phases that actually changed (item-level writes instead
+// of a whole-document rewrite — concurrent edits no longer clobber).
+let savedItems = new Map<string, string>(); // id -> canonical JSON (version stripped)
+let savedItemVersions = new Map<string, number>(); // id -> last known version
+let savedPhasesJson = '[]';
 let activeFormItemId: string | null = null;
 let activeFormPhaseIndex: number | null = null;
 // Linked JIRA issues for the form currently open. Mutated by the autosuggest
@@ -191,15 +201,98 @@ function schedulePersist(): void {
   saveTimer = setTimeout(persist, 250);
 }
 
+// Canonical JSON of an item with the server-managed `version` stripped, so
+// content changes are detected but a version bump alone is not.
+function canonicalItem(item: TimelineFileItem): string {
+  const { version: _v, ...rest } = item;
+  return JSON.stringify(rest, Object.keys(rest).sort());
+}
+
+// Rebuild the saved-state snapshot from the current in-memory file. Called
+// after a load and after every successful persist.
+function snapshotSaved(): void {
+  savedItems = new Map();
+  savedItemVersions = new Map();
+  for (const it of activeSourceFile?.items ?? []) {
+    if (!it.id) continue;
+    savedItems.set(it.id, canonicalItem(it));
+    if (it.version != null) savedItemVersions.set(it.id, it.version);
+  }
+  savedPhasesJson = JSON.stringify(activeSourceFile?.phases ?? []);
+}
+
+let persisting = false;
+let persistAgain = false;
+
 async function persist(): Promise<void> {
   if (!activeSourceId || !activeSourceFile) return;
+  if (persisting) {
+    persistAgain = true; // coalesce edits that land mid-save
+    return;
+  }
+  persisting = true;
+  const sourceId = activeSourceId;
+  const file = activeSourceFile;
   try {
-    setStatus('Speichere…');
-    await saveSourceToApi(activeSourceId, activeSourceFile);
-    setStatus(`Gespeichert · ${activeSourceFile.items.length} items`);
+    const currentIds = new Set(file.items.map((it) => it.id).filter(Boolean) as string[]);
+
+    // Additions + updates.
+    for (const it of file.items) {
+      if (!it.id) continue;
+      const canon = canonicalItem(it);
+      const prev = savedItems.get(it.id);
+      if (prev === undefined) {
+        setStatus('Speichere…');
+        const saved = await apiAddItem(sourceId, it);
+        it.version = saved.version;
+        savedItems.set(it.id, canonicalItem(it));
+        if (saved.version != null) savedItemVersions.set(it.id, saved.version);
+      } else if (prev !== canon) {
+        setStatus('Speichere…');
+        const { id: _id, version: _v, ...patch } = it;
+        const saved = await apiUpdateItem(sourceId, it.id, patch, savedItemVersions.get(it.id));
+        it.version = saved.version;
+        savedItems.set(it.id, canonicalItem(it));
+        if (saved.version != null) savedItemVersions.set(it.id, saved.version);
+      }
+    }
+
+    // Deletions.
+    for (const oldId of [...savedItems.keys()]) {
+      if (!currentIds.has(oldId)) {
+        setStatus('Speichere…');
+        await apiDeleteItem(sourceId, oldId);
+        savedItems.delete(oldId);
+        savedItemVersions.delete(oldId);
+      }
+    }
+
+    // Phases (replaced as a unit — small, rarely edited).
+    const phasesJson = JSON.stringify(file.phases ?? []);
+    if (phasesJson !== savedPhasesJson) {
+      setStatus('Speichere…');
+      await apiPutPhases(sourceId, file.phases ?? []);
+      savedPhasesJson = phasesJson;
+    }
+
+    setStatus(`Gespeichert · ${file.items.length} items`);
   } catch (err) {
+    if (err instanceof ConflictError) {
+      // Someone edited the same item concurrently — reload authoritative state.
+      setStatus('Konflikt: extern geändert, lade neu…');
+      persisting = false;
+      persistAgain = false;
+      if (activeView) await renderTimeline(activeView);
+      return;
+    }
     console.error(err);
     setStatus(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    persisting = false;
+    if (persistAgain) {
+      persistAgain = false;
+      void persist();
+    }
   }
 }
 
@@ -234,6 +327,7 @@ async function renderTimeline(view: View) {
   activeSourceFile = sourceFile;
   activeSourceId = sourceId;
   activeSourceEditable = sourceEditable;
+  snapshotSaved();
 
   const filtered = filterBuildForDisplay(built!);
   itemsDs = new DataSet<TimelineItem>(filtered.items);
