@@ -6,6 +6,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
+import WebSocket from 'ws';
 
 function parseEnvFile(path: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -38,6 +39,15 @@ export function getServiceClient(): SupabaseClient | null {
   const pick = (k: string) => process.env[k] ?? fromFiles[k] ?? '';
   const url = pick('TIMELINES_SUPABASE_URL');
   const key = pick('TIMELINES_SUPABASE_SERVICE_KEY');
-  cached = url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
+  // supabase-js constructs a realtime client that needs a WebSocket ctor; provide
+  // `ws` so it works in Node runtimes without a global WebSocket (e.g. Netlify
+  // Functions). Realtime isn't used server-side, but the ctor is required.
+  cached =
+    url && key
+      ? createClient(url, key, {
+          auth: { persistSession: false },
+          realtime: { transport: WebSocket as unknown as typeof globalThis.WebSocket },
+        })
+      : null;
   return cached;
 }
