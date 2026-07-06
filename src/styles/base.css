@@ -375,22 +375,26 @@ body {
   text-decoration: underline;
 }
 
-.item-form .jira-field {
+.item-form .jira-field,
+.item-form .deps-field {
   position: relative;
 }
 
-.jira-chips {
+.jira-chips,
+.deps-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 6px;
 }
 
-.jira-chips:empty {
+.jira-chips:empty,
+.deps-chips:empty {
   display: none;
 }
 
-.jira-chip {
+.jira-chip,
+.deps-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -410,15 +414,17 @@ body {
   white-space: nowrap;
 }
 
-.jira-chip-sum {
+.jira-chip-sum,
+.deps-chip-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 220px;
-  color: var(--fg-muted, #646464);
+  color: var(--fg, #2c3333);
 }
 
-.jira-chip-x {
+.jira-chip-x,
+.deps-chip-x {
   border: none;
   background: transparent;
   cursor: pointer;
@@ -429,16 +435,19 @@ body {
   border-radius: 4px;
 }
 
-.jira-chip-x:hover {
+.jira-chip-x:hover,
+.deps-chip-x:hover {
   background: var(--border, rgba(0, 0, 0, 0.1));
   color: var(--fg, #2c3333);
 }
 
-.jira-suggest {
+.jira-suggest,
+.deps-suggest {
   position: relative;
 }
 
-.jira-suggest-list {
+.jira-suggest-list,
+.deps-suggest-list {
   list-style: none;
   margin: 4px 0 0;
   padding: 4px;
@@ -454,7 +463,8 @@ body {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
-.jira-suggest-item {
+.jira-suggest-item,
+.deps-suggest-item {
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -464,7 +474,9 @@ body {
 }
 
 .jira-suggest-item.is-active,
-.jira-suggest-item:hover {
+.jira-suggest-item:hover,
+.deps-suggest-item.is-active,
+.deps-suggest-item:hover {
   background: var(--hover, rgba(0, 0, 0, 0.06));
 }
 
@@ -475,7 +487,17 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.jira-suggest-sum {
+.deps-suggest-label {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--fg, #2c3333);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jira-suggest-sum,
+.deps-suggest-id {
   font-size: 12px;
   color: var(--fg-muted, #646464);
   overflow: hidden;

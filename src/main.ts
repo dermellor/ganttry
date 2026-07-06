@@ -20,7 +20,6 @@ import {
   generateNewId,
   isoDateOnly,
   loadSource,
-  parseDependsOn,
   saveSourceToApi,
 } from './editor';
 import {
@@ -76,6 +75,9 @@ let activeFormPhaseIndex: number | null = null;
 // Linked JIRA issues for the form currently open. Mutated by the autosuggest
 // chips; read back in applyItemForm.
 let formJiraIssues: JiraIssue[] = [];
+// dependsOn IDs for the form currently open. Mutated by the deps autosuggest
+// chips; read back in applyItemForm.
+let formDependsOn: string[] = [];
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 // Debounce for reactive form edits: coalesces rapid keystrokes into one
 // model update + live rebuild (see scheduleLiveEdit).
@@ -676,6 +678,7 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
 
   const metadata = (item.metadata ?? {}) as Record<string, unknown>;
   const dependsOn = Array.isArray(metadata.dependsOn) ? (metadata.dependsOn as unknown[]).map(String) : [];
+  formDependsOn = [...dependsOn];
   const owner = typeof metadata.owner === 'string' ? metadata.owner : '';
   formJiraIssues = readJiraIssues(metadata);
 
@@ -730,9 +733,13 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
         <label for="f-body">Body</label>
         <textarea id="f-body" name="body" rows="6">${escapeHtml(item.body ?? '')}</textarea>
       </div>
-      <div class="field full">
-        <label for="f-deps">Depends on <small>(IDs, komma-getrennt)</small></label>
-        <input id="f-deps" name="dependsOn" value="${escapeHtml(dependsOn.join(', '))}" placeholder="z. B. S-1, D-2" />
+      <div class="field full deps-field">
+        <label for="f-deps">Depends on <small>(Einträge verknüpfen)</small></label>
+        <div class="deps-chips" data-role="deps-chips"></div>
+        <div class="deps-suggest">
+          <input id="f-deps" type="text" autocomplete="off" placeholder="Eintrag suchen…" />
+          <ul class="deps-suggest-list" data-role="deps-list" hidden></ul>
+        </div>
       </div>
       <div class="field full jira-field">
         <label for="f-jira">JIRA <small>(Tickets verlinken)</small></label>
@@ -785,6 +792,7 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
   });
 
   wireJiraAutosuggest(form);
+  wireDepsAutosuggest(form, id);
 
   els.detail.hidden = false;
   setTimeout(() => timeline?.redraw(), 0);
@@ -935,6 +943,159 @@ function wireJiraAutosuggest(form: HTMLFormElement): void {
   });
 }
 
+// Resolves a dependsOn id to a readable label (the item's title, falling back
+// to the raw id if the target isn't in the current source, e.g. a stale ref).
+function depLabel(depId: string): string {
+  const it = activeSourceFile?.items.find((i) => i.id === depId);
+  return it?.content?.trim() || depId;
+}
+
+// Renders the dependsOn chip list (linked-item pills) into the form, each with
+// a remove button. Re-rendered whenever formDependsOn changes.
+function renderDepChips(form: HTMLFormElement): void {
+  const wrap = form.querySelector<HTMLElement>('[data-role="deps-chips"]');
+  if (!wrap) return;
+  wrap.innerHTML = formDependsOn
+    .map(
+      (depId, i) =>
+        `<span class="deps-chip" title="${escapeHtml(depId)}">` +
+        `<span class="deps-chip-label">${escapeHtml(depLabel(depId))}</span>` +
+        `<button type="button" class="deps-chip-x" data-remove="${i}" aria-label="Entfernen">×</button>` +
+        `</span>`,
+    )
+    .join('');
+  wrap.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.remove);
+      formDependsOn.splice(idx, 1);
+      renderDepChips(form);
+      scheduleLiveEdit();
+    });
+  });
+}
+
+function addDep(form: HTMLFormElement, depId: string): void {
+  if (!depId || formDependsOn.includes(depId)) return;
+  formDependsOn.push(depId);
+  renderDepChips(form);
+  scheduleLiveEdit();
+}
+
+// Autosuggest over the current timeline's items: type to match item titles
+// (or ids), pick to link a dependency. The current item and already-linked
+// items are excluded from the suggestions.
+function wireDepsAutosuggest(form: HTMLFormElement, selfId: string): void {
+  renderDepChips(form);
+
+  const input = form.querySelector<HTMLInputElement>('#f-deps');
+  const list = form.querySelector<HTMLUListElement>('[data-role="deps-list"]');
+  if (!input || !list) return;
+
+  let activeIndex = -1;
+  let current: TimelineFileItem[] = [];
+
+  const closeList = () => {
+    list.hidden = true;
+    list.innerHTML = '';
+    activeIndex = -1;
+    current = [];
+  };
+
+  const search = (q: string): TimelineFileItem[] => {
+    const items = (activeSourceFile?.items ?? []).filter(
+      (it) => it.id && it.id !== selfId && !formDependsOn.includes(it.id),
+    );
+    const needle = q.toLowerCase();
+    const scored = items.filter(
+      (it) =>
+        !needle ||
+        (it.content ?? '').toLowerCase().includes(needle) ||
+        (it.id ?? '').toLowerCase().includes(needle),
+    );
+    return scored.slice(0, 8);
+  };
+
+  const highlight = () => {
+    list.querySelectorAll<HTMLLIElement>('.deps-suggest-item').forEach((li, i) => {
+      li.classList.toggle('is-active', i === activeIndex);
+    });
+  };
+
+  const pick = (i: number) => {
+    const it = current[i];
+    if (it?.id) addDep(form, it.id);
+    input.value = '';
+    closeList();
+    input.focus();
+  };
+
+  const renderList = (items: TimelineFileItem[]) => {
+    current = items;
+    activeIndex = -1;
+    if (!items.length) {
+      closeList();
+      return;
+    }
+    list.innerHTML = items
+      .map(
+        (it, i) =>
+          `<li class="deps-suggest-item" data-i="${i}" role="option">` +
+          `<span class="deps-suggest-label">${escapeHtml(it.content?.trim() || it.id || '')}</span>` +
+          `<span class="deps-suggest-id">${escapeHtml(it.id ?? '')}</span>` +
+          `</li>`,
+      )
+      .join('');
+    list.hidden = false;
+    list.querySelectorAll<HTMLLIElement>('.deps-suggest-item').forEach((li) => {
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        pick(Number(li.dataset.i));
+      });
+    });
+  };
+
+  input.addEventListener('input', () => {
+    renderList(search(input.value.trim()));
+  });
+
+  input.addEventListener('focus', () => {
+    renderList(search(input.value.trim()));
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (list.hidden) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        renderList(search(input.value.trim()));
+      } else if (e.key === 'Enter') {
+        // Don't let a stray Enter submit/reload the form.
+        e.preventDefault();
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIndex = Math.min(activeIndex + 1, current.length - 1);
+      highlight();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+      highlight();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIndex >= 0) pick(activeIndex);
+      else if (current.length) pick(0);
+    } else if (e.key === 'Escape') {
+      closeList();
+    }
+  });
+
+  input.addEventListener('blur', () => {
+    // Let a mousedown on a suggestion fire first, then close.
+    setTimeout(closeList, 120);
+  });
+}
+
 // Reads the open item form and writes its values into the in-memory model,
 // then refreshes the live view. Reactive: called on every field change, so the
 // timeline reflects edits as you type. Persistence is deferred until the
@@ -990,8 +1151,7 @@ function applyItemForm(id: string, form: HTMLFormElement): void {
   else delete item.body;
 
   const meta = (item.metadata ??= {}) as Record<string, unknown>;
-  const deps = parseDependsOn(get('dependsOn'));
-  if (deps.length) meta.dependsOn = deps;
+  if (formDependsOn.length) meta.dependsOn = [...formDependsOn];
   else delete meta.dependsOn;
 
   const owner = get('owner');
@@ -1181,6 +1341,9 @@ async function bootstrap() {
   await applyView(initialView);
   suppressUrlSync = false;
   syncUrl();
+
+  // Safety net: flush + persist an open item form if the tab closes mid-edit.
+  window.addEventListener('beforeunload', () => commitItemForm());
 
   els.milestonesOnly.checked = milestonesOnly;
   els.milestonesOnly.addEventListener('change', () => {
