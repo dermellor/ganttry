@@ -23,6 +23,7 @@ import { handleTimelineApi, parseSourcePath, type ApiRequest } from '../../scrip
 function json(data: unknown, status = 200, headers?: Headers): Response {
   const h = headers ?? new Headers();
   h.set('Content-Type', 'application/json');
+  h.set('Cache-Control', 'no-store'); // never cache the data API (CDN/browser)
   return new Response(JSON.stringify(data), { status, headers: h });
 }
 
