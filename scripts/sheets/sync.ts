@@ -16,6 +16,7 @@ export type SheetSourceConfig = {
   spreadsheetId: string;
   itemsSheet?: string;
   groupsSheet?: string;
+  phasesSheet?: string;
   groupBy?: string;
 };
 
@@ -47,6 +48,7 @@ async function readRange(
 export async function pullSheet(cfg: SheetSourceConfig): Promise<TimelineFile> {
   const itemsSheet = cfg.itemsSheet ?? 'Items';
   const groupsSheet = cfg.groupsSheet ?? 'Groups';
+  const phasesSheet = cfg.phasesSheet ?? 'Phases';
 
   const itemRows = await readRange(cfg.spreadsheetId, itemsSheet);
 
@@ -59,7 +61,17 @@ export async function pullSheet(cfg: SheetSourceConfig): Promise<TimelineFile> {
     }
   }
 
-  return rowsToTimelineFile(itemRows, groupRows, {
+  // Phases tab is optional — a missing tab yields a 400 "Unable to parse range".
+  let phaseRows: string[][] | null = null;
+  try {
+    phaseRows = await readRange(cfg.spreadsheetId, phasesSheet);
+  } catch (err: any) {
+    if (err?.code !== 400 && !/parse range/i.test(String(err?.message))) {
+      throw err;
+    }
+  }
+
+  return rowsToTimelineFile(itemRows, groupRows, phaseRows, {
     name: cfg.name,
     description: cfg.description,
     groupBy: cfg.groupBy,
@@ -108,8 +120,9 @@ async function ensureSheetExists(
 export async function pushSheet(cfg: SheetSourceConfig, file: TimelineFile): Promise<void> {
   const itemsSheet = cfg.itemsSheet ?? 'Items';
   const groupsSheet = cfg.groupsSheet ?? 'Groups';
+  const phasesSheet = cfg.phasesSheet ?? 'Phases';
 
-  const { itemRows, groupRows } = timelineFileToRows(file);
+  const { itemRows, groupRows, phaseRows } = timelineFileToRows(file);
 
   await ensureSheetExists(cfg.spreadsheetId, itemsSheet);
   await clearAndWrite(cfg.spreadsheetId, itemsSheet, itemRows);
@@ -117,5 +130,10 @@ export async function pushSheet(cfg: SheetSourceConfig, file: TimelineFile): Pro
   if (groupRows) {
     await ensureSheetExists(cfg.spreadsheetId, groupsSheet);
     await clearAndWrite(cfg.spreadsheetId, groupsSheet, groupRows);
+  }
+
+  if (phaseRows) {
+    await ensureSheetExists(cfg.spreadsheetId, phasesSheet);
+    await clearAndWrite(cfg.spreadsheetId, phasesSheet, phaseRows);
   }
 }

@@ -8,6 +8,7 @@ export type TimelineFileItem = {
   title?: string;
   type?: 'point' | 'range' | 'background' | 'box';
   className?: string;
+  icon?: string;
   body?: string;
   metadata?: Record<string, unknown>;
 };
@@ -19,12 +20,22 @@ export type TimelineGroupDecl = {
   showNested?: boolean;
 };
 
+export type TimelinePhaseDecl = {
+  id?: string;
+  label: string;
+  start: string;
+  end?: string;
+  duration?: string | number;
+  color?: string;
+};
+
 export type TimelineFile = {
   name?: string;
   description?: string;
   groupBy?: string;
   items: TimelineFileItem[];
   groups?: TimelineGroupDecl[];
+  phases?: TimelinePhaseDecl[];
 };
 
 export const ITEM_COLUMNS = [
@@ -40,6 +51,7 @@ export const ITEM_COLUMNS = [
   'dependsOn',
   'owner',
   'className',
+  'icon',
   'metadata',
 ] as const;
 
@@ -48,6 +60,10 @@ export type ItemColumn = (typeof ITEM_COLUMNS)[number];
 export const GROUP_COLUMNS = ['id', 'content', 'nestedGroups', 'showNested'] as const;
 
 export type GroupColumn = (typeof GROUP_COLUMNS)[number];
+
+export const PHASE_COLUMNS = ['id', 'label', 'start', 'end', 'duration', 'color'] as const;
+
+export type PhaseColumn = (typeof PHASE_COLUMNS)[number];
 
 export function indexHeaders<T extends string>(
   headers: string[],
@@ -129,6 +145,9 @@ export function rowToItem(row: string[], idx: Map<ItemColumn, number>): Timeline
   const className = readCell(row, idx.get('className')).trim();
   if (className) item.className = className;
 
+  const icon = readCell(row, idx.get('icon')).trim();
+  if (icon) item.icon = icon;
+
   const meta: Record<string, unknown> = {};
   Object.assign(meta, parseMetadata(readCell(row, idx.get('metadata'))));
 
@@ -159,6 +178,27 @@ export function rowToGroup(row: string[], idx: Map<GroupColumn, number>): Timeli
   return group;
 }
 
+export function rowToPhase(row: string[], idx: Map<PhaseColumn, number>): TimelinePhaseDecl | null {
+  const label = readCell(row, idx.get('label')).trim();
+  const start = readCell(row, idx.get('start')).trim();
+  if (!label || !start) return null;
+  const phase: TimelinePhaseDecl = { label, start };
+
+  const id = readCell(row, idx.get('id')).trim();
+  if (id) phase.id = id;
+
+  const end = readCell(row, idx.get('end')).trim();
+  if (end) phase.end = end;
+
+  const duration = readCell(row, idx.get('duration')).trim();
+  if (duration) phase.duration = duration;
+
+  const color = readCell(row, idx.get('color')).trim();
+  if (color) phase.color = color;
+
+  return phase;
+}
+
 export function itemToRow(item: TimelineFileItem): string[] {
   const meta = (item.metadata ?? {}) as Record<string, unknown>;
   const dependsOn = Array.isArray(meta.dependsOn)
@@ -186,6 +226,7 @@ export function itemToRow(item: TimelineFileItem): string[] {
     dependsOn,
     owner,
     cell(item.className),
+    cell(item.icon),
     metaJson,
   ];
 }
@@ -199,9 +240,23 @@ export function groupToRow(group: TimelineGroupDecl): string[] {
   ];
 }
 
+export function phaseToRow(phase: TimelinePhaseDecl): string[] {
+  const cell = (v: string | number | undefined): string =>
+    v == null ? '' : typeof v === 'number' ? String(v) : v;
+  return [
+    cell(phase.id),
+    cell(phase.label),
+    cell(phase.start),
+    cell(phase.end),
+    cell(phase.duration),
+    cell(phase.color),
+  ];
+}
+
 export function rowsToTimelineFile(
   itemRows: string[][],
   groupRows: string[][] | null,
+  phaseRows?: string[][] | null,
   meta?: { name?: string; description?: string; groupBy?: string },
 ): TimelineFile {
   if (itemRows.length === 0) {
@@ -228,17 +283,30 @@ export function rowsToTimelineFile(
     if (out.length > 0) groups = out;
   }
 
+  let phases: TimelinePhaseDecl[] | undefined;
+  if (phaseRows && phaseRows.length > 1) {
+    const phaseIdx = indexHeaders(phaseRows[0], PHASE_COLUMNS);
+    const out: TimelinePhaseDecl[] = [];
+    for (let i = 1; i < phaseRows.length; i++) {
+      const p = rowToPhase(phaseRows[i], phaseIdx);
+      if (p) out.push(p);
+    }
+    if (out.length > 0) phases = out;
+  }
+
   const file: TimelineFile = { items };
   if (meta?.name) file.name = meta.name;
   if (meta?.description) file.description = meta.description;
   if (meta?.groupBy) file.groupBy = meta.groupBy;
   if (groups) file.groups = groups;
+  if (phases) file.phases = phases;
   return file;
 }
 
 export function timelineFileToRows(file: TimelineFile): {
   itemRows: string[][];
   groupRows: string[][] | null;
+  phaseRows: string[][] | null;
 } {
   const itemHeader = [...ITEM_COLUMNS] as string[];
   const itemRows = [itemHeader, ...file.items.map(itemToRow)];
@@ -249,5 +317,11 @@ export function timelineFileToRows(file: TimelineFile): {
     groupRows = [groupHeader, ...file.groups.map(groupToRow)];
   }
 
-  return { itemRows, groupRows };
+  let phaseRows: string[][] | null = null;
+  if (file.phases && file.phases.length > 0) {
+    const phaseHeader = [...PHASE_COLUMNS] as string[];
+    phaseRows = [phaseHeader, ...file.phases.map(phaseToRow)];
+  }
+
+  return { itemRows, groupRows, phaseRows };
 }

@@ -155,6 +155,12 @@ const itemFields = {
   title: z.string().optional().describe('Tooltip text.'),
   type: z.enum(['point', 'range', 'background', 'box']).optional(),
   className: z.string().optional(),
+  icon: z
+    .string()
+    .optional()
+    .describe(
+      'Semantic icon key (brand resolves the glyph): milestone, launch, done, warning, blocked, review, deadline, meeting, idea, research, design, build, bug, release, decision, goal, info, note.',
+    ),
   body: z.string().optional().describe('Markdown shown in the detail panel.'),
   metadata: z
     .record(z.unknown())

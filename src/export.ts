@@ -52,10 +52,18 @@ function clientScript(): string {
   var padding = span * 0.05;
   var height = elTimeline.clientHeight || 600;
 
+  function iconSpan(icon) {
+    if (!icon || !/^[a-z]+$/.test(icon)) return '';
+    return '<span class="item-icon" style="--item-icon:var(--icon-' + icon + ')"></span>';
+  }
+
   var timeline = new vis.Timeline(elTimeline, itemsDs, useGroups ? groupsDs : undefined, {
     stack: true,
     horizontalScroll: true,
     zoomKey: 'ctrlKey',
+    template: function (item) {
+      return item ? iconSpan(item.icon) + (item.content || '') : '';
+    },
     margin: { item: 6, axis: 8 },
     orientation: { axis: 'top', item: 'top' },
     locale: 'de',

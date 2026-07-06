@@ -6,11 +6,14 @@ import {
   buildFromJson,
   buildFromNotes,
   escapeHtml,
+  type BuildResult,
   type DetailNote,
   type TimelineGroup,
   type TimelineItem,
 } from './buildItems';
 import { DependencyArrows } from './arrows';
+import { PhaseBand } from './phaseBand';
+import { TIMELINE_ICONS, iconSpanHtml } from './icons';
 import {
   ensureItemIds,
   findItemIndex,
@@ -58,6 +61,7 @@ const DEFAULT_BRAND = (import.meta.env.VITE_DEFAULT_BRAND ?? 'marcel-mellor') as
 
 let timeline: Timeline | null = null;
 let arrows: DependencyArrows | null = null;
+let phaseBand: PhaseBand | null = null;
 let itemsDs: DataSet<TimelineItem> | null = null;
 let groupsDs: DataSet<TimelineGroup> | null = null;
 let allNotes: Note[] = [];
@@ -66,12 +70,7 @@ let activeView: View | null = null;
 let activeSourceId: string | null = null;
 let activeSourceFile: TimelineFile | null = null;
 let activeSourceEditable = false;
-let activeBuild: {
-  items: TimelineItem[];
-  groups: TimelineGroup[];
-  details: Map<string, DetailNote>;
-  dependencies: Map<string, string[]>;
-} | null = null;
+let activeBuild: BuildResult | null = null;
 let activeFormItemId: string | null = null;
 // Linked JIRA issues for the form currently open. Mutated by the autosuggest
 // chips; read back in saveItemFromForm.
@@ -237,6 +236,10 @@ async function renderTimeline(view: View) {
     arrows.dispose();
     arrows = null;
   }
+  if (phaseBand) {
+    phaseBand.dispose();
+    phaseBand = null;
+  }
   if (timeline) {
     (timeline as any)._ro?.disconnect();
     timeline.destroy();
@@ -266,11 +269,18 @@ async function renderTimeline(view: View) {
   const initialStart = pendingWindow?.start ?? new Date(focusMin - padding);
   const initialEnd = pendingWindow?.end ?? new Date(focusMax + padding);
 
+  // reserve room at the top for the phase ribbon so items sit below it
+  const axisMargin = built!.phases.length > 0 ? 34 : 8;
+
   timeline = new Timeline(els.timeline, itemsDs, useGroups ? groupsDs : undefined, {
     stack: true,
     horizontalScroll: true,
     zoomKey: 'ctrlKey',
-    margin: { item: 6, axis: 8 },
+    // Prepend the brand-resolved icon at render time so the stored `content`
+    // stays clean (used by the edit form, confirm dialogs, and Sheets).
+    template: (item: TimelineItem) =>
+      item ? `${iconSpanHtml(item.icon)}${item.content ?? ''}` : '',
+    margin: { item: 6, axis: axisMargin },
     orientation: { axis: 'top', item: 'top' },
     locale: 'de',
     tooltip: { followMouse: false, overflowMethod: 'cap' },
@@ -322,6 +332,17 @@ async function renderTimeline(view: View) {
         arrows.setDependencies(built!.dependencies);
       } catch (err) {
         console.warn('DependencyArrows init failed:', err);
+      }
+    });
+  }
+
+  if (built!.phases.length > 0) {
+    requestAnimationFrame(() => {
+      try {
+        phaseBand = new PhaseBand(timeline!, els.timeline);
+        phaseBand.setPhases(built!.phases);
+      } catch (err) {
+        console.warn('PhaseBand init failed:', err);
       }
     });
   }
@@ -547,6 +568,13 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
             ['background', 'Phase (Hintergrund)'],
             ['box', 'Markierung'],
           ].map(([t, label]) => `<option value="${t}"${(item.type ?? '') === t ? ' selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-icon">Icon</label>
+        <select id="f-icon" name="icon">
+          <option value=""${!item.icon ? ' selected' : ''}>— kein Icon —</option>
+          ${TIMELINE_ICONS.map(({ key, label }) => `<option value="${key}"${item.icon === key ? ' selected' : ''}>${label}</option>`).join('')}
         </select>
       </div>
       <div class="field full">
@@ -797,6 +825,10 @@ function saveItemFromForm(id: string, form: HTMLFormElement): void {
 
   const grp = get('group');
   if (grp) item.group = grp;
+
+  const iconVal = get('icon');
+  if (iconVal) item.icon = iconVal;
+  else delete item.icon;
 
   const body = String(fd.get('body') ?? '');
   if (body) item.body = body;

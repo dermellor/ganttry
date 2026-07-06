@@ -21,6 +21,7 @@ type SheetConfig = {
   spreadsheetId: string;
   itemsSheet?: string;
   groupsSheet?: string;
+  phasesSheet?: string;
   groupBy?: string;
 };
 

@@ -1,5 +1,6 @@
 import type { Config, FilterClause, Note, TimelineFile, TimelineFileItem, View } from './types';
 import { matches, resolveGroupBy } from './filter';
+import { normalizeIcon } from './icons';
 
 export const UNGROUPED = '_ungrouped';
 
@@ -12,6 +13,8 @@ export type TimelineItem = {
   title: string;
   type: 'point' | 'range' | 'background' | 'box';
   className?: string;
+  style?: string;
+  icon?: string;
 };
 
 export type TimelineGroup = {
@@ -129,12 +132,68 @@ export function detailFromNote(note: Note, dateField: string, startIso: string):
   };
 }
 
+export type ResolvedPhase = {
+  id: string;
+  label: string;
+  start: string;
+  end: string;
+  color?: string;
+};
+
 export type BuildResult = {
   items: TimelineItem[];
   groups: TimelineGroup[];
   details: Map<string, DetailNote>;
   dependencies: Map<string, string[]>;
+  phases: ResolvedPhase[];
 };
+
+function resolvePhases(file: TimelineFile): ResolvedPhase[] {
+  const out: ResolvedPhase[] = [];
+  let auto = 0;
+  for (const p of file.phases ?? []) {
+    if (!p.start || !p.label) continue;
+    let end = p.end;
+    if (!end) {
+      const ms = durationToMs(p.duration);
+      if (ms && ms > 0) {
+        const startMs = new Date(p.start).getTime();
+        if (!Number.isNaN(startMs)) end = new Date(startMs + ms).toISOString();
+      }
+    }
+    if (!end) continue; // a phase needs an extent to render
+    out.push({
+      id: p.id || `__phase_${auto++}`,
+      label: escapeHtml(p.label),
+      start: p.start,
+      end,
+      color: typeof p.color === 'string' ? p.color : undefined,
+    });
+  }
+  return out;
+}
+
+// CSS-safe token for a phase id, shared by the background item's class name and
+// the dynamic stylesheet PhaseBand injects to colour it.
+export function phaseCssId(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+// Faint full-height tint per phase, rendered behind the items so you can read
+// which items fall into which phase. Complements the labeled ribbon on top.
+// Colour comes from a per-phase CSS class (see PhaseBand) — a plain inline
+// style loses to `.vis-item { background-color: ...!important }`.
+function phaseBackgroundItems(phases: ResolvedPhase[]): TimelineItem[] {
+  return phases.map((p) => ({
+    id: `__phasebg_${p.id}`,
+    start: p.start,
+    end: p.end,
+    content: '',
+    title: '',
+    type: 'background' as const,
+    className: `phase-bg phase-bg-${phaseCssId(p.id)}`,
+  }));
+}
 
 function extractDependsOn(meta: unknown): string[] {
   if (!meta || typeof meta !== 'object') return [];
@@ -189,6 +248,7 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
       content: escapeHtml(raw.content),
       title: raw.title ? escapeHtml(raw.title) : escapeHtml(raw.content),
       type: raw.type ?? (endIso ? 'range' : 'point'),
+      icon: normalizeIcon(raw.icon),
     });
     details.set(id, detailFromJsonItem({ ...raw, id }));
   }
@@ -202,8 +262,10 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
       })
     : [];
 
+  const phases = resolvePhases(file);
+  items.push(...phaseBackgroundItems(phases));
   assignLanes(items, groups);
-  return { items, groups, details, dependencies };
+  return { items, groups, details, dependencies, phases };
 }
 
 export function buildFromNotes(view: View, notes: Note[], cfg: Config): BuildResult {
@@ -244,5 +306,5 @@ export function buildFromNotes(view: View, notes: Note[], cfg: Config): BuildRes
   });
 
   assignLanes(items, groups);
-  return { items, groups, details, dependencies: new Map() };
+  return { items, groups, details, dependencies: new Map(), phases: [] };
 }

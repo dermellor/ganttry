@@ -53,14 +53,25 @@ export type TimelineFileItem = {
   title?: string;
   type?: 'point' | 'range' | 'background' | 'box';
   className?: string;
+  icon?: string;
   body?: string;
   metadata?: Record<string, unknown>;
+};
+
+export type TimelinePhase = {
+  id?: string;
+  label: string;
+  start: string;
+  end?: string;
+  duration?: string | number;
+  color?: string;
 };
 
 export type TimelineFile = {
   name?: string;
   description?: string;
   groupBy?: string;
+  phases?: TimelinePhase[];
   items: TimelineFileItem[];
   groups?: {
     id: string;
