@@ -101,6 +101,7 @@ function timelinesApi(): Plugin {
       const send = (res: any, status: number, json: unknown) => {
         res.statusCode = status;
         res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Cache-Control', 'no-store');
         res.end(JSON.stringify(json));
       };
 
