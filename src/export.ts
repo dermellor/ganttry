@@ -64,6 +64,7 @@ function clientScript(): string {
     template: function (item) {
       return item ? iconSpan(item.icon) + (item.content || '') : '';
     },
+    xss: { disabled: true },
     margin: { item: 6, axis: 8 },
     orientation: { axis: 'top', item: 'top' },
     locale: 'de',

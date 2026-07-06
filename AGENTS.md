@@ -53,6 +53,7 @@ File shape:
       "group": "Phase 1",                // optional
       "title": "Tooltip text",           // optional
       "type": "point",                   // optional: point | range | background | box
+      "icon": "milestone",               // optional: semantic icon key (see "Item icons")
       "body": "Markdown shown in detail panel",  // optional
       "metadata": { "owner": "Product Lead" }  // optional
     }
@@ -85,6 +86,39 @@ When generating a roadmap (whether for this project or invoked from elsewhere �
 - **Dependencies live in `metadata.dependsOn: ["id1", "id2"]`.** The viewer renders curved Bezier arrows from each source item's right edge to the target's left edge as an SVG overlay. Off-screen sources/targets simply hide the arrow until they scroll into view. Make sure dependency target items have explicit `id`s so they can be referenced.
 - **Bodies are Markdown.** Use them for owner notes, success criteria, links — they show up as the side panel content when the item is clicked.
 - **Dates as `YYYY-MM-DD`** without time component unless precision matters. `duration` accepts `Nh|d|w|mo|y` or raw milliseconds.
+
+## Item icons
+
+Items can carry an optional `icon` — a small glyph rendered before the content on
+the bar. The value is a **semantic key** (what the icon means, not a concrete
+SVG), so the same data works across every brand: each brand resolves the key to
+its own icon set via a `--icon-<key>` CSS custom property. The stored `content`
+stays clean (the glyph is prepended at render time via the vis-timeline
+`template`), so it round-trips through the editor, Sheets, and exports unchanged.
+
+Curated key set (defined once in [`src/icons.ts`](src/icons.ts)):
+
+`milestone` · `launch` · `done` · `warning` · `blocked` · `review` ·
+`deadline` · `meeting` · `idea` · `research` · `design` · `build` · `bug` ·
+`release` · `decision` · `goal` · `info` · `note`
+
+Unknown values are dropped (validated by `normalizeIcon`). The base glyphs are
+Acme neo-icons, defined in the `:root` block of
+[`src/styles/brands.css`](src/styles/brands.css) and inherited by every brand.
+
+**How to render / extend:**
+
+- **Render:** the glyph is a CSS `mask` on `.item-icon` (see
+  [`src/styles/timeline.css`](src/styles/timeline.css)), coloured with
+  `currentColor` — it adapts to the item/brand text colour automatically.
+- **Give a brand its own look:** override any key inside that brand's block,
+  e.g. `[data-brand='marcel-mellor'] { --icon-milestone: url("…"); }`.
+- **Add a new semantic key:** add it to `IconKey` + `TIMELINE_ICONS` in
+  `src/icons.ts` (label shown in the editor dropdown) and add a matching
+  `--icon-<key>` to the `:root` set in `brands.css`. It then appears in the edit
+  form, the Sheets `icon` column, and the MCP `add_item`/`update_item` tools.
+
+Icons render on the live viewer, exported HTML, and the read-only Netlify deploy.
 
 ## Google Sheets als Datenquelle
 
@@ -132,6 +166,7 @@ sind ok außer den Pflichtfeldern.
 | `dependsOn`   | komma-getrennte IDs                                      |
 | `owner`       | Owner-Name (landet in `metadata.owner`)                  |
 | `className`   | optional CSS-Klasse                                      |
+| `icon`        | semantischer Icon-Key (siehe „Item icons")              |
 | `metadata`    | freies JSON-Objekt für Extra-Felder                      |
 
 **Tab `Groups`** (optional):

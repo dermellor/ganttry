@@ -138,6 +138,11 @@ export type ResolvedPhase = {
   start: string;
   end: string;
   color?: string;
+  icon?: string;
+  // Index into the source file's `phases` array, so drag/resize edits in the
+  // ribbon can be written back to the exact phase they came from (auto-assigned
+  // ids and skipped phases make id/position matching unreliable otherwise).
+  srcIndex: number;
 };
 
 export type BuildResult = {
@@ -151,7 +156,9 @@ export type BuildResult = {
 function resolvePhases(file: TimelineFile): ResolvedPhase[] {
   const out: ResolvedPhase[] = [];
   let auto = 0;
-  for (const p of file.phases ?? []) {
+  const phases = file.phases ?? [];
+  for (let srcIndex = 0; srcIndex < phases.length; srcIndex++) {
+    const p = phases[srcIndex];
     if (!p.start || !p.label) continue;
     let end = p.end;
     if (!end) {
@@ -168,6 +175,8 @@ function resolvePhases(file: TimelineFile): ResolvedPhase[] {
       start: p.start,
       end,
       color: typeof p.color === 'string' ? p.color : undefined,
+      icon: normalizeIcon(p.icon),
+      srcIndex,
     });
   }
   return out;

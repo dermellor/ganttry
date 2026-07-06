@@ -65,6 +65,7 @@ export type TimelinePhase = {
   end?: string;
   duration?: string | number;
   color?: string;
+  icon?: string;
 };
 
 export type TimelineFile = {

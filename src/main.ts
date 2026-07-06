@@ -12,7 +12,7 @@ import {
   type TimelineItem,
 } from './buildItems';
 import { DependencyArrows } from './arrows';
-import { PhaseBand } from './phaseBand';
+import { PhaseBand, type PhaseEdit } from './phaseBand';
 import { TIMELINE_ICONS, iconSpanHtml } from './icons';
 import {
   ensureItemIds,
@@ -72,10 +72,14 @@ let activeSourceFile: TimelineFile | null = null;
 let activeSourceEditable = false;
 let activeBuild: BuildResult | null = null;
 let activeFormItemId: string | null = null;
+let activeFormPhaseIndex: number | null = null;
 // Linked JIRA issues for the form currently open. Mutated by the autosuggest
-// chips; read back in saveItemFromForm.
+// chips; read back in applyItemForm.
 let formJiraIssues: JiraIssue[] = [];
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+// Debounce for reactive form edits: coalesces rapid keystrokes into one
+// model update + live rebuild (see scheduleLiveEdit).
+let liveEditTimer: ReturnType<typeof setTimeout> | null = null;
 let currentBrand = DEFAULT_BRAND;
 let selectedItemId: string | null = null;
 let userWindow: { start: Date; end: Date } | null = null;
@@ -157,6 +161,7 @@ function rebuildAndApply(): void {
   activeBuild = built;
   applyBuildToDataSets();
   if (arrows) arrows.setDependencies(built.dependencies);
+  if (phaseBand) phaseBand.setPhases(built.phases);
   setStatus(statusFor(activeView, built));
 }
 
@@ -280,6 +285,10 @@ async function renderTimeline(view: View) {
     // stays clean (used by the edit form, confirm dialogs, and Sheets).
     template: (item: TimelineItem) =>
       item ? `${iconSpanHtml(item.icon)}${item.content ?? ''}` : '',
+    // vis-timeline's XSS filter strips the icon span's class/style. Our content
+    // and titles are already escapeHtml'd at build time and icon keys are
+    // validated, so disabling the redundant filter is safe here.
+    xss: { disabled: true },
     margin: { item: 6, axis: axisMargin },
     orientation: { axis: 'top', item: 'top' },
     locale: 'de',
@@ -341,6 +350,7 @@ async function renderTimeline(view: View) {
       try {
         phaseBand = new PhaseBand(timeline!, els.timeline);
         phaseBand.setPhases(built!.phases);
+        if (isEditableView()) phaseBand.setEditable(true, handlePhaseEdit, showPhaseFormByIndex);
       } catch (err) {
         console.warn('PhaseBand init failed:', err);
       }
@@ -420,6 +430,142 @@ function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) =>
   if (activeFormItemId === item.id) {
     showItemForm(src);
   }
+}
+
+function handlePhaseEdit(edit: PhaseEdit): void {
+  const phase = activeSourceFile?.phases?.[edit.srcIndex];
+  if (!phase) return;
+  // Persist as explicit start/end and drop any `duration` so the written range
+  // is unambiguous (mirrors how item moves are stored).
+  phase.start = isoDateOnly(edit.start);
+  phase.end = isoDateOnly(edit.end);
+  delete phase.duration;
+  rebuildAndApply();
+  schedulePersist();
+  if (activeFormPhaseIndex === edit.srcIndex) showPhaseForm(edit.srcIndex);
+}
+
+function showPhaseFormByIndex(srcIndex: number): void {
+  showPhaseForm(srcIndex);
+}
+
+function showPhaseForm(srcIndex: number): void {
+  const phase = activeSourceFile?.phases?.[srcIndex];
+  if (!phase) return;
+  // Opening a phase form supersedes any open item form.
+  activeFormItemId = null;
+  activeFormPhaseIndex = srcIndex;
+  timeline?.setSelection([]);
+  selectedItemId = null;
+
+  els.detailTitle.textContent = phase.label || '(unbenannte Phase)';
+  els.detailMeta.innerHTML = '';
+
+  const iconOptions =
+    `<option value=""${!phase.icon ? ' selected' : ''}>— kein Icon —</option>` +
+    TIMELINE_ICONS.map(
+      ({ key, label }) => `<option value="${key}"${phase.icon === key ? ' selected' : ''}>${label}</option>`,
+    ).join('');
+
+  els.detailBody.classList.add('detail-form');
+  els.detailBody.innerHTML = `
+    <form class="item-form phase-form" data-index="${srcIndex}">
+      <div class="field full">
+        <label for="p-label">Titel</label>
+        <input id="p-label" name="label" value="${escapeHtml(phase.label ?? '')}" />
+      </div>
+      <div class="field">
+        <label for="p-start">Start</label>
+        <input id="p-start" name="start" type="date" value="${isoDateOnly(phase.start)}" />
+      </div>
+      <div class="field">
+        <label for="p-end">Ende</label>
+        <input id="p-end" name="end" type="date" value="${isoDateOnly(phase.end ?? '')}" />
+      </div>
+      <div class="field">
+        <label for="p-duration">Dauer</label>
+        <input id="p-duration" name="duration" value="${escapeHtml(typeof phase.duration === 'string' ? phase.duration : phase.duration != null ? String(phase.duration) : '')}" placeholder="leer = Ende nutzen" />
+      </div>
+      <div class="field">
+        <label for="p-icon">Icon</label>
+        <select id="p-icon" name="icon">${iconOptions}</select>
+      </div>
+      <div class="field">
+        <label for="p-color">Farbe</label>
+        <input id="p-color" name="color" value="${escapeHtml(phase.color ?? '')}" placeholder="#2f0d5b" />
+      </div>
+      <div class="field">
+        <label for="p-id">ID <small>(read-only)</small></label>
+        <input id="p-id" name="id" value="${escapeHtml(phase.id ?? '')}" readonly />
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">Speichern</button>
+        <button type="button" class="btn-danger" data-action="delete">Löschen</button>
+      </div>
+    </form>
+  `;
+
+  const form = els.detailBody.querySelector('form') as HTMLFormElement;
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    savePhaseFromForm(srcIndex, form);
+  });
+  form.querySelector<HTMLButtonElement>('[data-action="delete"]')!.addEventListener('click', () => {
+    deletePhase(srcIndex);
+  });
+
+  els.detail.hidden = false;
+  setTimeout(() => timeline?.redraw(), 0);
+}
+
+function savePhaseFromForm(srcIndex: number, form: HTMLFormElement): void {
+  const phase = activeSourceFile?.phases?.[srcIndex];
+  if (!phase) return;
+  const fd = new FormData(form);
+  const get = (name: string) => String(fd.get(name) ?? '').trim();
+
+  phase.label = get('label') || phase.label;
+  const startVal = get('start');
+  if (startVal) phase.start = startVal;
+
+  const endVal = get('end');
+  const durVal = get('duration');
+  // Duration wins over end (same precedence as items); at least one is needed
+  // for the phase to render, so keep whatever the user supplied.
+  if (durVal) {
+    phase.duration = durVal;
+    delete phase.end;
+  } else if (endVal) {
+    phase.end = endVal;
+    delete phase.duration;
+  } else {
+    delete phase.duration;
+    delete phase.end;
+  }
+
+  const iconVal = get('icon');
+  if (iconVal) phase.icon = iconVal;
+  else delete phase.icon;
+
+  const colorVal = get('color');
+  if (colorVal) phase.color = colorVal;
+  else delete phase.color;
+
+  rebuildAndApply();
+  schedulePersist();
+  setStatus(`Phase „${phase.label}" aktualisiert`);
+  showPhaseForm(srcIndex);
+}
+
+function deletePhase(srcIndex: number): void {
+  const phase = activeSourceFile?.phases?.[srcIndex];
+  if (!phase) return;
+  if (!confirm(`Phase „${phase.label}" wirklich löschen?`)) return;
+  activeSourceFile!.phases!.splice(srcIndex, 1);
+  activeFormPhaseIndex = null;
+  rebuildAndApply();
+  schedulePersist();
+  hideDetail();
 }
 
 function handleAdd(item: TimelineItem, callback: (item: TimelineItem | null) => void): void {
@@ -517,7 +663,10 @@ function showDetail(note: DetailNote) {
 function showItemForm(item: TimelineFileItem & { id?: string }): void {
   if (!activeSourceFile || !item.id) return;
   const id = item.id;
+  // Switching to a different item = leaving the previous form → persist it.
+  if (activeFormItemId && activeFormItemId !== id) commitItemForm();
   activeFormItemId = id;
+  activeFormPhaseIndex = null;
   els.detailTitle.textContent = item.content || '(unbenannt)';
   els.detailMeta.innerHTML = '';
 
@@ -606,7 +755,6 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
         <textarea id="f-meta" name="metadata" rows="3" placeholder='{"key": "value"}'>${escapeHtml(metaJson)}</textarea>
       </div>
       <div class="form-actions">
-        <button type="submit" class="btn-primary">Speichern</button>
         <button type="button" class="btn-danger" data-action="delete">Löschen</button>
       </div>
     </form>
@@ -617,8 +765,8 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
   const endField = form.querySelector<HTMLElement>('#f-end')!.closest('.field') as HTMLElement;
   const durField = form.querySelector<HTMLElement>('#f-duration')!.closest('.field') as HTMLElement;
   // A point (Meilenstein) has no extent. End/Duration stay editable: entering
-  // one promotes the item to a range on save (see saveItemFromForm). Just flag
-  // the point state visually so the interaction reads cleanly.
+  // one promotes the item to a range live (see applyItemForm). Just flag the
+  // point state visually so the interaction reads cleanly.
   const syncTypeFields = () => {
     const isPoint = typeSelect.value === 'point';
     endField.classList.toggle('is-muted', isPoint);
@@ -627,10 +775,11 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
   syncTypeFields();
   typeSelect.addEventListener('change', syncTypeFields);
 
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    saveItemFromForm(id, form);
-  });
+  // Reactive editing: every change writes straight into the model and refreshes
+  // the live view. No save button — the source is persisted when the sidebar is
+  // left (commitItemForm).
+  form.addEventListener('input', scheduleLiveEdit);
+  form.addEventListener('change', scheduleLiveEdit);
   form.querySelector<HTMLButtonElement>('[data-action="delete"]')!.addEventListener('click', () => {
     deleteItem(id);
   });
@@ -661,6 +810,7 @@ function renderJiraChips(form: HTMLFormElement): void {
       const idx = Number(btn.dataset.remove);
       formJiraIssues.splice(idx, 1);
       renderJiraChips(form);
+      scheduleLiveEdit();
     });
   });
 }
@@ -670,6 +820,7 @@ function addJiraIssue(form: HTMLFormElement, issue: JiraIssue): void {
   if (formJiraIssues.some((i) => i.key === issue.key)) return;
   formJiraIssues.push(issue);
   renderJiraChips(form);
+  scheduleLiveEdit();
 }
 
 function wireJiraAutosuggest(form: HTMLFormElement): void {
@@ -784,7 +935,11 @@ function wireJiraAutosuggest(form: HTMLFormElement): void {
   });
 }
 
-function saveItemFromForm(id: string, form: HTMLFormElement): void {
+// Reads the open item form and writes its values into the in-memory model,
+// then refreshes the live view. Reactive: called on every field change, so the
+// timeline reflects edits as you type. Persistence is deferred until the
+// sidebar is left (see commitItemForm).
+function applyItemForm(id: string, form: HTMLFormElement): void {
   if (!activeSourceFile) return;
   const idx = findItemIndex(activeSourceFile, id);
   if (idx === -1) return;
@@ -846,7 +1001,10 @@ function saveItemFromForm(id: string, form: HTMLFormElement): void {
   if (formJiraIssues.length) meta.jira = formJiraIssues.map((i) => ({ key: i.key, summary: i.summary }));
   else delete meta.jira;
 
+  // Invalid metadata JSON: keep the last valid extras and just flag it in the
+  // status line — no blocking alert on every keystroke while typing.
   const metaJsonRaw = get('metadata');
+  let metaError = false;
   if (metaJsonRaw) {
     try {
       const extra = JSON.parse(metaJsonRaw);
@@ -856,9 +1014,8 @@ function saveItemFromForm(id: string, form: HTMLFormElement): void {
           meta[k] = v;
         }
       }
-    } catch (err) {
-      alert(`Metadata JSON ungültig: ${err instanceof Error ? err.message : err}`);
-      return;
+    } catch {
+      metaError = true;
     }
   } else {
     for (const k of Object.keys(meta)) {
@@ -869,8 +1026,39 @@ function saveItemFromForm(id: string, form: HTMLFormElement): void {
   if (Object.keys(meta).length === 0) delete (item as any).metadata;
 
   rebuildAndApply();
-  schedulePersist();
-  setStatus(`Item „${item.content}" aktualisiert`);
+  // Keep the sidebar header and the timeline selection in sync with the live
+  // content (rebuildAndApply reloads the DataSet, which drops the selection).
+  els.detailTitle.textContent = item.content || '(unbenannt)';
+  try {
+    timeline?.setSelection([id]);
+  } catch {
+    /* item may be filtered out of the current view */
+  }
+  if (metaError) setStatus('Metadata JSON ungültig — Änderung nicht übernommen');
+}
+
+// Debounced reactive apply: coalesces rapid keystrokes into one model update.
+function scheduleLiveEdit(): void {
+  if (liveEditTimer) clearTimeout(liveEditTimer);
+  liveEditTimer = setTimeout(() => {
+    liveEditTimer = null;
+    if (!activeFormItemId) return;
+    const form = els.detailBody.querySelector<HTMLFormElement>('form.item-form');
+    if (form) applyItemForm(activeFormItemId, form);
+  }, 100);
+}
+
+// Flushes any pending live edit and persists the source. Called whenever the
+// item sidebar is left (closed, another item opened, view switched, unload).
+function commitItemForm(): void {
+  if (liveEditTimer) {
+    clearTimeout(liveEditTimer);
+    liveEditTimer = null;
+  }
+  if (!activeFormItemId) return;
+  const form = els.detailBody.querySelector<HTMLFormElement>('form.item-form');
+  if (form) applyItemForm(activeFormItemId, form);
+  void persist();
 }
 
 function deleteItem(id: string): void {
@@ -886,9 +1074,14 @@ function deleteItem(id: string): void {
 }
 
 function hideDetail() {
+  if (liveEditTimer) {
+    clearTimeout(liveEditTimer);
+    liveEditTimer = null;
+  }
   els.detail.hidden = true;
   els.detailBody.classList.remove('detail-form');
   activeFormItemId = null;
+  activeFormPhaseIndex = null;
   setTimeout(() => timeline?.redraw(), 0);
 }
 
@@ -906,6 +1099,8 @@ async function applyView(viewId: string) {
   if (!config) return;
   const view = config.views.find((v) => v.id === viewId);
   if (!view) return;
+  // Switching views leaves any open item form → persist it first.
+  commitItemForm();
   localStorage.setItem('timelines.view', viewId);
   els.viewSelect.value = viewId;
   hideDetail();
@@ -1008,6 +1203,7 @@ async function bootstrap() {
   });
   els.brandSelect.addEventListener('change', () => applyBrand(els.brandSelect.value));
   els.detailClose.addEventListener('click', () => {
+    commitItemForm();
     selectedItemId = null;
     timeline?.setSelection([]);
     hideDetail();

@@ -176,9 +176,12 @@
   background-color: #e02a2a;
 }
 
-/* Faint full-height phase tint behind the items */
+/* Faint full-height phase tint behind the items. The inset strip on the right
+   edge paints over with the panel colour, so adjacent phase fills that share a
+   boundary read as separated instead of touching. */
 .vis-item.vis-background.phase-bg {
   border: none;
+  box-shadow: inset -3px 0 0 0 var(--surface);
 }
 
 /* Phase ribbon — pinned to the top of the center panel */
@@ -220,4 +223,49 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  pointer-events: none;
+}
+
+/* The masked icon glyph inherits the ribbon's (white) text colour. Mirrors the
+   `.vis-item .item-icon` rule, which is scoped to timeline items. */
+.phase-seg .item-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.35em;
+  vertical-align: -0.15em;
+  background-color: currentColor;
+  -webkit-mask: var(--item-icon) center / contain no-repeat;
+  mask: var(--item-icon) center / contain no-repeat;
+}
+
+/* Editable phase segments: drag the body, resize from the edges */
+.phase-band.is-editable .phase-seg {
+  cursor: grab;
+}
+
+.phase-band.is-editable .phase-seg.is-dragging {
+  cursor: grabbing;
+  opacity: 0.85;
+}
+
+.phase-seg-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.phase-seg-handle.left {
+  left: 0;
+}
+
+.phase-seg-handle.right {
+  right: 0;
+}
+
+/* Suppress text selection while a phase is being dragged */
+body.phase-dragging {
+  user-select: none;
 }
