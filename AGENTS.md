@@ -324,7 +324,8 @@ When the active view points to a `data/*.json` file, the viewer becomes editable
 
 - **Drag** an item left/right to move start, drag the right edge to resize, drag vertically to switch group. Persists on drop.
 - **Double-click** on empty timeline space to add a new item (defaults: 1-week duration, current group, content "Neuer Eintrag"). Form opens for further edits.
-- **Click** an item to open the edit form in the side panel: title, start/end, duration, group, type, body (Markdown), `dependsOn` IDs, owner, plus a free-form metadata JSON box. Save writes back; Delete removes the item.
+- **Click** an item to open the edit form in the side panel: title, start/end, duration, group, type, body (Markdown), dependencies, owner, plus a free-form metadata JSON box. Save writes back; Delete removes the item.
+- **Depends on** is a title-autosuggest field: type to search the current timeline's items by title (or id), pick to link a dependency (rendered as a removable chip). Stored as `metadata.dependsOn` IDs — the chips just show the target's title.
 
 Persistence path: viewer → `PUT /api/source/<id>` → middleware writes `data/<id>.json` → watcher copies to `public/data/sources/<id>.json`. The middleware lives in `vite.config.ts`; only available under `npm run dev`/`npm run dev:notes`. Builds (`npm run build`) and exported HTML have no edit endpoint.
 
