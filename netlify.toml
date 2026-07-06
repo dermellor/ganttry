@@ -3,7 +3,8 @@
   publish = "dist"
 
 [build.environment]
-  NODE_VERSION = "20"
+  # 22+ so the MCP Function's supabase-js has a native WebSocket (realtime-js).
+  NODE_VERSION = "22"
   # Acme-instance defaults — override per branch in the Netlify UI.
   TIMELINES_SOURCES_SUBDIR = "Acme"
   TIMELINES_STATIC_ONLY = "true"
