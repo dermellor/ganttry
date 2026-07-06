@@ -22,15 +22,15 @@
   function = "auth"
   path = "/*"
 
-# Sheets API proxy — runs after auth, handles sheet-backed sources.
-# Falls through to static files for non-sheet sources.
-# /api/sources is the discovery endpoint (list of configured sheet sources).
+# Timeline API — runs after auth, serves DB-backed sources from Supabase.
+# Falls through to static files for non-DB sources (read-only).
+# /api/sources is the discovery endpoint (list of DB timelines).
 [[edge_functions]]
-  function = "sheets-api"
+  function = "timelines-api"
   path = "/api/source/*"
 
 [[edge_functions]]
-  function = "sheets-api"
+  function = "timelines-api"
   path = "/api/sources"
 
 # JIRA issue-picker proxy — powers the editor autosuggest. Runs after auth.
