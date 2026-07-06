@@ -133,3 +133,31 @@
   stroke-width: 1.25;
   opacity: 0.55;
 }
+
+/* Acme brand: replace the default red × delete button with a subtle trash icon */
+[data-brand='Acme'] .vis-item .vis-delete,
+[data-brand='Acme'] .vis-item .vis-delete-rtl {
+  background: transparent;
+  border-radius: var(--mark-radius);
+}
+
+[data-brand='Acme'] .vis-item .vis-delete:after,
+[data-brand='Acme'] .vis-item .vis-delete-rtl:after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: var(--fg-muted);
+  -webkit-mask: var(--icon-trash) center / 15px 15px no-repeat;
+  mask: var(--icon-trash) center / 15px 15px no-repeat;
+  transition: background-color 0.15s linear;
+}
+
+[data-brand='Acme'] .vis-item .vis-delete:hover,
+[data-brand='Acme'] .vis-item .vis-delete-rtl:hover {
+  background: var(--hover);
+}
+
+[data-brand='Acme'] .vis-item .vis-delete:hover:after,
+[data-brand='Acme'] .vis-item .vis-delete-rtl:hover:after {
+  background-color: #e02a2a;
+}
