@@ -56,6 +56,7 @@ export type TimelineFileItem = {
   icon?: string;
   body?: string;
   metadata?: Record<string, unknown>;
+  version?: number; // DB row version for optimistic locking (server-managed)
 };
 
 export type TimelinePhase = {

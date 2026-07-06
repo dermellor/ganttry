@@ -14,22 +14,10 @@ const SOURCES_SUBDIR = (process.env.TIMELINES_SOURCES_SUBDIR ?? '').replace(/^\/
 const SOURCES_DIR_IN = SOURCES_SUBDIR ? join(ROOT, 'data', SOURCES_SUBDIR) : join(ROOT, 'data');
 const SOURCES_DIR_OUT = join(OUT_DIR, 'sources');
 
-type SheetConfig = {
-  id: string;
-  name?: string;
-  description?: string;
-  spreadsheetId: string;
-  itemsSheet?: string;
-  groupsSheet?: string;
-  phasesSheet?: string;
-  groupBy?: string;
-};
-
 type Config = {
   notesDir: string;
   dateFields: string[];
   filenameDatePatterns: string[];
-  sheets?: SheetConfig[];
 };
 
 type Note = {
@@ -170,35 +158,46 @@ function unitToMs(unit: string): number {
 
 const STATIC_ONLY = /^(1|true|yes)$/i.test(process.env.TIMELINES_STATIC_ONLY ?? '');
 
-async function syncSheetsOnce(sheets: SheetConfig[]): Promise<void> {
-  if (sheets.length === 0) return;
-  if (STATIC_ONLY) return; // production builds rely on committed JSON cache
-  let pullSheet: (cfg: SheetConfig) => Promise<unknown>;
+// Pull every DB-backed timeline into its data/<id>.json so the committed static
+// cache (the read-only Netlify fallback) stays current. Skipped on static-only
+// builds and when no DB credentials are present. `version` is stripped — it's a
+// server-managed field and would only cause churn in the committed files.
+async function syncTimelinesOnce(): Promise<void> {
+  if (STATIC_ONLY) return; // production builds rely on the committed JSON cache
+  let getServiceClient: () => any;
+  let listTimelines: (db: any) => Promise<{ id: string }[]>;
+  let getTimeline: (db: any, id: string) => Promise<any>;
   try {
-    ({ pullSheet } = (await import('./sheets/sync.js')) as any);
+    ({ getServiceClient } = (await import('./db/client.ts')) as any);
+    ({ listTimelines, getTimeline } = (await import('./db/timeline-repo.ts')) as any);
   } catch (err) {
-    console.warn('[build-data] sheets sync skipped (module load failed):', err);
+    console.warn('[build-data] db pull skipped (module load failed):', err);
     return;
   }
-  for (const cfg of sheets) {
+  const db = getServiceClient();
+  if (!db) return; // no credentials — rely on committed cache
+
+  let metas: { id: string }[];
+  try {
+    metas = await listTimelines(db);
+  } catch (err) {
+    console.warn(`[build-data] db pull failed: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  for (const meta of metas) {
     try {
-      const file = await pullSheet(cfg);
-      const outPath = join(SOURCES_DIR_IN, `${cfg.id}.json`);
+      const file = await getTimeline(db, meta.id);
+      if (!file) continue;
+      for (const it of file.items) delete it.version;
+      const outPath = join(SOURCES_DIR_IN, `${meta.id}.json`);
       await mkdir(dirname(outPath), { recursive: true });
-      const json = `${JSON.stringify(file, null, 2)}\n`;
-      const changed = await writeIfChanged(outPath, json);
+      const changed = await writeIfChanged(outPath, `${JSON.stringify(file, null, 2)}\n`);
       if (changed) {
-        console.log(`[build-data] sheet "${cfg.id}" pulled → ${relative(ROOT, outPath)}`);
+        console.log(`[build-data] timeline "${meta.id}" pulled → ${relative(ROOT, outPath)}`);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (/No Google token cached/.test(msg)) {
-        console.warn(
-          `[build-data] sheet "${cfg.id}" skipped — run \`npm run sheets:auth\` to authorize.`,
-        );
-      } else {
-        console.warn(`[build-data] sheet "${cfg.id}" sync failed: ${msg}`);
-      }
+      console.warn(`[build-data] timeline "${meta.id}" pull failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 }
@@ -207,7 +206,7 @@ async function buildOnce(): Promise<void> {
   const config = await loadConfig();
   const notesDir = expandHome(config.notesDir);
 
-  await syncSheetsOnce(config.sheets ?? []);
+  await syncTimelinesOnce();
 
   if (!STATIC_ONLY && !existsSync(notesDir)) {
     console.error(`[build-data] notesDir not found: ${notesDir}`);
@@ -425,22 +424,8 @@ async function main() {
       .on('change', trigger)
       .on('unlink', trigger);
 
-    const sheets = config.sheets ?? [];
-    if (sheets.length > 0) {
-      const intervalSec = Math.max(
-        15,
-        parseInt(process.env.TIMELINES_SHEETS_POLL_SECONDS ?? '60', 10) || 60,
-      );
-      const tick = async () => {
-        try {
-          await syncSheetsOnce(sheets);
-        } catch (err) {
-          console.warn('[build-data] periodic sheet sync failed:', err);
-        }
-      };
-      setInterval(tick, intervalSec * 1000).unref();
-      console.log(`[build-data] polling ${sheets.length} sheet(s) every ${intervalSec}s`);
-    }
+    // No sheet polling anymore — realtime handles live updates in the browser,
+    // and the static cache refreshes on each build via syncTimelinesOnce().
     console.log(
       watchNotes
         ? `[build-data] watching ${notesDir}/**/*.md + ${relative(ROOT, SOURCES_DIR_IN)}/**/*.json + config`

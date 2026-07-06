@@ -1,27 +1,12 @@
 import { defineConfig, type Plugin } from 'vite';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve, dirname, sep } from 'node:path';
-import { pushSheet } from './scripts/sheets/sync';
+import { resolve } from 'node:path';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
+import { getServiceClient } from './scripts/db/client';
+import { handleTimelineApi, parseSourcePath, type ApiRequest } from './scripts/db/api';
 
-const SOURCES_SUBDIR = (process.env.TIMELINES_SOURCES_SUBDIR ?? '').replace(/^\/+|\/+$/g, '');
-const SOURCES_DIR = SOURCES_SUBDIR
-  ? resolve(__dirname, 'data', SOURCES_SUBDIR)
-  : resolve(__dirname, 'data');
-const CONFIG_PATH = resolve(__dirname, 'timelines.config.json');
 const ID_SEGMENT = /^[a-zA-Z0-9_-]+$/;
-
-type SheetConfig = {
-  id: string;
-  spreadsheetId: string;
-  itemsSheet?: string;
-  groupsSheet?: string;
-  name?: string;
-  description?: string;
-  groupBy?: string;
-};
 
 // Minimal .env parser — only what's needed to surface JIRA credentials that
 // live in ~/_AGENTS/.env (cross-project keys) or a local .env.local without
@@ -63,16 +48,6 @@ function loadJiraCreds(): JiraCreds | null {
   const apiToken = pick('JIRA_API_TOKEN');
   jiraCredsCache = baseUrl && email && apiToken ? { baseUrl, email, apiToken } : null;
   return jiraCredsCache;
-}
-
-async function loadSheetConfigs(): Promise<SheetConfig[]> {
-  try {
-    const raw = await readFile(CONFIG_PATH, 'utf8');
-    const cfg = JSON.parse(raw) as { sheets?: SheetConfig[] };
-    return cfg.sheets ?? [];
-  } catch {
-    return [];
-  }
 }
 
 function timelinesApi(): Plugin {
@@ -123,88 +98,83 @@ function timelinesApi(): Plugin {
         }
       });
 
-      server.middlewares.use('/api/source', async (req, res, next) => {
-        if (req.method !== 'GET' && req.method !== 'PUT') return next();
-
-        const path = (req.url ?? '').replace(/^\//, '').replace(/\?.*$/, '').replace(/\/$/, '');
-        const id = path;
-        const segments = id ? id.split('/') : [];
-        const idValid = segments.length > 0 && segments.every((s) => ID_SEGMENT.test(s));
-        if (!idValid) {
-          res.statusCode = 400;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: `invalid id "${id}"` }));
-          return;
-        }
-
-        const filePath = resolve(SOURCES_DIR, `${id}.json`);
-        if (filePath !== `${SOURCES_DIR}${sep}${id}.json` && !filePath.startsWith(SOURCES_DIR + sep)) {
-          res.statusCode = 400;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: 'path traversal rejected' }));
-          return;
-        }
-
-        if (req.method === 'GET') {
-          if (!existsSync(filePath)) {
-            res.statusCode = 404;
-            res.end(JSON.stringify({ error: 'not found' }));
-            return;
-          }
-          const content = await readFile(filePath, 'utf8');
-          res.setHeader('Content-Type', 'application/json');
-          res.end(content);
-          return;
-        }
-
-        // PUT
-        let body = '';
-        for await (const chunk of req) body += chunk;
-        let json: any;
-        try {
-          json = JSON.parse(body);
-        } catch (err) {
-          res.statusCode = 400;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: 'invalid JSON', detail: String(err) }));
-          return;
-        }
-        if (!json || typeof json !== 'object' || !Array.isArray(json.items)) {
-          res.statusCode = 400;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: 'expected object with "items" array' }));
-          return;
-        }
-
-        await mkdir(dirname(filePath), { recursive: true });
-        await writeFile(filePath, `${JSON.stringify(json, null, 2)}\n`);
-
-        const sheets = await loadSheetConfigs();
-        const sheetCfg = sheets.find((s) => s.id === id);
-        if (sheetCfg) {
-          try {
-            await pushSheet(sheetCfg, json);
-          } catch (err) {
-            console.warn(`[timelines-api] sheet write-back failed for "${id}":`, err);
-            res.setHeader('Content-Type', 'application/json');
-            res.end(
-              JSON.stringify({
-                ok: true,
-                sheetWriteBack: 'failed',
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            );
-            return;
-          }
-        }
-
+      const send = (res: any, status: number, json: unknown) => {
+        res.statusCode = status;
         res.setHeader('Content-Type', 'application/json');
-        res.end(
-          JSON.stringify({
-            ok: true,
-            sheetWriteBack: sheetCfg ? 'ok' : undefined,
-          }),
-        );
+        res.end(JSON.stringify(json));
+      };
+
+      const readBody = async (req: any): Promise<unknown> => {
+        let raw = '';
+        for await (const chunk of req) raw += chunk;
+        if (!raw.trim()) return undefined;
+        return JSON.parse(raw);
+      };
+
+      // GET /api/sources — list timelines
+      server.middlewares.use('/api/sources', async (req, res, next) => {
+        if (req.method !== 'GET') return next();
+        const db = getServiceClient();
+        if (!db) return send(res, 200, { sources: [] });
+        try {
+          const result = await handleTimelineApi(db, { method: 'GET', id: '' });
+          send(res, result.status, result.json);
+        } catch (err) {
+          send(res, 500, { error: 'server_error', message: String(err) });
+        }
+      });
+
+      // /api/source/<id>[/item|group|phases[/<childId>]] — DB-backed CRUD
+      server.middlewares.use('/api/source', async (req, res, next) => {
+        const method = req.method ?? 'GET';
+        const rawPath = (req.url ?? '').replace(/\?.*$/, '');
+        const parsed = parseSourcePath(rawPath);
+        if (!parsed) return send(res, 400, { error: 'invalid path' });
+
+        // Validate id + childId segments.
+        const segs = [...parsed.id.split('/'), parsed.sub?.childId].filter(Boolean) as string[];
+        if (!segs.every((s) => ID_SEGMENT.test(s))) {
+          return send(res, 400, { error: `invalid id "${parsed.id}"` });
+        }
+
+        const db = getServiceClient();
+        if (!db) {
+          // No DB configured: 404 on GET so the client falls back to the static
+          // /data/sources/<id>.json (read-only); writes are simply unavailable.
+          if (method === 'GET') return send(res, 404, { error: 'db_not_configured' });
+          return send(res, 503, {
+            error: 'db_not_configured',
+            detail: 'Set TIMELINES_SUPABASE_URL and TIMELINES_SUPABASE_SERVICE_KEY.',
+          });
+        }
+
+        let body: unknown;
+        if (method !== 'GET' && method !== 'DELETE') {
+          try {
+            body = await readBody(req);
+          } catch (err) {
+            return send(res, 400, { error: 'invalid JSON', detail: String(err) });
+          }
+        }
+
+        const ifMatchHeader = req.headers['if-match'];
+        const ifMatch = ifMatchHeader ? parseInt(String(ifMatchHeader), 10) : undefined;
+
+        const apiReq: ApiRequest = {
+          method,
+          id: parsed.id,
+          sub: parsed.sub,
+          body,
+          ifMatch: Number.isFinite(ifMatch as number) ? (ifMatch as number) : undefined,
+        };
+
+        try {
+          const result = await handleTimelineApi(db, apiReq);
+          // On GET 404 the client falls back to the static /data/sources file.
+          send(res, result.status, result.json);
+        } catch (err) {
+          send(res, 500, { error: 'server_error', message: String(err) });
+        }
       });
     },
   };

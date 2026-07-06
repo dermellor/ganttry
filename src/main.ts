@@ -14,13 +14,18 @@ import {
 import { DependencyArrows } from './arrows';
 import { PhaseBand, type PhaseEdit } from './phaseBand';
 import { TIMELINE_ICONS, iconSpanHtml } from './icons';
+import { createMarkdownEditor, type MarkdownEditor } from './wysiwyg';
 import {
   ensureItemIds,
   findItemIndex,
   generateNewId,
   isoDateOnly,
   loadSource,
-  saveSourceToApi,
+  apiAddItem,
+  apiUpdateItem,
+  apiDeleteItem,
+  apiPutPhases,
+  ConflictError,
 } from './editor';
 import {
   onExternalUrlStateChange,
@@ -36,6 +41,7 @@ import {
   searchJira,
   type JiraIssue,
 } from './jira';
+import { isRealtimeEnabled, subscribeTimeline } from './realtime';
 
 const els = {
   timeline: document.getElementById('timeline') as HTMLDivElement,
@@ -70,6 +76,12 @@ let activeSourceId: string | null = null;
 let activeSourceFile: TimelineFile | null = null;
 let activeSourceEditable = false;
 let activeBuild: BuildResult | null = null;
+// Snapshot of the last successfully persisted state, diffed on persist() so we
+// only send the items/phases that actually changed (item-level writes instead
+// of a whole-document rewrite — concurrent edits no longer clobber).
+let savedItems = new Map<string, string>(); // id -> canonical JSON (version stripped)
+let savedItemVersions = new Map<string, number>(); // id -> last known version
+let savedPhasesJson = '[]';
 let activeFormItemId: string | null = null;
 let activeFormPhaseIndex: number | null = null;
 // Linked JIRA issues for the form currently open. Mutated by the autosuggest
@@ -79,6 +91,8 @@ let formJiraIssues: JiraIssue[] = [];
 // chips; read back in applyItemForm.
 let formDependsOn: string[] = [];
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let realtimeUnsub: (() => void) | null = null;
+let realtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 // Debounce for reactive form edits: coalesces rapid keystrokes into one
 // model update + live rebuild (see scheduleLiveEdit).
 let liveEditTimer: ReturnType<typeof setTimeout> | null = null;
@@ -191,16 +205,138 @@ function schedulePersist(): void {
   saveTimer = setTimeout(persist, 250);
 }
 
+// Canonical JSON of an item with the server-managed `version` stripped, so
+// content changes are detected but a version bump alone is not.
+function canonicalItem(item: TimelineFileItem): string {
+  const { version: _v, ...rest } = item;
+  return JSON.stringify(rest, Object.keys(rest).sort());
+}
+
+// Rebuild the saved-state snapshot from the current in-memory file. Called
+// after a load and after every successful persist.
+function snapshotSaved(): void {
+  savedItems = new Map();
+  savedItemVersions = new Map();
+  for (const it of activeSourceFile?.items ?? []) {
+    if (!it.id) continue;
+    savedItems.set(it.id, canonicalItem(it));
+    if (it.version != null) savedItemVersions.set(it.id, it.version);
+  }
+  savedPhasesJson = JSON.stringify(activeSourceFile?.phases ?? []);
+}
+
+let persisting = false;
+let persistAgain = false;
+
 async function persist(): Promise<void> {
   if (!activeSourceId || !activeSourceFile) return;
+  if (persisting) {
+    persistAgain = true; // coalesce edits that land mid-save
+    return;
+  }
+  persisting = true;
+  const sourceId = activeSourceId;
+  const file = activeSourceFile;
   try {
-    setStatus('Speichere…');
-    await saveSourceToApi(activeSourceId, activeSourceFile);
-    setStatus(`Gespeichert · ${activeSourceFile.items.length} items`);
+    const currentIds = new Set(file.items.map((it) => it.id).filter(Boolean) as string[]);
+
+    // Additions + updates.
+    for (const it of file.items) {
+      if (!it.id) continue;
+      const canon = canonicalItem(it);
+      const prev = savedItems.get(it.id);
+      if (prev === undefined) {
+        setStatus('Speichere…');
+        const saved = await apiAddItem(sourceId, it);
+        it.version = saved.version;
+        savedItems.set(it.id, canonicalItem(it));
+        if (saved.version != null) savedItemVersions.set(it.id, saved.version);
+      } else if (prev !== canon) {
+        setStatus('Speichere…');
+        const { id: _id, version: _v, ...patch } = it;
+        const saved = await apiUpdateItem(sourceId, it.id, patch, savedItemVersions.get(it.id));
+        it.version = saved.version;
+        savedItems.set(it.id, canonicalItem(it));
+        if (saved.version != null) savedItemVersions.set(it.id, saved.version);
+      }
+    }
+
+    // Deletions.
+    for (const oldId of [...savedItems.keys()]) {
+      if (!currentIds.has(oldId)) {
+        setStatus('Speichere…');
+        await apiDeleteItem(sourceId, oldId);
+        savedItems.delete(oldId);
+        savedItemVersions.delete(oldId);
+      }
+    }
+
+    // Phases (replaced as a unit — small, rarely edited).
+    const phasesJson = JSON.stringify(file.phases ?? []);
+    if (phasesJson !== savedPhasesJson) {
+      setStatus('Speichere…');
+      await apiPutPhases(sourceId, file.phases ?? []);
+      savedPhasesJson = phasesJson;
+    }
+
+    setStatus(`Gespeichert · ${file.items.length} items`);
   } catch (err) {
+    if (err instanceof ConflictError) {
+      // Someone edited the same item concurrently — reload authoritative state.
+      setStatus('Konflikt: extern geändert, lade neu…');
+      persisting = false;
+      persistAgain = false;
+      if (activeView) await renderTimeline(activeView);
+      return;
+    }
     console.error(err);
     setStatus(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    persisting = false;
+    if (persistAgain) {
+      persistAgain = false;
+      void persist();
+    }
   }
+}
+
+// Reload the active source from the server and re-render, preserving the
+// current viewport. Used when a remote change arrives via realtime.
+function scheduleRemoteRefresh(): void {
+  if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer = setTimeout(() => {
+    if (!activeView) return;
+    const win = timeline?.getWindow();
+    if (win) pendingWindow = { start: new Date(win.start), end: new Date(win.end) };
+    void renderTimeline(activeView);
+  }, 400);
+}
+
+// (Re)subscribe to realtime changes for the active editable DB source.
+function setupRealtime(): void {
+  if (realtimeUnsub) {
+    realtimeUnsub();
+    realtimeUnsub = null;
+  }
+  if (!isRealtimeEnabled() || !activeSourceId || !activeSourceEditable) return;
+  const sourceId = activeSourceId;
+  realtimeUnsub = subscribeTimeline(sourceId, (change) => {
+    if (activeSourceId !== sourceId) return; // stale event after a view switch
+    // Suppress our own echo: we already hold this exact version.
+    if (
+      change.table === 'timeline_items' &&
+      change.version != null &&
+      savedItemVersions.get(change.id) === change.version
+    ) {
+      return;
+    }
+    // Don't clobber a form the user is editing — just flag it.
+    if (change.table === 'timeline_items' && change.id === activeFormItemId) {
+      setStatus('Dieser Eintrag wurde extern geändert — beim Speichern wird neu geladen.');
+      return;
+    }
+    scheduleRemoteRefresh();
+  });
 }
 
 async function renderTimeline(view: View) {
@@ -234,6 +370,8 @@ async function renderTimeline(view: View) {
   activeSourceFile = sourceFile;
   activeSourceId = sourceId;
   activeSourceEditable = sourceEditable;
+  snapshotSaved();
+  setupRealtime();
 
   const filtered = filterBuildForDisplay(built!);
   itemsDs = new DataSet<TimelineItem>(filtered.items);
@@ -730,8 +868,9 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
         </select>
       </div>
       <div class="field full">
-        <label for="f-body">Body</label>
-        <textarea id="f-body" name="body" rows="6">${escapeHtml(item.body ?? '')}</textarea>
+        <label>Body</label>
+        <div data-role="body-editor"></div>
+        <textarea id="f-body" name="body" hidden>${escapeHtml(item.body ?? '')}</textarea>
       </div>
       <div class="field full deps-field">
         <label for="f-deps">Depends on <small>(Einträge verknüpfen)</small></label>
@@ -791,11 +930,27 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
     deleteItem(id);
   });
 
+  wireBodyEditor(form);
   wireJiraAutosuggest(form);
   wireDepsAutosuggest(form, id);
 
   els.detail.hidden = false;
   setTimeout(() => timeline?.redraw(), 0);
+}
+
+// Mounts the Markdown WYSIWYG editor over the hidden Body textarea. The editor
+// keeps the textarea's value in sync (Markdown) and dispatches a bubbling input
+// event so the form's existing live-edit listener persists the change.
+let bodyEditor: MarkdownEditor | null = null;
+function wireBodyEditor(form: HTMLFormElement): void {
+  const mount = form.querySelector<HTMLElement>('[data-role="body-editor"]');
+  const textarea = form.querySelector<HTMLTextAreaElement>('#f-body');
+  if (!mount || !textarea) return;
+  bodyEditor = createMarkdownEditor(textarea.value, () => {
+    textarea.value = bodyEditor?.getMarkdown() ?? '';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  mount.appendChild(bodyEditor.el);
 }
 
 // Renders the JIRA chip list (the linked-issue pills) into the form, with a
