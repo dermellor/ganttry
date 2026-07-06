@@ -71,18 +71,6 @@ export async function loadSource(id: string): Promise<LoadResult> {
   return { file: await staticRes.json(), editable: false };
 }
 
-export async function saveSourceToApi(id: string, file: TimelineFile): Promise<void> {
-  const res = await fetch(`/api/source/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(file, null, 2),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as { error?: string }).error || `Save failed (${res.status})`);
-  }
-}
-
 export function ensureItemIds(file: TimelineFile): boolean {
   let changed = false;
   const used = new Set(file.items.map((i) => i.id).filter(Boolean) as string[]);
