@@ -10,17 +10,56 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
+import crypto from 'node:crypto';
 import type { Config } from '@netlify/functions';
 import { getServiceClient } from '../../scripts/db/client.ts';
 import { handleTimelineApi, type ApiRequest } from '../../scripts/db/api.ts';
 
+const ACCESS_TTL = 12 * 3600; // must match mcp-oauth.ts
+
 function constantTimeEqual(a: string, b: string): boolean {
-  const enc = new TextEncoder();
-  const ab = enc.encode(a);
-  const bb = enc.encode(b);
-  let diff = ab.length ^ bb.length;
-  for (let i = 0; i < Math.max(ab.length, bb.length); i++) diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0);
-  return diff === 0;
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
+}
+
+// Verify an HMAC-signed token minted by mcp-oauth.ts (same AUTH_SECRET, same
+// b64url(payload).b64url(sig) format). Returns the payload or null.
+function verifySigned(token: string): Record<string, unknown> | null {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) return null;
+  const dot = token.indexOf('.');
+  if (dot <= 0) return null;
+  let payload: Buffer;
+  let sig: Buffer;
+  try {
+    payload = Buffer.from(token.slice(0, dot), 'base64url');
+    sig = Buffer.from(token.slice(dot + 1), 'base64url');
+  } catch {
+    return null;
+  }
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest();
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(sig, expected)) return null;
+  try {
+    return JSON.parse(payload.toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+// Resolve the caller: a valid per-user OAuth access token → their email; the
+// shared MCP_API_TOKEN → "mcp" (break-glass). Null if neither.
+function authenticate(req: Request): string | null {
+  const presented = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
+  if (!presented) return null;
+  const shared = process.env.MCP_API_TOKEN;
+  if (shared && constantTimeEqual(presented, shared)) return 'mcp';
+  const claims = verifySigned(presented);
+  if (claims && claims.typ === 'access' && typeof claims.email === 'string') {
+    if (typeof claims.iat === 'number' && Date.now() / 1000 - claims.iat > ACCESS_TTL) return null;
+    return claims.email;
+  }
+  return null;
 }
 
 // Build a fresh server per request (stateless mode) so the function stays
@@ -84,18 +123,21 @@ function buildServer(updatedBy: string): McpServer {
 }
 
 export default async function handler(req: Request): Promise<Response> {
-  // Stage 1 gate: shared bearer token. Replaced by per-user OAuth in a later stage.
-  const configured = process.env.MCP_API_TOKEN;
-  const auth = req.headers.get('authorization') ?? '';
-  const presented = auth.replace(/^Bearer\s+/i, '');
-  if (!configured || !presented || !constantTimeEqual(presented, configured)) {
+  const identity = authenticate(req);
+  if (!identity) {
+    // Point the MCP client at our Protected Resource Metadata so it starts the
+    // OAuth flow (per-user Google login).
+    const origin = new URL(req.url).origin;
     return new Response(JSON.stringify({ error: 'unauthorized' }), {
       status: 401,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'WWW-Authenticate': `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+      },
     });
   }
 
-  const server = buildServer('mcp');
+  const server = buildServer(identity); // updated_by = user email (or "mcp")
   const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true }); // stateless
   await server.connect(transport);
   return transport.handleRequest(req);

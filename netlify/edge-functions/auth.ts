@@ -75,9 +75,17 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
 
 export const config: Config = {
   path: '/*',
-  // /mcp (and, later, the MCP-OAuth endpoints) carry their own auth — keep the
-  // Google session gate off them so the remote MCP client isn't redirected.
-  excludedPath: ['/favicon.ico', '/robots.txt', '/mcp'],
+  // /mcp and the MCP-OAuth endpoints carry their own auth — keep the Google
+  // session gate off them so the remote MCP client isn't redirected.
+  excludedPath: [
+    '/favicon.ico',
+    '/robots.txt',
+    '/mcp',
+    '/mcp-oauth/*',
+    '/.well-known/oauth-protected-resource',
+    '/.well-known/oauth-protected-resource/mcp',
+    '/.well-known/oauth-authorization-server',
+  ],
 };
 
 // ---------- OAuth flow ----------
