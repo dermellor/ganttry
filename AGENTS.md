@@ -66,9 +66,24 @@ File shape:
       "nestedGroups": ["comm-product", "comm-tech"],  // optional: children rendered indented under parent, collapse-/expandierbar
       "showNested": true                              // optional, default true
     }
-  ]                                      // optional, derived from items if missing
+  ],                                     // optional, derived from items if missing
+  "phases": [                            // optional: labeled ribbon across the top
+    {
+      "id": "ph-pre",                    // optional, but needed to edit reliably
+      "label": "Pre-Launch",
+      "start": "2026-06-28",
+      "end": "2026-09-15",               // optional, OR
+      "duration": "6w",                  // optional (same format as items)
+      "color": "#64748B",                // optional
+      "icon": "launch"                   // optional: semantic icon key (see "Item icons")
+    }
+  ]
 }
 ```
+
+A phase needs a `label`, a `start`, and an extent (`end` or `duration`) to
+render; phases missing any of these are skipped. They show as a labeled ribbon
+pinned to the top plus a faint full-height tint behind the items.
 
 Items without `start` or `content` are skipped. Two reference files live in `data/`:
 
@@ -326,6 +341,7 @@ When the active view points to a `data/*.json` file, the viewer becomes editable
 - **Double-click** on empty timeline space to add a new item (defaults: 1-week duration, current group, content "Neuer Eintrag"). Form opens for further edits.
 - **Click** an item to open the edit form in the side panel: title, start/end, duration, group, type, body (Markdown), dependencies, owner, plus a free-form metadata JSON box. Save writes back; Delete removes the item.
 - **Depends on** is a title-autosuggest field: type to search the current timeline's items by title (or id), pick to link a dependency (rendered as a removable chip). Stored as `metadata.dependsOn` IDs — the chips just show the target's title.
+- **Phases** render as a ribbon along the top. Drag a segment to move it, drag either edge to resize (snaps to whole days, min. 1 day), and click it (without dragging) to open the phase form in the side panel: title, start/end, duration, icon, colour. Persists on drop / Save; Delete removes the phase.
 
 Persistence path: viewer → `PUT /api/source/<id>` → middleware writes `data/<id>.json` → watcher copies to `public/data/sources/<id>.json`. The middleware lives in `vite.config.ts`; only available under `npm run dev`/`npm run dev:notes`. Builds (`npm run build`) and exported HTML have no edit endpoint.
 
