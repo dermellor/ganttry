@@ -7,8 +7,6 @@
     "build:data": "tsx scripts/build-data.ts",
     "watch:data": "tsx scripts/build-data.ts --watch",
     "watch:data:notes": "tsx scripts/build-data.ts --watch --watch-notes",
-    "sheets:auth": "tsx scripts/sheets/auth.ts",
-    "sheets:sync": "tsx scripts/build-data.ts",
     "db:import": "tsx scripts/db/import.ts",
     "dev": "bash scripts/dev-prep.sh && npm run build:data && concurrently -n data,vite -c yellow,cyan \"npm run watch:data\" \"vite\"",
     "dev:notes": "bash scripts/dev-prep.sh && npm run build:data && concurrently -n data,vite -c yellow,cyan \"npm run watch:data:notes\" \"vite\"",
@@ -20,15 +18,15 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@supabase/supabase-js": "^2.110.0",
-    "google-auth-library": "^10.6.2",
-    "googleapis": "^171.4.0",
     "marked": "^14.1.0",
+    "turndown": "^7.2.4",
     "vis-data": "^7.1.9",
     "vis-timeline": "^7.7.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/turndown": "^5.0.6",
     "chokidar": "^3.6.0",
     "concurrently": "^9.0.0",
     "gray-matter": "^4.0.3",

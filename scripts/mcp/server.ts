@@ -22,11 +22,8 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type {
-  TimelineFile,
-  TimelineFileItem,
-  TimelineGroupDecl,
-} from '../sheets/transform.js';
+import type { TimelineFile, TimelineFileItem } from '../../src/types.js';
+import type { TimelineGroupDecl } from '../db/timeline-repo.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..', '..');

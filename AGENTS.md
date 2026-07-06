@@ -109,7 +109,7 @@ the bar. The value is a **semantic key** (what the icon means, not a concrete
 SVG), so the same data works across every brand: each brand resolves the key to
 its own icon set via a `--icon-<key>` CSS custom property. The stored `content`
 stays clean (the glyph is prepended at render time via the vis-timeline
-`template`), so it round-trips through the editor, Sheets, and exports unchanged.
+`template`), so it round-trips through the editor, the DB, and exports unchanged.
 
 Curated key set (defined once in [`src/icons.ts`](src/icons.ts)):
 
@@ -131,156 +131,127 @@ Acme neo-icons, defined in the `:root` block of
 - **Add a new semantic key:** add it to `IconKey` + `TIMELINE_ICONS` in
   `src/icons.ts` (label shown in the editor dropdown) and add a matching
   `--icon-<key>` to the `:root` set in `brands.css`. It then appears in the edit
-  form, the Sheets `icon` column, and the MCP `add_item`/`update_item` tools.
+  form, the `timeline_items.icon` column, and the MCP `add_item`/`update_item` tools.
 
 Icons render on the live viewer, exported HTML, and the read-only Netlify deploy.
 
-## Google Sheets als Datenquelle
+## Supabase als Datenquelle
 
-Sheets werden bidirektional synchronisiert (Read + Write), aber nur **lokal** auf
-deiner Maschine. Die Live-Site auf Netlify kennt das Sheet nicht und serviert
-nur das committete JSON-Cache.
+Editierbare Timelines liegen in **Supabase (Postgres)**, nicht mehr in Google
+Sheets. Geschrieben wird **item-genau mit optimistischem Locking** (`version`-
+Spalte pro Item): parallele Edits an verschiedenen Items überschreiben sich nicht
+mehr, und ein veralteter Schreibversuch bekommt `409` statt still zu verlieren.
+
+Datei-basierte Timelines (`data/*.json`, z.B. die Beispiele) bleiben **read-only
+statische Quellen** — sie sind *nicht* in der DB. Nur DB-Timelines sind editierbar.
+
+Lokale Middleware (`vite.config.ts`) und Netlify-Edge-Function
+(`netlify/edge-functions/timelines-api.ts`) teilen sich denselben Dispatcher
+(`scripts/db/api.ts`) und Data-Access-Layer (`scripts/db/timeline-repo.ts`) —
+eine Implementierung der Storage- und Locking-Semantik für beide Runtimes.
+
+### Schema
+
+Drei Tabellen (Migrationen in `supabase/migrations/`):
+
+- `timelines` — id, name, description, group_by, `phases` (jsonb).
+- `timeline_items` — Spalten für start/end/duration/content/group/type/title/
+  body/icon/class_name, `metadata` (jsonb: `dependsOn`, `owner`, `jira`, freie
+  Extras), `version` (Trigger-Bump bei UPDATE), `sort`, `updated_by`.
+- `timeline_groups` — id, content, nested_groups, show_nested, sort.
+
+RLS ist an; Server-Zugriff läuft über den Service-Key (bypassed RLS). Anon-
+SELECT-Policies existieren nur für die Realtime-Subscription (siehe unten).
+
+Migrationen anwenden (nutzt den gespeicherten `supabase login`, kein DB-Passwort):
+
+```bash
+supabase link --project-ref <ref>
+supabase db query --linked -f supabase/migrations/<datei>.sql
+```
 
 ### Setup (einmalig)
 
-1. **OAuth-Client:** entweder den existierenden Web-Client unter
-   `~/Development/client_secret_*.json` wiederverwenden oder einen neuen Desktop-
-   Client in der Google Cloud Console anlegen. Datei nach
-   `.scripts/client_secret.json` legen (oder Pfad via
-   `TIMELINES_GOOGLE_CLIENT_SECRET=...` setzen). `.scripts/` ist gitignored.
-2. **Sheets API aktivieren:** im GCP-Projekt unter „APIs & Services → Library"
-   die Google Sheets API einschalten.
-3. **Authorisieren:**
+Credentials in `~/_AGENTS/.env` (oder `.env.local`), gelesen via
+`scripts/db/client.ts`:
 
-   ```bash
-   npm run sheets:auth
-   ```
+| Var                             | Bedeutung                                              |
+| ------------------------------- | ------------------------------------------------------ |
+| `TIMELINES_SUPABASE_URL`        | `https://<ref>.supabase.co`                            |
+| `TIMELINES_SUPABASE_SERVICE_KEY`| Service-Role-Key (Server-seitig, nie in den Client)    |
 
-   Öffnet den Browser, du gewährst Zugriff, das Token landet in
-   `.scripts/google-token.json` (gitignored, refresht sich automatisch).
+### Import / Migration
 
-### Sheet anlegen (feste Konventionen)
+`scripts/db/import.ts` lädt die konfigurierten Timelines aus ihren
+`data/<id>.json` in die DB (`replaceTimeline`). Wiederholbar.
 
-Im Sheet braucht es zwei Tabs (Namen konfigurierbar, Default `Items` und
-`Groups`). Erste Zeile = Header, Reihenfolge der Spalten egal, fehlende Spalten
-sind ok außer den Pflichtfeldern.
-
-**Tab `Items`** (Pflichtspalten fett):
-
-| Spalte        | Bedeutung                                                |
-| ------------- | -------------------------------------------------------- |
-| `id`          | Item-ID (für `dependsOn`-Referenzen)                     |
-| **`start`**   | `YYYY-MM-DD`                                             |
-| `end`         | `YYYY-MM-DD` (alternativ zu `duration`)                  |
-| `duration`    | `7d`, `2w`, `90m`, ISO `P7D` …                           |
-| **`content`** | Item-Titel                                               |
-| `group`       | Group-ID (matched gegen Groups-Tab oder freier String)   |
-| `type`        | `point` \| `range` \| `background` \| `box`              |
-| `title`       | Tooltip-Text                                             |
-| `body`        | Markdown für Detail-Panel                                |
-| `dependsOn`   | komma-getrennte IDs                                      |
-| `owner`       | Owner-Name (landet in `metadata.owner`)                  |
-| `className`   | optional CSS-Klasse                                      |
-| `icon`        | semantischer Icon-Key (siehe „Item icons")              |
-| `metadata`    | freies JSON-Objekt für Extra-Felder                      |
-
-**Tab `Groups`** (optional):
-
-| Spalte         | Bedeutung                                            |
-| -------------- | ---------------------------------------------------- |
-| `id`           | Group-ID (Pflicht)                                   |
-| `content`      | Anzeigename                                          |
-| `nestedGroups` | komma-getrennte Child-Group-IDs                      |
-| `showNested`   | `true` / `false`                                     |
-
-### Konfig-Eintrag
-
-In `timelines.config.json`:
-
-```jsonc
-{
-  "sheets": [
-    {
-      "id": "team-roadmap",
-      "name": "Team Roadmap",
-      "spreadsheetId": "1AbC...xyz",
-      "itemsSheet": "Items",        // optional, default "Items"
-      "groupsSheet": "Groups",      // optional, default "Groups"
-      "groupBy": "group"            // optional
-    }
-  ]
-}
+```bash
+npm run db:import                         # alle
+npm run db:import -- acme/mein-plan     # gezielt
 ```
-
-`id` wird zu `src:<id>` als View-ID. Gepullt wird beim Build und (im Watch-
-Modus) alle 60 s. Polling-Intervall via `TIMELINES_SHEETS_POLL_SECONDS=120`
-änderbar (min 15 s).
 
 ### Sync-Verhalten
 
-- **Pull:** `npm run dev` (oder `npm run build`) zieht jedes konfigurierte
-  Sheet und schreibt nach `data/<id>.json`. Die Datei sollte committed werden,
-  damit Netlify-Builds dieselben Daten haben.
-- **Push:** Edits in der UI (Drag, Form, Add, Delete) gehen via PUT-Endpoint
-  → schreibt JSON lokal **und** überschreibt das Sheet (Items + Groups Tabs
-  werden geleert und neu geschrieben — Spalten außerhalb der Konvention gehen
-  verloren, frei strukturierte Extras gehören in die `metadata`-Spalte).
-- **Konflikte:** Last-write-wins. Wenn jemand das Sheet extern ändert während
-  du die UI offen hast, überschreibt der nächste Edit-Save deine Änderung.
-  Polling lädt externe Änderungen nach max. 60 s in den lokalen Cache, aber
-  nicht in eine offene Edit-Session.
-- **Production (Netlify):** Per-User Google OAuth mit Sheets-Scope.
-  Jeder Kollege autorisiert einmal (Google-Login enthält Sheets-Consent),
-  danach liest/schreibt die Edge Function mit dem jeweiligen User-Token.
-  Edits werden mit dem persönlichen Google-Account dem Sheet zugeordnet
-  (sichtbar in der Versionshistorie). Fallback auf statisches
-  `data/<id>.json` wenn `SHEETS_ENABLED` nicht gesetzt ist.
+- **Read:** Client lädt `GET /api/source/<id>` → DB. Ist die Timeline nicht in
+  der DB (datei-basiert) → `404` → der Client fällt auf das statische
+  `/data/sources/<id>.json` zurück (`editable:false`).
+- **Write:** UI-Edits (Drag, Form, Add, Delete) schicken **item-genaue** Calls:
+  `POST/PATCH/DELETE /api/source/<id>/item[/<itemId>]`, `PUT …/phases`. `PATCH`
+  trägt die bekannte `version` im `If-Match`-Header; passt sie nicht mehr → `409`
+  → der Client lädt das Item neu.
+- **Statischer Cache:** `npm run build:data` (Teil von `dev`/`build`) zieht alle
+  DB-Timelines und schreibt `data/<id>.json`. Diese Dateien committen — sie sind
+  der read-only Fallback für die Netlify-Site, falls die DB nicht erreichbar ist.
+- **Live-Kollaboration:** siehe „Realtime" — ersetzt das frühere 60-s-Polling.
 
-### Production-Setup (Netlify + Sheets)
+### Production-Setup (Netlify)
 
-Zusätzlich zu den bestehenden Auth-Env-Vars:
+Zusätzlich zu den Auth-Env-Vars:
 
-| Var               | Where     | Notes                                                          |
-| ----------------- | --------- | -------------------------------------------------------------- |
-| `SHEETS_ENABLED`  | dashboard | `true` aktiviert Sheets-Scope im OAuth und die API-Proxy-Funktion |
-| `SHEETS_CONFIG`   | dashboard | JSON-Array der Sheet-Einträge (gleiche Struktur wie `timelines.config.json → sheets`, nur als Env-Var) |
+| Var                              | Where              | Notes                                          |
+| -------------------------------- | ------------------ | ---------------------------------------------- |
+| `TIMELINES_SUPABASE_URL`         | dashboard          | aktiviert die `timelines-api` Edge Function     |
+| `TIMELINES_SUPABASE_SERVICE_KEY` | dashboard (secret) | Service-Role-Key für den serverseitigen Zugriff |
 
-Beispiel `SHEETS_CONFIG`:
-```json
-[{"id":"team-roadmap","spreadsheetId":"1AbC...xyz","name":"Team Roadmap"}]
-```
+Die Edge Function gated per Session-Cookie (bzw. MCP-Token) und attribuiert
+Edits über `updated_by` an die E-Mail des eingeloggten Users. Sind die Vars
+nicht gesetzt, fällt jede Source auf die statische Datei zurück (read-only).
 
-Die Edge Function `sheets-api` liest `SHEETS_CONFIG`, matched die `id` gegen
-den Request-Pfad (`/api/source/<id>`), und nutzt das Google-Token des
-eingeloggten Users für die Sheets-API. Nicht-Sheet-Sources fallen weiter auf
-die statische Datei zurück (read-only).
+### Realtime (Live-Kollaboration)
 
-Das Google-Sheet selbst muss mit allen Kollegen geteilt sein (Editor-Recht),
-damit deren persönliche Tokens darauf zugreifen können.
+Fremde Edits erscheinen live ohne Reload — Supabase Realtime schiebt Zeilen-
+änderungen per WebSocket, der Client (`src/realtime.ts`) patcht die Ansicht.
 
-### Manueller Sync
+**Opt-in pro Environment** über Client-Env-Vars (Vite, build-time):
 
-```bash
-npm run sheets:sync   # einmaliger Pull aller konfigurierten Sheets
-```
+| Var                       | Bedeutung                                            |
+| ------------------------- | ---------------------------------------------------- |
+| `VITE_SUPABASE_URL`       | Supabase-URL (in den Client-Bundle eingebettet)      |
+| `VITE_SUPABASE_ANON_KEY`  | anon-Key — **public im Browser**                     |
+
+Achtung: der anon-Key ist im ausgelieferten Bundle sichtbar; mit den
+anon-SELECT-Policies sind Timeline-*Reads* damit für jeden lesbar, der den Key
+hat. Daher bewusst opt-in — auf der gated Netlify-Site nur setzen, wenn das
+akzeptabel ist. Writes bleiben serverseitig (Service-Key). Ohne diese Vars
+funktioniert alles weiter, fremde Änderungen erscheinen dann erst beim Reload.
 
 ## MCP server (Claude Code)
 
 Ein stdio-MCP-Server (`scripts/mcp/server.ts`) erlaubt Claude Code, die
-Sheets-basierten Timelines auszulesen und zu manipulieren. Er arbeitet **immer
+DB-basierten Timelines auszulesen und zu manipulieren. Er arbeitet **immer
 gegen die Live-Site** (`TIMELINES_LIVE_URL`, Default
 `https://example-timelines.netlify.app`): jeder Read/Write geht durch
-`/api/source(s)` → `sheets-api` Edge Function → Google Sheet. Damit bleibt das
-Sheet Single Source of Truth und Änderungen sind sofort live.
+`/api/source(s)` → `timelines-api` Edge Function → Supabase. Damit bleibt die
+DB Single Source of Truth und Änderungen sind sofort live.
 
-**Nur Sheets-basierte Timelines** sind exponiert. Datei-basierte Sources sind
+**Nur DB-basierte Timelines** sind exponiert. Datei-basierte Sources sind
 auf der Live-Site read-only und daher nicht manipulierbar.
 
 ### Tools
 
 | Tool                | Wirkung                                                        |
 | ------------------- | ------------------------------------------------------------- |
-| `list_timelines`    | listet alle Sheet-Timelines (id, name, description)           |
+| `list_timelines`    | listet alle DB-Timelines (id, name, description)              |
 | `get_timeline`      | komplette Timeline (items + groups) per id                    |
 | `add_item`          | Item anhängen (Pflicht: `start`, `content`)                   |
 | `update_item`       | Item patchen (nur übergebene Felder; `metadata` wird gemergt) |
@@ -291,17 +262,16 @@ auf der Live-Site read-only und daher nicht manipulierbar.
 | `replace_timeline`  | ganze Timeline ersetzen (Bulk)                               |
 
 Die granularen Item-/Group-Tools laufen read-modify-write: der Server holt die
-Timeline, mutiert im Speicher und schreibt sie per PUT zurück (analog zum
-Web-Editor). `dependsOn` und `owner` liegen unter `metadata`.
+Timeline, mutiert im Speicher und schreibt sie per PUT (Bulk-Replace) zurück.
+`dependsOn` und `owner` liegen unter `metadata`.
 
 ### Auth: Service-Token-Bypass
 
 Der Server hängt an jeden Request den Header `X-MCP-Token: <MCP_API_TOKEN>`.
-Die `auth`-Edge-Function lässt Requests mit gültigem Token ohne Google-Login
-durch (konstant-zeit-Vergleich). Serverseitig holt sich `sheets-api` dann ein
-Google-Access-Token aus `SHEETS_SERVICE_REFRESH_TOKEN` (statt aus der
-User-Session), um auf das Sheet zuzugreifen — Sheet-Edits werden also dem
-Account dieses Refresh-Tokens zugeschrieben.
+Die `timelines-api`-Edge-Function lässt Requests mit gültigem Token ohne
+Google-Login durch (konstant-zeit-Vergleich) und greift serverseitig mit dem
+Supabase-Service-Key auf die DB zu. MCP-Edits werden über `updated_by` als
+`mcp` attribuiert.
 
 ### Konfiguration
 
@@ -322,20 +292,20 @@ claude mcp add -s user timelines -- \
 
 (oder direkt als `mcpServers.timelines`-Eintrag in `~/.claude.json`.)
 
-### Netlify-Env (zusätzlich zu den Sheets-Vars)
+### Netlify-Env (zusätzlich zu den Supabase-Vars)
 
-| Var                            | Where              | Notes                                                                 |
-| ------------------------------ | ------------------ | --------------------------------------------------------------------- |
-| `MCP_API_TOKEN`                | dashboard (secret) | aktiviert den Bypass; identisch mit dem lokalen Server-Token          |
-| `SHEETS_SERVICE_REFRESH_TOKEN` | dashboard (secret) | Google-Refresh-Token für den headless Sheet-Zugriff (Service-Identity)|
+| Var             | Where              | Notes                                                        |
+| --------------- | ------------------ | ------------------------------------------------------------ |
+| `MCP_API_TOKEN` | dashboard (secret) | aktiviert den Bypass; identisch mit dem lokalen Server-Token |
 
-Voraussetzung: `SHEETS_ENABLED=true` **und** `AUTH_REQUIRED=true` müssen gesetzt
-sein (sonst greift `sheets-api` nicht). Ist `MCP_API_TOKEN` nicht gesetzt, ist
-der Bypass inaktiv und der Server bleibt für Menschen per Google-Login gated.
+Voraussetzung: `TIMELINES_SUPABASE_URL` / `TIMELINES_SUPABASE_SERVICE_KEY` **und**
+`AUTH_REQUIRED=true` müssen gesetzt sein (sonst greift `timelines-api` nicht). Ist
+`MCP_API_TOKEN` nicht gesetzt, ist der Bypass inaktiv und der Server bleibt für
+Menschen per Google-Login gated.
 
 ## Editing JSON timelines
 
-When the active view points to a `data/*.json` file, the viewer becomes editable:
+When the active view points to a **DB-backed** source (the timeline exists in Supabase, so `GET /api/source/<id>` returns it), the viewer is editable. File-only sources load read-only.
 
 - **Drag** an item left/right to move start, drag the right edge to resize, drag vertically to switch group. Persists on drop.
 - **Double-click** on empty timeline space to add a new item (defaults: 1-week duration, current group, content "Neuer Eintrag"). Form opens for further edits.
@@ -343,7 +313,7 @@ When the active view points to a `data/*.json` file, the viewer becomes editable
 - **Depends on** is a title-autosuggest field: type to search the current timeline's items by title (or id), pick to link a dependency (rendered as a removable chip). Stored as `metadata.dependsOn` IDs — the chips just show the target's title.
 - **Phases** render as a ribbon along the top. Drag a segment to move it, drag either edge to resize (snaps to whole days, min. 1 day), and click it (without dragging) to open the phase form in the side panel: title, start/end, duration, icon, colour. Persists on drop / Save; Delete removes the phase.
 
-Persistence path: viewer → `PUT /api/source/<id>` → middleware writes `data/<id>.json` → watcher copies to `public/data/sources/<id>.json`. The middleware lives in `vite.config.ts`; only available under `npm run dev`/`npm run dev:notes`. Builds (`npm run build`) and exported HTML have no edit endpoint.
+Persistence path: viewer → item-level calls (`POST/PATCH/DELETE /api/source/<id>/item`, `PUT …/phases`) → middleware (`vite.config.ts`) → Supabase via `scripts/db/api.ts`. `PATCH` carries the item `version` in `If-Match`; a stale version returns `409` and the client reloads that item. Only DB-backed sources are editable; file-based sources return `404` from the API and load read-only from the static `/data/sources/<id>.json`. Builds (`npm run build`) and exported HTML have no edit endpoint. The committed `data/<id>.json` caches are refreshed from the DB by `npm run build:data`.
 
 ## JIRA linking
 
@@ -355,8 +325,8 @@ and read-only Netlify) shows them as clickable `…/browse/<KEY>` links.
 
 Links are stored per item in `metadata.jira` as `[{ "key": "PROJ-123",
 "summary": "…" }]` — the summary is cached so links stay readable without a live
-JIRA call. Because it lives in `metadata`, it round-trips through Google Sheets
-(the free-form `metadata` column) unchanged.
+JIRA call. Because it lives in `metadata`, it round-trips through the
+`timeline_items.metadata` jsonb column unchanged.
 
 **How the autosuggest is served:**
 
@@ -452,7 +422,7 @@ Two build-time env vars control how the brand selector behaves:
 
 ## Deploy: Netlify (Acme-internal instance)
 
-A stripped-down, read-only deploy lives on Netlify for Acme colleagues. All
+A stripped-down deploy lives on Netlify for Acme colleagues. All
 config-as-code lives in [`netlify.toml`](netlify.toml); secrets go into the
 Netlify dashboard.
 
@@ -461,9 +431,10 @@ Netlify dashboard.
 - Sources: `data/acme/*.json` only (`TIMELINES_SOURCES_SUBDIR=Acme`).
 - Notes scan disabled (`TIMELINES_STATIC_ONLY=true`); no Markdown-driven views.
 - Brand locked to Acme (`VITE_BRAND_MODE=fixed`, `VITE_DEFAULT_BRAND=Acme`).
-- Editor is read-only — `loadSource()` falls back from `/api/source/<id>` to
-  the static `/data/sources/<id>.json`, and `isEditableView()` returns false
-  when the API isn't reachable.
+- **Editing** is live when the Supabase env vars are set (see „Supabase als
+  Datenquelle → Production-Setup"): the `timelines-api` edge function serves
+  DB-backed Acme timelines editable. Without those vars, `loadSource()` falls
+  back to the static `/data/sources/<id>.json` and the view is read-only.
 
 To add a Acme-visible timeline locally: drop the JSON into `data/acme/`,
 commit, push.
