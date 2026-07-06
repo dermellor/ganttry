@@ -14,6 +14,7 @@ import {
 import { DependencyArrows } from './arrows';
 import { PhaseBand, type PhaseEdit } from './phaseBand';
 import { TIMELINE_ICONS, iconSpanHtml } from './icons';
+import { createMarkdownEditor, type MarkdownEditor } from './wysiwyg';
 import {
   ensureItemIds,
   findItemIndex,
@@ -40,6 +41,7 @@ import {
   searchJira,
   type JiraIssue,
 } from './jira';
+import { isRealtimeEnabled, subscribeTimeline } from './realtime';
 
 const els = {
   timeline: document.getElementById('timeline') as HTMLDivElement,
@@ -89,6 +91,8 @@ let formJiraIssues: JiraIssue[] = [];
 // chips; read back in applyItemForm.
 let formDependsOn: string[] = [];
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let realtimeUnsub: (() => void) | null = null;
+let realtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 // Debounce for reactive form edits: coalesces rapid keystrokes into one
 // model update + live rebuild (see scheduleLiveEdit).
 let liveEditTimer: ReturnType<typeof setTimeout> | null = null;
@@ -296,6 +300,45 @@ async function persist(): Promise<void> {
   }
 }
 
+// Reload the active source from the server and re-render, preserving the
+// current viewport. Used when a remote change arrives via realtime.
+function scheduleRemoteRefresh(): void {
+  if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer = setTimeout(() => {
+    if (!activeView) return;
+    const win = timeline?.getWindow();
+    if (win) pendingWindow = { start: new Date(win.start), end: new Date(win.end) };
+    void renderTimeline(activeView);
+  }, 400);
+}
+
+// (Re)subscribe to realtime changes for the active editable DB source.
+function setupRealtime(): void {
+  if (realtimeUnsub) {
+    realtimeUnsub();
+    realtimeUnsub = null;
+  }
+  if (!isRealtimeEnabled() || !activeSourceId || !activeSourceEditable) return;
+  const sourceId = activeSourceId;
+  realtimeUnsub = subscribeTimeline(sourceId, (change) => {
+    if (activeSourceId !== sourceId) return; // stale event after a view switch
+    // Suppress our own echo: we already hold this exact version.
+    if (
+      change.table === 'timeline_items' &&
+      change.version != null &&
+      savedItemVersions.get(change.id) === change.version
+    ) {
+      return;
+    }
+    // Don't clobber a form the user is editing — just flag it.
+    if (change.table === 'timeline_items' && change.id === activeFormItemId) {
+      setStatus('Dieser Eintrag wurde extern geändert — beim Speichern wird neu geladen.');
+      return;
+    }
+    scheduleRemoteRefresh();
+  });
+}
+
 async function renderTimeline(view: View) {
   if (!config) return;
 
@@ -328,6 +371,7 @@ async function renderTimeline(view: View) {
   activeSourceId = sourceId;
   activeSourceEditable = sourceEditable;
   snapshotSaved();
+  setupRealtime();
 
   const filtered = filterBuildForDisplay(built!);
   itemsDs = new DataSet<TimelineItem>(filtered.items);
@@ -824,8 +868,9 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
         </select>
       </div>
       <div class="field full">
-        <label for="f-body">Body</label>
-        <textarea id="f-body" name="body" rows="6">${escapeHtml(item.body ?? '')}</textarea>
+        <label>Body</label>
+        <div data-role="body-editor"></div>
+        <textarea id="f-body" name="body" hidden>${escapeHtml(item.body ?? '')}</textarea>
       </div>
       <div class="field full deps-field">
         <label for="f-deps">Depends on <small>(Einträge verknüpfen)</small></label>
@@ -885,11 +930,27 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
     deleteItem(id);
   });
 
+  wireBodyEditor(form);
   wireJiraAutosuggest(form);
   wireDepsAutosuggest(form, id);
 
   els.detail.hidden = false;
   setTimeout(() => timeline?.redraw(), 0);
+}
+
+// Mounts the Markdown WYSIWYG editor over the hidden Body textarea. The editor
+// keeps the textarea's value in sync (Markdown) and dispatches a bubbling input
+// event so the form's existing live-edit listener persists the change.
+let bodyEditor: MarkdownEditor | null = null;
+function wireBodyEditor(form: HTMLFormElement): void {
+  const mount = form.querySelector<HTMLElement>('[data-role="body-editor"]');
+  const textarea = form.querySelector<HTMLTextAreaElement>('#f-body');
+  if (!mount || !textarea) return;
+  bodyEditor = createMarkdownEditor(textarea.value, () => {
+    textarea.value = bodyEditor?.getMarkdown() ?? '';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  mount.appendChild(bodyEditor.el);
 }
 
 // Renders the JIRA chip list (the linked-issue pills) into the form, with a
