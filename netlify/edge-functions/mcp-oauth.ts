@@ -25,6 +25,7 @@ const GOOGLE_USERINFO = 'https://www.googleapis.com/oauth2/v3/userinfo';
 
 const CODE_TTL = 300; // auth code: 5 min
 const ACCESS_TTL = 12 * 3600; // access token: 12 h
+const REFRESH_TTL = 30 * 24 * 3600; // refresh token: 30 d (slides with use)
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -64,7 +65,7 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
       token_endpoint: `${origin}/mcp-oauth/token`,
       registration_endpoint: `${origin}/mcp-oauth/register`,
       response_types_supported: ['code'],
-      grant_types_supported: ['authorization_code'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['none'],
       scopes_supported: ['openid', 'email', 'profile'],
@@ -167,7 +168,25 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
   // ---- token endpoint -----------------------------------------------------
   if (path === '/mcp-oauth/token' && req.method === 'POST') {
     const form = new URLSearchParams(await req.text());
-    if (form.get('grant_type') !== 'authorization_code') return json({ error: 'unsupported_grant_type' }, 400);
+    const grant = form.get('grant_type');
+
+    // Silent renewal: exchange a refresh token for a fresh access token. The
+    // refresh token is re-issued (sliding 30-day window), so an actively-used
+    // login never expires.
+    if (grant === 'refresh_token') {
+      const rt = (await verify(form.get('refresh_token') ?? '')) as
+        | { typ?: string; email: string; resource?: string; iat: number }
+        | null;
+      if (!rt || rt.typ !== 'refresh') return json({ error: 'invalid_grant' }, 400);
+      if (nowSec() - rt.iat > REFRESH_TTL) {
+        return json({ error: 'invalid_grant', error_description: 'refresh token expired' }, 400);
+      }
+      const access_token = await sign({ typ: 'access', email: rt.email, resource: rt.resource, iat: nowSec() });
+      const refresh_token = await sign({ typ: 'refresh', email: rt.email, resource: rt.resource, iat: nowSec() });
+      return json({ access_token, token_type: 'Bearer', expires_in: ACCESS_TTL, refresh_token });
+    }
+
+    if (grant !== 'authorization_code') return json({ error: 'unsupported_grant_type' }, 400);
     const c = (await verify(form.get('code') ?? '')) as
       | { typ?: string; email: string; redirect_uri: string; code_challenge: string; resource: string; iat: number }
       | null;
@@ -181,7 +200,8 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
       return json({ error: 'invalid_grant', error_description: 'PKCE verification failed' }, 400);
     }
     const access_token = await sign({ typ: 'access', email: c.email, resource: c.resource, iat: nowSec() });
-    return json({ access_token, token_type: 'Bearer', expires_in: ACCESS_TTL });
+    const refresh_token = await sign({ typ: 'refresh', email: c.email, resource: c.resource, iat: nowSec() });
+    return json({ access_token, token_type: 'Bearer', expires_in: ACCESS_TTL, refresh_token });
   }
 
   return; // not our route
