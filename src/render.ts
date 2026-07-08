@@ -260,7 +260,8 @@ export async function renderTimeline(view: View) {
       lastH = h;
       timeline?.setOptions({ height: `${h}px` });
     }
-    // width may have changed too (e.g. detail panel opening) → re-evaluate
+    // Panel open/close keeps px/day constant synchronously via withPreservedZoom;
+    // here we only re-evaluate tag-density after any width change.
     updateTagDensity();
   });
   ro.observe(els.timeline);
