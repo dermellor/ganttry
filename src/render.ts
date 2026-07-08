@@ -206,8 +206,14 @@ export async function renderTimeline(view: View) {
   const initialStart = state.pendingWindow?.start ?? new Date(focusMin - padding);
   const initialEnd = state.pendingWindow?.end ?? new Date(focusMax + padding);
 
-  // reserve room at the top for the phase ribbon so items sit below it
-  const axisMargin = built.phases.length > 0 ? 34 : 8;
+  // Reserve room at the top for the phase ribbon. `margin.axis` alone doesn't
+  // do it: it only offsets the first *item*, so an empty parent/nested group
+  // rendered as the first row collapses to a header that sits exactly behind
+  // the band. Instead we tag the container and let CSS pad the whole group set
+  // (labels, items, and phase tints) down by the band height — see
+  // `.timeline.has-phase-band` in styles/timeline.css.
+  const axisMargin = 8;
+  els.timeline.classList.toggle('has-phase-band', built.phases.length > 0);
 
   timeline = new Timeline(els.timeline, itemsDs, useGroups ? groupsDs : undefined, {
     stack: true,

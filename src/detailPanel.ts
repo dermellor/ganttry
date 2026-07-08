@@ -4,7 +4,7 @@
 import { marked } from 'marked';
 import { escapeHtml, type DetailNote } from './buildItems';
 import { jiraLinksHtml, readJiraIssues } from './jira';
-import { state, els, isEditableView } from './state';
+import { state, els, isEditableView, withPreservedZoom } from './state';
 import { cancelThrottledPersist } from './persistence';
 import { showItemForm } from './itemForm';
 
@@ -49,7 +49,9 @@ export function showDetail(note: DetailNote) {
   els.detailBody.innerHTML = bodyHtml;
   els.detailBody.classList.remove('detail-form');
 
-  els.detail.hidden = false;
+  withPreservedZoom(() => {
+    els.detail.hidden = false;
+  });
   setTimeout(() => state.timeline?.redraw(), 0);
 }
 
@@ -59,7 +61,9 @@ export function hideDetail() {
     state.liveEditTimer = null;
   }
   cancelThrottledPersist();
-  els.detail.hidden = true;
+  withPreservedZoom(() => {
+    els.detail.hidden = true;
+  });
   els.detailBody.classList.remove('detail-form');
   state.activeFormItemId = null;
   state.activeFormPhaseIndex = null;

@@ -15,7 +15,7 @@ import {
   type JiraIssue,
 } from './jira';
 import type { TimelineFileItem } from './types';
-import { state, els, setStatus } from './state';
+import { state, els, setStatus, withPreservedZoom } from './state';
 import { commitItemForm, scheduleLiveEdit, schedulePersist } from './persistence';
 import { rebuildAndApply } from './render';
 import { hideDetail } from './detailPanel';
@@ -169,7 +169,9 @@ export function showItemForm(item: TimelineFileItem & { id?: string }): void {
   wireDepsAutosuggest(form, id);
   wireTagsAutosuggest(form);
 
-  els.detail.hidden = false;
+  withPreservedZoom(() => {
+    els.detail.hidden = false;
+  });
   // Switching items commits the previous form, whose rebuildAndApply reloads the
   // DataSet (dropping the selection) and re-selects the *old* item. Re-assert the
   // selection on the item we're actually showing so the mark follows the sidebar.

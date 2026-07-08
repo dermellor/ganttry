@@ -5,7 +5,7 @@ import { escapeHtml } from './buildItems';
 import { TIMELINE_ICONS } from './icons';
 import { isoDateOnly } from './editor';
 import type { PhaseEdit } from './phaseBand';
-import { state, els, setStatus } from './state';
+import { state, els, setStatus, withPreservedZoom } from './state';
 import { rebuildAndApply } from './render';
 import { schedulePersist } from './persistence';
 import { hideDetail } from './detailPanel';
@@ -92,7 +92,9 @@ export function showPhaseForm(srcIndex: number): void {
     deletePhase(srcIndex);
   });
 
-  els.detail.hidden = false;
+  withPreservedZoom(() => {
+    els.detail.hidden = false;
+  });
   setTimeout(() => state.timeline?.redraw(), 0);
 }
 

@@ -138,6 +138,57 @@ export function setStatus(text: string): void {
   els.status.textContent = text;
 }
 
+// Run a layout change that resizes the timeline horizontally (opening/closing
+// the detail panel shrinks/grows it) while keeping the zoom factor (px/day)
+// constant. Without this, vis-timeline keeps the same time window in the new
+// width, squeezing every item into a narrower/wider box — the view visibly
+// "jumps". We anchor the left edge and recompute the visible range so px/day is
+// unchanged: every date keeps its exact horizontal pixel position, only the
+// revealed span at the right edge changes.
+//
+// It runs synchronously — reading clientWidth after the toggle forces a layout,
+// so the corrected window is set before the browser paints. Doing it here rather
+// than reacting in a ResizeObserver avoids the one-frame flash where vis would
+// otherwise paint the old window at the new width first.
+export function withPreservedZoom(toggle: () => void): void {
+  const tl = state.timeline;
+  if (!tl) {
+    toggle();
+    return;
+  }
+  // Time→pixel mapping is driven by the *center* panel — the container minus the
+  // fixed left group-label column (and scrollbar/borders). We must preserve
+  // px/day against that center width, not the whole container, or a few px of
+  // drift remain (the label column doesn't shrink with the panel).
+  //
+  // But the center panel is sized by vis-timeline's own JS during its redraw, so
+  // reading its clientWidth right after the toggle still reports the *old* width
+  // (the redraw hasn't run yet) — a no-op that lets the later redraw rescale and
+  // jump. The container, by contrast, is CSS-grid-driven and updates synchronously
+  // on a forced reflow. So we read the container synchronously and derive the
+  // center width from it by subtracting the label column `L`, measured before the
+  // toggle where both widths are consistent (L stays constant when the side panel
+  // opens/closes — only the center width absorbs the change).
+  const center = els.timeline.querySelector<HTMLElement>('.vis-panel.vis-center');
+  const oldContainer = els.timeline.clientWidth;
+  const oldCenter = center?.clientWidth || oldContainer;
+  const chrome = oldContainer - oldCenter; // label column + scrollbar/borders
+  const win = tl.getWindow();
+  toggle();
+  const newContainer = els.timeline.clientWidth; // forces synchronous layout
+  const oldWidth = oldCenter;
+  const newWidth = newContainer - chrome;
+  if (oldWidth > 0 && newWidth > 0 && newWidth !== oldWidth) {
+    const startMs = win.start.getTime();
+    const rangeMs = win.end.getTime() - startMs;
+    const newEnd = new Date(startMs + (rangeMs * newWidth) / oldWidth);
+    tl.setWindow(win.start, newEnd, { animation: false });
+    // Keep the tracked window in sync so persistence snapshots and URL syncing
+    // reflect what's actually shown (silent — no URL write here).
+    if (state.userWindow) state.userWindow = { start: new Date(win.start), end: newEnd };
+  }
+}
+
 export function isEditableView(): boolean {
   return !!state.activeSourceFile && !!state.activeSourceId && state.activeSourceEditable;
 }

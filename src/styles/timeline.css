@@ -248,6 +248,19 @@
   overflow: hidden;
 }
 
+/* Reserve vertical room for the ribbon so the first group row starts *below*
+   it instead of sitting behind it. Padding the whole group set — labels, item
+   foreground, and the full-height phase tints — keeps left and center panels in
+   vertical lockstep (scroll stays synced). `content-box` makes the padding add
+   to the height rather than eat into vis-timeline's computed content area, so
+   the bottom row is never clipped. Toggled by `has-phase-band` in render.ts. */
+.timeline.has-phase-band .vis-labelset,
+.timeline.has-phase-band .vis-foreground,
+.timeline.has-phase-band .vis-itemset > .vis-background {
+  box-sizing: content-box;
+  padding-top: 30px;
+}
+
 .phase-seg {
   position: absolute;
   top: 2px;
