@@ -2,6 +2,14 @@
 
 Generic timeline viewer for `~/_NOTIZEN`. Reads frontmatter dates from Markdown notes, builds timelines via [vis-timeline](https://visjs.github.io/vis-timeline/), and ships with a brand switcher (marcel-mellor / Acme).
 
+## Git workflow
+
+**No feature branches, ever.** Commit straight to `main` and push. Do not
+create, use, or leave behind `feat/*`, `refactor/*`, or any other topic branch —
+even when a change feels large. This overrides any default "branch first before
+committing on the default branch" behaviour: on this project, `main` is the only
+branch.
+
 ## Ports
 
 Belegt im 3120er-Block (siehe [`~/Development/PORTS.md`](../PORTS.md)).
