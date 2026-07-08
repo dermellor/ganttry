@@ -159,6 +159,29 @@ Lokale Middleware (`vite.config.ts`) und Netlify-Edge-Function
 (`scripts/db/api.ts`) und Data-Access-Layer (`scripts/db/timeline-repo.ts`) —
 eine Implementierung der Storage- und Locking-Semantik für beide Runtimes.
 
+### Prinzip: keine Notfall-/Fallback-Daten — niemals
+
+**Für DB-Timelines wird nirgends ein Inhalts-Snapshot vorgehalten. Lieber gar
+keine Daten als falsche.** Ein committeter oder gecachter Abzug einer
+Live-Timeline ist optisch nicht von echten Daten zu unterscheiden und wird
+zuverlässig damit verwechselt (bei DB-Ausfall, id-Mismatch, veraltetem Stand).
+Deshalb gilt hart:
+
+- Der Viewer lädt DB-Timelines **ausschließlich** live aus der DB
+  (`GET /api/source/<id>`). Schlägt das fehl (`404`, kein Netz), **failt er laut**
+  mit einer Fehlermeldung — es wird *kein* statischer Inhalt angezeigt
+  ([`src/editor.ts`](src/editor.ts), `loadSource`).
+- Die committeten `data/<db-id>.json` sind **reine Registrierungs-Stubs**
+  (`name`, optional `description`/`groupBy`, `items: []`) — nur damit die Timeline
+  in der View-Liste auftaucht (build-data scannt diese Dateien für das Dropdown).
+  Sie enthalten **nie** items/groups/phases. `syncTimelinesOnce`
+  ([`scripts/build-data.ts`](scripts/build-data.ts)) schreibt genau diesen Stub.
+
+Neue Sync-/Cache-/Fallback-Mechanismen für DB-Timelines, die Inhalte in Dateien,
+CDN oder sonstwo spiegeln, sind **nicht** einzuführen. (Datei-basierte Quellen —
+die Beispiele — sind kein Widerspruch: dort *ist* die Datei die Quelle, kein
+Abzug von etwas anderem.)
+
 ### Schema
 
 Drei Tabellen (Migrationen in `supabase/migrations/`):
@@ -201,16 +224,18 @@ npm run db:import -- acme/mein-plan     # gezielt
 
 ### Sync-Verhalten
 
-- **Read:** Client lädt `GET /api/source/<id>` → DB. Ist die Timeline nicht in
-  der DB (datei-basiert) → `404` → der Client fällt auf das statische
-  `/data/sources/<id>.json` zurück (`editable:false`).
+- **Read:** Client lädt `GET /api/source/<id>` → DB. Schlägt das fehl (`404`,
+  kein Netz) → **lauter Fehler, kein statischer Fallback** (siehe „Prinzip: keine
+  Notfall-/Fallback-Daten"). Echte datei-basierte Quellen (die Beispiele) liegen
+  als Datei vor und sind read-only (`editable:false`).
 - **Write:** UI-Edits (Drag, Form, Add, Delete) schicken **item-genaue** Calls:
   `POST/PATCH/DELETE /api/source/<id>/item[/<itemId>]`, `PUT …/phases`. `PATCH`
   trägt die bekannte `version` im `If-Match`-Header; passt sie nicht mehr → `409`
   → der Client lädt das Item neu.
-- **Statischer Cache:** `npm run build:data` (Teil von `dev`/`build`) zieht alle
-  DB-Timelines und schreibt `data/<id>.json`. Diese Dateien committen — sie sind
-  der read-only Fallback für die Netlify-Site, falls die DB nicht erreichbar ist.
+- **Registrierungs-Stubs:** `npm run build:data` (Teil von `dev`/`build`) schreibt
+  für jede DB-Timeline nur einen Stub nach `data/<id>.json` (`name` + `items: []`,
+  kein Inhalt). Diese Stubs committen — sie halten die Timeline nur in der
+  View-Liste sichtbar, sind aber **kein** Daten-Fallback.
 - **Live-Kollaboration:** siehe „Realtime" — ersetzt das frühere 60-s-Polling.
 
 ### Production-Setup (Netlify)
@@ -325,7 +350,7 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
 - **Tags** is a chip editor with autosuggest: type to match tags already used in the timeline, or type a new label and press Enter to create one. Each chip carries its resolved colour and a remove button. Stored as `metadata.tags` (string[]); saving migrates any legacy singular `metadata.tag` into the array.
 - **Phases** render as a ribbon along the top. Drag a segment to move it, drag either edge to resize (snaps to whole days, min. 1 day), and click it (without dragging) to open the phase form in the side panel: title, start/end, duration, icon, colour. Persists on drop / Save; Delete removes the phase.
 
-Persistence path: viewer → item-level calls (`POST/PATCH/DELETE /api/source/<id>/item`, `PUT …/phases`) → middleware (`vite.config.ts`) → Supabase via `scripts/db/api.ts`. `PATCH` carries the item `version` in `If-Match`; a stale version returns `409` and the client reloads that item. Only DB-backed sources are editable; file-based sources return `404` from the API and load read-only from the static `/data/sources/<id>.json`. Builds (`npm run build`) and exported HTML have no edit endpoint. The committed `data/<id>.json` caches are refreshed from the DB by `npm run build:data`.
+Persistence path: viewer → item-level calls (`POST/PATCH/DELETE /api/source/<id>/item`, `PUT …/phases`) → middleware (`vite.config.ts`) → Supabase via `scripts/db/api.ts`. `PATCH` carries the item `version` in `If-Match`; a stale version returns `409` and the client reloads that item. Only DB-backed sources are editable; genuine file-based sources (the examples) load read-only from their static `/data/sources/<id>.json`. Builds (`npm run build`) and exported HTML have no edit endpoint. For DB-backed timelines, `npm run build:data` writes only a registration **stub** to `data/<id>.json` (`name` + `items: []`, no content) — there is deliberately no committed content cache (see „Prinzip: keine Notfall-/Fallback-Daten").
 
 ## JIRA linking
 
@@ -445,8 +470,9 @@ Netlify dashboard.
 - Brand locked to Acme (`VITE_BRAND_MODE=fixed`, `VITE_DEFAULT_BRAND=Acme`).
 - **Editing** is live when the Supabase env vars are set (see „Supabase als
   Datenquelle → Production-Setup"): the `timelines-api` edge function serves
-  DB-backed Acme timelines editable. Without those vars, `loadSource()` falls
-  back to the static `/data/sources/<id>.json` and the view is read-only.
+  DB-backed Acme timelines editable. Without those vars, the DB read fails and
+  the viewer surfaces an error — there is no static content fallback (see
+  „Prinzip: keine Notfall-/Fallback-Daten").
 
 To add a Acme-visible timeline locally: drop the JSON into `data/acme/`,
 commit, push.

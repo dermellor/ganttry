@@ -140,8 +140,8 @@ function timelinesApi(): Plugin {
 
         const db = getServiceClient();
         if (!db) {
-          // No DB configured: 404 on GET so the client falls back to the static
-          // /data/sources/<id>.json (read-only); writes are simply unavailable.
+          // No DB configured: 404 on GET (nothing to read). The client surfaces
+          // the error loudly — there is no static content fallback. Writes 503.
           if (method === 'GET') return send(res, 404, { error: 'db_not_configured' });
           return send(res, 503, {
             error: 'db_not_configured',
@@ -167,11 +167,16 @@ function timelinesApi(): Plugin {
           sub: parsed.sub,
           body,
           ifMatch: Number.isFinite(ifMatch as number) ? (ifMatch as number) : undefined,
+          // Local dev has no auth session; attribute edits as "local" so they're
+          // distinguishable from colleague (Netlify/Google) and MCP edits in the
+          // item audit panel. Production/MCP set updatedBy in their own runtimes.
+          updatedBy: 'local',
         };
 
         try {
           const result = await handleTimelineApi(db, apiReq);
-          // On GET 404 the client falls back to the static /data/sources file.
+          // A GET 404 (source not in the DB) surfaces as a loud client error —
+          // no static content fallback (see AGENTS.md „keine Notfall-Daten").
           send(res, result.status, result.json);
         } catch (err) {
           send(res, 500, { error: 'server_error', message: String(err) });

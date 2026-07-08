@@ -30,7 +30,8 @@ function json(data: unknown, status = 200, headers?: Headers): Response {
 export default async function handler(req: Request, _ctx: Context): Promise<Response | void> {
   const url = Deno.env.get('TIMELINES_SUPABASE_URL');
   const key = Deno.env.get('TIMELINES_SUPABASE_SERVICE_KEY');
-  // No DB configured → fall through to the static /data/sources files (read-only).
+  // No DB configured → nothing to serve; pass through (the request then 404s,
+  // and the client surfaces a loud error — no static content fallback).
   if (!url || !key) return;
 
   const reqUrl = new URL(req.url);
@@ -71,7 +72,8 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
   const db = createClient(url, key, { auth: { persistSession: false } });
   try {
     const result = await handleTimelineApi(db, apiReq);
-    // On GET 404 the client falls back to the static /data/sources file.
+    // A GET 404 (source not in the DB) surfaces as a loud client error —
+    // no static content fallback (see AGENTS.md „keine Notfall-Daten").
     return json(result.json, result.status);
   } catch (err) {
     return json({ error: 'server_error', message: String(err) }, 500);

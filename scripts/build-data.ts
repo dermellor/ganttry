@@ -158,46 +158,50 @@ function unitToMs(unit: string): number {
 
 const STATIC_ONLY = /^(1|true|yes)$/i.test(process.env.TIMELINES_STATIC_ONLY ?? '');
 
-// Pull every DB-backed timeline into its data/<id>.json so the committed static
-// cache (the read-only Netlify fallback) stays current. Skipped on static-only
-// builds and when no DB credentials are present. `version` is stripped — it's a
-// server-managed field and would only cause churn in the committed files.
+// Keep a *registration stub* for every DB-backed timeline in data/<id>.json so
+// it stays discoverable in the view list (build-data scans these files to build
+// the dropdown). The stub carries ONLY name/description/groupBy — deliberately
+// never the item/group/phase content.
+//
+// Principle: no committed snapshot of live data, ever. A stale copy is visually
+// indistinguishable from real data and gets mistaken for it, so we keep nothing
+// to fall back to — the viewer loads content live from the DB (or fails loudly).
+//
+// Skipped on static-only builds and when no DB credentials are present; the
+// committed stubs then simply stand as-is.
 async function syncTimelinesOnce(): Promise<void> {
-  if (STATIC_ONLY) return; // production builds rely on the committed JSON cache
+  if (STATIC_ONLY) return; // deploy discovery relies on the committed stubs
   let getServiceClient: () => any;
-  let listTimelines: (db: any) => Promise<{ id: string }[]>;
-  let getTimeline: (db: any, id: string) => Promise<any>;
   try {
     ({ getServiceClient } = (await import('./db/client.ts')) as any);
-    ({ listTimelines, getTimeline } = (await import('./db/timeline-repo.ts')) as any);
   } catch (err) {
-    console.warn('[build-data] db pull skipped (module load failed):', err);
+    console.warn('[build-data] db stub sync skipped (module load failed):', err);
     return;
   }
   const db = getServiceClient();
-  if (!db) return; // no credentials — rely on committed cache
+  if (!db) return; // no credentials — leave the committed stubs untouched
 
-  let metas: { id: string }[];
+  let rows: { id: string; name: string | null; description: string | null; group_by: string | null }[];
   try {
-    metas = await listTimelines(db);
+    const { data, error } = await db.from('timelines').select('id, name, description, group_by').order('id');
+    if (error) throw new Error(error.message);
+    rows = data ?? [];
   } catch (err) {
-    console.warn(`[build-data] db pull failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(`[build-data] db stub sync failed: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
 
-  for (const meta of metas) {
-    try {
-      const file = await getTimeline(db, meta.id);
-      if (!file) continue;
-      for (const it of file.items) delete it.version;
-      const outPath = join(SOURCES_DIR_IN, `${meta.id}.json`);
-      await mkdir(dirname(outPath), { recursive: true });
-      const changed = await writeIfChanged(outPath, `${JSON.stringify(file, null, 2)}\n`);
-      if (changed) {
-        console.log(`[build-data] timeline "${meta.id}" pulled → ${relative(ROOT, outPath)}`);
-      }
-    } catch (err) {
-      console.warn(`[build-data] timeline "${meta.id}" pull failed: ${err instanceof Error ? err.message : String(err)}`);
+  for (const row of rows) {
+    // Registration stub only — no items/groups/phases (that's the whole point).
+    const stub: Record<string, unknown> = { name: row.name ?? row.id };
+    if (row.description != null) stub.description = row.description;
+    if (row.group_by != null) stub.groupBy = row.group_by;
+    stub.items = [];
+    const outPath = join(SOURCES_DIR_IN, `${row.id}.json`);
+    await mkdir(dirname(outPath), { recursive: true });
+    const changed = await writeIfChanged(outPath, `${JSON.stringify(stub, null, 2)}\n`);
+    if (changed) {
+      console.log(`[build-data] timeline "${row.id}" stub written → ${relative(ROOT, outPath)}`);
     }
   }
 }
