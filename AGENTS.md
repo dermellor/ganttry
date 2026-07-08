@@ -213,6 +213,8 @@ Zusätzlich zu den Auth-Env-Vars:
 | -------------------------------- | ------------------ | ---------------------------------------------- |
 | `TIMELINES_SUPABASE_URL`         | dashboard          | aktiviert die `timelines-api` Edge Function     |
 | `TIMELINES_SUPABASE_SERVICE_KEY` | dashboard (secret) | Service-Role-Key für den serverseitigen Zugriff |
+| `VITE_SUPABASE_URL`              | dashboard          | build-time; ohne beide erscheinen fremde Edits erst beim Reload (siehe „Realtime") |
+| `VITE_SUPABASE_ANON_KEY`         | dashboard          | build-time, public im Bundle; **Redeploy nötig** (Vite backt sie beim Build ein) |
 
 Die Edge Function gated per Session-Cookie (bzw. MCP-Token) und attribuiert
 Edits über `updated_by` an die E-Mail des eingeloggten Users. Sind die Vars
