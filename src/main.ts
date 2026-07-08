@@ -49,6 +49,7 @@ const els = {
   brandControl: document.getElementById('brand-control') as HTMLLabelElement,
   brandSelect: document.getElementById('brand-select') as HTMLSelectElement,
   milestonesOnly: document.getElementById('milestones-only') as HTMLInputElement,
+  addBtn: document.getElementById('add-btn') as HTMLButtonElement,
   exportBtn: document.getElementById('export-btn') as HTMLButtonElement,
   status: document.getElementById('status') as HTMLSpanElement,
   detail: document.getElementById('detail') as HTMLElement,
@@ -184,14 +185,24 @@ function rebuildAndApply(): void {
 function applyBuildToDataSets(): void {
   if (!activeBuild) return;
   const filtered = filterBuildForDisplay(activeBuild);
-  if (itemsDs) {
-    itemsDs.clear();
-    itemsDs.add(filtered.items);
-  }
-  if (groupsDs) {
-    groupsDs.clear();
-    groupsDs.add(filtered.groups);
-  }
+  // Diff the DataSets in place instead of clear()+add(). Clearing momentarily
+  // empties the timeline, collapsing its content height — the browser then clamps
+  // the vertical-scroll container's scrollTop to the top and vis-timeline latches
+  // that, snapping the view up on every rebuild (live edits, drags, switching
+  // items). update()/remove() keep the surviving rows mounted, so the height
+  // never collapses and the scroll position is left untouched.
+  if (itemsDs) syncDataSet(itemsDs, filtered.items);
+  if (groupsDs) syncDataSet(groupsDs, filtered.groups);
+}
+
+// Reconcile a vis DataSet to `next` without ever emptying it: drop rows that are
+// gone, then add/update the rest. Avoids the content-height collapse a clear()
+// would cause (which resets vis-timeline's vertical scroll to the top).
+function syncDataSet(ds: DataSet<any>, next: Array<{ id?: string | number }>): void {
+  const nextIds = new Set(next.map((r) => String(r.id)));
+  const stale = (ds.getIds() as (string | number)[]).filter((id) => !nextIds.has(String(id)));
+  if (stale.length) ds.remove(stale);
+  ds.update(next);
 }
 
 function statusFor(view: View, build: NonNullable<typeof activeBuild>): string {
@@ -342,6 +353,16 @@ function setupRealtime(): void {
 async function renderTimeline(view: View) {
   if (!config) return;
 
+  // A fresh vis-timeline always starts scrolled to the top. When we re-render
+  // the *same* view (realtime refresh, conflict reload, live rebuild) we must
+  // keep the user where they were vertically — otherwise clicking/editing an
+  // item near the bottom snaps the view to the top. The horizontal window is
+  // preserved separately via `pendingWindow`; this is its vertical counterpart.
+  const sameView = activeView?.id === view.id;
+  const prevVScroll = sameView
+    ? els.timeline.querySelector<HTMLElement>('.vis-panel.vis-left')?.scrollTop ?? 0
+    : 0;
+
   let built: typeof activeBuild;
   let sourceFile: TimelineFile | null = null;
   let sourceId: string | null = null;
@@ -411,6 +432,8 @@ async function renderTimeline(view: View) {
     ? { updateTime: true, updateGroup: true, add: true, remove: true, overrideItems: false }
     : false;
 
+  els.addBtn.hidden = !isEditableView();
+
   const initialStart = pendingWindow?.start ?? new Date(focusMin - padding);
   const initialEnd = pendingWindow?.end ?? new Date(focusMax + padding);
 
@@ -467,6 +490,18 @@ async function renderTimeline(view: View) {
 
   const ensureVisible = () => {
     timeline?.redraw();
+    // Re-apply the pre-render vertical offset once the new timeline has laid out
+    // (content height and the feasible scroll range are only known after a
+    // redraw). vis-timeline's own `_setScrollTop` clamps to that range and a
+    // second redraw syncs both the content transform and the scrollbar
+    // containers — the authoritative path, avoiding the desync a raw DOM
+    // scrollTop write races into. Repeated across frames so a first pass that
+    // ran before layout settled gets corrected.
+    const tl = timeline as any;
+    if (prevVScroll > 0 && typeof tl?._setScrollTop === 'function') {
+      tl._setScrollTop(-prevVScroll);
+      timeline?.redraw();
+    }
     const visEl = els.timeline.querySelector<HTMLElement>('.vis-timeline');
     if (visEl) visEl.style.visibility = 'visible';
   };
@@ -708,29 +743,57 @@ function deletePhase(srcIndex: number): void {
   hideDetail();
 }
 
-function handleAdd(item: TimelineItem, callback: (item: TimelineItem | null) => void): void {
-  if (!activeSourceFile) {
-    callback(null);
-    return;
-  }
+// Appends a new item to the active source at the given start/group, persists,
+// and opens its edit form. Shared by the double-click handler (handleAdd) and
+// the toolbar "+ Eintrag" button (addNewItem).
+function createItem(start: Date, group?: string | number | null): (TimelineFileItem & { id: string }) | null {
+  if (!activeSourceFile) return null;
   const newId = generateNewId(activeSourceFile);
-  const groupId = item.group != null
-    ? String(item.group)
+  const groupId = group != null
+    ? String(group)
     : activeSourceFile.groups?.[0]?.id ?? activeBuild?.groups[0]?.id;
 
   const newItem: TimelineFileItem & { id: string } = {
     id: newId,
-    start: isoDateOnly(item.start),
+    start: isoDateOnly(start),
     duration: '1w',
     content: 'Neuer Eintrag',
     group: groupId,
   };
   activeSourceFile.items.push(newItem);
-
-  callback({ ...item, id: newId, content: newItem.content });
   rebuildAndApply();
   schedulePersist();
+  return newItem;
+}
+
+function handleAdd(item: TimelineItem, callback: (item: TimelineItem | null) => void): void {
+  const newItem = createItem(item.start, item.group);
+  if (!newItem) {
+    callback(null);
+    return;
+  }
+  callback({ ...item, id: newItem.id, content: newItem.content });
   setTimeout(() => showItemForm(newItem), 50);
+}
+
+// Toolbar "+ Eintrag": adds an item at the centre of the visible window (so it
+// lands on screen) and opens its form. No-op on read-only views.
+function addNewItem(): void {
+  if (!isEditableView()) return;
+  const win = timeline?.getWindow();
+  const start = win
+    ? new Date((new Date(win.start).getTime() + new Date(win.end).getTime()) / 2)
+    : new Date();
+  const newItem = createItem(start);
+  if (!newItem) return;
+  setTimeout(() => {
+    try {
+      timeline?.setSelection([newItem.id]);
+    } catch {
+      /* item may be filtered out of the current view */
+    }
+    showItemForm(newItem);
+  }, 50);
 }
 
 function handleRemove(item: TimelineItem, callback: (item: TimelineItem | null) => void): void {
@@ -935,6 +998,14 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
   wireDepsAutosuggest(form, id);
 
   els.detail.hidden = false;
+  // Switching items commits the previous form, whose rebuildAndApply reloads the
+  // DataSet (dropping the selection) and re-selects the *old* item. Re-assert the
+  // selection on the item we're actually showing so the mark follows the sidebar.
+  try {
+    timeline?.setSelection([id]);
+  } catch {
+    /* item may be filtered out of the current view */
+  }
   setTimeout(() => timeline?.redraw(), 0);
 }
 
@@ -1527,6 +1598,7 @@ async function bootstrap() {
     hideDetail();
     syncUrl();
   });
+  els.addBtn.addEventListener('click', addNewItem);
   els.exportBtn.addEventListener('click', handleExport);
 
   onExternalUrlStateChange((state) => applyExternalState(state));

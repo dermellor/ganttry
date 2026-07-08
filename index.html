@@ -16,8 +16,6 @@
           <span>View</span>
           <select id="view-select"></select>
         </label>
-      </div>
-      <div class="app-controls">
         <label class="control control-toggle" id="milestones-control">
           <input type="checkbox" id="milestones-only" />
           <span>Nur Meilensteine</span>
@@ -29,7 +27,9 @@
             <option value="Acme">Acme</option>
           </select>
         </label>
-        <button id="export-btn" class="export-btn" type="button" title="Aktuelle View als statische HTML-Datei herunterladen">Export HTML</button>
+      </div>
+      <div class="app-controls">
+        <button id="add-btn" class="export-btn add-btn" type="button" title="Neuen Eintrag hinzufügen" hidden>+ Eintrag</button>
       </div>
     </header>
     <main class="app-main">
@@ -43,6 +43,7 @@
     </main>
     <footer class="app-footer">
       <span id="status" class="status">…</span>
+      <button id="export-btn" class="export-link" type="button" title="Aktuelle View als statische HTML-Datei herunterladen">Export HTML</button>
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
