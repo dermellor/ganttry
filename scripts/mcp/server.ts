@@ -23,7 +23,7 @@ import { homedir } from 'node:os';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TimelineFile, TimelineFileItem } from '../../src/types.js';
-import type { TimelineGroupDecl } from '../db/timeline-repo.js';
+import { enforceExtentExclusivity, type TimelineGroupDecl } from '../db/timeline-repo.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..', '..');
@@ -149,11 +149,18 @@ async function mutate(
 const itemFields = {
   id: z.string().optional().describe('Stable item id (needed for dependsOn references and edits).'),
   start: z.string().describe('Start date, YYYY-MM-DD (or ISO datetime if precision matters).'),
-  end: z.string().optional().describe('End date, YYYY-MM-DD. Alternative to duration.'),
+  end: z
+    .string()
+    .optional()
+    .describe(
+      'End date, YYYY-MM-DD. Mutually exclusive with duration — set one, not both. If both are given, end wins and duration is dropped.',
+    ),
   duration: z
     .union([z.string(), z.number()])
     .optional()
-    .describe('Length, e.g. "7d", "2w", "90m", ISO "P7D", or milliseconds as number.'),
+    .describe(
+      'Length, e.g. "7d", "2w", "90m", ISO "P7D", or milliseconds as number. Mutually exclusive with end (set one, not both). To switch an end-based item to a duration, send duration alone — the stored end is cleared.',
+    ),
   content: z.string().describe('Item title shown on the bar.'),
   group: z.string().optional().describe('Group id this item belongs to.'),
   title: z.string().optional().describe('Tooltip text.'),
@@ -242,6 +249,8 @@ server.registerTool(
       if (item.id && f.items.some((i) => i.id === item.id)) {
         throw new Error(`Item id "${item.id}" already exists in "${id}".`);
       }
+      // Extent fields are mutually exclusive (end wins); never store both.
+      enforceExtentExclusivity(item);
       f.items.push(item as TimelineFileItem);
     });
     return ok({ ok: true, id, itemId: item.id, items: file.items.length });
@@ -269,6 +278,10 @@ server.registerTool(
       const { metadata, ...rest } = patch;
       Object.assign(it, rest);
       if (metadata) it.metadata = { ...(it.metadata ?? {}), ...metadata };
+      // Extent fields are mutually exclusive: whichever the patch set wins and
+      // clears the counterpart, so switching end↔duration never leaves both.
+      if (rest.end != null) delete it.duration;
+      else if (rest.duration != null) delete it.end;
     });
     return ok({ ok: true, id, itemId, updated: found });
   },

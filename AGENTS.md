@@ -55,8 +55,8 @@ File shape:
     {
       "id": "kickoff",                   // optional
       "start": "2026-01-15",
-      "end": "2026-02-28",               // optional, OR
-      "duration": "3w",                  // optional ("7d", "2w", "90m", number = ms)
+      "end": "2026-02-28",               // optional; mutually exclusive with duration (end wins)
+      "duration": "3w",                  // optional ("7d", "2w", "90m", number = ms) — only when no end
       "content": "Kickoff",
       "group": "Phase 1",                // optional
       "title": "Tooltip text",           // optional
@@ -189,7 +189,11 @@ Drei Tabellen (Migrationen in `supabase/migrations/`):
 - `timelines` — id, name, description, group_by, `phases` (jsonb).
 - `timeline_items` — Spalten für start/end/duration/content/group/type/title/
   body/icon/class_name, `metadata` (jsonb: `dependsOn`, `owner`, `jira`, freie
-  Extras), `version` (Trigger-Bump bei UPDATE), `sort`, `updated_by`.
+  Extras), `version` (Trigger-Bump bei UPDATE), `sort`, `updated_by`. `end` und
+  `duration` schließen sich aus (Ausdehnung entweder/oder, `end` gewinnt) —
+  erzwungen im Write-Layer für alle Pfade (`enforceExtentExclusivity` +
+  patch-bewusstes Gegenstück-Löschen in [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts),
+  MCP `add_item`/`update_item`, Client-Form).
 - `timeline_groups` — id, content, nested_groups, show_nested, sort.
 
 RLS ist an; Server-Zugriff läuft über den Service-Key (bypassed RLS). Anon-

@@ -61,8 +61,22 @@ function rowToItem(row: Record<string, any>): TimelineFileItem {
   return item;
 }
 
+/**
+ * DB invariant: an item's extent is expressed by EITHER `end` OR `duration`,
+ * never both. When both are present `end` wins — mirroring the render precedence
+ * in `buildItems`. A row carrying both is the bug that silently shrank
+ * `end`-based bars to a stale `duration` on the next edit. Callers assembling a
+ * full item/row funnel through here; partial patches clear the counterpart
+ * inline (see `updateItem`).
+ */
+export function enforceExtentExclusivity<T extends { end?: unknown; duration?: unknown }>(o: T): T {
+  if (o.end != null) (o as { duration?: unknown }).duration = null;
+  return o;
+}
+
 // Columns for insert/update. `sort` and `version` are managed here / by trigger.
 function itemToRow(timelineId: string, item: TimelineFileItem, sort?: number): Record<string, any> {
+  enforceExtentExclusivity(item);
   const row: Record<string, any> = {
     timeline_id: timelineId,
     id: item.id,
@@ -228,6 +242,12 @@ export async function updateItem(
   for (const [k, col] of Object.entries(map)) {
     if (k in patch) set[col] = full[col];
   }
+  // Keep the extent columns mutually exclusive across a *partial* patch: setting
+  // one clears the stored other (end wins when both are asserted), so a row can
+  // never keep both. This also lets a caller switch an end-based item to
+  // duration by sending `duration` alone (the stale `end` column is cleared).
+  if (set.end != null) set.duration = null;
+  else if (set.duration != null) set.end = null;
   if (updatedBy) set.updated_by = updatedBy;
   if (Object.keys(set).length === 0) {
     const cur = await getItem(db, timelineId, itemId);

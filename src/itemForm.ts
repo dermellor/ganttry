@@ -65,7 +65,7 @@ export function showItemForm(item: TimelineFileItem & { id?: string }): void {
       </div>
       <div class="field">
         <label for="f-duration">Duration</label>
-        <input id="f-duration" name="duration" value="${escapeHtml(typeof item.duration === 'string' ? item.duration : item.duration != null ? String(item.duration) : '')}" placeholder="leer = End nutzen" />
+        <input id="f-duration" name="duration" value="${escapeHtml(typeof item.duration === 'string' ? item.duration : item.duration != null ? String(item.duration) : '')}" placeholder="nur ohne End-Datum" />
       </div>
       <div class="field">
         <label for="f-group">Group</label>
@@ -711,12 +711,17 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     delete item.type;
   }
 
-  if (durVal) {
-    item.duration = durVal;
-    delete item.end;
-  } else if (endVal) {
+  // Extent precedence must match the render path (buildItems: `end` wins, with
+  // `duration` only a fallback). Committing with the opposite precedence is what
+  // collapsed items carrying *both* fields — a long `end`-based bar silently
+  // shrank to its stale `duration` on the next commit. Prefer `end` here and
+  // drop the other so the two never coexist going forward.
+  if (endVal) {
     item.end = endVal;
     delete item.duration;
+  } else if (durVal) {
+    item.duration = durVal;
+    delete item.end;
   } else {
     delete item.duration;
     delete item.end;
