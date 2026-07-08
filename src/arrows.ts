@@ -3,6 +3,65 @@ import type { Timeline } from 'vis-timeline/standalone';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 type Anchor = { left: number; right: number; top: number; bottom: number; midY: number };
+type Pt = { x: number; y: number };
+
+const STUB = 12; // horizontal lead-out/lead-in at each item edge
+const CORRIDOR = 22; // vertical detour below same-row items in the backward case
+const CORNER = 6; // corner rounding radius
+
+// Right-angle connector from a predecessor's finish edge (x1,y1) to a
+// successor's start edge (x2,y2). When the successor starts well to the right
+// there's one vertical step; when it starts before the predecessor finishes
+// (overlap / same row) the path drops into a corridor, runs back left, and
+// re-enters from the correct side so it never doubles back through an item.
+function elbowPath(x1: number, y1: number, x2: number, y2: number): string {
+  let pts: Pt[];
+  if (x2 >= x1 + 2 * STUB) {
+    const midX = (x1 + x2) / 2;
+    pts = [
+      { x: x1, y: y1 },
+      { x: midX, y: y1 },
+      { x: midX, y: y2 },
+      { x: x2, y: y2 },
+    ];
+  } else {
+    const corridorY =
+      Math.abs(y2 - y1) > 2 * CORRIDOR ? (y1 + y2) / 2 : Math.max(y1, y2) + CORRIDOR;
+    pts = [
+      { x: x1, y: y1 },
+      { x: x1 + STUB, y: y1 },
+      { x: x1 + STUB, y: corridorY },
+      { x: x2 - STUB, y: corridorY },
+      { x: x2 - STUB, y: y2 },
+      { x: x2, y: y2 },
+    ];
+  }
+  return roundedPath(pts);
+}
+
+// Renders a polyline through `pts` with rounded corners (quadratic arcs).
+function roundedPath(pts: Pt[]): string {
+  if (pts.length < 2) return '';
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const len1 = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    const len2 = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    if (len1 === 0 || len2 === 0) {
+      d += ` L ${p1.x} ${p1.y}`;
+      continue;
+    }
+    const r = Math.min(CORNER, len1 / 2, len2 / 2);
+    const a = { x: p1.x - ((p1.x - p0.x) / len1) * r, y: p1.y - ((p1.y - p0.y) / len1) * r };
+    const b = { x: p1.x + ((p2.x - p1.x) / len2) * r, y: p1.y + ((p2.y - p1.y) / len2) * r };
+    d += ` L ${a.x} ${a.y} Q ${p1.x} ${p1.y} ${b.x} ${b.y}`;
+  }
+  const last = pts[pts.length - 1];
+  d += ` L ${last.x} ${last.y}`;
+  return d;
+}
 
 export class DependencyArrows {
   private svg: SVGSVGElement;
@@ -11,6 +70,7 @@ export class DependencyArrows {
   private timeline: Timeline;
   private resizeObserver: ResizeObserver;
   private rafToken = 0;
+  private settleTimers: ReturnType<typeof setTimeout>[] = [];
   private onChanged = () => this.scheduleRedraw();
 
   constructor(timeline: Timeline, container: HTMLElement) {
@@ -41,10 +101,26 @@ export class DependencyArrows {
   setDependencies(deps: Map<string, string[]>): void {
     this.deps = deps;
     this.scheduleRedraw();
+    // The first redraw can run before vis-timeline has positioned the items, so
+    // getAnchor() returns null and nothing is drawn. On a static page no further
+    // 'changed' event fires to correct it, so self-heal with a few delayed
+    // redraws until the item DOM has settled.
+    this.clearSettleTimers();
+    if (deps.size > 0) {
+      for (const ms of [80, 240, 600]) {
+        this.settleTimers.push(setTimeout(() => this.scheduleRedraw(), ms));
+      }
+    }
+  }
+
+  private clearSettleTimers(): void {
+    for (const t of this.settleTimers) clearTimeout(t);
+    this.settleTimers = [];
   }
 
   dispose(): void {
     if (this.rafToken) cancelAnimationFrame(this.rafToken);
+    this.clearSettleTimers();
     this.resizeObserver.disconnect();
     this.timeline.off('changed', this.onChanged);
     this.svg.remove();
@@ -116,15 +192,11 @@ export class DependencyArrows {
         if (Math.max(x1, x2) < 0 || Math.min(x1, x2) > w) continue;
         if (Math.max(y1, y2) < 0 || Math.min(y1, y2) > h) continue;
 
-        // Draw forward (downstream) arrows only — skip if source is to the right of target
-        if (x1 > x2 + 4) continue;
-
-        const dx = Math.max(24, Math.abs(x2 - x1) / 2);
+        // Orthogonal "Gantt" elbow: leave the predecessor's finish edge, run
+        // through a vertical corridor, and enter the successor's start edge
+        // horizontally (so the arrowhead points cleanly into it).
         const path = document.createElementNS(SVG_NS, 'path');
-        path.setAttribute(
-          'd',
-          `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2 - 3} ${y2}`,
-        );
+        path.setAttribute('d', elbowPath(x1, y1, x2, y2));
         path.setAttribute('marker-end', 'url(#tl-arrow-head)');
         path.classList.add('dep-arrow');
         this.svg.appendChild(path);

@@ -165,7 +165,9 @@
   fill: none;
   stroke: var(--fg-muted);
   stroke-width: 1.25;
-  opacity: 0.55;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.5;
 }
 
 /* Acme brand: replace the default red × delete button with a subtle trash icon */
