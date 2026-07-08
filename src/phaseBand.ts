@@ -155,8 +155,6 @@ export class PhaseBand {
 
       const label = document.createElement('span');
       label.className = 'phase-seg-label';
-      // keep the label visible when a phase starts off-screen to the left
-      if (left < 0) label.style.marginLeft = `${Math.min(-left, clippedRight - clippedLeft - 4)}px`;
       // p.label is already escaped in resolvePhases; the icon span is trusted.
       label.innerHTML = `${iconSpanHtml(p.icon)}${p.label}`;
       seg.appendChild(label);
