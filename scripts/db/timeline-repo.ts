@@ -33,7 +33,7 @@ export class NotFoundError extends Error {
 }
 
 const ITEM_SELECT =
-  'id, start, "end", duration, content, "group", type, title, body, icon, class_name, metadata, version, sort';
+  'id, start, "end", duration, content, "group", type, title, body, icon, class_name, metadata, version, sort, created_at, created_by, updated_at, updated_by';
 
 // ---- row <-> object mapping ------------------------------------------------
 
@@ -53,6 +53,11 @@ function rowToItem(row: Record<string, any>): TimelineFileItem {
   if (row.class_name != null) item.className = row.class_name;
   if (row.metadata && Object.keys(row.metadata).length > 0) item.metadata = row.metadata;
   if (row.version != null) item.version = row.version;
+  // Server-managed audit fields (read-only; surfaced in the viewer's detail panel).
+  if (row.created_at != null) item.createdAt = row.created_at;
+  if (row.created_by != null) item.createdBy = row.created_by;
+  if (row.updated_at != null) item.updatedAt = row.updated_at;
+  if (row.updated_by != null) item.updatedBy = row.updated_by;
   return item;
 }
 
@@ -191,7 +196,10 @@ export async function addItem(
   updatedBy?: string,
 ): Promise<TimelineFileItem> {
   const row = itemToRow(timelineId, item, await nextSort(db, timelineId));
-  if (updatedBy) row.updated_by = updatedBy;
+  if (updatedBy) {
+    row.updated_by = updatedBy;
+    row.created_by = updatedBy; // attribute the creation to the same actor
+  }
   const { data, error } = await db.from('timeline_items').insert(row).select(ITEM_SELECT).single();
   if (error) throw new Error(`addItem: ${error.message}`);
   return rowToItem(data);

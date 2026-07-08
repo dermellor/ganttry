@@ -13,18 +13,30 @@ import {
 import { isRealtimeEnabled, subscribeTimeline } from './realtime';
 import { state, els, setStatus, PERSIST_THROTTLE_MS } from './state';
 import { renderTimeline } from './render';
-import { applyItemForm } from './itemForm';
+import { applyItemForm, refreshItemAudit } from './itemForm';
 
 export function schedulePersist(): void {
   if (state.saveTimer) clearTimeout(state.saveTimer);
   state.saveTimer = setTimeout(persist, 250);
 }
 
-// Canonical JSON of an item with the server-managed `version` stripped, so
-// content changes are detected but a version bump alone is not.
+// Canonical JSON of an item with the server-managed audit fields stripped, so
+// content changes are detected but a version bump / re-attribution alone is not.
 export function canonicalItem(item: TimelineFileItem): string {
-  const { version: _v, ...rest } = item;
+  const { version: _v, createdAt: _ca, createdBy: _cb, updatedAt: _ua, updatedBy: _ub, ...rest } =
+    item;
   return JSON.stringify(rest, Object.keys(rest).sort());
+}
+
+// Copy the server-managed audit fields from a saved item back onto the
+// in-memory item, then refresh the open form's audit block if it's showing it.
+function adoptAudit(target: TimelineFileItem, saved: TimelineFileItem): void {
+  target.version = saved.version;
+  if (saved.createdAt != null) target.createdAt = saved.createdAt;
+  if (saved.createdBy != null) target.createdBy = saved.createdBy;
+  if (saved.updatedAt != null) target.updatedAt = saved.updatedAt;
+  if (saved.updatedBy != null) target.updatedBy = saved.updatedBy;
+  if (target.id && target.id === state.activeFormItemId) refreshItemAudit(target);
 }
 
 // Rebuild the saved-state snapshot from the current in-memory file. Called
@@ -60,14 +72,14 @@ export async function persist(): Promise<void> {
       if (prev === undefined) {
         setStatus('Speichere…');
         const saved = await apiAddItem(sourceId, it);
-        it.version = saved.version;
+        adoptAudit(it, saved);
         state.savedItems.set(it.id, canonicalItem(it));
         if (saved.version != null) state.savedItemVersions.set(it.id, saved.version);
       } else if (prev !== canon) {
         setStatus('Speichere…');
-        const { id: _id, version: _v, ...patch } = it;
+        const { id: _id, version: _v, createdAt: _ca, createdBy: _cb, updatedAt: _ua, updatedBy: _ub, ...patch } = it;
         const saved = await apiUpdateItem(sourceId, it.id, patch, state.savedItemVersions.get(it.id));
-        it.version = saved.version;
+        adoptAudit(it, saved);
         state.savedItems.set(it.id, canonicalItem(it));
         if (saved.version != null) state.savedItemVersions.set(it.id, saved.version);
       }

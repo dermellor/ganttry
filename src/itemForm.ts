@@ -134,6 +134,7 @@ export function showItemForm(item: TimelineFileItem & { id?: string }): void {
       <div class="form-actions">
         <button type="button" class="btn-danger" data-action="delete">Löschen</button>
       </div>
+      ${auditBlockHtml(item)}
     </form>
   `;
 
@@ -181,6 +182,51 @@ export function showItemForm(item: TimelineFileItem & { id?: string }): void {
     /* item may be filtered out of the current view */
   }
   setTimeout(() => state.timeline?.redraw(), 0);
+}
+
+// ---- audit footer (localhost only) ----------------------------------------
+// Read-only "created / updated by whom, when" block at the bottom of the form.
+// Server-managed fields (see timeline-repo ITEM_SELECT). Gated to dev because
+// the deployed site has no need for edit-attribution noise and local edits are
+// the only ones stamped `local`.
+
+const auditDateFmt = new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
+
+function formatAuditDate(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : auditDateFmt.format(d);
+}
+
+function auditRowHtml(label: string, by?: string, iso?: string, version?: number): string {
+  const when = formatAuditDate(iso);
+  if (!when && !by) return '';
+  const parts: string[] = [];
+  if (by) parts.push(`von <strong>${escapeHtml(by)}</strong>`);
+  if (when) parts.push(escapeHtml(when));
+  if (version != null) parts.push(`v${version}`);
+  return `<dt>${escapeHtml(label)}</dt><dd>${parts.join(' · ')}</dd>`;
+}
+
+function auditBlockHtml(item: TimelineFileItem): string {
+  if (!import.meta.env.DEV) return '';
+  const rows =
+    auditRowHtml('Erstellt', item.createdBy, item.createdAt) +
+    auditRowHtml('Aktualisiert', item.updatedBy, item.updatedAt, item.version);
+  // Nothing known yet (e.g. a freshly added item before its first save round-trip).
+  const body = rows || '<dt>Metadaten</dt><dd>noch nicht gespeichert</dd>';
+  return `<div class="item-audit" data-role="audit"><dl>${body}</dl></div>`;
+}
+
+// Re-render the audit block in place after a save writes fresh server values
+// back onto the item (called from persistence.adoptAudit).
+export function refreshItemAudit(item: TimelineFileItem): void {
+  const wrap = els.detailBody.querySelector<HTMLElement>('.item-audit[data-role="audit"]');
+  if (!wrap) return;
+  const html = auditBlockHtml(item);
+  // auditBlockHtml wraps in .item-audit; swap just the inner <dl>.
+  const inner = html.replace(/^<div[^>]*>|<\/div>$/g, '');
+  wrap.innerHTML = inner;
 }
 
 // Mounts the Markdown WYSIWYG editor over the hidden Body textarea. The editor

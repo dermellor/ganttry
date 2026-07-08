@@ -57,6 +57,11 @@ export type TimelineFileItem = {
   body?: string;
   metadata?: Record<string, unknown>;
   version?: number; // DB row version for optimistic locking (server-managed)
+  // Server-managed audit fields (read-only). ISO timestamps + attribution.
+  createdAt?: string;
+  createdBy?: string;
+  updatedAt?: string;
+  updatedBy?: string;
 };
 
 export type TimelinePhase = {

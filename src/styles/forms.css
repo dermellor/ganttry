@@ -117,3 +117,35 @@
   border-color: #d3333a;
   color: #d3333a;
 }
+
+/* Read-only creation/update audit footer (localhost only). */
+.item-form .item-audit {
+  grid-column: 1 / -1;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+
+.item-form .item-audit dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 12px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-muted, #646464);
+}
+
+.item-form .item-audit dt {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.item-form .item-audit dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.item-form .item-audit dd strong {
+  font-weight: 600;
+  color: var(--fg, inherit);
+}
