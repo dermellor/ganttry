@@ -204,6 +204,36 @@
   box-shadow: inset -3px 0 0 0 var(--surface);
 }
 
+/* Item tag: lightweight coloured theme pill before the title */
+.vis-item .item-tag {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #fff;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+/* Dense view (zoomed out): the pill text is more clutter than signal, so it
+   collapses to just its coloured dot. The inline background-color carries the
+   tag's colour; the label stays available via the item tooltip. Toggled from
+   JS (`updateTagDensity`) on the timeline container. */
+.is-tags-compact .vis-item .item-tag {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  margin-right: 3px;
+  border-radius: 50%;
+  font-size: 0;
+  line-height: 0;
+  vertical-align: 0;
+  overflow: hidden;
+}
+
 /* Phase ribbon — pinned to the top of the center panel */
 .phase-band {
   position: absolute;

@@ -458,11 +458,13 @@ body {
 }
 
 .item-form .jira-field,
+.item-form .tags-field,
 .item-form .deps-field {
   position: relative;
 }
 
 .jira-chips,
+.tags-chips,
 .deps-chips {
   display: flex;
   flex-wrap: wrap;
@@ -471,11 +473,13 @@ body {
 }
 
 .jira-chips:empty,
+.tags-chips:empty,
 .deps-chips:empty {
   display: none;
 }
 
 .jira-chip,
+.tag-chip,
 .deps-chip {
   display: inline-flex;
   align-items: center;
@@ -487,6 +491,26 @@ body {
   border-radius: 6px;
   font-size: 12px;
   line-height: 1.3;
+}
+
+.tag-chip-dot,
+.tags-suggest-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.tag-chip-dot {
+  background: var(--tag-color, #64748b);
+}
+
+.tag-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+  color: var(--fg, #2c3333);
 }
 
 .jira-chip-key {
@@ -506,6 +530,7 @@ body {
 }
 
 .jira-chip-x,
+.tag-chip-x,
 .deps-chip-x {
   border: none;
   background: transparent;
@@ -518,17 +543,20 @@ body {
 }
 
 .jira-chip-x:hover,
+.tag-chip-x:hover,
 .deps-chip-x:hover {
   background: var(--border, rgba(0, 0, 0, 0.1));
   color: var(--fg, #2c3333);
 }
 
 .jira-suggest,
+.tags-suggest,
 .deps-suggest {
   position: relative;
 }
 
 .jira-suggest-list,
+.tags-suggest-list,
 .deps-suggest-list {
   list-style: none;
   margin: 4px 0 0;

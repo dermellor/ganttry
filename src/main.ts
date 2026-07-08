@@ -6,6 +6,9 @@ import {
   buildFromJson,
   buildFromNotes,
   escapeHtml,
+  tagPillsHtml,
+  tagColor,
+  readTags,
   type BuildResult,
   type DetailNote,
   type TimelineGroup,
@@ -62,6 +65,13 @@ const els = {
 const MILESTONES_ONLY_KEY = 'timelines.milestonesOnly';
 let milestonesOnly = localStorage.getItem(MILESTONES_ONLY_KEY) === 'true';
 
+// Tag pills collapse to plain coloured dots once the view gets too dense to
+// read their text: below this many pixels per day the label text is more
+// clutter than help, so we swap it for a dot (CSS `.is-tags-compact`). Zoom in
+// past the threshold and the full text comes back. Tunable single knob.
+const TAG_TEXT_MIN_PX_PER_DAY = 12;
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
 const BRAND_MODE = (import.meta.env.VITE_BRAND_MODE ?? 'select') as 'select' | 'fixed';
 const DEFAULT_BRAND = (import.meta.env.VITE_DEFAULT_BRAND ?? 'marcel-mellor') as string;
 
@@ -91,6 +101,9 @@ let formJiraIssues: JiraIssue[] = [];
 // dependsOn IDs for the form currently open. Mutated by the deps autosuggest
 // chips; read back in applyItemForm.
 let formDependsOn: string[] = [];
+// Tags for the form currently open. Mutated by the tags autosuggest chips;
+// read back in applyItemForm.
+let formTags: string[] = [];
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let realtimeUnsub: (() => void) | null = null;
 let realtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -447,7 +460,7 @@ async function renderTimeline(view: View) {
     // Prepend the brand-resolved icon at render time so the stored `content`
     // stays clean (used by the edit form, confirm dialogs, and Sheets).
     template: (item: TimelineItem) =>
-      item ? `${iconSpanHtml(item.icon)}${item.content ?? ''}` : '',
+      item ? `${tagPillsHtml(item.tags)}${iconSpanHtml(item.icon)}${item.content ?? ''}` : '',
     // vis-timeline's XSS filter strips the icon span's class/style. Our content
     // and titles are already escapeHtml'd at build time and icon keys are
     // validated, so disabling the redundant filter is safe here.
@@ -484,6 +497,8 @@ async function renderTimeline(view: View) {
       lastH = h;
       timeline?.setOptions({ height: `${h}px` });
     }
+    // width may have changed too (e.g. detail panel opening) → re-evaluate
+    updateTagDensity();
   });
   ro.observe(els.timeline);
   (timeline as any)._ro = ro;
@@ -532,6 +547,11 @@ async function renderTimeline(view: View) {
     });
   }
 
+  updateTagDensity();
+  // `rangechange` fires continuously while zooming/panning; `updateTagDensity`
+  // is a no-op unless the compact state actually flips, so this is cheap.
+  timeline.on('rangechange', updateTagDensity);
+
   timeline.on('select', (props: { items: string[] }) => {
     const id = props.items[0];
     if (!id) {
@@ -569,6 +589,20 @@ async function renderTimeline(view: View) {
   }
 
   setStatus(statusFor(view, built!));
+}
+
+// Toggle the compact tag mode based on how much horizontal room a day of the
+// timeline currently occupies. Recomputed on zoom/pan (`rangechange`) and on
+// container resize; only mutates the DOM when the state actually flips.
+function updateTagDensity(): void {
+  if (!timeline) return;
+  const win = timeline.getWindow();
+  const width = els.timeline.clientWidth;
+  if (!width) return;
+  const days = (win.end.getTime() - win.start.getTime()) / MS_PER_DAY;
+  const pxPerDay = days > 0 ? width / days : Infinity;
+  const compact = pxPerDay < TAG_TEXT_MIN_PX_PER_DAY;
+  els.timeline.classList.toggle('is-tags-compact', compact);
 }
 
 function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) => void): void {
@@ -882,9 +916,12 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
   formDependsOn = [...dependsOn];
   const owner = typeof metadata.owner === 'string' ? metadata.owner : '';
   formJiraIssues = readJiraIssues(metadata);
+  formTags = readTags(metadata);
 
   const otherMeta = Object.fromEntries(
-    Object.entries(metadata).filter(([k]) => k !== 'dependsOn' && k !== 'owner' && k !== 'jira')
+    Object.entries(metadata).filter(
+      ([k]) => k !== 'dependsOn' && k !== 'owner' && k !== 'jira' && k !== 'tags' && k !== 'tag',
+    )
   );
   const metaJson = Object.keys(otherMeta).length ? JSON.stringify(otherMeta, null, 2) : '';
 
@@ -943,6 +980,14 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
           <ul class="deps-suggest-list" data-role="deps-list" hidden></ul>
         </div>
       </div>
+      <div class="field full tags-field">
+        <label for="f-tags">Tags <small>(farbige Marker)</small></label>
+        <div class="tags-chips" data-role="tags-chips"></div>
+        <div class="tags-suggest">
+          <input id="f-tags" type="text" autocomplete="off" placeholder="Tag suchen oder neu eingeben…" />
+          <ul class="tags-suggest-list" data-role="tags-list" hidden></ul>
+        </div>
+      </div>
       <div class="field full jira-field">
         <label for="f-jira">JIRA <small>(Tickets verlinken)</small></label>
         <div class="jira-chips" data-role="jira-chips"></div>
@@ -989,6 +1034,9 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
   // left (commitItemForm).
   form.addEventListener('input', scheduleLiveEdit);
   form.addEventListener('change', scheduleLiveEdit);
+  // Leaving a field guarantees its edit is written even mid-session, without
+  // waiting for the throttle window or the sidebar to close.
+  form.addEventListener('focusout', () => commitItemForm());
   form.querySelector<HTMLButtonElement>('[data-action="delete"]')!.addEventListener('click', () => {
     deleteItem(id);
   });
@@ -996,6 +1044,7 @@ function showItemForm(item: TimelineFileItem & { id?: string }): void {
   wireBodyEditor(form);
   wireJiraAutosuggest(form);
   wireDepsAutosuggest(form, id);
+  wireTagsAutosuggest(form);
 
   els.detail.hidden = false;
   // Switching items commits the previous form, whose rebuildAndApply reloads the
@@ -1322,6 +1371,149 @@ function wireDepsAutosuggest(form: HTMLFormElement, selfId: string): void {
   });
 }
 
+// Distinct tags already in use across the current source, for autosuggest.
+function collectTimelineTags(): string[] {
+  const out: string[] = [];
+  for (const it of activeSourceFile?.items ?? []) {
+    for (const t of readTags(it.metadata)) {
+      if (!out.includes(t)) out.push(t);
+    }
+  }
+  return out.sort((a, b) => a.localeCompare(b, 'de'));
+}
+
+// Renders the tag chip list into the form, each coloured by its resolved tag
+// colour and carrying a remove button. Re-rendered whenever formTags changes.
+function renderTagChips(form: HTMLFormElement): void {
+  const wrap = form.querySelector<HTMLElement>('[data-role="tags-chips"]');
+  if (!wrap) return;
+  wrap.innerHTML = formTags
+    .map(
+      (tag, i) =>
+        `<span class="tag-chip" style="--tag-color:${tagColor(tag)}">` +
+        `<span class="tag-chip-dot"></span>` +
+        `<span class="tag-chip-label">${escapeHtml(tag)}</span>` +
+        `<button type="button" class="tag-chip-x" data-remove="${i}" aria-label="Entfernen">×</button>` +
+        `</span>`,
+    )
+    .join('');
+  wrap.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.remove);
+      formTags.splice(idx, 1);
+      renderTagChips(form);
+      scheduleLiveEdit();
+    });
+  });
+}
+
+function addTag(form: HTMLFormElement, tag: string): void {
+  const t = tag.trim();
+  if (!t || formTags.includes(t)) return;
+  formTags.push(t);
+  renderTagChips(form);
+  scheduleLiveEdit();
+}
+
+// Autosuggest over the tags already used in the timeline; free-form entry is
+// allowed too (Enter adds whatever is typed, so new tags can be created).
+function wireTagsAutosuggest(form: HTMLFormElement): void {
+  renderTagChips(form);
+
+  const input = form.querySelector<HTMLInputElement>('#f-tags');
+  const list = form.querySelector<HTMLUListElement>('[data-role="tags-list"]');
+  if (!input || !list) return;
+
+  let activeIndex = -1;
+  let current: string[] = [];
+
+  const closeList = () => {
+    list.hidden = true;
+    list.innerHTML = '';
+    activeIndex = -1;
+    current = [];
+  };
+
+  const search = (q: string): string[] => {
+    const needle = q.trim().toLowerCase();
+    return collectTimelineTags()
+      .filter((t) => !formTags.includes(t) && (!needle || t.toLowerCase().includes(needle)))
+      .slice(0, 8);
+  };
+
+  const highlight = () => {
+    list.querySelectorAll<HTMLLIElement>('.tags-suggest-item').forEach((li, i) => {
+      li.classList.toggle('is-active', i === activeIndex);
+    });
+  };
+
+  const pick = (i: number) => {
+    const tag = current[i];
+    if (tag) addTag(form, tag);
+    input.value = '';
+    closeList();
+    input.focus();
+  };
+
+  const renderList = (tags: string[]) => {
+    current = tags;
+    activeIndex = -1;
+    if (!tags.length) {
+      closeList();
+      return;
+    }
+    list.innerHTML = tags
+      .map(
+        (tag, i) =>
+          `<li class="tags-suggest-item" data-i="${i}" role="option">` +
+          `<span class="tags-suggest-dot" style="background-color:${tagColor(tag)}"></span>` +
+          `<span class="tags-suggest-label">${escapeHtml(tag)}</span>` +
+          `</li>`,
+      )
+      .join('');
+    list.querySelectorAll<HTMLLIElement>('.tags-suggest-item').forEach((li) => {
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        pick(Number(li.dataset.i));
+      });
+    });
+    list.hidden = false;
+  };
+
+  input.addEventListener('input', () => renderList(search(input.value)));
+  input.addEventListener('focus', () => renderList(search(input.value)));
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (list.hidden) renderList(search(input.value));
+      activeIndex = Math.min(activeIndex + 1, current.length - 1);
+      highlight();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+      highlight();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      // A highlighted suggestion wins; otherwise commit the free-form input as
+      // a new tag.
+      if (activeIndex >= 0) pick(activeIndex);
+      else if (input.value.trim()) {
+        addTag(form, input.value);
+        input.value = '';
+        closeList();
+      }
+    } else if (e.key === 'Escape') {
+      closeList();
+    }
+  });
+
+  input.addEventListener('blur', () => {
+    // Let a mousedown on a suggestion fire first, then close.
+    setTimeout(closeList, 120);
+  });
+}
+
 // Reads the open item form and writes its values into the in-memory model,
 // then refreshes the live view. Reactive: called on every field change, so the
 // timeline reflects edits as you type. Persistence is deferred until the
@@ -1387,6 +1579,12 @@ function applyItemForm(id: string, form: HTMLFormElement): void {
   if (formJiraIssues.length) meta.jira = formJiraIssues.map((i) => ({ key: i.key, summary: i.summary }));
   else delete meta.jira;
 
+  if (formTags.length) meta.tags = [...formTags];
+  else delete meta.tags;
+  // The tags chip editor supersedes the legacy singular `tag`; drop it so both
+  // don't linger (readTags already folds it into formTags on load).
+  delete meta.tag;
+
   // Invalid metadata JSON: keep the last valid extras and just flag it in the
   // status line — no blocking alert on every keystroke while typing.
   const metaJsonRaw = get('metadata');
@@ -1396,7 +1594,7 @@ function applyItemForm(id: string, form: HTMLFormElement): void {
       const extra = JSON.parse(metaJsonRaw);
       if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
         for (const [k, v] of Object.entries(extra)) {
-          if (k === 'dependsOn' || k === 'owner' || k === 'jira') continue;
+          if (k === 'dependsOn' || k === 'owner' || k === 'jira' || k === 'tags' || k === 'tag') continue;
           meta[k] = v;
         }
       }
@@ -1405,7 +1603,7 @@ function applyItemForm(id: string, form: HTMLFormElement): void {
     }
   } else {
     for (const k of Object.keys(meta)) {
-      if (k === 'dependsOn' || k === 'owner' || k === 'jira') continue;
+      if (k === 'dependsOn' || k === 'owner' || k === 'jira' || k === 'tags' || k === 'tag') continue;
       delete meta[k];
     }
   }
@@ -1424,19 +1622,16 @@ function applyItemForm(id: string, form: HTMLFormElement): void {
 }
 
 // Debounced reactive apply: coalesces rapid keystrokes into one model update.
-function scheduleLiveEdit(): void {
-  if (liveEditTimer) clearTimeout(liveEditTimer);
-  liveEditTimer = setTimeout(() => {
-    liveEditTimer = null;
-    if (!activeFormItemId) return;
-    const form = els.detailBody.querySelector<HTMLFormElement>('form.item-form');
-    if (form) applyItemForm(activeFormItemId, form);
-  }, 100);
-}
+// While an item form is open we persist at most once per PERSIST_THROTTLE_MS —
+// enough for live collaboration without a DB round-trip per keystroke. Leaving
+// a field (focusout) or the sidebar flushes immediately (see commitItemForm).
+const PERSIST_THROTTLE_MS = 10_000;
+let lastFormPersistAt = 0;
+let throttlePersistTimer: ReturnType<typeof setTimeout> | null = null;
 
-// Flushes any pending live edit and persists the source. Called whenever the
-// item sidebar is left (closed, another item opened, view switched, unload).
-function commitItemForm(): void {
+// Applies the open item form to the in-memory model (no DB write) and clears
+// the pending live-edit tick. Shared by the live-edit tick and the commit path.
+function flushLiveEditToModel(): void {
   if (liveEditTimer) {
     clearTimeout(liveEditTimer);
     liveEditTimer = null;
@@ -1444,6 +1639,42 @@ function commitItemForm(): void {
   if (!activeFormItemId) return;
   const form = els.detailBody.querySelector<HTMLFormElement>('form.item-form');
   if (form) applyItemForm(activeFormItemId, form);
+}
+
+function scheduleThrottledPersist(): void {
+  if (throttlePersistTimer) return; // a write is already queued in this window
+  const wait = Math.max(0, PERSIST_THROTTLE_MS - (Date.now() - lastFormPersistAt));
+  throttlePersistTimer = setTimeout(() => {
+    throttlePersistTimer = null;
+    lastFormPersistAt = Date.now();
+    void persist();
+  }, wait);
+}
+
+function cancelThrottledPersist(): void {
+  if (throttlePersistTimer) {
+    clearTimeout(throttlePersistTimer);
+    throttlePersistTimer = null;
+  }
+}
+
+function scheduleLiveEdit(): void {
+  if (liveEditTimer) clearTimeout(liveEditTimer);
+  liveEditTimer = setTimeout(() => {
+    flushLiveEditToModel();
+    // Periodic DB write so collaborators see edits while the field stays focused.
+    scheduleThrottledPersist();
+  }, 100);
+}
+
+// Flushes any pending live edit and persists the source immediately. Called on
+// field blur and whenever the item sidebar is left (closed, another item
+// opened, view switched, unload).
+function commitItemForm(): void {
+  cancelThrottledPersist();
+  flushLiveEditToModel();
+  if (!activeFormItemId) return;
+  lastFormPersistAt = Date.now();
   void persist();
 }
 
@@ -1464,6 +1695,7 @@ function hideDetail() {
     clearTimeout(liveEditTimer);
     liveEditTimer = null;
   }
+  cancelThrottledPersist();
   els.detail.hidden = true;
   els.detailBody.classList.remove('detail-form');
   activeFormItemId = null;

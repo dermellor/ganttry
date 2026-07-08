@@ -15,6 +15,7 @@ export type TimelineItem = {
   className?: string;
   style?: string;
   icon?: string;
+  tags?: string[];
 };
 
 export type TimelineGroup = {
@@ -188,6 +189,52 @@ export function phaseCssId(id: string): string {
   return id.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
+// Item tags: lightweight visual theme markers within a lane (rendered as
+// coloured pills before the title). Stored per item in `metadata.tags`
+// (string[]); a legacy singular `metadata.tag` is still read for backwards
+// compatibility. Colours resolved centrally here.
+const TAG_COLORS: Record<string, string> = {
+  'Stimmen & Modelle': '#8642FE',
+  'Qualität & Daten': '#1D9E75',
+  'Conversation Design': '#BA7517',
+};
+
+const TAG_FALLBACK_COLOR = '#64748B';
+
+export function tagColor(tag: string): string {
+  return TAG_COLORS[tag] ?? TAG_FALLBACK_COLOR;
+}
+
+// Reads tags from metadata, accepting both the current `tags` array and the
+// legacy singular `tag` string. Trims, drops empties, and de-duplicates while
+// preserving order.
+export function readTags(meta: unknown): string[] {
+  if (!meta || typeof meta !== 'object') return [];
+  const m = meta as Record<string, unknown>;
+  const raw: unknown[] = [];
+  if (Array.isArray(m.tags)) raw.push(...m.tags);
+  if (typeof m.tag === 'string') raw.push(m.tag);
+  const out: string[] = [];
+  for (const v of raw) {
+    if (typeof v !== 'string') continue;
+    const t = v.trim();
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+export function tagPillsHtml(tags?: string[]): string {
+  if (!tags || tags.length === 0) return '';
+  return tags
+    .map(
+      (tag) =>
+        // `title` keeps the tag name reachable on hover even when the pill
+        // collapses to a bare dot in the dense (zoomed-out) view.
+        `<span class="item-tag" style="background-color:${tagColor(tag)}" title="${escapeHtml(tag)}">${escapeHtml(tag)}</span>`,
+    )
+    .join('');
+}
+
 // Faint full-height tint per phase, rendered behind the items so you can read
 // which items fall into which phase. Complements the labeled ribbon on top.
 // Colour comes from a per-phase CSS class (see PhaseBand) — a plain inline
@@ -258,6 +305,7 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
       title: raw.title ? escapeHtml(raw.title) : escapeHtml(raw.content),
       type: raw.type ?? (endIso ? 'range' : 'point'),
       icon: normalizeIcon(raw.icon),
+      tags: readTags(raw.metadata),
     });
     details.set(id, detailFromJsonItem({ ...raw, id }));
   }
