@@ -185,14 +185,24 @@ function rebuildAndApply(): void {
 function applyBuildToDataSets(): void {
   if (!activeBuild) return;
   const filtered = filterBuildForDisplay(activeBuild);
-  if (itemsDs) {
-    itemsDs.clear();
-    itemsDs.add(filtered.items);
-  }
-  if (groupsDs) {
-    groupsDs.clear();
-    groupsDs.add(filtered.groups);
-  }
+  // Diff the DataSets in place instead of clear()+add(). Clearing momentarily
+  // empties the timeline, collapsing its content height — the browser then clamps
+  // the vertical-scroll container's scrollTop to the top and vis-timeline latches
+  // that, snapping the view up on every rebuild (live edits, drags, switching
+  // items). update()/remove() keep the surviving rows mounted, so the height
+  // never collapses and the scroll position is left untouched.
+  if (itemsDs) syncDataSet(itemsDs, filtered.items);
+  if (groupsDs) syncDataSet(groupsDs, filtered.groups);
+}
+
+// Reconcile a vis DataSet to `next` without ever emptying it: drop rows that are
+// gone, then add/update the rest. Avoids the content-height collapse a clear()
+// would cause (which resets vis-timeline's vertical scroll to the top).
+function syncDataSet(ds: DataSet<any>, next: Array<{ id?: string | number }>): void {
+  const nextIds = new Set(next.map((r) => String(r.id)));
+  const stale = (ds.getIds() as (string | number)[]).filter((id) => !nextIds.has(String(id)));
+  if (stale.length) ds.remove(stale);
+  ds.update(next);
 }
 
 function statusFor(view: View, build: NonNullable<typeof activeBuild>): string {
@@ -466,28 +476,6 @@ async function renderTimeline(view: View) {
       callback(null);
     },
   } as any);
-
-  // ===== TEMP SCROLL DIAGNOSTIC — nach Debugging wieder entfernen =====
-  // Loggt jedes Mal, wenn vis-timeline den vertikalen Offset auf 0 (= ganz oben)
-  // setzt, samt Stacktrace des Verursachers. So sehen wir im echten Browser,
-  // welcher Code-Pfad den Sprung auslöst.
-  {
-    const tlAny = timeline as any;
-    const orig = tlAny._setScrollTop?.bind(tlAny);
-    if (orig) {
-      tlAny._setScrollTop = (v: number) => {
-        const prev = tlAny.props?.scrollTop;
-        if (v === 0 && prev != null && prev < -5) {
-          // eslint-disable-next-line no-console
-          console.warn('[scroll-diag] Sprung nach oben: scrollTop', prev, '→ 0');
-          // eslint-disable-next-line no-console
-          console.trace('[scroll-diag] Verursacher');
-        }
-        return orig(v);
-      };
-    }
-  }
-  // ===== /TEMP SCROLL DIAGNOSTIC =====
 
   let lastH = containerHeight;
   const ro = new ResizeObserver(() => {
