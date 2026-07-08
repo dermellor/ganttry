@@ -61,14 +61,20 @@ export async function apiPutPhases(sourceId: string, phases: TimelinePhase[]): P
 }
 
 export async function loadSource(id: string): Promise<LoadResult> {
-  // Try the dev API first; fall back to the static copy for production builds.
+  // The timeline is served only from the DB via the API. There is deliberately
+  // NO static /data/sources fallback: a stale committed snapshot is visually
+  // indistinguishable from live data, and it was repeatedly mistaken for the
+  // real thing (e.g. a DB outage, or an id mismatch that 404s). Any failure to
+  // read from the DB now surfaces loudly instead of silently showing old data.
   const apiRes = await fetch(`/api/source/${id}`).catch(() => null);
   if (apiRes && apiRes.ok) {
     return { file: await apiRes.json(), editable: true };
   }
-  const staticRes = await fetch(`/data/sources/${id}.json`);
-  if (!staticRes.ok) throw new Error(`Load failed (${staticRes.status})`);
-  return { file: await staticRes.json(), editable: false };
+  const reason = apiRes ? `HTTP ${apiRes.status}` : 'keine Verbindung zur API';
+  throw new Error(
+    `Timeline „${id}“ konnte nicht aus der DB geladen werden (${reason}). ` +
+      `Kein statischer Fallback – veraltete Daten werden bewusst nicht angezeigt.`,
+  );
 }
 
 export function ensureItemIds(file: TimelineFile): boolean {
