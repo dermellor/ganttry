@@ -174,6 +174,13 @@ export function withPreservedZoom(toggle: () => void): void {
   const oldCenter = center?.clientWidth || oldContainer;
   const chrome = oldContainer - oldCenter; // label column + scrollbar/borders
   const win = tl.getWindow();
+  // Snapshot the vertical scroll too. Shrinking/growing the center width makes
+  // vis-timeline re-stack items on its redraw, which changes the content height
+  // and lets the browser clamp the scroll container back toward the top — so on
+  // the *first* click (panel goes hidden→visible) the view visibly jumps up.
+  // We re-apply this offset after the redraw below, the same way renderTimeline
+  // restores it on a re-render.
+  const prevVScroll = els.timeline.querySelector<HTMLElement>('.vis-panel.vis-left')?.scrollTop ?? 0;
   toggle();
   const newContainer = els.timeline.clientWidth; // forces synchronous layout
   const oldWidth = oldCenter;
@@ -186,6 +193,22 @@ export function withPreservedZoom(toggle: () => void): void {
     // Keep the tracked window in sync so persistence snapshots and URL syncing
     // reflect what's actually shown (silent — no URL write here).
     if (state.userWindow) state.userWindow = { start: new Date(win.start), end: newEnd };
+  }
+  // Restore the vertical scroll through vis-timeline's own authoritative path
+  // (`_setScrollTop` clamps to the new content range, a redraw syncs both the
+  // content transform and the scrollbar container). Repeated across frames so a
+  // pass that ran before layout settled gets corrected.
+  if (prevVScroll > 0) {
+    const restore = () => {
+      const anyTl = tl as unknown as { _setScrollTop?: (v: number) => void };
+      if (typeof anyTl._setScrollTop === 'function') {
+        anyTl._setScrollTop(-prevVScroll);
+        tl.redraw();
+      }
+    };
+    restore();
+    requestAnimationFrame(restore);
+    setTimeout(restore, 0);
   }
 }
 
