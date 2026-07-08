@@ -6,6 +6,10 @@ import visJsRaw from 'vis-timeline/standalone/umd/vis-timeline-graph2d.min.js?ra
 import visCssRaw from 'vis-timeline/styles/vis-timeline-graph2d.min.css?raw';
 import markedJsRaw from 'marked/marked.min.js?raw';
 import baseCssRaw from './styles/base.css?raw';
+import detailCssRaw from './styles/detail.css?raw';
+import formsCssRaw from './styles/forms.css?raw';
+import wysiwygCssRaw from './styles/wysiwyg.css?raw';
+import chipsCssRaw from './styles/chips.css?raw';
 import brandsCssRaw from './styles/brands.css?raw';
 import timelineCssRaw from './styles/timeline.css?raw';
 
@@ -180,6 +184,10 @@ function buildHtml(args: ExportArgs): string {
 <title>${escapeHtml(title)}</title>
 <style>${visCssRaw}</style>
 <style>${baseCssRaw}</style>
+<style>${detailCssRaw}</style>
+<style>${formsCssRaw}</style>
+<style>${wysiwygCssRaw}</style>
+<style>${chipsCssRaw}</style>
 <style>${brandsCssRaw}</style>
 <style>${timelineCssRaw}</style>
 </head>

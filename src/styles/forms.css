@@ -1,0 +1,119 @@
+/* Editable item + phase forms shown inside the detail panel.
+   The Markdown body editor is styled in wysiwyg.css; the JIRA/tags/deps
+   chip + autosuggest widgets in chips.css. */
+
+.detail-body.detail-form {
+  font-size: 13px;
+}
+
+.item-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.item-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.item-form .field.full {
+  grid-column: 1 / -1;
+}
+
+/* The hidden attribute must win over the flex display above. */
+.item-form .field[hidden] {
+  display: none;
+}
+
+/* Point selected: end/duration still editable, just visually de-emphasised. */
+.item-form .field.is-muted {
+  opacity: 0.6;
+}
+
+.item-form label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted, #646464);
+  font-weight: 500;
+}
+
+.item-form label small {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.item-form input,
+.item-form select,
+.item-form textarea {
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  width: 100%;
+}
+
+.item-form textarea {
+  resize: vertical;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  line-height: 1.45;
+}
+
+.item-form input:focus,
+.item-form select:focus,
+.item-form textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+
+.item-form input[readonly] {
+  background: var(--hover, rgba(0, 0, 0, 0.04));
+  color: var(--fg-muted);
+  cursor: default;
+}
+
+.item-form .form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.item-form .btn-primary,
+.item-form .btn-danger {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.item-form .btn-primary {
+  background: var(--accent);
+  color: var(--surface, #fff);
+}
+
+.item-form .btn-primary:hover {
+  background: var(--accent-strong, var(--accent));
+}
+
+.item-form .btn-danger {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--fg-muted);
+}
+
+.item-form .btn-danger:hover {
+  border-color: #d3333a;
+  color: #d3333a;
+}
