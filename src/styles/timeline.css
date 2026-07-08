@@ -44,6 +44,26 @@
   padding: 6px 10px;
   font-size: 12px;
   font-weight: 500;
+  /* Cap the label column: vis-timeline sizes the left panel to the widest
+     label, so long group names (e.g. "ACE (Agent Configuration Experience)")
+     otherwise stretch the sidebar. Wrap instead of widening. !important beats
+     the library's own .vis-inner rule, which loads after this file. */
+  display: inline-block;
+  box-sizing: border-box;
+  max-width: 160px !important;
+  white-space: normal !important;
+  overflow-wrap: break-word;
+  text-align: left;
+}
+
+/* vis-timeline applies a 150px left-padding *fallback* to nested-group labels
+   (rule `.vis-label.vis-nested-group .vis-inner`). Its per-level overrides
+   (level-1 → 15px, …) only kick in when vis can resolve the depth; our groups
+   get `vis-group-level-unknown-but-gte1`, so none match and the 150px sticks —
+   which, under the width cap above, crushes the text to one char per line.
+   Force a sane single indent for every nested child (parents stay at level-0). */
+.vis-ltr .vis-labelset .vis-label.vis-nested-group:not(.vis-group-level-0) .vis-inner {
+  padding-left: 15px !important;
 }
 
 .vis-foreground .vis-group {
