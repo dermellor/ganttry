@@ -197,6 +197,7 @@ const TAG_COLORS: Record<string, string> = {
   'Stimmen & Modelle': '#8642FE',
   'Qualität & Daten': '#1D9E75',
   'Conversation Design': '#BA7517',
+  'Agent Graph': '#315DFF',
 };
 
 const TAG_FALLBACK_COLOR = '#64748B';
