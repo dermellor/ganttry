@@ -32,7 +32,9 @@ export async function apiAddItem(sourceId: string, item: TimelineFileItem): Prom
 export async function apiUpdateItem(
   sourceId: string,
   itemId: string,
-  patch: Partial<TimelineFileItem>,
+  // Values may be `null` to explicitly clear a column (an omitted key leaves the
+  // stored value untouched), so this is wider than Partial<TimelineFileItem>.
+  patch: Record<string, unknown>,
   version?: number,
 ): Promise<TimelineFileItem> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };

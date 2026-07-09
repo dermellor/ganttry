@@ -28,6 +28,36 @@ export function canonicalItem(item: TimelineFileItem): string {
   return JSON.stringify(rest, Object.keys(rest).sort());
 }
 
+// Optional item columns that can be cleared. A PATCH only touches a column when
+// the key is present, so a field the user emptied (e.g. removed the last
+// `metadata.dependsOn`, which drops `metadata` entirely) must be sent as an
+// explicit `null` — otherwise the omitted key leaves the stale DB value intact
+// and it reappears on reload.
+const CLEARABLE_ITEM_FIELDS: (keyof TimelineFileItem)[] = [
+  'end',
+  'duration',
+  'group',
+  'title',
+  'type',
+  'className',
+  'icon',
+  'body',
+  'metadata',
+];
+
+// Build the PATCH body for an item update: all current fields (minus id +
+// server-managed audit) plus an explicit `null` for every clearable field the
+// item no longer carries, so the server resets those columns.
+function buildItemPatch(item: TimelineFileItem): Record<string, unknown> {
+  const { id: _id, version: _v, createdAt: _ca, createdBy: _cb, updatedAt: _ua, updatedBy: _ub, ...rest } =
+    item;
+  const patch: Record<string, unknown> = { ...rest };
+  for (const k of CLEARABLE_ITEM_FIELDS) {
+    if (!(k in patch)) patch[k] = null;
+  }
+  return patch;
+}
+
 // Copy the server-managed audit fields from a saved item back onto the
 // in-memory item, then refresh the open form's audit block if it's showing it.
 function adoptAudit(target: TimelineFileItem, saved: TimelineFileItem): void {
@@ -95,7 +125,7 @@ export async function persist(): Promise<void> {
         if (saved.version != null) state.savedItemVersions.set(it.id, saved.version);
       } else if (prev !== canon) {
         setStatus('Speichere…');
-        const { id: _id, version: _v, createdAt: _ca, createdBy: _cb, updatedAt: _ua, updatedBy: _ub, ...patch } = it;
+        const patch = buildItemPatch(it);
         const saved = await apiUpdateItem(sourceId, it.id, patch, state.savedItemVersions.get(it.id));
         adoptAudit(it, saved);
         state.savedItems.set(it.id, canonicalItem(it));

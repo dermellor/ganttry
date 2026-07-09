@@ -235,7 +235,14 @@ npm run db:import -- acme/mein-plan     # gezielt
 - **Write:** UI-Edits (Drag, Form, Add, Delete) schicken **item-genaue** Calls:
   `POST/PATCH/DELETE /api/source/<id>/item[/<itemId>]`, `PUT …/phases`. `PATCH`
   trägt die bekannte `version` im `If-Match`-Header; passt sie nicht mehr → `409`
-  → der Client lädt das Item neu.
+  → der Client lädt das Item neu. Ein `PATCH` rührt eine Spalte **nur an, wenn
+  der Key im Body steht** (`updateItem`, [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts)) —
+  ein geleertes optionales Feld (z.B. die letzte `metadata.dependsOn` entfernt,
+  wodurch `metadata` ganz vom Item verschwindet) muss daher als **explizites
+  `null`** gesendet werden, sonst bleibt der alte DB-Wert stehen und taucht beim
+  Reload wieder auf. Der Client baut den Patch deshalb über `buildItemPatch`
+  ([`src/persistence.ts`](src/persistence.ts)), das jedes fehlende clearable Feld
+  auf `null` setzt.
 - **Registrierungs-Stubs:** `npm run build:data` (Teil von `dev`/`build`) schreibt
   für jede DB-Timeline nur einen Stub nach `data/<id>.json` (`name` + `items: []`,
   kein Inhalt). Diese Stubs committen — sie halten die Timeline nur in der
