@@ -6,37 +6,74 @@ type Anchor = { left: number; right: number; top: number; bottom: number; midY: 
 type Pt = { x: number; y: number };
 
 const STUB = 12; // horizontal lead-out/lead-in at each item edge
-const CORRIDOR = 22; // vertical detour below same-row items in the backward case
 const CORNER = 6; // corner rounding radius
+const INSET = 14; // how far in from the box corner the tight-case connector attaches
+const ENTRY_GAP = 12; // vertical spacing between multiple arrows entering one target
 
-// Right-angle connector from a predecessor's finish edge (x1,y1) to a
-// successor's start edge (x2,y2). When the successor starts well to the right
-// there's one vertical step; when it starts before the predecessor finishes
-// (overlap / same row) the path drops into a corridor, runs back left, and
-// re-enters from the correct side so it never doubles back through an item.
-function elbowPath(x1: number, y1: number, x2: number, y2: number): string {
-  let pts: Pt[];
-  if (x2 >= x1 + 2 * STUB) {
+// Right-angle connector from a predecessor (finish) to a successor (start),
+// given both items' boxes in host coordinates.
+//
+//  • Roomy — the successor starts well to the right of the predecessor's finish:
+//    the classic Gantt elbow, leaving the finish edge (right, mid-height) and
+//    entering the start edge (left, mid-height) so the arrow points cleanly in.
+//
+//  • Tight / overlapping — the successor starts at or before the predecessor's
+//    finish (back-to-back rows). A right→left elbow would have to double back
+//    through the cramped gap. Instead the line leaves the predecessor's *bottom*
+//    edge near its right end (its finish) and drops down into the successor's
+//    *left* edge at mid-height (arrow pointing right, into the start). It still
+//    reads "A must finish before B starts" without backtracking through the gap.
+//    Mirrored (leaves the top edge) when the successor sits above.
+function connector(s: Anchor, t: Anchor): string {
+  if (t.left >= s.right + 2 * STUB) {
+    const x1 = s.right;
+    const x2 = t.left;
     const midX = (x1 + x2) / 2;
-    pts = [
-      { x: x1, y: y1 },
-      { x: midX, y: y1 },
-      { x: midX, y: y2 },
-      { x: x2, y: y2 },
-    ];
-  } else {
-    const corridorY =
-      Math.abs(y2 - y1) > 2 * CORRIDOR ? (y1 + y2) / 2 : Math.max(y1, y2) + CORRIDOR;
-    pts = [
-      { x: x1, y: y1 },
-      { x: x1 + STUB, y: y1 },
-      { x: x1 + STUB, y: corridorY },
-      { x: x2 - STUB, y: corridorY },
-      { x: x2 - STUB, y: y2 },
-      { x: x2, y: y2 },
-    ];
+    return roundedPath([
+      { x: x1, y: s.midY },
+      { x: midX, y: s.midY },
+      { x: midX, y: t.midY },
+      { x: x2, y: t.midY },
+    ]);
   }
-  return roundedPath(pts);
+
+  const down = t.midY >= s.midY;
+  const sy = down ? s.bottom : s.top; // leave the bottom (or top) edge…
+  const sx = Math.max(s.left + STUB, s.right - INSET); // …near the finish (right) end
+
+  if (sx <= t.left) {
+    // A's finish sits left of B's start: drop straight down (up), then run into
+    // B's left edge — a clean L, arrow pointing right.
+    return roundedPath([
+      { x: sx, y: sy },
+      { x: sx, y: t.midY },
+      { x: t.left, y: t.midY },
+    ]);
+  }
+
+  // Genuine overlap: A's finish is right of B's start. Drop into a corridor,
+  // slide left to just before B's start, then come into B's left edge from the
+  // left so the arrow still points right.
+  const leadX = t.left - STUB;
+  const cy = (sy + t.midY) / 2;
+  return roundedPath([
+    { x: sx, y: sy },
+    { x: sx, y: cy },
+    { x: leadX, y: cy },
+    { x: leadX, y: t.midY },
+    { x: t.left, y: t.midY },
+  ]);
+}
+
+// Shift an anchor (viewport coords) into the SVG host's coordinate system.
+function translate(a: Anchor, host: DOMRect): Anchor {
+  return {
+    left: a.left - host.left,
+    right: a.right - host.left,
+    top: a.top - host.top,
+    bottom: a.bottom - host.top,
+    midY: a.midY - host.top,
+  };
 }
 
 // Renders a polyline through `pts` with rounded corners (quadratic arcs).
@@ -174,32 +211,48 @@ export class DependencyArrows {
     defs.appendChild(marker);
     this.svg.appendChild(defs);
 
+    const w = hostRect.width;
+    const h = hostRect.height;
+
+    const addArrow = (d: string, head: boolean): void => {
+      if (!d) return;
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('d', d);
+      if (head) path.setAttribute('marker-end', 'url(#tl-arrow-head)');
+      path.classList.add('dep-arrow');
+      this.svg.appendChild(path);
+    };
+
     for (const [targetId, sources] of this.deps) {
       const target = this.getAnchor(targetId);
       if (!target) continue;
+      const t = translate(target, hostRect);
+
+      // Resolve + translate on-canvas source boxes.
+      const ss: Anchor[] = [];
       for (const sourceId of sources) {
         const source = this.getAnchor(sourceId);
         if (!source) continue;
+        const s = translate(source, hostRect);
+        if (Math.max(s.right, t.left) < 0 || Math.min(s.right, t.left) > w) continue;
+        if (Math.max(s.midY, t.midY) < 0 || Math.min(s.midY, t.midY) > h) continue;
+        ss.push(s);
+      }
 
-        const x1 = source.right - hostRect.left;
-        const y1 = source.midY - hostRect.top;
-        const x2 = target.left - hostRect.left;
-        const y2 = target.midY - hostRect.top;
-
-        // Skip if completely off-canvas in the host's coord system
-        const w = hostRect.width;
-        const h = hostRect.height;
-        if (Math.max(x1, x2) < 0 || Math.min(x1, x2) > w) continue;
-        if (Math.max(y1, y2) < 0 || Math.min(y1, y2) > h) continue;
-
-        // Orthogonal "Gantt" elbow: leave the predecessor's finish edge, run
-        // through a vertical corridor, and enter the successor's start edge
-        // horizontally (so the arrowhead points cleanly into it).
-        const path = document.createElementNS(SVG_NS, 'path');
-        path.setAttribute('d', elbowPath(x1, y1, x2, y2));
-        path.setAttribute('marker-end', 'url(#tl-arrow-head)');
-        path.classList.add('dep-arrow');
-        this.svg.appendChild(path);
+      if (ss.length === 1) {
+        addArrow(connector(ss[0], t), true);
+      } else if (ss.length >= 2) {
+        // Several predecessors on one target: give each its own arrow but stagger
+        // the entry points along the target's left edge so they don't stack into
+        // a single-looking arrow. Order top→bottom so the vertical order of the
+        // entries matches the vertical order of the sources (no crossing).
+        const sorted = [...ss].sort((a, b) => a.midY - b.midY);
+        const n = sorted.length;
+        const span = Math.min(t.bottom - t.top - 8, (n - 1) * ENTRY_GAP);
+        sorted.forEach((s, i) => {
+          const dy = span * (i / (n - 1) - 0.5);
+          addArrow(connector(s, { ...t, midY: t.midY + dy }), true);
+        });
       }
     }
   }
