@@ -4,6 +4,7 @@
 
 import { Timeline, DataSet } from 'vis-timeline/standalone';
 import {
+  assignLaneSubgroups,
   buildFromJson,
   buildFromNotes,
   tagPillsHtml,
@@ -46,6 +47,14 @@ let phaseBand: PhaseBand | null = null;
 let itemsDs: DataSet<TimelineItem> | null = null;
 let groupsDs: DataSet<TimelineGroup> | null = null;
 
+// Point-label measurement (see repackLanes). A single off-DOM canvas measures
+// text width in the timeline's own font; results are cached by `font|text`.
+// `labelFont` is resolved lazily from a rendered item and reset per render.
+let measureCtx: CanvasRenderingContext2D | null = null;
+let labelFont: string | null = null;
+const labelWidthCache = new Map<string, number>();
+let repackRaf = 0;
+
 export function filterBuildForDisplay(build: BuildResult): {
   items: TimelineItem[];
   groups: TimelineGroup[];
@@ -84,6 +93,9 @@ export function rebuildAndApply(): void {
   const built = buildFromJson(state.activeView, state.activeSourceFile);
   state.activeBuild = built;
   applyBuildToDataSets();
+  // buildFromJson packs lanes with zero-width points; restore the label-width
+  // lanes for the current zoom so edits don't re-collapse milestones.
+  repackLanes();
   if (arrows) arrows.setDependencies(built.dependencies);
   if (phaseBand) phaseBand.setPhases(built.phases);
   setStatus(statusFor(state.activeView, built));
@@ -215,6 +227,11 @@ export async function renderTimeline(view: View) {
   const axisMargin = 8;
   els.timeline.classList.toggle('has-phase-band', built.phases.length > 0);
 
+  // Fresh timeline → the item font may differ (brand switch); drop the cached
+  // font and measurements so point-label widths get re-measured.
+  labelFont = null;
+  labelWidthCache.clear();
+
   timeline = new Timeline(els.timeline, itemsDs, useGroups ? groupsDs : undefined, {
     // Vertical placement is precomputed into per-lane `subgroup`s in buildItems
     // (assignLaneSubgroups); vis only honours subgroups in its non-stacking
@@ -271,13 +288,19 @@ export async function renderTimeline(view: View) {
       timeline?.setOptions({ height: `${h}px` });
     }
     // Panel open/close keeps px/day constant synchronously via withPreservedZoom;
-    // here we only re-evaluate tag-density after any width change.
+    // here we only re-evaluate tag-density after any width change. A width change
+    // also shifts px/day, so re-pack point-label lanes too.
     updateTagDensity();
+    scheduleRepack();
   });
   ro.observe(els.timeline);
   (timeline as any)._ro = ro;
 
   const ensureVisible = () => {
+    // Re-pack lanes with the real px/day + measurable item font before the
+    // timeline becomes visible, so the first painted frame already reserves
+    // room for point labels instead of flashing the overlap.
+    repackLanes();
     timeline?.redraw();
     // Re-apply the pre-render vertical offset once the new timeline has laid out
     // (content height and the feasible scroll range are only known after a
@@ -333,9 +356,13 @@ export async function renderTimeline(view: View) {
   }
 
   updateTagDensity();
-  // `rangechange` fires continuously while zooming/panning; `updateTagDensity`
-  // is a no-op unless the compact state actually flips, so this is cheap.
-  timeline.on('rangechange', updateTagDensity);
+  // `rangechange` fires continuously while zooming/panning. `updateTagDensity`
+  // is a no-op unless the compact state flips, and `scheduleRepack` coalesces to
+  // one re-pack per frame — so this stays cheap during a drag/zoom.
+  timeline.on('rangechange', () => {
+    updateTagDensity();
+    scheduleRepack();
+  });
 
   timeline.on('select', (props: { items: string[] }) => {
     const id = props.items[0];
@@ -380,14 +407,114 @@ export async function renderTimeline(view: View) {
 // timeline currently occupies. Recomputed on zoom/pan (`rangechange`) and on
 // container resize; only mutates the DOM when the state actually flips.
 export function updateTagDensity(): void {
-  if (!timeline) return;
-  const win = timeline.getWindow();
-  const width = els.timeline.clientWidth;
-  if (!width) return;
-  const days = (win.end.getTime() - win.start.getTime()) / MS_PER_DAY;
-  const pxPerDay = days > 0 ? width / days : Infinity;
+  const pxPerDay = currentPxPerDay();
+  if (pxPerDay === null) return;
   const compact = pxPerDay < TAG_TEXT_MIN_PX_PER_DAY;
   els.timeline.classList.toggle('is-tags-compact', compact);
+}
+
+// Horizontal density of the visible window, in px per day. `null` when it can't
+// be computed yet (no timeline / zero width). `Infinity` when the window has
+// collapsed to a point.
+function currentPxPerDay(): number | null {
+  if (!timeline) return null;
+  const width = els.timeline.clientWidth;
+  if (!width) return null;
+  const win = timeline.getWindow();
+  const days = (win.end.getTime() - win.start.getTime()) / MS_PER_DAY;
+  return days > 0 ? width / days : Infinity;
+}
+
+// Coalesce re-packs to one per animation frame: `rangechange` fires many times
+// during a single zoom/pan gesture, but the lanes only need recomputing once
+// per painted frame.
+function scheduleRepack(): void {
+  if (repackRaf) return;
+  repackRaf = requestAnimationFrame(() => {
+    repackRaf = 0;
+    repackLanes();
+  });
+}
+
+// Recompute per-lane subgroups for the current zoom level and push only the
+// items whose lane actually changed into the live DataSet. Because point items
+// reserve their label width (translated from px via the current px/day),
+// zooming out — where the same label spans more days — spreads crowded
+// milestones onto more lanes, and zooming back in re-packs them tight again.
+export function repackLanes(): void {
+  const build = state.activeBuild;
+  if (!timeline || !build || !itemsDs) return;
+  const pxPerDay = currentPxPerDay();
+  if (pxPerDay === null) return;
+
+  const before = new Map(build.items.map((it) => [it.id, it.subgroup]));
+  assignLaneSubgroups(build.items, build.groups, build.dependencies, {
+    pxPerDay,
+    pointLabelPx: measurePointLabelPx,
+  });
+
+  // Only touch items that are actually mounted (milestones-only filter may hide
+  // some) and whose lane moved — a partial update keeps vis's redraw minimal.
+  const present = new Set((itemsDs.getIds() as (string | number)[]).map(String));
+  const changed = build.items
+    .filter((it) => present.has(String(it.id)) && it.subgroup !== before.get(it.id))
+    .map((it) => ({ id: it.id, subgroup: it.subgroup }));
+  if (changed.length) itemsDs.update(changed);
+}
+
+// Estimate the rendered width (px) of a point item's label: dot + optional icon
+// + tag pills (text pills, or dots in compact mode) + the content text, plus
+// padding/breathing room. Text is measured off-DOM in the item font (cached).
+const ICON_LABEL_PX = 20;
+const POINT_LABEL_PAD = 26;
+const PILL_GAP_PX = 6;
+const PILL_TEXT_PAD = 12;
+const PILL_DOT_PX = 16;
+
+function measurePointLabelPx(item: TimelineItem): number {
+  const font = currentLabelFont();
+  let px = measureText(decodeEntities(item.content ?? ''), font) + POINT_LABEL_PAD;
+  if (item.icon) px += ICON_LABEL_PX;
+  if (item.tags?.length) {
+    const compact = els.timeline.classList.contains('is-tags-compact');
+    for (const t of item.tags) {
+      px += compact ? PILL_DOT_PX : measureText(decodeEntities(t), font) + PILL_TEXT_PAD;
+    }
+    px += PILL_GAP_PX;
+  }
+  return px;
+}
+
+function measureText(text: string, font: string): number {
+  const key = `${font}|${text}`;
+  const cached = labelWidthCache.get(key);
+  if (cached != null) return cached;
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+  const w = measureCtx ? ((measureCtx.font = font), measureCtx.measureText(text).width) : text.length * 7.5;
+  labelWidthCache.set(key, w);
+  return w;
+}
+
+// Resolve the canvas `font` shorthand from a rendered item. Only cached once a
+// real `.vis-item-content` exists — before that we return the container font
+// but keep retrying, so an early pre-layout measurement doesn't lock in a wrong
+// font (the cache key includes the font, so a later correct font re-measures).
+function currentLabelFont(): string {
+  if (labelFont) return labelFont;
+  const sample = els.timeline.querySelector<HTMLElement>('.vis-item .vis-item-content');
+  const cs = getComputedStyle(sample ?? els.timeline);
+  const font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  if (sample) labelFont = font;
+  return font;
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
 }
 
 function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) => void): void {

@@ -306,13 +306,38 @@ function packBand(
 //     visually identical to what vis's own stacking produced before.
 //
 // Track order and group membership are never changed ("Tracks bleiben heilig").
-function assignLaneSubgroups(
+export interface LanePackOptions {
+  // Horizontal density of the current viewport. Point label widths (measured in
+  // px) are translated into a time width via this factor.
+  pxPerDay: number;
+  // Measures the rendered label width (px) of a point item — dot + icon + tag
+  // pills + content text. Supplied by the renderer, which has the DOM/font.
+  pointLabelPx: (item: TimelineItem) => number;
+}
+
+const LANE_DAY_MS = 86_400_000;
+
+export function assignLaneSubgroups(
   items: TimelineItem[],
   groups: TimelineGroup[],
   dependencies: Map<string, string[]>,
+  opts?: LanePackOptions,
 ): void {
   const startMs = (it: TimelineItem) => new Date(it.start).getTime();
-  const endMs = (it: TimelineItem) => new Date(it.end ?? it.start).getTime();
+  // Effective right edge used for packing. For range items this is the real end
+  // (bar width == time span, so time already captures the visual footprint). A
+  // point item's time span is zero, but its label renders to the RIGHT of the
+  // dot and occupies horizontal room — without reserving it, two nearby
+  // milestones pack into one lane and their labels overlap. When pack options
+  // are supplied (live, on every zoom) we convert the measured label width (px)
+  // into a time width via the current px/day so the point reserves exactly the
+  // room its label needs at this zoom level.
+  const endMs = (it: TimelineItem) => {
+    if (it.type === 'point' && opts && opts.pxPerDay > 0 && Number.isFinite(opts.pxPerDay)) {
+      return startMs(it) + (opts.pointLabelPx(it) / opts.pxPerDay) * LANE_DAY_MS;
+    }
+    return new Date(it.end ?? it.start).getTime();
+  };
 
   const byGroup = new Map<string, TimelineItem[]>();
   for (const it of items) {
