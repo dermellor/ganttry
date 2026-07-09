@@ -92,6 +92,29 @@ export function durationToMs(value: unknown): number | null {
   return n * (map[unit] ?? 0) || null;
 }
 
+/**
+ * Add a duration (ms) to a start date and return an end string in the SAME
+ * calendar frame as the start. Bare `YYYY-MM-DD` starts are interpreted as
+ * LOCAL midnight — the way vis-timeline reads bare dates in the viewer — and the
+ * result is emitted WITHOUT a `Z`, so it is parsed back in that same local
+ * frame. Using `new Date(start).getTime()` + `.toISOString()` here (UTC, with a
+ * trailing `Z`) instead makes a duration-derived end land TZ-offset hours past a
+ * neighbouring item's local-midnight `start`: in CET/CEST that's 1–2h, so two
+ * back-to-back bars overlap by ~8px and read as "touching" at high zoom.
+ */
+export function endFromDuration(start: string, ms: number): string | null {
+  const base = new Date(
+    typeof start === 'string' && start.length === 10 ? `${start}T00:00:00` : start,
+  );
+  const t = base.getTime();
+  if (Number.isNaN(t)) return null;
+  const d = new Date(t + ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return time === '00:00:00' ? date : `${date}T${time}`;
+}
+
 export function pickStartForView(
   note: Note,
   view: View,
@@ -171,8 +194,7 @@ function resolvePhases(file: TimelineFile): ResolvedPhase[] {
     if (!end) {
       const ms = durationToMs(p.duration);
       if (ms && ms > 0) {
-        const startMs = new Date(p.start).getTime();
-        if (!Number.isNaN(startMs)) end = new Date(startMs + ms).toISOString();
+        end = endFromDuration(p.start, ms) ?? end;
       }
     }
     if (!end) continue; // a phase needs an extent to render
@@ -444,8 +466,7 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
     if (!endIso && raw.type !== 'point') {
       const ms = durationToMs(raw.duration);
       if (ms && ms > 0) {
-        const startMs = new Date(raw.start).getTime();
-        if (!Number.isNaN(startMs)) endIso = new Date(startMs + ms).toISOString();
+        endIso = endFromDuration(raw.start, ms) ?? endIso;
       }
     }
 

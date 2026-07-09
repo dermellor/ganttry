@@ -99,6 +99,45 @@
 .vis-item.vis-point.lane-4,
 .vis-item.vis-point.lane-5 { background-color: #fff !important; }
 
+/* Guarantee a 2px gutter between back-to-back range bars at every zoom level.
+   vis-timeline pins each bar to its exact date, so when one ends where the next
+   begins they render edge-to-edge. We can't shrink the outer .vis-item (its
+   pixel width is set inline from the dates), so instead the visible bar — fill,
+   border, radius — is painted on the inner `.vis-item-overflow` wrapper, and the
+   outer item reserves a 2px gutter on its right via `padding-right`. The wrapper
+   is `width:100%`, i.e. the item's content box (slot − 2px), so the bar keeps a
+   full border on all four sides and simply ends 2px before the next bar starts.
+   Must come *after* the `.lane-*` rules above, which paint the outer item. */
+.vis-item.vis-range {
+  background: transparent !important;
+  border: 0 !important;
+  padding-right: 2px !important;
+  box-sizing: border-box !important;
+}
+
+.vis-item.vis-range .vis-item-overflow {
+  background-color: var(--item-bg);
+  border: 1px solid var(--item-border);
+  /* Match vis-timeline's own `.vis-item.vis-range` radius (2px). Before the
+     wrapper refactor, range bars inherited that 2px (vis's selector outweighs
+     our `.vis-item { border-radius: 6px }`); painting on `.vis-item-overflow`
+     escaped that rule, so a 6px here made the corners visibly larger than live. */
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+
+.vis-item.vis-range.lane-0 .vis-item-overflow { background-color: var(--lane-0-bg); border-color: var(--lane-0-border); }
+.vis-item.vis-range.lane-1 .vis-item-overflow { background-color: var(--lane-1-bg); border-color: var(--lane-1-border); }
+.vis-item.vis-range.lane-2 .vis-item-overflow { background-color: var(--lane-2-bg); border-color: var(--lane-2-border); }
+.vis-item.vis-range.lane-3 .vis-item-overflow { background-color: var(--lane-3-bg); border-color: var(--lane-3-border); }
+.vis-item.vis-range.lane-4 .vis-item-overflow { background-color: var(--lane-4-bg); border-color: var(--lane-4-border); }
+.vis-item.vis-range.lane-5 .vis-item-overflow { background-color: var(--lane-5-bg); border-color: var(--lane-5-border); }
+
+/* Move the selection ring onto the wrapper so it hugs the visible bar, not the
+   full (gutter-inclusive) slot. */
+.vis-item.vis-range.vis-selected { box-shadow: none !important; }
+.vis-item.vis-range.vis-selected .vis-item-overflow { box-shadow: 0 0 0 2px var(--accent); }
+
 .vis-labelset .vis-label.lane-0 { box-shadow: inset 4px 0 0 var(--lane-0-border); }
 .vis-labelset .vis-label.lane-1 { box-shadow: inset 4px 0 0 var(--lane-1-border); }
 .vis-labelset .vis-label.lane-2 { box-shadow: inset 4px 0 0 var(--lane-2-border); }
