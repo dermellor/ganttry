@@ -733,6 +733,15 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     delete item.type;
   }
 
+  // The reverse: promoting a point to a range/box without giving it an extent
+  // would produce a range item with no `end` — vis-timeline drops those, so the
+  // item silently vanishes from the timeline. Seed a default duration (matching
+  // the double-click "new item" default) so it renders as a visible bar the
+  // user can then resize.
+  if ((item.type === 'range' || item.type === 'background') && !item.end && !item.duration) {
+    item.duration = '1w';
+  }
+
   const grp = get('group');
   if (grp) item.group = grp;
 
