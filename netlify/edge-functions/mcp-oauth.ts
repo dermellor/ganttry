@@ -83,7 +83,10 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
         client_id,
         redirect_uris,
         token_endpoint_auth_method: 'none',
-        grant_types: ['authorization_code'],
+        // Must include 'refresh_token' — a spec-compliant client reads the
+        // per-client grant_types and won't attempt silent refresh unless it's
+        // listed here, forcing a full re-login every ACCESS_TTL (12 h).
+        grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
       },
       201,
