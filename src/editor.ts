@@ -102,17 +102,9 @@ export function generateNewId(file: TimelineFile, prefix = 'i'): string {
   return `${prefix}${n}`;
 }
 
-export function isoDateOnly(value: Date | string | number | null | undefined): string {
-  if (value == null) return '';
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  if (typeof value === 'number') return new Date(value).toISOString().slice(0, 10);
-  if (typeof value === 'string') {
-    if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
-    const d = new Date(value);
-    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  }
-  return '';
-}
+// Date ⇄ calendar-day conversion lives in one place — see src/date.ts. Re-export
+// so existing `import { isoDateOnly } from './editor'` call sites keep working.
+export { isoDateOnly } from './date';
 
 export function findItemIndex(file: TimelineFile, id: string): number {
   return file.items.findIndex((it) => it.id === id);

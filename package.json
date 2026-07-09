@@ -13,6 +13,7 @@
     "build": "npm run build:data && vite build",
     "export": "npm run build:data && tsx scripts/export-view.ts",
     "preview": "vite preview",
+    "test": "TZ=Europe/Berlin node --import tsx --test src/*.test.ts",
     "mcp": "tsx scripts/mcp/server.ts"
   },
   "dependencies": {

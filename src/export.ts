@@ -62,7 +62,7 @@ function clientScript(): string {
   }
 
   var timeline = new vis.Timeline(elTimeline, itemsDs, useGroups ? groupsDs : undefined, {
-    stack: true,
+    stack: false,
     horizontalScroll: true,
     zoomKey: 'ctrlKey',
     template: function (item) {

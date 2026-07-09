@@ -52,6 +52,24 @@ export function snapshotSaved(): void {
   state.savedPhasesJson = JSON.stringify(state.activeSourceFile?.phases ?? []);
 }
 
+// True when the in-memory model differs from the last-saved snapshot, i.e. there
+// are local edits not yet written to the server. Mirrors the diff persist() uses
+// (add / change / delete / phases). Used to stop a remote refresh from
+// clobbering an edit the user just made but that hasn't persisted yet.
+export function hasUnsavedChanges(): boolean {
+  const file = state.activeSourceFile;
+  if (!file) return false;
+  const currentIds = new Set<string>();
+  for (const it of file.items) {
+    if (!it.id) continue;
+    currentIds.add(it.id);
+    const prev = state.savedItems.get(it.id);
+    if (prev === undefined || prev !== canonicalItem(it)) return true;
+  }
+  for (const id of state.savedItems.keys()) if (!currentIds.has(id)) return true;
+  return JSON.stringify(file.phases ?? []) !== state.savedPhasesJson;
+}
+
 export async function persist(): Promise<void> {
   if (!state.activeSourceId || !state.activeSourceFile) return;
   if (state.persisting) {
@@ -128,7 +146,24 @@ export async function persist(): Promise<void> {
 // current viewport. Used when a remote change arrives via realtime.
 export function scheduleRemoteRefresh(): void {
   if (state.realtimeRefreshTimer) clearTimeout(state.realtimeRefreshTimer);
-  state.realtimeRefreshTimer = setTimeout(() => {
+  state.realtimeRefreshTimer = setTimeout(async () => {
+    if (!state.activeView) return;
+    // A remote refresh reloads the source from the server and rebuilds the
+    // timeline — which would silently discard any local edit that hasn't been
+    // persisted yet (e.g. a drag whose 250 ms save debounce is still pending).
+    // Flush first, then reload; if edits are still in flight afterwards, defer.
+    if (state.persisting || hasUnsavedChanges()) {
+      await persist();
+      // Still saving (in-flight or coalesced) → retry shortly.
+      if (state.persisting || state.persistAgain) {
+        scheduleRemoteRefresh();
+        return;
+      }
+      // Persist finished but we're still dirty → the write failed. Keep the
+      // local edits and skip the reload rather than discard them or busy-loop;
+      // the next realtime event or user action will retry.
+      if (hasUnsavedChanges()) return;
+    }
     if (!state.activeView) return;
     const win = state.timeline?.getWindow();
     if (win) state.pendingWindow = { start: new Date(win.start), end: new Date(win.end) };

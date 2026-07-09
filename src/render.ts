@@ -216,7 +216,11 @@ export async function renderTimeline(view: View) {
   els.timeline.classList.toggle('has-phase-band', built.phases.length > 0);
 
   timeline = new Timeline(els.timeline, itemsDs, useGroups ? groupsDs : undefined, {
-    stack: true,
+    // Vertical placement is precomputed into per-lane `subgroup`s in buildItems
+    // (assignLaneSubgroups); vis only honours subgroups in its non-stacking
+    // path, and fixed lanes stay put while scrolling (vis's own stacking
+    // re-flows vertically as items enter/leave the viewport).
+    stack: false,
     horizontalScroll: true,
     zoomKey: 'ctrlKey',
     // Prepend the brand-resolved icon at render time so the stored `content`
@@ -234,7 +238,13 @@ export async function renderTimeline(view: View) {
     zoomMin: 1000 * 60 * 60 * 6,
     zoomMax: 1000 * 60 * 60 * 24 * 365 * 30,
     snap: (date: Date) => {
+      // Snap to the nearest *local* day. vis parses stored "YYYY-MM-DD" as local
+      // midnight and isoDateOnly reads Dates in local time, so snapping locally
+      // keeps the whole pipeline consistent. Rounding (not flooring) makes a
+      // sub-day drag in either direction land on the nearest day rather than
+      // snapping back to the origin.
       const d = new Date(date);
+      if (d.getHours() >= 12) d.setDate(d.getDate() + 1);
       d.setHours(0, 0, 0, 0);
       return d;
     },

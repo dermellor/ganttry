@@ -7,6 +7,10 @@ export const UNGROUPED = '_ungrouped';
 export type TimelineItem = {
   id: string;
   group?: string;
+  // Numeric on purpose: vis-timeline's string `subgroupOrder` sorts with
+  // `a - b`, so a padded-string lane id ("l000") yields NaN and no sort. A plain
+  // lane number sorts correctly (see layoutDependencyLanes).
+  subgroup?: number;
   start: string;
   end?: string;
   content: string;
@@ -24,6 +28,8 @@ export type TimelineGroup = {
   className?: string;
   nestedGroups?: string[];
   showNested?: boolean;
+  subgroupOrder?: string;
+  subgroupStack?: boolean;
 };
 
 const LANE_COUNT = 6;
@@ -252,6 +258,135 @@ function phaseBackgroundItems(phases: ResolvedPhase[]): TimelineItem[] {
   }));
 }
 
+// Greedily packs a set of non-overlapping-by-time items into as few lanes as
+// possible, starting at lane index `base`. Returns the number of lanes used.
+// Records each item's absolute lane in `laneOf`. "Tightest fit" (reuse the
+// latest-finishing lane that's free) keeps rows dense.
+function packBand(
+  band: TimelineItem[],
+  base: number,
+  laneOf: Map<string, number>,
+  startMs: (it: TimelineItem) => number,
+  endMs: (it: TimelineItem) => number,
+): number {
+  const laneEnds: number[] = [];
+  const ordered = [...band].sort((a, b) => startMs(a) - startMs(b) || endMs(a) - endMs(b));
+  for (const it of ordered) {
+    const s = startMs(it);
+    let chosen = -1;
+    let chosenEnd = -Infinity;
+    for (let li = 0; li < laneEnds.length; li++) {
+      if (laneEnds[li] <= s && laneEnds[li] > chosenEnd) {
+        chosen = li;
+        chosenEnd = laneEnds[li];
+      }
+    }
+    if (chosen === -1) {
+      chosen = laneEnds.length;
+      laneEnds.push(endMs(it));
+    } else {
+      laneEnds[chosen] = endMs(it);
+    }
+    laneOf.set(it.id, base + chosen);
+  }
+  return laneEnds.length;
+}
+
+// Deterministic vertical lane layout for every track, rendered via vis-timeline
+// `subgroup`s (one subgroup per lane). We take stacking over from vis entirely
+// (the timeline runs with `stack: false`) because vis only honours subgroups in
+// its non-stacking path — and because fixed, precomputed lanes are stable while
+// vis's own stacking re-flows vertically as items scroll in/out of view.
+//
+//   • Tracks WITH an internal dependency graph get a "staircase": connected
+//     items are placed in topological layers (longest-path depth) so every
+//     predecessor sits on a lane strictly above its successors and all
+//     dependency arrows flow downward; free items are packed into a block below.
+//   • Tracks WITHOUT internal dependencies just get a compact greedy packing —
+//     visually identical to what vis's own stacking produced before.
+//
+// Track order and group membership are never changed ("Tracks bleiben heilig").
+function assignLaneSubgroups(
+  items: TimelineItem[],
+  groups: TimelineGroup[],
+  dependencies: Map<string, string[]>,
+): void {
+  const startMs = (it: TimelineItem) => new Date(it.start).getTime();
+  const endMs = (it: TimelineItem) => new Date(it.end ?? it.start).getTime();
+
+  const byGroup = new Map<string, TimelineItem[]>();
+  for (const it of items) {
+    // Background items (phase tints) span the full group height and are not
+    // laned; everything else gets a subgroup so nothing overlaps under
+    // `stack: false`.
+    if (!it.group || it.type === 'background') continue;
+    let bucket = byGroup.get(it.group);
+    if (!bucket) byGroup.set(it.group, (bucket = []));
+    bucket.push(it);
+  }
+
+  for (const [groupId, groupItems] of byGroup) {
+    const ids = new Set(groupItems.map((i) => i.id));
+
+    // Intra-group edges only (cross-group deps are ignored — they'd force items
+    // out of their track).
+    const preds = new Map<string, string[]>();
+    const connected = new Set<string>();
+    for (const it of groupItems) {
+      const ps = (dependencies.get(it.id) ?? []).filter((d) => ids.has(d) && d !== it.id);
+      preds.set(it.id, ps);
+      if (ps.length) {
+        connected.add(it.id);
+        for (const p of ps) connected.add(p);
+      }
+    }
+
+    const laneOf = new Map<string, number>();
+    let base = 0;
+
+    if (connected.size > 0) {
+      // Longest-path layer per connected item (with a cycle guard so a malformed
+      // dependsOn loop can't recurse forever).
+      const layer = new Map<string, number>();
+      const inStack = new Set<string>();
+      const computeLayer = (id: string): number => {
+        const cached = layer.get(id);
+        if (cached !== undefined) return cached;
+        if (inStack.has(id)) return 0; // back-edge: break the cycle
+        inStack.add(id);
+        let best = 0;
+        for (const p of preds.get(id) ?? []) best = Math.max(best, computeLayer(p) + 1);
+        inStack.delete(id);
+        layer.set(id, best);
+        return best;
+      };
+      for (const id of connected) computeLayer(id);
+      const maxLayer = Math.max(...[...connected].map((id) => layer.get(id) ?? 0));
+
+      // Connected items as layer bands (top = layer 0); banding by layer
+      // guarantees every edge points from a lower lane index to a higher one
+      // (i.e. downward). Free items packed into a block below.
+      for (let L = 0; L <= maxLayer; L++) {
+        const band = groupItems.filter((it) => connected.has(it.id) && layer.get(it.id) === L);
+        if (band.length) base += packBand(band, base, laneOf, startMs, endMs);
+      }
+      const free = groupItems.filter((it) => !connected.has(it.id));
+      if (free.length) base += packBand(free, base, laneOf, startMs, endMs);
+    } else {
+      // No internal dependencies: plain compact packing.
+      base += packBand(groupItems, base, laneOf, startMs, endMs);
+    }
+
+    // Numeric lane ids so vis-timeline's `subgroupOrder` (numeric `a - b` sort)
+    // keeps lanes in the computed top-to-bottom order (lane 0 = top).
+    for (const it of groupItems) {
+      it.subgroup = laneOf.get(it.id) ?? 0;
+    }
+    const g = groups.find((x) => x.id === groupId);
+    if (g) g.subgroupOrder = 'subgroup';
+  }
+}
+
 function extractDependsOn(meta: unknown): string[] {
   if (!meta || typeof meta !== 'object') return [];
   const v = (meta as Record<string, unknown>).dependsOn;
@@ -322,6 +457,7 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
 
   const phases = resolvePhases(file);
   items.push(...phaseBackgroundItems(phases));
+  assignLaneSubgroups(items, groups, dependencies);
   assignLanes(items, groups);
   return { items, groups, details, dependencies, phases };
 }
@@ -363,6 +499,7 @@ export function buildFromNotes(view: View, notes: Note[], cfg: Config): BuildRes
     return a.id.localeCompare(b.id, 'de');
   });
 
+  assignLaneSubgroups(items, groups, new Map());
   assignLanes(items, groups);
   return { items, groups, details, dependencies: new Map(), phases: [] };
 }
