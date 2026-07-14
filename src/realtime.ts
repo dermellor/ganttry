@@ -6,6 +6,7 @@
 // (the app still works — remote changes appear on the next reload).
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { PresenceUser } from './presence';
 
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -58,6 +59,46 @@ export function subscribeTimeline(timelineId: string, onChange: (c: RemoteChange
       () => onChange({ table: 'timelines', event: 'UPDATE', id: timelineId }),
     )
     .subscribe();
+
+  return () => {
+    void db.removeChannel(channel);
+  };
+}
+
+/**
+ * Join the presence channel for one timeline and announce `me` as online.
+ * `onSync` fires whenever the roster changes with the de-duplicated list of
+ * users currently connected (one entry per email, even across multiple tabs).
+ * Returns an unsubscribe function. No-op when realtime is disabled.
+ */
+export function joinPresence(
+  timelineId: string,
+  me: PresenceUser,
+  onSync: (users: PresenceUser[]) => void,
+): () => void {
+  const db = getClient();
+  if (!db) return () => {};
+
+  const channel = db.channel(`presence:${timelineId}`, {
+    config: { presence: { key: me.email } },
+  });
+
+  const emit = () => {
+    const roster = channel.presenceState<PresenceUser>();
+    const byEmail = new Map<string, PresenceUser>();
+    for (const entries of Object.values(roster)) {
+      for (const entry of entries) {
+        if (entry?.email) byEmail.set(entry.email, { email: entry.email, name: entry.name });
+      }
+    }
+    onSync([...byEmail.values()]);
+  };
+
+  channel
+    .on('presence', { event: 'sync' }, emit)
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') void channel.track({ email: me.email, name: me.name });
+    });
 
   return () => {
     void db.removeChannel(channel);

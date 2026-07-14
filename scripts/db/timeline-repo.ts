@@ -8,7 +8,7 @@
 // whole-sheet rewrite — concurrent edits on different items no longer clobber.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { TimelineFile, TimelineFileItem, TimelinePhase } from '../../src/types';
+import type { CustomFieldDef, TimelineFile, TimelineFileItem, TimelinePhase } from '../../src/types';
 
 export type TimelineGroupDecl = {
   id: string;
@@ -126,7 +126,7 @@ export async function listTimelines(db: SupabaseClient): Promise<TimelineMeta[]>
 export async function getTimeline(db: SupabaseClient, id: string): Promise<TimelineFile | null> {
   const { data: tl, error: tlErr } = await db
     .from('timelines')
-    .select('id, name, description, group_by, phases')
+    .select('id, name, description, group_by, phases, custom_fields')
     .eq('id', id)
     .maybeSingle();
   if (tlErr) throw new Error(`getTimeline: ${tlErr.message}`);
@@ -151,6 +151,8 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
   if (tl.description != null) file.description = tl.description;
   if (tl.group_by != null) file.groupBy = tl.group_by;
   if (Array.isArray(tl.phases) && tl.phases.length) file.phases = tl.phases as TimelinePhase[];
+  if (Array.isArray(tl.custom_fields) && tl.custom_fields.length)
+    file.customFields = tl.custom_fields as CustomFieldDef[];
   if (groupRows && groupRows.length) file.groups = groupRows.map(rowToGroup);
   return file;
 }
@@ -164,6 +166,7 @@ export async function replaceTimeline(db: SupabaseClient, id: string, file: Time
     description: file.description ?? null,
     group_by: file.groupBy ?? null,
     phases: file.phases ?? [],
+    custom_fields: file.customFields ?? [],
     updated_at: new Date().toISOString(),
   });
   if (upErr) throw new Error(`replaceTimeline meta: ${upErr.message}`);
@@ -322,12 +325,15 @@ export async function updatePhases(db: SupabaseClient, id: string, phases: Timel
 export async function updateMeta(
   db: SupabaseClient,
   id: string,
-  meta: { name?: string; description?: string; groupBy?: string },
+  meta: { name?: string; description?: string; groupBy?: string; customFields?: CustomFieldDef[] },
 ): Promise<void> {
   const set: Record<string, any> = { updated_at: new Date().toISOString() };
   if ('name' in meta) set.name = meta.name ?? null;
   if ('description' in meta) set.description = meta.description ?? null;
   if ('groupBy' in meta) set.group_by = meta.groupBy ?? null;
+  // Custom-field definitions are patched as a unit (like phases). Absent key =
+  // leave untouched, so a plain name/description edit never clears them.
+  if ('customFields' in meta) set.custom_fields = meta.customFields ?? [];
   const { error } = await db.from('timelines').update(set).eq('id', id);
   if (error) throw new Error(`updateMeta: ${error.message}`);
 }

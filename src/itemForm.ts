@@ -4,6 +4,13 @@
 // persistence.ts (commitItemForm / scheduleLiveEdit).
 
 import { escapeHtml, readTags, tagColor } from './buildItems';
+import {
+  applyCustomFields,
+  initCustomFieldState,
+  isManagedMetaKey,
+  renderCustomFieldsHtml,
+  wireCustomFields,
+} from './customFields';
 import { TIMELINE_ICONS } from './icons';
 import { findItemIndex, isoDateOnly } from './editor';
 import { createMarkdownEditor, type MarkdownEditor } from './wysiwyg';
@@ -40,11 +47,10 @@ export function showItemForm(item: TimelineFileItem & { id?: string }): void {
   const owner = typeof metadata.owner === 'string' ? metadata.owner : '';
   state.formJiraIssues = readJiraIssues(metadata);
   state.formTags = readTags(metadata);
+  initCustomFieldState(metadata);
 
   const otherMeta = Object.fromEntries(
-    Object.entries(metadata).filter(
-      ([k]) => k !== 'dependsOn' && k !== 'owner' && k !== 'jira' && k !== 'tags' && k !== 'tag',
-    )
+    Object.entries(metadata).filter(([k]) => !isManagedMetaKey(k)),
   );
   const metaJson = Object.keys(otherMeta).length ? JSON.stringify(otherMeta, null, 2) : '';
 
@@ -115,6 +121,7 @@ export function showItemForm(item: TimelineFileItem & { id?: string }): void {
           <ul class="tags-suggest-list" data-role="tags-list" hidden></ul>
         </div>
       </div>
+      ${renderCustomFieldsHtml(metadata)}
       <div class="field full jira-field">
         <label for="f-jira">JIRA <small>(Tickets verlinken)</small></label>
         <div class="jira-chips" data-role="jira-chips"></div>
@@ -174,6 +181,7 @@ export function showItemForm(item: TimelineFileItem & { id?: string }): void {
   wireJiraAutosuggest(form);
   wireDepsAutosuggest(form, id);
   wireTagsAutosuggest(form);
+  wireCustomFields(form);
 
   withPreservedZoom(() => {
     els.detail.hidden = false;
@@ -775,6 +783,9 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   // don't linger (readTags already folds it into formTags on load).
   delete meta.tag;
 
+  // Custom fields (managed by their own controls, so kept out of the JSON box).
+  applyCustomFields(form, meta);
+
   // Invalid metadata JSON: keep the last valid extras and just flag it in the
   // status line — no blocking alert on every keystroke while typing.
   const metaJsonRaw = get('metadata');
@@ -784,7 +795,7 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
       const extra = JSON.parse(metaJsonRaw);
       if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
         for (const [k, v] of Object.entries(extra)) {
-          if (k === 'dependsOn' || k === 'owner' || k === 'jira' || k === 'tags' || k === 'tag') continue;
+          if (isManagedMetaKey(k)) continue;
           meta[k] = v;
         }
       }
@@ -793,7 +804,7 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     }
   } else {
     for (const k of Object.keys(meta)) {
-      if (k === 'dependsOn' || k === 'owner' || k === 'jira' || k === 'tags' || k === 'tag') continue;
+      if (isManagedMetaKey(k)) continue;
       delete meta[k];
     }
   }

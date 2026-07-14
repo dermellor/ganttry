@@ -74,11 +74,34 @@ export type TimelinePhase = {
   icon?: string;
 };
 
+// Per-timeline custom fields. The *definitions* are timeline-level config
+// (stored on the timeline row, like `phases`); a field's *value* lives per item
+// in `metadata[key]` — a string for `text`/`select`, a string[] for
+// `multi-select`. Configuration is backend-side for now (no in-app editor for
+// the definitions); they're seeded via the DB / MCP `set_custom_fields`.
+export type CustomFieldType = 'text' | 'select' | 'multi-select';
+
+export type CustomFieldOption = {
+  value: string;
+  label?: string;
+  // Optional pill colour (hex), used for select / multi-select chips.
+  color?: string;
+};
+
+export type CustomFieldDef = {
+  key: string;
+  label: string;
+  type: CustomFieldType;
+  // Allowed choices for `select` / `multi-select`. Ignored for `text`.
+  options?: CustomFieldOption[];
+};
+
 export type TimelineFile = {
   name?: string;
   description?: string;
   groupBy?: string;
   phases?: TimelinePhase[];
+  customFields?: CustomFieldDef[];
   items: TimelineFileItem[];
   groups?: {
     id: string;

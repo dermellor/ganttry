@@ -15,15 +15,19 @@ import type { Timeline } from 'vis-timeline/standalone';
 import type { Config, Note, TimelineFile, View } from './types';
 import type { BuildResult } from './buildItems';
 import type { JiraIssue } from './jira';
+import type { PresenceUser } from './presence';
 import { isoDateOnly } from './editor';
 import { writeUrlState, type UrlState } from './urlState';
 
 export const els = {
   timeline: document.getElementById('timeline') as HTMLDivElement,
+  list: document.getElementById('list') as HTMLElement,
   viewSelect: document.getElementById('view-select') as HTMLSelectElement,
+  modeSelect: document.getElementById('mode-select') as HTMLSelectElement,
   brandControl: document.getElementById('brand-control') as HTMLLabelElement,
   brandSelect: document.getElementById('brand-select') as HTMLSelectElement,
   milestonesOnly: document.getElementById('milestones-only') as HTMLInputElement,
+  presence: document.getElementById('presence') as HTMLDivElement,
   addBtn: document.getElementById('add-btn') as HTMLButtonElement,
   exportBtn: document.getElementById('export-btn') as HTMLButtonElement,
   status: document.getElementById('status') as HTMLSpanElement,
@@ -35,6 +39,9 @@ export const els = {
 };
 
 export const MILESTONES_ONLY_KEY = 'timelines.milestonesOnly';
+export const VIEW_MODE_KEY = 'timelines.viewMode';
+
+export type ViewMode = 'timeline' | 'list';
 
 // Tag pills collapse to plain coloured dots once the view gets too dense to
 // read their text: below this many pixels per day the label text is more
@@ -85,8 +92,20 @@ export interface AppState {
   // Tags for the form currently open. Mutated by the tags autosuggest chips;
   // read back in applyItemForm.
   formTags: string[];
+  // Selected values per multi-select custom field for the form currently open,
+  // keyed by field key. Mutated by the custom-field chip editors; read back in
+  // applyItemForm. Scalar (text/select) fields are read straight from the DOM.
+  formCustomMulti: Record<string, string[]>;
   saveTimer: ReturnType<typeof setTimeout> | null;
   realtimeUnsub: (() => void) | null;
+  presenceUnsub: (() => void) | null;
+  // Source id the presence channel is currently joined to (null = none). Lets
+  // setupRealtime skip a re-join on same-view re-renders (avoids badge flicker
+  // and leave/join churn broadcast to other clients).
+  presenceSourceId: string | null;
+  // Signed-in user (from /api/me); labels our own presence avatar. Null when the
+  // site isn't gated / identity is unknown.
+  currentUser: PresenceUser | null;
   realtimeRefreshTimer: ReturnType<typeof setTimeout> | null;
   // Debounce for reactive form edits: coalesces rapid keystrokes into one
   // model update + live rebuild (see scheduleLiveEdit).
@@ -98,6 +117,7 @@ export interface AppState {
   pendingWindow: { start: Date; end: Date } | null;
   suppressUrlSync: boolean;
   milestonesOnly: boolean;
+  viewMode: ViewMode;
   persisting: boolean;
   persistAgain: boolean;
   lastFormPersistAt: number;
@@ -122,8 +142,12 @@ export const state: AppState = {
   formJiraIssues: [],
   formDependsOn: [],
   formTags: [],
+  formCustomMulti: {},
   saveTimer: null,
   realtimeUnsub: null,
+  presenceUnsub: null,
+  presenceSourceId: null,
+  currentUser: null,
   realtimeRefreshTimer: null,
   liveEditTimer: null,
   currentBrand: DEFAULT_BRAND,
@@ -133,6 +157,7 @@ export const state: AppState = {
   pendingWindow: null,
   suppressUrlSync: false,
   milestonesOnly: localStorage.getItem(MILESTONES_ONLY_KEY) === 'true',
+  viewMode: localStorage.getItem(VIEW_MODE_KEY) === 'list' ? 'list' : 'timeline',
   persisting: false,
   persistAgain: false,
   lastFormPersistAt: 0,
@@ -230,6 +255,7 @@ export function syncUrl(): void {
     urlState.to = isoDateOnly(state.userWindow.end);
   }
   if (state.milestonesOnly) urlState.milestones = true;
+  if (state.viewMode === 'list') urlState.mode = 'list';
   if (BRAND_MODE === 'select' && state.currentBrand && state.currentBrand !== DEFAULT_BRAND) {
     urlState.brand = state.currentBrand;
   }

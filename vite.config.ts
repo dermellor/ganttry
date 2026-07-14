@@ -112,6 +112,14 @@ function timelinesApi(): Plugin {
         return JSON.parse(raw);
       };
 
+      // GET /api/me — current user for the header presence badge. Local dev has
+      // no auth session, so everyone is the single "local" identity (matches the
+      // updatedBy attribution the write path uses in dev).
+      server.middlewares.use('/api/me', (req, res, next) => {
+        if (req.method !== 'GET') return next();
+        send(res, 200, { email: 'local', name: 'local' });
+      });
+
       // GET /api/sources — list timelines
       server.middlewares.use('/api/sources', async (req, res, next) => {
         if (req.method !== 'GET') return next();

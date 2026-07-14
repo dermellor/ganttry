@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/src/styles/chips.css" />
     <link rel="stylesheet" href="/src/styles/brands.css" />
     <link rel="stylesheet" href="/src/styles/timeline.css" />
+    <link rel="stylesheet" href="/src/styles/list.css" />
   </head>
   <body data-brand="marcel-mellor">
     <header class="app-header">
@@ -19,6 +20,13 @@
         <label class="control">
           <span>View</span>
           <select id="view-select"></select>
+        </label>
+        <label class="control">
+          <span>Ansicht</span>
+          <select id="mode-select">
+            <option value="timeline">Timeline</option>
+            <option value="list">Liste</option>
+          </select>
         </label>
         <label class="control control-toggle" id="milestones-control">
           <input type="checkbox" id="milestones-only" />
@@ -33,11 +41,13 @@
         </label>
       </div>
       <div class="app-controls">
+        <div id="presence" class="presence" aria-label="Online" hidden></div>
         <button id="add-btn" class="export-btn add-btn" type="button" title="Neuen Eintrag hinzufügen" hidden>+ Eintrag</button>
       </div>
     </header>
     <main class="app-main">
       <section id="timeline" class="timeline" aria-label="Timeline"></section>
+      <section id="list" class="list-view" aria-label="Liste" hidden></section>
       <aside id="detail" class="detail" hidden>
         <div class="detail-header">
           <button id="detail-close" class="detail-close" aria-label="Schließen">×</button>

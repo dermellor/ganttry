@@ -144,6 +144,59 @@ Acme neo-icons, defined in the `:root` block of
 
 Icons render on the live viewer, exported HTML, and the read-only Netlify deploy.
 
+## Custom fields (per timeline)
+
+Beyond the built-in item fields, each timeline can declare its own **custom
+fields**. The *definitions* are timeline-level config (stored on the timeline
+row in the `custom_fields` jsonb column, a peer of `phases`); a field's *value*
+lives per item in `metadata[key]`. This keeps the field schema per-timeline
+while reusing the existing `timeline_items.metadata` column for values.
+
+A definition is:
+
+```jsonc
+{
+  "key": "tier",                 // metadata key the value is stored under
+  "label": "Tier",               // shown in the editor
+  "type": "multi-select",        // "text" | "select" | "multi-select"
+  "options": [                   // choices for select / multi-select (ignored for text)
+    { "value": "Free",       "color": "#64748B" },
+    { "value": "Starter",    "color": "#1D9E75" },
+    { "value": "Scale",      "color": "#315DFF" },
+    { "value": "Enterprise", "color": "#8642FE" }
+  ]
+}
+```
+
+**Values by type** (in `metadata[key]`): `text` / `select` → a string;
+`multi-select` → a `string[]`. Definitions are read/written in
+[`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts) (`getTimeline`,
+`replaceTimeline`, `updateMeta`) and flow to the viewer as `file.customFields`.
+
+**Configuration is backend-side for now** — there is no in-app editor for the
+definitions themselves. Seed / change them via:
+
+- the MCP tool `set_custom_fields(id, customFields)` (patches the definitions as
+  a unit; items are untouched), or `replace_timeline`'s optional `customFields`;
+- a direct `PATCH /api/source/<id>` with `{ "customFields": [...] }`;
+- SQL on the `timelines.custom_fields` column.
+
+**Editing values:** for a DB-backed (editable) timeline the item form renders one
+control per custom field ([`src/customFields.ts`](src/customFields.ts), wired
+into [`src/itemForm.ts`](src/itemForm.ts)) — a chip editor with a fixed-options
+dropdown for `multi-select`, a `<select>` for `select`, a text input for `text`.
+Custom-field keys are treated as managed metadata (like `tags` / `dependsOn`),
+so they never leak into the free-form "Other metadata (JSON)" box.
+
+The **Example Timeline (v1)** timeline carries a seeded `tier` multi-select
+(Free / Starter / Scale / Enterprise).
+
+> Note: metadata-only edits (custom fields, tags, `dependsOn`, owner, JIRA) rely
+> on the persist-diff seeing inside `metadata`. `canonicalItem`
+> ([`src/persistence.ts`](src/persistence.ts)) therefore serialises with a
+> recursive key-sort — **not** a `JSON.stringify` array replacer, which silently
+> drops nested keys and made metadata-only edits look unchanged.
+
 ## Supabase als Datenquelle
 
 Editierbare Timelines liegen in **Supabase (Postgres)**, nicht mehr in Google
@@ -282,6 +335,28 @@ hat. Daher bewusst opt-in — auf der gated Netlify-Site nur setzen, wenn das
 akzeptabel ist. Writes bleiben serverseitig (Service-Key). Ohne diese Vars
 funktioniert alles weiter, fremde Änderungen erscheinen dann erst beim Reload.
 
+#### Presence (wer ist online)
+
+Der Header zeigt oben rechts Avatare aller, die dieselbe **editierbare
+DB-Timeline** gerade offen haben. Umgesetzt über einen Supabase-**Presence**-
+Channel (`presence:<timelineId>`, `joinPresence` in [`src/realtime.ts`](src/realtime.ts)) —
+kein DB-Tabellen-Zugriff, keine RLS-Policy nötig. Gerendert von
+[`src/presence.ts`](src/presence.ts) ins `#presence`-Element, per Farbe/Initialen
+pro E-Mail; der eigene Avatar bekommt einen Ring. Mehrfach-Tabs derselben Person
+werden per E-Mail dedupliziert, ab dem 6. User klappt der Rest zu „+N".
+
+Lebenszyklus hängt an `setupRealtime` ([`src/persistence.ts`](src/persistence.ts)):
+Beim View-Wechsel wird die alte Presence abgemeldet und der Badge geleert, für
+editierbare Quellen neu beigetreten. Gleiche Opt-in-Bedingung wie Realtime
+(`VITE_SUPABASE_*`) — ohne die Vars bleibt der Badge aus.
+
+Die eigene Identität kommt vom `GET /api/me`-Endpoint (das Session-Cookie ist
+HttpOnly, der Client kennt sich sonst nicht): Netlify-Edge-Function
+[`netlify/edge-functions/me.ts`](netlify/edge-functions/me.ts) liest die Session
+(`{ email, name }`) hinter dem Auth-Gate; die Vite-Middleware liefert lokal
+`{ email: 'local' }`. Ist keine Identität bekannt (ungegatete Site), trackt der
+Client anonym als „Gast".
+
 ## MCP server (Claude Code)
 
 Ein stdio-MCP-Server (`scripts/mcp/server.ts`) erlaubt Claude Code, die
@@ -393,15 +468,39 @@ The picker-response parsing is shared by both runtimes in
 `scripts/jira/picker.ts`. Browse-link rendering uses the public, build-time
 `VITE_JIRA_BASE_URL` (default `https://your-org.atlassian.net`).
 
+## View modes: Timeline / Liste
+
+The header **Ansicht** dropdown switches between two renderings of the *same*
+active build:
+
+- **Timeline** — the vis-timeline (default).
+- **Liste** — a scrollable, grouped table ([`src/listView.ts`](src/listView.ts)):
+  one section per group (group order preserved, items sorted by start), with
+  columns Eintrag (icon + tag pills + content), Start, Ende, Typ, Owner. Phase
+  background items are omitted. The milestones-only filter applies here too.
+
+Both modes share all state and machinery: the timeline instance stays alive
+(just hidden) in list mode, so drags, the detail/edit form, and persistence keep
+working. Clicking a row opens the same detail panel (or edit form on editable
+sources), tracks the selection, and highlights the row — identical to selecting
+a timeline item. Edits (form, add, delete) repaint the list live via
+`applyBuildToDataSets`. The mode persists in `localStorage`
+(`timelines.viewMode`) and in the URL hash (`mode=list`), so list views can be
+deep-linked and survive reload.
+
 ## URL state
 
-Selected view, opened item, visible time window, milestones-only filter, and (in `select` brand mode) the brand are encoded in the location hash so links can be shared and back/forward navigation works. Format:
+Selected view, opened item, visible time window, milestones-only filter, the
+view mode, and (in `select` brand mode) the brand are encoded in the location
+hash so links can be shared and back/forward navigation works. Format:
 
 ```
-#view=<id>&item=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&m=1&brand=<name>
+#view=<id>&item=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&m=1&brand=<name>&mode=list
 ```
 
-Only non-default values are written. Switching views via the dropdown clears `item` and `from`/`to`. Hash changes from outside the app (paste, back/forward) re-apply state without reload.
+Only non-default values are written (`mode` only when `list`). Switching views
+via the dropdown clears `item` and `from`/`to`. Hash changes from outside the
+app (paste, back/forward) re-apply state without reload.
 
 ## Configuration: `timelines.config.json`
 

@@ -19,13 +19,15 @@
 
 .item-form .jira-field,
 .item-form .tags-field,
-.item-form .deps-field {
+.item-form .deps-field,
+.item-form .cf-field {
   position: relative;
 }
 
 .jira-chips,
 .tags-chips,
-.deps-chips {
+.deps-chips,
+.cf-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -34,13 +36,15 @@
 
 .jira-chips:empty,
 .tags-chips:empty,
-.deps-chips:empty {
+.deps-chips:empty,
+.cf-chips:empty {
   display: none;
 }
 
 .jira-chip,
 .tag-chip,
-.deps-chip {
+.deps-chip,
+.cf-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -54,7 +58,9 @@
 }
 
 .tag-chip-dot,
-.tags-suggest-dot {
+.tags-suggest-dot,
+.cf-chip-dot,
+.cf-suggest-dot {
   flex: none;
   width: 8px;
   height: 8px;
@@ -65,7 +71,12 @@
   background: var(--tag-color, #64748b);
 }
 
-.tag-chip-label {
+.cf-chip-dot {
+  background: var(--cf-color, #64748b);
+}
+
+.tag-chip-label,
+.cf-chip-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -91,7 +102,8 @@
 
 .jira-chip-x,
 .tag-chip-x,
-.deps-chip-x {
+.deps-chip-x,
+.cf-chip-x {
   border: none;
   background: transparent;
   cursor: pointer;
@@ -104,20 +116,23 @@
 
 .jira-chip-x:hover,
 .tag-chip-x:hover,
-.deps-chip-x:hover {
+.deps-chip-x:hover,
+.cf-chip-x:hover {
   background: var(--border, rgba(0, 0, 0, 0.1));
   color: var(--fg, #2c3333);
 }
 
 .jira-suggest,
 .tags-suggest,
-.deps-suggest {
+.deps-suggest,
+.cf-suggest {
   position: relative;
 }
 
 .jira-suggest-list,
 .tags-suggest-list,
-.deps-suggest-list {
+.deps-suggest-list,
+.cf-suggest-list {
   list-style: none;
   margin: 4px 0 0;
   padding: 4px;
@@ -170,6 +185,33 @@
 .deps-suggest-id {
   font-size: 12px;
   color: var(--fg-muted, #646464);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Single-line suggestion rows (dot + label) for the tags and custom-field
+   multi-select dropdowns. */
+.tags-suggest-item,
+.cf-suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tags-suggest-item.is-active,
+.tags-suggest-item:hover,
+.cf-suggest-item.is-active,
+.cf-suggest-item:hover {
+  background: var(--hover, rgba(0, 0, 0, 0.06));
+}
+
+.cf-suggest-label {
+  font-size: 12px;
+  color: var(--fg, #2c3333);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

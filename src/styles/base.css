@@ -64,6 +64,44 @@ body {
   align-items: center;
 }
 
+.presence {
+  display: flex;
+  align-items: center;
+}
+
+.presence-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--mark-radius, 50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
+  background: hsl(var(--presence-hue, 260), 52%, 46%);
+  border: 2px solid var(--surface, #fff);
+  box-sizing: border-box;
+  margin-left: -8px;
+  cursor: default;
+  user-select: none;
+  text-transform: uppercase;
+}
+
+.presence-avatar:first-child {
+  margin-left: 0;
+}
+
+.presence-avatar.is-self {
+  box-shadow: 0 0 0 2px var(--accent, #2f0d5b);
+}
+
+.presence-more {
+  background: var(--fg-muted, #646464);
+  font-size: 10px;
+}
+
 .control {
   display: inline-flex;
   align-items: center;

@@ -1,0 +1,118 @@
+/* Alternative "Liste/Tabelle" rendering (listView.ts). Same brand tokens as the
+   timeline; a scrollable grouped table of the active build's items. */
+
+.list-view {
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  padding: 16px 24px;
+}
+
+.list-view[hidden] {
+  display: none;
+}
+
+.list-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.list-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted, #646464);
+  background: var(--surface, #fff);
+  border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.15));
+}
+
+.list-group-row th {
+  text-align: left;
+  padding: 16px 12px 6px;
+  font-family: var(--font-headline, var(--font-body, serif));
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--fg, #2c3333);
+  border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+
+.list-row {
+  cursor: pointer;
+  transition: background 0.08s ease;
+}
+
+.list-row:hover {
+  background: var(--surface-alt, rgba(47, 13, 91, 0.05));
+}
+
+.list-row.is-selected {
+  background: var(--surface-alt, rgba(47, 13, 91, 0.09));
+  box-shadow: inset 3px 0 0 0 var(--accent, #2f0d5b);
+}
+
+.list-row:focus-visible {
+  outline: 2px solid var(--accent, #2f0d5b);
+  outline-offset: -2px;
+}
+
+.list-row td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.06));
+  vertical-align: top;
+}
+
+.list-entry {
+  font-weight: 500;
+}
+
+.list-date,
+.list-type,
+.list-owner {
+  white-space: nowrap;
+  color: var(--fg-muted, #646464);
+}
+
+.list-empty {
+  color: var(--fg-muted, #646464);
+  opacity: 0.6;
+}
+
+.list-empty-msg {
+  color: var(--fg-muted, #646464);
+  padding: 8px 0;
+}
+
+/* Reuse the timeline's semantic icon + tag pill markup inside table rows. The
+   base rules in timeline.css are scoped to `.vis-item`, so mirror them here. */
+.list-view .item-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.4em;
+  vertical-align: -0.15em;
+  background-color: currentColor;
+  -webkit-mask: var(--item-icon) center / contain no-repeat;
+  mask: var(--item-icon) center / contain no-repeat;
+}
+
+.list-view .item-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #fff;
+  vertical-align: 1px;
+  white-space: nowrap;
+}

@@ -16,9 +16,12 @@ import {
   els,
   setStatus,
   syncUrl,
+  isEditableView,
   BRAND_MODE,
   DEFAULT_BRAND,
   MILESTONES_ONLY_KEY,
+  VIEW_MODE_KEY,
+  type ViewMode,
 } from './state';
 import {
   renderTimeline,
@@ -26,9 +29,23 @@ import {
   applyBuildToDataSets,
   statusFor,
   addNewItem,
+  repackLanes,
 } from './render';
 import { commitItemForm } from './persistence';
+import type { PresenceUser } from './presence';
+import { deleteItem } from './itemForm';
 import { hideDetail, showDetailForId } from './detailPanel';
+import { renderListView, setupListView } from './listView';
+
+// Is the keyboard focus currently in a place where a keystroke means "type",
+// not "act on the selected item"? Guards the global Delete shortcut so it never
+// fires while editing a form field.
+function isTypingTarget(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
 
 async function loadConfig(): Promise<Config> {
   const res = await fetch('/data/config.json');
@@ -40,6 +57,22 @@ async function loadNotes(): Promise<NotesData> {
   const res = await fetch('/data/notes.json');
   if (!res.ok) throw new Error(`Could not load notes data: ${res.status}`);
   return res.json();
+}
+
+// Who am I? Powers the header presence badge (labels our own avatar). Best-effort:
+// any failure just leaves the identity unknown, presence still works anonymously.
+async function loadCurrentUser(): Promise<PresenceUser | null> {
+  try {
+    const res = await fetch('/api/me');
+    if (!res.ok) return null;
+    const data = (await res.json()) as { email?: unknown; name?: unknown };
+    if (typeof data.email === 'string' && data.email) {
+      return { email: data.email, name: typeof data.name === 'string' ? data.name : undefined };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function applyBrand(brand: string) {
@@ -63,6 +96,31 @@ async function applyView(viewId: string) {
   hideDetail();
   await renderTimeline(view);
   syncUrl();
+}
+
+// Switch between the timeline and the list rendering of the same build. The
+// timeline instance is kept alive (just hidden) so all edit machinery — drags,
+// the form, persistence — keeps working; the list is a second view of the same
+// data. `persist` is false during bootstrap/external-URL application where the
+// caller drives localStorage + URL syncing itself.
+function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean } = {}) {
+  state.viewMode = mode;
+  els.modeSelect.value = mode;
+  const list = mode === 'list';
+  els.timeline.hidden = list;
+  els.list.hidden = !list;
+  if (list) {
+    renderListView();
+  } else {
+    // The timeline was display:none while the list showed, so vis-timeline
+    // couldn't size itself. Redraw + re-pack point lanes now that it's visible.
+    state.timeline?.redraw();
+    repackLanes();
+  }
+  if (persist) {
+    localStorage.setItem(VIEW_MODE_KEY, mode);
+    syncUrl();
+  }
 }
 
 async function handleExport() {
@@ -91,9 +149,14 @@ async function handleExport() {
 async function bootstrap() {
   setStatus('Lade Konfiguration & Notizen…');
 
-  const [cfg, notesData] = await Promise.all([loadConfig(), loadNotes()]);
+  const [cfg, notesData, currentUser] = await Promise.all([
+    loadConfig(),
+    loadNotes(),
+    loadCurrentUser(),
+  ]);
   state.config = cfg;
   state.allNotes = notesData.notes;
+  state.currentUser = currentUser;
 
   els.viewSelect.innerHTML = cfg.views
     .map((v) => `<option value="${v.id}">${escapeHtml(v.name)}</option>`)
@@ -124,6 +187,13 @@ async function bootstrap() {
     localStorage.setItem(MILESTONES_ONLY_KEY, String(state.milestonesOnly));
   }
 
+  if (urlState.mode) {
+    state.viewMode = urlState.mode;
+    localStorage.setItem(VIEW_MODE_KEY, urlState.mode);
+  }
+  els.modeSelect.value = state.viewMode;
+  setupListView();
+
   state.pendingItem = urlState.item ?? null;
   if (urlState.from && urlState.to) {
     const startD = new Date(urlState.from);
@@ -136,6 +206,7 @@ async function bootstrap() {
   state.suppressUrlSync = true;
   applyBrand(brand);
   await applyView(initialView);
+  applyViewMode(state.viewMode, { persist: false });
   state.suppressUrlSync = false;
   syncUrl();
 
@@ -161,16 +232,32 @@ async function bootstrap() {
     state.pendingWindow = null;
     applyView(els.viewSelect.value);
   });
+  els.modeSelect.addEventListener('change', () => {
+    const mode = els.modeSelect.value === 'list' ? 'list' : 'timeline';
+    applyViewMode(mode);
+  });
   els.brandSelect.addEventListener('change', () => applyBrand(els.brandSelect.value));
   els.detailClose.addEventListener('click', () => {
     commitItemForm();
     state.selectedItemId = null;
     state.timeline?.setSelection([]);
     hideDetail();
+    if (state.viewMode === 'list') renderListView();
     syncUrl();
   });
   els.addBtn.addEventListener('click', addNewItem);
   els.exportBtn.addEventListener('click', handleExport);
+
+  // Delete key (and Mac's ⌫) removes the item whose edit form is open — as long
+  // as focus is not inside a form field. deleteItem() shows its own confirm.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (isTypingTarget(e.target)) return;
+    if (!isEditableView() || !state.activeFormItemId) return;
+    e.preventDefault();
+    deleteItem(state.activeFormItemId);
+  });
 
   onExternalUrlStateChange((incoming) => applyExternalState(incoming));
 }
@@ -195,6 +282,8 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
         state.timeline?.redraw();
       }
     }
+
+    const wantMode: ViewMode = incoming.mode === 'list' ? 'list' : 'timeline';
 
     const targetViewId = incoming.view ?? state.config.defaultView;
     const targetWindow = incoming.from && incoming.to
@@ -230,6 +319,9 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
         state.userWindow = targetWindow;
       }
     }
+
+    if (wantMode !== state.viewMode) localStorage.setItem(VIEW_MODE_KEY, wantMode);
+    applyViewMode(wantMode, { persist: false });
   } finally {
     state.suppressUrlSync = false;
   }

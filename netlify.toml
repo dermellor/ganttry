@@ -34,6 +34,12 @@
   function = "timelines-api"
   path = "/api/sources"
 
+# Current-user probe for the header presence badge. Runs after auth, so it only
+# sees a session when the gate is active.
+[[edge_functions]]
+  function = "me"
+  path = "/api/me"
+
 # JIRA issue-picker proxy — powers the editor autosuggest. Runs after auth.
 # Inactive unless JIRA_ENABLED=true and JIRA_* credentials are set.
 [[edge_functions]]

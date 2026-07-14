@@ -10,7 +10,8 @@ import {
   apiPutPhases,
   ConflictError,
 } from './editor';
-import { isRealtimeEnabled, subscribeTimeline } from './realtime';
+import { isRealtimeEnabled, subscribeTimeline, joinPresence } from './realtime';
+import { renderPresence } from './presence';
 import { state, els, setStatus, PERSIST_THROTTLE_MS } from './state';
 import { renderTimeline } from './render';
 import { applyItemForm, refreshItemAudit } from './itemForm';
@@ -20,12 +21,33 @@ export function schedulePersist(): void {
   state.saveTimer = setTimeout(persist, 250);
 }
 
+// Order-independent deep clone used for canonical serialization: sorts object
+// keys at every level (arrays keep their order — element order is meaningful,
+// e.g. tags / dependsOn). A recursive sort, NOT a JSON.stringify array-replacer:
+// an array replacer whitelists keys and, applied to nested objects too, silently
+// dropped everything inside `metadata` (tags, dependsOn, owner, jira, custom
+// fields) from the diff — so metadata-only edits looked unchanged and never
+// persisted. Sorting recursively keeps that content while staying stable against
+// key-order churn between the server row and the in-memory model.
+function sortDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortDeep);
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(value as Record<string, unknown>).sort()) {
+      out[k] = sortDeep((value as Record<string, unknown>)[k]);
+    }
+    return out;
+  }
+  return value;
+}
+
 // Canonical JSON of an item with the server-managed audit fields stripped, so
-// content changes are detected but a version bump / re-attribution alone is not.
+// content changes (including inside `metadata`) are detected but a version bump
+// / re-attribution alone is not.
 export function canonicalItem(item: TimelineFileItem): string {
   const { version: _v, createdAt: _ca, createdBy: _cb, updatedAt: _ua, updatedBy: _ub, ...rest } =
     item;
-  return JSON.stringify(rest, Object.keys(rest).sort());
+  return JSON.stringify(sortDeep(rest));
 }
 
 // Optional item columns that can be cleared. A PATCH only touches a column when
@@ -207,8 +229,35 @@ export function setupRealtime(): void {
     state.realtimeUnsub();
     state.realtimeUnsub = null;
   }
-  if (!isRealtimeEnabled() || !state.activeSourceId || !state.activeSourceEditable) return;
-  const sourceId = state.activeSourceId;
+
+  const editableSourceId =
+    isRealtimeEnabled() && state.activeSourceId && state.activeSourceEditable
+      ? state.activeSourceId
+      : null;
+
+  // Presence lifecycle: only (re)join when the source actually changes.
+  // setupRealtime re-runs on every same-view re-render (live edits, remote
+  // refreshes); re-subscribing each time would flap the header badge and
+  // broadcast a leave/join churn to the other connected clients.
+  if (editableSourceId !== state.presenceSourceId) {
+    if (state.presenceUnsub) {
+      state.presenceUnsub();
+      state.presenceUnsub = null;
+    }
+    renderPresence([], state.currentUser?.email ?? null);
+    state.presenceSourceId = editableSourceId;
+    if (editableSourceId) {
+      // Fall back to an anonymous identity when /api/me returned nothing.
+      const me = state.currentUser ?? { email: 'anon', name: 'Gast' };
+      state.presenceUnsub = joinPresence(editableSourceId, me, (users) => {
+        if (state.presenceSourceId !== editableSourceId) return; // stale
+        renderPresence(users, me.email);
+      });
+    }
+  }
+
+  if (!editableSourceId) return;
+  const sourceId = editableSourceId;
   state.realtimeUnsub = subscribeTimeline(sourceId, (change) => {
     if (state.activeSourceId !== sourceId) return; // stale event after a view switch
     // Suppress our own echo: we already hold this exact version.

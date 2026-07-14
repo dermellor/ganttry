@@ -5,9 +5,10 @@ export type UrlState = {
   to?: string;
   milestones?: boolean;
   brand?: string;
+  mode?: 'timeline' | 'list';
 };
 
-const ORDER = ['view', 'item', 'from', 'to', 'm', 'brand'] as const;
+const ORDER = ['view', 'item', 'from', 'to', 'm', 'brand', 'mode'] as const;
 
 function parseHash(hash: string): URLSearchParams {
   const h = hash.startsWith('#') ? hash.slice(1) : hash;
@@ -28,6 +29,8 @@ export function readUrlState(): UrlState {
   if (p.get('m') === '1') state.milestones = true;
   const brand = p.get('brand');
   if (brand) state.brand = brand;
+  const mode = p.get('mode');
+  if (mode === 'list' || mode === 'timeline') state.mode = mode;
   return state;
 }
 
@@ -39,6 +42,7 @@ function buildHash(state: UrlState): string {
   if (state.to) map.to = state.to;
   if (state.milestones) map.m = '1';
   if (state.brand) map.brand = state.brand;
+  if (state.mode === 'list') map.mode = state.mode;
   return ORDER.flatMap((k) =>
     map[k] != null ? [`${encodeURIComponent(k)}=${encodeURIComponent(map[k])}`] : [],
   ).join('&');

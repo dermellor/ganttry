@@ -35,6 +35,7 @@ import {
 import { schedulePersist, setupRealtime, snapshotSaved } from './persistence';
 import { showItemForm } from './itemForm';
 import { showDetailForId, hideDetail } from './detailPanel';
+import { renderListView } from './listView';
 import { showPhaseFormByIndex, handlePhaseEdit } from './phaseForm';
 
 // Render-internal handles. `timeline` mirrors state.timeline (kept in sync on
@@ -112,6 +113,9 @@ export function applyBuildToDataSets(): void {
   // never collapses and the scroll position is left untouched.
   if (itemsDs) syncDataSet(itemsDs, filtered.items);
   if (groupsDs) syncDataSet(groupsDs, filtered.groups);
+  // Keep the list view in sync when it's the active display (edits, drags,
+  // milestones-only toggle all funnel through here).
+  if (state.viewMode === 'list') renderListView();
 }
 
 // Reconcile a vis DataSet to `next` without ever emptying it: drop rows that are
@@ -401,6 +405,10 @@ export async function renderTimeline(view: View) {
   }
 
   setStatus(statusFor(view, built));
+
+  // Fresh build → repaint the list too, so switching to it (or reloading a
+  // deep-linked list URL) shows the current data without an extra edit.
+  if (state.viewMode === 'list') renderListView();
 }
 
 // Toggle the compact tag mode based on how much horizontal room a day of the

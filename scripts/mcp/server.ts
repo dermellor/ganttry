@@ -133,6 +133,14 @@ async function putTimeline(id: string, file: TimelineFile): Promise<void> {
   });
 }
 
+/** Patch timeline-level meta (name/description/groupBy/customFields) — no item touch. */
+async function patchMeta(id: string, meta: Record<string, unknown>): Promise<void> {
+  await api(`/api/source/${encodeId(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(meta),
+  });
+}
+
 /** Read-modify-write helper: fetch, mutate in memory, push back. Returns the new file. */
 async function mutate(
   id: string,
@@ -176,8 +184,28 @@ const itemFields = {
   metadata: z
     .record(z.unknown())
     .optional()
-    .describe('Free-form extras, e.g. { "owner": "Product Lead", "dependsOn": ["S-1"] }.'),
+    .describe(
+      'Free-form extras, e.g. { "owner": "Product Lead", "dependsOn": ["S-1"] }. Custom-field ' +
+        'values also live here under the field key (string for text/select, string[] for ' +
+        'multi-select), e.g. { "tier": ["Free", "Scale"] } — see the timeline\'s customFields.',
+    ),
 } as const;
+
+const customFieldOption = z.object({
+  value: z.string().describe('Stored option value.'),
+  label: z.string().optional().describe('Display label (defaults to value).'),
+  color: z.string().optional().describe('Pill colour, hex e.g. "#315DFF".'),
+});
+
+const customFieldDef = z.object({
+  key: z.string().describe('metadata key the value is stored under, e.g. "tier".'),
+  label: z.string().describe('Field label shown in the editor, e.g. "Tier".'),
+  type: z.enum(['text', 'select', 'multi-select']),
+  options: z
+    .array(customFieldOption)
+    .optional()
+    .describe('Allowed choices for select / multi-select. Ignored for text.'),
+});
 
 const groupFields = {
   id: z.string().describe('Group id.'),
@@ -228,11 +256,32 @@ server.registerTool(
       description: z.string().optional(),
       items: z.array(z.object(itemFields)),
       groups: z.array(z.object(groupFields)).optional(),
+      customFields: z.array(customFieldDef).optional().describe('Per-timeline custom-field definitions.'),
     },
   },
   async ({ id, ...file }) => {
     await putTimeline(id, file as TimelineFile);
     return ok({ ok: true, id, items: file.items.length });
+  },
+);
+
+server.registerTool(
+  'set_custom_fields',
+  {
+    title: 'Set custom fields',
+    description:
+      'Replace a timeline\'s custom-field definitions (patched as a unit; items are untouched). ' +
+      'Pass an empty array to clear them. Field values are set per item via metadata under each ' +
+      'field\'s key (see add_item / update_item). Example field: ' +
+      '{ "key": "tier", "label": "Tier", "type": "multi-select", "options": [{ "value": "Free" }, { "value": "Enterprise" }] }.',
+    inputSchema: {
+      id: z.string().describe('Timeline id.'),
+      customFields: z.array(customFieldDef).describe('The full new list of custom-field definitions.'),
+    },
+  },
+  async ({ id, customFields }) => {
+    await patchMeta(id, { customFields });
+    return ok({ ok: true, id, customFields });
   },
 );
 
