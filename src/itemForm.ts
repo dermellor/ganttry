@@ -49,6 +49,10 @@ export function showItemForm(item: TimelineFileItem & { id?: string }): void {
   const metaJson = Object.keys(otherMeta).length ? JSON.stringify(otherMeta, null, 2) : '';
 
   els.detailBody.classList.add('detail-form');
+  // Swapping the form removes the previously-focused input, which fires a
+  // focusout → commit. Guard it: the outgoing form's values must not be
+  // flushed onto this (already switched-to) item.
+  state.formRebuilding = true;
   els.detailBody.innerHTML = `
     <form class="item-form" data-id="${escapeHtml(id)}">
       <div class="field full">
@@ -137,6 +141,7 @@ export function showItemForm(item: TimelineFileItem & { id?: string }): void {
       ${auditBlockHtml(item)}
     </form>
   `;
+  state.formRebuilding = false;
 
   const form = els.detailBody.querySelector('form') as HTMLFormElement;
   const typeSelect = form.querySelector<HTMLSelectElement>('#f-type')!;

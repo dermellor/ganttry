@@ -72,6 +72,10 @@ export interface AppState {
   savedPhasesJson: string;
   activeFormItemId: string | null;
   activeFormPhaseIndex: number | null;
+  // True while showItemForm is swapping the form's DOM. Removing the old
+  // (focused) form fires a focusout → commit; suppress it so the previous
+  // form's values aren't written onto the item being switched to.
+  formRebuilding: boolean;
   // Linked JIRA issues for the form currently open. Mutated by the autosuggest
   // chips; read back in applyItemForm.
   formJiraIssues: JiraIssue[];
@@ -114,6 +118,7 @@ export const state: AppState = {
   savedPhasesJson: '[]',
   activeFormItemId: null,
   activeFormPhaseIndex: null,
+  formRebuilding: false,
   formJiraIssues: [],
   formDependsOn: [],
   formTags: [],

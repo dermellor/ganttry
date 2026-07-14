@@ -236,8 +236,19 @@ export function flushLiveEditToModel(): void {
     state.liveEditTimer = null;
   }
   if (!state.activeFormItemId) return;
+  // The form's DOM is being torn down/rebuilt (item switch). The focusout the
+  // teardown fires must not commit the outgoing form onto the incoming item.
+  if (state.formRebuilding) return;
   const form = els.detailBody.querySelector<HTMLFormElement>('form.item-form');
-  if (form) applyItemForm(state.activeFormItemId, form);
+  if (!form) return;
+  // Write the form's values back to the item the form was actually built for
+  // (its own data-id), not to state.activeFormItemId. When switching items,
+  // activeFormItemId is updated before the form HTML is swapped; tearing down
+  // the old (focused) form fires a focusout → commit whose activeFormItemId is
+  // already the *new* item, which would otherwise overwrite it with the old
+  // form's values. The data-id is the single source of truth for the form.
+  const formId = form.dataset.id ?? state.activeFormItemId;
+  applyItemForm(formId, form);
 }
 
 export function scheduleThrottledPersist(): void {
