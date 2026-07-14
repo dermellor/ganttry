@@ -2,13 +2,61 @@
 
 Generic timeline viewer for `~/_NOTIZEN`. Reads frontmatter dates from Markdown notes, builds timelines via [vis-timeline](https://visjs.github.io/vis-timeline/), and ships with a brand switcher (marcel-mellor / Acme).
 
-## Git workflow
+## Branching, Commits & Session Isolation
 
-**No feature branches, ever.** Commit straight to `main` and push. Do not
-create, use, or leave behind `feat/*`, `refactor/*`, or any other topic branch —
-even when a change feels large. This overrides any default "branch first before
-committing on the default branch" behaviour: on this project, `main` is the only
-branch.
+"I thought the feature was live, but it never shipped" has two root causes that
+pull in opposite directions — so guarding against only one reintroduces the other:
+
+- **Branch rot:** work committed to a branch that was never merged.
+- **Working-tree rot:** work never committed at all — concurrent sessions piling
+  uncommitted changes into the *same* working directory until they entangle and
+  none of it ships.
+
+Feature branches *are* branch rot and don't fix working-tree rot, so
+"branch vs main" is the wrong axis. The rules below attack both roots directly:
+**session isolation**, a **hard done-gate**, and disciplined integration.
+
+### 1. Isolate every change-session in its own git worktree
+
+Any session that will modify code works in its **own git worktree**, never in the
+shared main checkout. Two concurrent sessions then cannot entangle each other's
+working tree. (Claude Code: use `isolation: "worktree"`.) The worktree is
+disposable; what matters is that its changes reach `main` via the done-gate below
+before the session ends.
+
+**Live-preview caveat:** the Vite dev server (PM2) runs from the main checkout and
+does **not** see edits made in a worktree. When a task needs live visual
+verification, either run the dev server from the worktree for the session, or merge
+to `main` and verify there. Never assume the running app reflects worktree edits —
+that mismatch is a known trap.
+
+### 2. Done = committed + pushed + deploy-verified
+
+A change is not "done" until it is committed, pushed to `main`, and the resulting
+Netlify deploy is confirmed green. **Never end a session with uncommitted or
+unpushed changes that belong to the task.** At session end, `git status` must be
+clean except for deliberately-ignored artifacts. If work is genuinely unfinished,
+say so explicitly and leave it committed on a clearly-named branch — not loose in a
+working tree.
+
+### 3. Choose the integration path at the first change of a session
+
+- **Direct to `main`** — for small, low-risk changes. No branch, no issue ceremony.
+- **Worktree + branch + GitHub issue + PR** — for larger or riskier features where
+  a review/merge checkpoint and traceability are worth it. An opened PR must be
+  merged or closed within the session — never left to rot.
+
+Either way, the done-gate (rule 2) applies. If a change is too risky for `main`,
+gate it with a feature flag, not a long-lived branch. Issues live in this repo's
+own tracker (<https://github.com/dermellor/timelines/issues>); reference them from
+the closing commit with `Closes #NN`.
+
+### 4. Guard against foreign in-flight work
+
+At the start of a change-session, check `git status`. If it already contains
+uncommitted changes you did not create, another session owns them — do not build on
+top of or commit them blindly. Surface them and either work in a fresh worktree off
+`HEAD` or coordinate before touching shared files.
 
 ## Ports
 

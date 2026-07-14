@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Reminder: if this session will change code, BEFORE the first Edit/Write ask the user (AskUserQuestion) which integration path -- direct-to-main (small low-risk changes) vs worktree+branch+GitHub-issue+PR (larger/riskier features) -- and run git status to catch foreign uncommitted work. Use isolation: worktree for the change work; note the Vite dev server runs from the main checkout and does NOT see worktree edits (run it from the worktree or merge+verify on main). done = committed + pushed + deploy-verified (Netlify green); never end a change-session with uncommitted work. Details: AGENTS.md > Branching, Commits & Session Isolation.'"
+          }
+        ]
+      }
+    ]
+  }
+}
