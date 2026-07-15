@@ -209,6 +209,12 @@ A phase needs a `label`, a `start`, and an extent (`end` or `duration`) to
 render; phases missing any of these are skipped. They show as a labeled ribbon
 pinned to the top plus a faint full-height tint behind the items.
 
+A group with `nestedGroups` is a **parent/container only** — items are assignable
+solely to its leaf children, never to the parent itself. The editor enforces this
+everywhere (form dropdown renders parents as non-selectable `<optgroup>` headings,
+a drag onto a parent lane snaps into its first leaf, new items default to the
+first leaf group). The rule lives once in [`src/groupHierarchy.ts`](src/groupHierarchy.ts).
+
 Items without `content` are skipped. `start` is optional: a date-less item is
 kept and shown in the **list view** (dates render as „—"), but the **timeline
 view** filters it out (vis-timeline needs a start to place an item) and the
