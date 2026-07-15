@@ -4,7 +4,15 @@
 // document. Pure and deterministic (no Date / IO) so it's unit-testable and the
 // caller stamps the date.
 
-import type { Pricing, PricingFeature, PricingTier } from './types';
+import { statusOrDefault } from './status';
+import {
+  PRICING_FEATURE_META_KEY,
+  PRICING_ITEM_VERSION_META_KEY,
+  type Pricing,
+  type PricingFeature,
+  type PricingTier,
+  type TimelineFileItem,
+} from './types';
 
 export type PricingDoc = {
   timelineId: string;
@@ -33,6 +41,50 @@ export function featureVisibleForVersion(
   const fIdx = versions.indexOf(feature.version);
   if (selIdx < 0 || fIdx < 0) return true;
   return fIdx <= selIdx;
+}
+
+// ---- work indicator (pure helpers, shared with the matrix view) ------------
+
+// Aggregate work state for a feature row, derived from its linked items' status.
+export type WorkState = 'doing' | 'done' | 'open' | 'none';
+
+/** Feature ids an item is assigned to (tolerates scalar or array in metadata). */
+export function readItemFeatureIds(meta: unknown): string[] {
+  const v = (meta as Record<string, unknown> | undefined)?.[PRICING_FEATURE_META_KEY];
+  if (Array.isArray(v)) return v.map(String);
+  if (typeof v === 'string' && v.trim()) return [v.trim()];
+  return [];
+}
+
+/** The pricing version an item's work targets, or undefined. */
+export function itemVersion(it: TimelineFileItem): string | undefined {
+  const v = it.metadata?.[PRICING_ITEM_VERSION_META_KEY];
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+}
+
+/**
+ * Items linked to a feature, filtered by the selected version: exact match on the
+ * item's targeted version, or all items when `selected` is null ("Alle").
+ */
+export function itemsForFeature(
+  featureId: string,
+  items: TimelineFileItem[],
+  selected: string | null,
+): TimelineFileItem[] {
+  return items.filter(
+    (it) =>
+      readItemFeatureIds(it.metadata).includes(featureId) &&
+      (!selected || itemVersion(it) === selected),
+  );
+}
+
+/** Aggregate: Doing wins (in progress); else all-Done → done; else open; none if empty. */
+export function aggregateWorkState(items: TimelineFileItem[]): WorkState {
+  if (!items.length) return 'none';
+  const statuses = items.map((it) => statusOrDefault(it.status));
+  if (statuses.includes('Doing')) return 'doing';
+  if (statuses.every((s) => s === 'Done')) return 'done';
+  return 'open';
 }
 
 // Render one tier's value for a feature as Markdown cell content:

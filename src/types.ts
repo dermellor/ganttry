@@ -145,6 +145,11 @@ export type Pricing = {
 // Item metadata key holding the feature ids an item is assigned to (string[]).
 export const PRICING_FEATURE_META_KEY = 'featureIds';
 
+// Item metadata key holding the pricing version an item's work targets (string,
+// one of Pricing.versions). Drives the version-dependent work indicator in the
+// matrix (an item is "work for version X on feature Y").
+export const PRICING_ITEM_VERSION_META_KEY = 'featureVersion';
+
 export type TimelineFile = {
   name?: string;
   description?: string;

@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pricingToMarkdown, featureVisibleForVersion, type PricingDoc } from './pricing';
+import {
+  pricingToMarkdown,
+  featureVisibleForVersion,
+  itemsForFeature,
+  aggregateWorkState,
+  type PricingDoc,
+} from './pricing';
+import type { TimelineFileItem } from './types';
 
 const doc: PricingDoc = {
   timelineId: 'acme/timeline-example-timeline-v1',
@@ -132,6 +139,26 @@ test('featureVisibleForVersion: feature without version is always visible', () =
 test('featureVisibleForVersion: unknown version never hides', () => {
   const V = ['1.0', '2.0'];
   assert.equal(featureVisibleForVersion({ id: 'x', name: 'X', version: '9.9' }, V, '1.0'), true);
+});
+
+const workItems: TimelineFileItem[] = [
+  { id: 'a', content: 'A', status: 'Doing', metadata: { featureIds: ['crm'], featureVersion: '2.0' } },
+  { id: 'b', content: 'B', status: 'Open', metadata: { featureIds: ['crm'], featureVersion: '2.0' } },
+  { id: 'c', content: 'C', status: 'Done', metadata: { featureIds: ['voice'], featureVersion: '3.0' } },
+  { id: 'd', content: 'D', status: 'Done', metadata: { featureIds: ['crm'], featureVersion: '1.0' } },
+];
+
+test('itemsForFeature: filters by feature id and exact version (or all when null)', () => {
+  assert.deepEqual(itemsForFeature('crm', workItems, '2.0').map((i) => i.id), ['a', 'b']);
+  assert.deepEqual(itemsForFeature('crm', workItems, null).map((i) => i.id), ['a', 'b', 'd']);
+  assert.deepEqual(itemsForFeature('voice', workItems, '2.0').map((i) => i.id), []);
+});
+
+test('aggregateWorkState: Doing wins, else all-Done → done, else open, empty → none', () => {
+  assert.equal(aggregateWorkState(itemsForFeature('crm', workItems, '2.0')), 'doing'); // a Doing + b Open
+  assert.equal(aggregateWorkState(itemsForFeature('voice', workItems, '3.0')), 'done'); // only c Done
+  assert.equal(aggregateWorkState([{ id: 'x', content: 'X', status: 'Open' }]), 'open');
+  assert.equal(aggregateWorkState([]), 'none');
 });
 
 test('empty pricing renders a placeholder, no matrix', () => {

@@ -9,7 +9,12 @@
 import { escapeHtml } from './buildItems';
 import { state } from './state';
 import { scheduleLiveEdit } from './persistence';
-import { PRICING_FEATURE_META_KEY, type CustomFieldDef, type CustomFieldOption } from './types';
+import {
+  PRICING_FEATURE_META_KEY,
+  PRICING_ITEM_VERSION_META_KEY,
+  type CustomFieldDef,
+  type CustomFieldOption,
+} from './types';
 
 // metadata keys managed by their own dedicated form control (the reserved
 // built-ins handled directly in itemForm) — used to keep them out of the
@@ -24,24 +29,37 @@ const FALLBACK_COLOR = '#64748B';
 // metadata box, and offers grouping-by-feature in the list view — all for free,
 // without a parallel code path. It is NOT part of the stored `customFields` array
 // (it's derived from `pricing`), so it never gets persisted back as a definition.
-function featuresFieldDef(): CustomFieldDef | null {
+function pricingFieldDefs(): CustomFieldDef[] {
   const file = state.activeSourceFile;
-  if (!file || file.type !== 'product') return null;
+  if (!file || file.type !== 'product') return [];
+  const defs: CustomFieldDef[] = [];
   const features = file.pricing?.features ?? [];
-  if (!features.length) return null;
-  return {
-    key: PRICING_FEATURE_META_KEY,
-    label: 'Features',
-    type: 'multi-select',
-    options: features.map((f) => ({ value: f.id, label: f.name })),
-  };
+  if (features.length) {
+    defs.push({
+      key: PRICING_FEATURE_META_KEY,
+      label: 'Features',
+      type: 'multi-select',
+      options: features.map((f) => ({ value: f.id, label: f.name })),
+    });
+  }
+  // Which pricing version this item's work targets (drives the matrix's
+  // version-dependent work indicator). Single-select from the declared versions.
+  const versions = file.pricing?.versions ?? [];
+  if (versions.length) {
+    defs.push({
+      key: PRICING_ITEM_VERSION_META_KEY,
+      label: 'Version',
+      type: 'select',
+      options: versions.map((v) => ({ value: v })),
+    });
+  }
+  return defs;
 }
 
 export function getCustomFields(): CustomFieldDef[] {
   const cfs = state.activeSourceFile?.customFields;
   const stored = Array.isArray(cfs) ? cfs.filter((f) => f && f.key && f.type) : [];
-  const featureField = featuresFieldDef();
-  return featureField ? [...stored, featureField] : stored;
+  return [...stored, ...pricingFieldDefs()];
 }
 
 // True when a metadata key is surfaced by a dedicated control (reserved built-in
