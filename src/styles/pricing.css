@@ -66,6 +66,7 @@
 
 /* ---- Tier cards (highlight tiles) -------------------------------------- */
 
+/* Card look ported from the /render pricing cards (brand-adapted via CSS vars). */
 .pc-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -74,93 +75,119 @@
 }
 
 .pc-card {
-  border: 1px solid var(--border);
-  border-radius: 16px;
   background: var(--surface);
-  padding: 22px 20px;
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  padding: 1.5rem 1.5rem 1.75rem;
   display: flex;
   flex-direction: column;
 }
 
-.pc-card-head {
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 16px;
-  margin-bottom: 16px;
-}
-.pc-card-name {
-  margin: 0;
+.pc-name {
   font-family: var(--font-headline);
-  font-weight: var(--headline-weight);
-  font-size: 1.35rem;
+  font-weight: 300;
+  font-size: 1.75rem;
+  line-height: 1.1;
+  color: var(--fg);
+  text-align: center;
 }
-.pc-card-tagline {
-  margin-top: 3px;
-  font-size: 0.82rem;
+.pc-suit {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
   color: var(--fg-muted);
+  line-height: 1.35;
+  text-align: center;
+  margin-top: 0.4rem;
+  min-height: 1.9em;
 }
-.pc-card-price {
-  margin-top: 12px;
-  font-size: 1.5rem;
+
+.pc-price {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.1rem;
+  margin-top: 1rem;
+  line-height: 1;
+}
+.pc-price-prefix {
+  font-size: 1.1rem;
+  color: var(--fg-muted);
+  align-self: flex-end;
+  padding-bottom: 0.5rem;
+}
+.pc-price-whole {
   font-weight: 700;
+  font-size: 3.25rem;
+  letter-spacing: -0.03em;
   color: var(--fg);
 }
-
-.pc-card-body {
+.pc-price-side {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  align-items: flex-start;
+  padding-top: 0.35rem;
 }
-
-.pc-section-head {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.pc-price-frac { font-weight: 700; font-size: 1.2rem; }
+.pc-price-cur { font-weight: 700; font-size: 0.8rem; letter-spacing: 0.04em; }
+.pc-permonth {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
   color: var(--fg-muted);
-  font-weight: 600;
-  margin-bottom: 7px;
+  text-align: center;
+  margin-top: 0.4rem;
+  line-height: 1.4;
 }
 
-.pc-rows {
+.pc-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.25rem 0;
+  width: 100%;
+}
+.pc-body { flex: 1; }
+
+.pc-section-label {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.01em;
+  color: var(--fg);
+  margin: 1.25rem 0 0.6rem;
+}
+.pc-body > .pc-section-label:first-child { margin-top: 0; }
+
+.pc-features {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.5rem;
 }
 
-.pc-row {
+.pc-feat {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 0.92rem;
-  line-height: 1.35;
-}
-
-/* Green check like the real cards. */
-.pc-check {
-  flex: 0 0 auto;
-  color: var(--success, #30A46C);
-  font-weight: 700;
-  transform: translateY(1px);
-}
-
-.pc-row-label { flex: 1 1 auto; }
-
-.pc-inherit .pc-row-label {
-  color: var(--fg-muted);
-  font-style: italic;
-}
-
-/* Value rows: label left, value right (e.g. "Minuten … 3.000"). */
-.pc-row-value {
-  justify-content: space-between;
-}
-.pc-row-value .pc-row-label { color: var(--fg-muted); }
-.pc-row-value-text {
-  flex: 0 0 auto;
-  font-weight: 600;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  line-height: 1.4;
   color: var(--fg);
+}
+.pc-icon { flex-shrink: 0; margin-top: 2px; }
+.pc-yes .pc-icon { color: var(--success, #00a06a); }
+.pc-arrow .pc-icon { color: var(--fg-muted); }
+.pc-feat .pc-label { color: var(--fg-muted); }
+.pc-feat .pc-value { font-weight: 700; }
+
+.pc-pill {
+  display: inline-block;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border-radius: 999px;
+  padding: 0.02rem 0.5rem;
+  font-size: 0.82em;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .pc-card-empty { color: var(--fg-muted); }

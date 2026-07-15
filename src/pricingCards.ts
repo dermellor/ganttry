@@ -1,9 +1,9 @@
-// Card view for product pricing — website-style tier cards. Each card shows the
-// tier's tagline + price and, per section, the included highlight bullets:
-// value highlights render "Label: value", boolean highlights render as a check.
-// Higher tiers collapse features carried over from the tier to their left into a
-// single "Alles aus <prev>" line and list only the delta — mirroring the real
-// pricing cards. Read-only; highlights (pricing.highlights) are the curated layer.
+// Card view for product pricing — mirrors the /render pricing-card look:
+// centered name + tagline + big split price, a divider, then sections with a
+// green circle-check per included feature, value features shown as "Label: value",
+// and higher tiers collapsing carried-over features into a single
+// "← Alles aus <prev>" row (arrow + pill). Read-only; highlights are the curated
+// layer (pricing.highlights). Class names + SVGs match the rendered original.
 
 import { escapeHtml } from './buildItems';
 import { resolveHighlight, type ResolvedHighlight } from './pricing';
@@ -11,7 +11,16 @@ import type { PricingHighlight, PricingTier, TimelineFile } from './types';
 
 const DEFAULT_SECTION = 'Weitere';
 
-// Sections in first-seen order, each with its highlights (order preserved).
+// Green circle-check (included) and grey left arrow (inheritance) — same glyphs
+// as the /render output; the arrow points left toward the tier it inherits from.
+const CHECK_SVG =
+  '<svg class="pc-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">' +
+  '<path d="m15.698 8.237-5.165 5.614L8.83 11.77l-1.16.95 1.885 2.304a1.25 1.25 0 0 0 1.887.055l5.36-5.826-1.104-1.016Z" fill="currentColor"/>' +
+  '<path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2ZM3.5 12a8.5 8.5 0 1 1 17 0 8.5 8.5 0 0 1-17 0Z" fill="currentColor"/></svg>';
+const ARROW_SVG =
+  '<svg class="pc-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">' +
+  '<path d="M19 12H5M11 6l-6 6 6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
+
 function sectionsOf(highlights: PricingHighlight[]): { section: string; items: PricingHighlight[] }[] {
   const order: string[] = [];
   const by = new Map<string, PricingHighlight[]>();
@@ -26,18 +35,33 @@ function sectionsOf(highlights: PricingHighlight[]): { section: string; items: P
   return order.map((section) => ({ section, items: by.get(section)! }));
 }
 
+function checkRow(inner: string): string {
+  return `<li class="pc-feat pc-yes">${CHECK_SVG}<span>${inner}</span></li>`;
+}
+
 function bulletHtml(h: PricingHighlight, r: ResolvedHighlight): string {
   if (r.value) {
-    return (
-      `<li class="pc-row pc-row-value">` +
-      `<span class="pc-row-label">${escapeHtml(h.label)}</span>` +
-      `<span class="pc-row-value-text">${escapeHtml(r.value)}</span>` +
-      `</li>`
-    );
+    return checkRow(`<span class="pc-label">${escapeHtml(h.label)}:</span> <span class="pc-value">${escapeHtml(r.value)}</span>`);
   }
+  return checkRow(escapeHtml(h.label));
+}
+
+// Split a price string ("ab 449 €/Monat") into the big number + currency and a
+// per-month suffix, matching the /render price typography.
+function priceHtml(price: string): string {
+  const m = price.match(/^\s*(ab\s+)?([\d.]+)(?:,(\d+))?\s*(€)?\s*(.*)$/);
+  if (!m) return `<div class="pc-price"><span class="pc-price-whole">${escapeHtml(price)}</span></div>`;
+  const [, prefix, whole, frac, cur, rest] = m;
+  const side =
+    (frac ? `<span class="pc-price-frac">,${escapeHtml(frac)}</span>` : '') +
+    (cur ? `<span class="pc-price-cur">${escapeHtml(cur)}</span>` : '');
   return (
-    `<li class="pc-row"><span class="pc-check" aria-hidden="true">✓</span>` +
-    `<span class="pc-row-label">${escapeHtml(h.label)}</span></li>`
+    `<div class="pc-price">` +
+    (prefix ? `<span class="pc-price-prefix">${escapeHtml(prefix.trim())}</span>` : '') +
+    `<span class="pc-price-whole">${escapeHtml(whole)}</span>` +
+    (side ? `<span class="pc-price-side">${side}</span>` : '') +
+    `</div>` +
+    (rest.trim() ? `<div class="pc-permonth">${escapeHtml(rest.trim())}</div>` : '')
   );
 }
 
@@ -57,7 +81,7 @@ export function renderCardsHtml(
   const cards = p.tiers
     .map((tier, i) => {
       const prev: PricingTier | undefined = p.tiers[i - 1];
-      const sectionHtml = sections
+      const body = sections
         .map(({ section, items }) => {
           const rows = items.map((h) => ({
             h,
@@ -68,35 +92,27 @@ export function renderCardsHtml(
           }));
           const included = rows.filter((r) => r.cur.included);
           if (!included.length) return '';
-          // Inherited = present in the previous tier with the same value.
-          const inherited = included.filter((r) => r.prev.included && r.prev.value === r.cur.value);
           const changed = included.filter((r) => !(r.prev.included && r.prev.value === r.cur.value));
+          const inheritedCount = included.length - changed.length;
 
           const lines: string[] = [];
-          if (inherited.length && prev) {
+          if (inheritedCount > 0 && prev) {
             lines.push(
-              `<li class="pc-row pc-inherit"><span class="pc-check" aria-hidden="true">✓</span>` +
-                `<span class="pc-row-label">Alles aus ${escapeHtml(prev.name)}</span></li>`,
+              `<li class="pc-feat pc-arrow">${ARROW_SVG}<span>Alles aus <span class="pc-pill">${escapeHtml(prev.name)}</span></span></li>`,
             );
           }
           for (const r of changed) lines.push(bulletHtml(r.h, r.cur));
-          return (
-            `<div class="pc-section">` +
-            `<div class="pc-section-head">${escapeHtml(section)}</div>` +
-            `<ul class="pc-rows">${lines.join('')}</ul>` +
-            `</div>`
-          );
+          return `<p class="pc-section-label">${escapeHtml(section)}</p><ul class="pc-features">${lines.join('')}</ul>`;
         })
         .join('');
 
       return (
         `<article class="pc-card">` +
-        `<header class="pc-card-head">` +
-        `<h3 class="pc-card-name">${escapeHtml(tier.name)}</h3>` +
-        (tier.tagline ? `<div class="pc-card-tagline">${escapeHtml(tier.tagline)}</div>` : '') +
-        `<div class="pc-card-price">${escapeHtml(tier.price)}</div>` +
-        `</header>` +
-        `<div class="pc-card-body">${sectionHtml || '<p class="pc-card-empty">—</p>'}</div>` +
+        `<div class="pc-name">${escapeHtml(tier.name)}</div>` +
+        `<div class="pc-suit">${tier.tagline ? escapeHtml(tier.tagline) : ''}</div>` +
+        priceHtml(tier.price) +
+        `<hr class="pc-divider" />` +
+        `<div class="pc-body">${body || '<p class="pc-card-empty">—</p>'}</div>` +
         `</article>`
       );
     })
