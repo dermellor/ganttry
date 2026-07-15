@@ -212,6 +212,31 @@ const customFieldDef = z.object({
     .describe('Allowed choices for select / multi-select. Ignored for text.'),
 });
 
+const pricingFeature = z.object({
+  id: z.string().describe('Stable feature id, referenced by tiers and item metadata.'),
+  name: z.string().describe('Feature display name.'),
+  group: z.string().optional().describe('Grouping label for the matrix rows, e.g. "Funktionen".'),
+  description: z.string().optional(),
+});
+
+const pricingTier = z.object({
+  id: z.string().describe('Stable tier id.'),
+  name: z.string().describe('Tier name, e.g. "Medium".'),
+  price: z.string().describe('Free-form price string, e.g. "74,95 €/Monat" or "ab 449,95 €".'),
+  values: z
+    .record(z.union([z.string(), z.boolean()]))
+    .describe(
+      'Per-tier feature values keyed by feature id: true = included (✓), false/omitted = not ' +
+        'included (–), string = shown verbatim ("3.000", "unbegrenzt (RAG)"). Lets one feature ' +
+        'differ per tier instead of a boolean row per value.',
+    ),
+});
+
+const pricing = z.object({
+  features: z.array(pricingFeature),
+  tiers: z.array(pricingTier),
+});
+
 const groupFields = {
   id: z.string().describe('Group id.'),
   content: z.string().describe('Display name.'),
@@ -259,14 +284,41 @@ server.registerTool(
       id: z.string(),
       name: z.string().optional(),
       description: z.string().optional(),
+      type: z.string().optional().describe("Timeline kind. 'product' unlocks the pricing model."),
       items: z.array(z.object(itemFields)),
       groups: z.array(z.object(groupFields)).optional(),
       customFields: z.array(customFieldDef).optional().describe('Per-timeline custom-field definitions.'),
+      pricing: pricing.optional().describe('Pricing model (features + tiers) for product timelines.'),
     },
   },
   async ({ id, ...file }) => {
     await putTimeline(id, file as TimelineFile);
     return ok({ ok: true, id, items: file.items.length });
+  },
+);
+
+server.registerTool(
+  'set_pricing',
+  {
+    title: 'Set pricing model',
+    description:
+      "Set a timeline's pricing model (features + tiers) and optionally its type. Patched as a " +
+      'unit (like set_custom_fields); items are untouched. Set type to "product" to surface the ' +
+      'pricing matrix in the viewer. Pass an empty features/tiers array to clear. Item→feature ' +
+      'links live per item in metadata.featureIds (string[]) — set via add_item / update_item. ' +
+      'Note: for the AI-Agents timeline the pricing model is normally authored in Preismodell.md ' +
+      'and synced automatically; use this tool for other product timelines or ad-hoc fixes.',
+    inputSchema: {
+      id: z.string().describe('Timeline id.'),
+      type: z.string().optional().describe("Timeline kind, usually 'product'."),
+      pricing: pricing.describe('The full new pricing model.'),
+    },
+  },
+  async ({ id, type, pricing: pricingModel }) => {
+    const meta: Record<string, unknown> = { pricing: pricingModel };
+    if (type !== undefined) meta.type = type;
+    await patchMeta(id, meta);
+    return ok({ ok: true, id, type, features: pricingModel.features.length, tiers: pricingModel.tiers.length });
   },
 );
 

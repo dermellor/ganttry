@@ -23,10 +23,12 @@ export const els = {
   timeline: document.getElementById('timeline') as HTMLDivElement,
   list: document.getElementById('list') as HTMLElement,
   listBody: document.getElementById('list-body') as HTMLElement,
+  pricing: document.getElementById('pricing') as HTMLElement,
   listGroupBy: document.getElementById('list-groupby') as HTMLSelectElement,
   viewSelect: document.getElementById('view-select') as HTMLSelectElement,
   modeTimelineBtn: document.getElementById('mode-timeline') as HTMLButtonElement,
   modeListBtn: document.getElementById('mode-list') as HTMLButtonElement,
+  modePricingBtn: document.getElementById('mode-pricing') as HTMLButtonElement,
   brandControl: document.getElementById('brand-control') as HTMLLabelElement,
   brandSelect: document.getElementById('brand-select') as HTMLSelectElement,
   milestonesOnly: document.getElementById('milestones-only') as HTMLInputElement,
@@ -48,7 +50,7 @@ export const VIEW_MODE_KEY = 'timelines.viewMode';
 // render, falling back to 'group' when the chosen dimension isn't available.
 export const LIST_GROUP_BY_KEY = 'timelines.listGroupBy';
 
-export type ViewMode = 'timeline' | 'list';
+export type ViewMode = 'timeline' | 'list' | 'pricing';
 
 // Tag pills collapse to plain coloured dots once the view gets too dense to
 // read their text: below this many pixels per day the label text is more
@@ -166,7 +168,10 @@ export const state: AppState = {
   pendingWindow: null,
   suppressUrlSync: false,
   milestonesOnly: localStorage.getItem(MILESTONES_ONLY_KEY) === 'true',
-  viewMode: localStorage.getItem(VIEW_MODE_KEY) === 'list' ? 'list' : 'timeline',
+  viewMode: (() => {
+    const m = localStorage.getItem(VIEW_MODE_KEY);
+    return m === 'list' || m === 'pricing' ? m : 'timeline';
+  })(),
   listGroupBy: localStorage.getItem(LIST_GROUP_BY_KEY) || 'group',
   persisting: false,
   persistAgain: false,

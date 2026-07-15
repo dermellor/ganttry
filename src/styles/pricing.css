@@ -1,0 +1,121 @@
+/* Read-only pricing matrix (product timelines). Brand-aware via the shared CSS
+   variables defined in brands.css. */
+
+.pricing-view {
+  overflow: auto;
+  height: 100%;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.pricing-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.pricing-title {
+  font-family: var(--font-headline);
+  font-weight: var(--headline-weight);
+  font-size: 1.4rem;
+  margin: 0 0 20px;
+}
+
+.pricing-empty {
+  color: var(--fg-muted);
+}
+
+.pricing-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.pricing-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+}
+
+.pricing-table th,
+.pricing-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.pricing-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.pricing-table th.pm-tier {
+  font-family: var(--font-headline);
+  font-weight: var(--headline-weight);
+  font-size: 1rem;
+}
+
+/* Row-header (feature name / group / price label) is left-aligned. */
+.pricing-table th.pm-feature {
+  text-align: left;
+  font-weight: 500;
+  min-width: 220px;
+}
+
+.pm-price-row td,
+.pm-price-row th {
+  font-weight: 600;
+  color: var(--fg);
+  background: var(--accent-soft);
+}
+
+.pm-group-row th {
+  text-align: left;
+  background: var(--hover);
+  color: var(--fg-muted);
+  font-family: var(--font-headline);
+  font-weight: var(--headline-weight);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pm-check {
+  color: var(--success, var(--accent-strong));
+  font-weight: 700;
+}
+
+.pm-dash {
+  color: var(--fg-muted);
+  opacity: 0.5;
+}
+
+.pm-cell.is-value {
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.pm-cell.is-off {
+  background: color-mix(in srgb, var(--fg-muted) 5%, transparent);
+}
+
+.pm-count-badge {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.pricing-table tbody tr:hover th.pm-feature {
+  color: var(--accent-strong);
+}

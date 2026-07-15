@@ -99,12 +99,50 @@ export type CustomFieldDef = {
   options?: CustomFieldOption[];
 };
 
+// Pricing model, only meaningful for `type: 'product'` timelines. Two entities:
+// features (the capabilities a product ships) and tiers (named, priced plans
+// that each bundle a subset of features). A timeline *item* links to features
+// via metadata[PRICING_FEATURE_META_KEY] (string[]). The whole model is a
+// timeline-level config blob, stored like `phases` / `customFields`.
+export type PricingFeature = {
+  id: string;
+  name: string;
+  // Optional grouping label for the matrix rows, e.g. "Funktionen".
+  group?: string;
+  description?: string;
+};
+
+export type PricingTier = {
+  id: string;
+  name: string;
+  // Free-form price string — carries currency and qualifiers ("ab 449,95 €").
+  price: string;
+  // Per-tier feature values, keyed by feature id:
+  //   true          → included, rendered as a check (✓)
+  //   false / absent → not included, rendered as a dash (–)
+  //   string         → shown verbatim in the cell ("3.000", "unbegrenzt (RAG)")
+  // This lets one feature (e.g. "Inkludierte Minuten") differ per tier instead of
+  // exploding into a boolean row per value.
+  values: Record<string, string | boolean>;
+};
+
+export type Pricing = {
+  features: PricingFeature[];
+  tiers: PricingTier[];
+};
+
+// Item metadata key holding the feature ids an item is assigned to (string[]).
+export const PRICING_FEATURE_META_KEY = 'featureIds';
+
 export type TimelineFile = {
   name?: string;
   description?: string;
   groupBy?: string;
+  // Timeline kind. 'product' unlocks the `pricing` model + matrix view.
+  type?: string;
   phases?: TimelinePhase[];
   customFields?: CustomFieldDef[];
+  pricing?: Pricing;
   items: TimelineFileItem[];
   groups?: {
     id: string;

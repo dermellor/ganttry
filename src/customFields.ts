@@ -9,7 +9,7 @@
 import { escapeHtml } from './buildItems';
 import { state } from './state';
 import { scheduleLiveEdit } from './persistence';
-import type { CustomFieldDef, CustomFieldOption } from './types';
+import { PRICING_FEATURE_META_KEY, type CustomFieldDef, type CustomFieldOption } from './types';
 
 // metadata keys managed by their own dedicated form control (the reserved
 // built-ins handled directly in itemForm) — used to keep them out of the
@@ -18,9 +18,30 @@ const RESERVED_META_KEYS = new Set(['dependsOn', 'owner', 'jira', 'tags', 'tag']
 
 const FALLBACK_COLOR = '#64748B';
 
+// A product timeline exposes its pricing features as a synthetic multi-select
+// field (key = metadata.featureIds). Routing it through the custom-field
+// machinery gives the item form a feature picker, keeps the key out of the raw
+// metadata box, and offers grouping-by-feature in the list view — all for free,
+// without a parallel code path. It is NOT part of the stored `customFields` array
+// (it's derived from `pricing`), so it never gets persisted back as a definition.
+function featuresFieldDef(): CustomFieldDef | null {
+  const file = state.activeSourceFile;
+  if (!file || file.type !== 'product') return null;
+  const features = file.pricing?.features ?? [];
+  if (!features.length) return null;
+  return {
+    key: PRICING_FEATURE_META_KEY,
+    label: 'Features',
+    type: 'multi-select',
+    options: features.map((f) => ({ value: f.id, label: f.name })),
+  };
+}
+
 export function getCustomFields(): CustomFieldDef[] {
   const cfs = state.activeSourceFile?.customFields;
-  return Array.isArray(cfs) ? cfs.filter((f) => f && f.key && f.type) : [];
+  const stored = Array.isArray(cfs) ? cfs.filter((f) => f && f.key && f.type) : [];
+  const featureField = featuresFieldDef();
+  return featureField ? [...stored, featureField] : stored;
 }
 
 // True when a metadata key is surfaced by a dedicated control (reserved built-in

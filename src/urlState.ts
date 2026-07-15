@@ -5,7 +5,7 @@ export type UrlState = {
   to?: string;
   milestones?: boolean;
   brand?: string;
-  mode?: 'timeline' | 'list';
+  mode?: 'timeline' | 'list' | 'pricing';
 };
 
 const ORDER = ['view', 'item', 'from', 'to', 'm', 'brand', 'mode'] as const;
@@ -30,7 +30,7 @@ export function readUrlState(): UrlState {
   const brand = p.get('brand');
   if (brand) state.brand = brand;
   const mode = p.get('mode');
-  if (mode === 'list' || mode === 'timeline') state.mode = mode;
+  if (mode === 'list' || mode === 'timeline' || mode === 'pricing') state.mode = mode;
   return state;
 }
 
@@ -42,7 +42,7 @@ function buildHash(state: UrlState): string {
   if (state.to) map.to = state.to;
   if (state.milestones) map.m = '1';
   if (state.brand) map.brand = state.brand;
-  if (state.mode === 'list') map.mode = state.mode;
+  if (state.mode === 'list' || state.mode === 'pricing') map.mode = state.mode;
   return ORDER.flatMap((k) =>
     map[k] != null ? [`${encodeURIComponent(k)}=${encodeURIComponent(map[k])}`] : [],
   ).join('&');

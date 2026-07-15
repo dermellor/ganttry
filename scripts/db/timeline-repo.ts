@@ -8,7 +8,7 @@
 // whole-sheet rewrite — concurrent edits on different items no longer clobber.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CustomFieldDef, TimelineFile, TimelineFileItem, TimelinePhase } from '../../src/types';
+import type { CustomFieldDef, Pricing, TimelineFile, TimelineFileItem, TimelinePhase } from '../../src/types';
 
 export type TimelineGroupDecl = {
   id: string;
@@ -127,7 +127,7 @@ export async function listTimelines(db: SupabaseClient): Promise<TimelineMeta[]>
 export async function getTimeline(db: SupabaseClient, id: string): Promise<TimelineFile | null> {
   const { data: tl, error: tlErr } = await db
     .from('timelines')
-    .select('id, name, description, group_by, phases, custom_fields')
+    .select('id, name, description, group_by, type, phases, custom_fields, pricing')
     .eq('id', id)
     .maybeSingle();
   if (tlErr) throw new Error(`getTimeline: ${tlErr.message}`);
@@ -151,9 +151,13 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
   if (tl.name != null) file.name = tl.name;
   if (tl.description != null) file.description = tl.description;
   if (tl.group_by != null) file.groupBy = tl.group_by;
+  if (tl.type != null) file.type = tl.type;
   if (Array.isArray(tl.phases) && tl.phases.length) file.phases = tl.phases as TimelinePhase[];
   if (Array.isArray(tl.custom_fields) && tl.custom_fields.length)
     file.customFields = tl.custom_fields as CustomFieldDef[];
+  // `pricing` defaults to '{}' in the DB — only surface a populated model.
+  if (tl.pricing && typeof tl.pricing === 'object' && Array.isArray((tl.pricing as any).tiers))
+    file.pricing = tl.pricing as Pricing;
   if (groupRows && groupRows.length) file.groups = groupRows.map(rowToGroup);
   return file;
 }
@@ -166,8 +170,10 @@ export async function replaceTimeline(db: SupabaseClient, id: string, file: Time
     name: file.name ?? null,
     description: file.description ?? null,
     group_by: file.groupBy ?? null,
+    type: file.type ?? null,
     phases: file.phases ?? [],
     custom_fields: file.customFields ?? [],
+    pricing: file.pricing ?? {},
     updated_at: new Date().toISOString(),
   });
   if (upErr) throw new Error(`replaceTimeline meta: ${upErr.message}`);
@@ -327,15 +333,25 @@ export async function updatePhases(db: SupabaseClient, id: string, phases: Timel
 export async function updateMeta(
   db: SupabaseClient,
   id: string,
-  meta: { name?: string; description?: string; groupBy?: string; customFields?: CustomFieldDef[] },
+  meta: {
+    name?: string;
+    description?: string;
+    groupBy?: string;
+    type?: string;
+    customFields?: CustomFieldDef[];
+    pricing?: Pricing;
+  },
 ): Promise<void> {
   const set: Record<string, any> = { updated_at: new Date().toISOString() };
   if ('name' in meta) set.name = meta.name ?? null;
   if ('description' in meta) set.description = meta.description ?? null;
   if ('groupBy' in meta) set.group_by = meta.groupBy ?? null;
-  // Custom-field definitions are patched as a unit (like phases). Absent key =
-  // leave untouched, so a plain name/description edit never clears them.
+  if ('type' in meta) set.type = meta.type ?? null;
+  // Custom-field definitions and the pricing model are patched as a unit (like
+  // phases). Absent key = leave untouched, so a plain name/description edit
+  // never clears them.
   if ('customFields' in meta) set.custom_fields = meta.customFields ?? [];
+  if ('pricing' in meta) set.pricing = meta.pricing ?? {};
   const { error } = await db.from('timelines').update(set).eq('id', id);
   if (error) throw new Error(`updateMeta: ${error.message}`);
 }

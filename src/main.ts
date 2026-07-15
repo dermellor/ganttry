@@ -37,6 +37,7 @@ import type { PresenceUser } from './presence';
 import { deleteItem } from './itemForm';
 import { hideDetail, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
+import { renderPricingMatrix, hasPricing } from './pricingMatrix';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -96,6 +97,7 @@ async function applyView(viewId: string) {
   els.viewSelect.value = viewId;
   hideDetail();
   await renderTimeline(view);
+  updatePricingAvailability();
   syncUrl();
 }
 
@@ -104,6 +106,19 @@ async function applyView(viewId: string) {
 function setModeButtons(mode: ViewMode) {
   els.modeTimelineBtn.setAttribute('aria-pressed', String(mode === 'timeline'));
   els.modeListBtn.setAttribute('aria-pressed', String(mode === 'list'));
+  els.modePricingBtn.setAttribute('aria-pressed', String(mode === 'pricing'));
+}
+
+// Show the "Preise" mode button only for product timelines that carry a pricing
+// model. If the current mode is 'pricing' but the active timeline has none (e.g.
+// after switching views), fall back to 'timeline' so the user isn't stuck on an
+// empty section.
+export function updatePricingAvailability(): void {
+  const available = hasPricing(state.activeSourceFile);
+  els.modePricingBtn.hidden = !available;
+  if (!available && state.viewMode === 'pricing') {
+    applyViewMode('timeline');
+  }
 }
 
 // Switch between the timeline and the list rendering of the same build. The
@@ -112,13 +127,19 @@ function setModeButtons(mode: ViewMode) {
 // data. `persist` is false during bootstrap/external-URL application where the
 // caller drives localStorage + URL syncing itself.
 function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean } = {}) {
+  // Guard: 'pricing' is only valid for product timelines with a model.
+  if (mode === 'pricing' && !hasPricing(state.activeSourceFile)) mode = 'timeline';
   state.viewMode = mode;
   setModeButtons(mode);
   const list = mode === 'list';
-  els.timeline.hidden = list;
+  const pricing = mode === 'pricing';
+  els.timeline.hidden = list || pricing;
   els.list.hidden = !list;
+  els.pricing.hidden = !pricing;
   if (list) {
     renderListView();
+  } else if (pricing) {
+    renderPricingMatrix();
   } else {
     // The timeline was display:none while the list showed, so vis-timeline
     // couldn't size itself. Redraw + re-pack point lanes now that it's visible.
@@ -244,6 +265,7 @@ async function bootstrap() {
   });
   els.modeTimelineBtn.addEventListener('click', () => applyViewMode('timeline'));
   els.modeListBtn.addEventListener('click', () => applyViewMode('list'));
+  els.modePricingBtn.addEventListener('click', () => applyViewMode('pricing'));
   els.brandSelect.addEventListener('change', () => applyBrand(els.brandSelect.value));
   els.detailClose.addEventListener('click', () => {
     commitItemForm();
