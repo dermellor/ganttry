@@ -74,8 +74,7 @@ export async function loadSource(id: string): Promise<LoadResult> {
   }
   const reason = apiRes ? `HTTP ${apiRes.status}` : 'keine Verbindung zur API';
   throw new Error(
-    `Timeline „${id}“ konnte nicht aus der DB geladen werden (${reason}). ` +
-      `Kein statischer Fallback – veraltete Daten werden bewusst nicht angezeigt.`,
+    `Timeline „${id}“ konnte nicht aus der DB geladen werden (${reason}).`,
   );
 }
 
