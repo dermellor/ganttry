@@ -27,7 +27,10 @@ import { commitItemForm, scheduleLiveEdit, schedulePersist } from './persistence
 import { rebuildAndApply } from './render';
 import { hideDetail } from './detailPanel';
 
-export function showItemForm(item: TimelineFileItem & { id?: string }): void {
+export function showItemForm(
+  item: TimelineFileItem & { id?: string },
+  opts?: { focusTitle?: boolean },
+): void {
   if (!state.activeSourceFile || !item.id) return;
   const id = item.id;
   // Switching to a different item = leaving the previous form → persist it.
@@ -195,6 +198,14 @@ export function showItemForm(item: TimelineFileItem & { id?: string }): void {
     /* item may be filtered out of the current view */
   }
   setTimeout(() => state.timeline?.redraw(), 0);
+
+  // Freshly-created items open with the placeholder title pre-selected, so the
+  // user can just start typing to replace "Neuer Eintrag".
+  if (opts?.focusTitle) {
+    const contentInput = form.querySelector<HTMLInputElement>('#f-content');
+    contentInput?.focus();
+    contentInput?.select();
+  }
 }
 
 // ---- audit footer (localhost only) ----------------------------------------

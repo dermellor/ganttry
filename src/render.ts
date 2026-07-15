@@ -591,7 +591,7 @@ function handleAdd(item: TimelineItem, callback: (item: TimelineItem | null) => 
     return;
   }
   callback({ ...item, id: newItem.id, content: newItem.content });
-  setTimeout(() => showItemForm(newItem), 50);
+  setTimeout(() => showItemForm(newItem, { focusTitle: true }), 50);
 }
 
 // Toolbar "+ Eintrag": adds an item at the centre of the visible window (so it
@@ -612,7 +612,7 @@ export function addNewItem(group?: string | null): void {
     } catch {
       /* item may be filtered out of the current view */
     }
-    showItemForm(newItem);
+    showItemForm(newItem, { focusTitle: true });
   }, 50);
 }
 
