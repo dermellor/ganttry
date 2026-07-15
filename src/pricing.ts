@@ -10,6 +10,7 @@ import {
   PRICING_ITEM_VERSION_META_KEY,
   type Pricing,
   type PricingFeature,
+  type PricingHighlight,
   type PricingTier,
   type TimelineFileItem,
 } from './types';
@@ -93,6 +94,42 @@ export function aggregateWorkState(items: TimelineFileItem[]): WorkState {
   let best: StatusKey = order[0];
   for (const k of order) if (counts[k] > counts[best]) best = k;
   return best.toLowerCase() as WorkState;
+}
+
+// ---- card view (highlight tiles per tier) ----------------------------------
+
+export type ResolvedHighlight = {
+  // Whether the tier includes this highlight at all (≥1 of its features present).
+  included: boolean;
+  // Concise value parts to show on the card: a value-feature's string value, or
+  // an included boolean feature's name. Empty when not included.
+  parts: string[];
+};
+
+/**
+ * Resolve a highlight for one tier: which of its features the tier includes and
+ * how to summarise them. Version-aware (a feature beyond the selected version is
+ * ignored). Pure — shared by the card view and testable in isolation.
+ */
+export function resolveHighlight(
+  highlight: PricingHighlight,
+  tier: PricingTier,
+  features: PricingFeature[],
+  versions: string[],
+  selected: string | null,
+): ResolvedHighlight {
+  const byId = new Map(features.map((f) => [f.id, f]));
+  const parts: string[] = [];
+  for (const fid of highlight.featureIds) {
+    const feat = byId.get(fid);
+    if (!feat) continue;
+    if (selected && !featureVisibleForVersion(feat, versions, selected)) continue;
+    const v = tier.values?.[fid];
+    if (v === true) parts.push(feat.name);
+    else if (typeof v === 'string' && v.trim()) parts.push(v.trim());
+    // false / absent → not part of this tier
+  }
+  return { included: parts.length > 0, parts };
 }
 
 // Render one tier's value for a feature as Markdown cell content:

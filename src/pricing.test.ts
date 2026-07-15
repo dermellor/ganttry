@@ -5,8 +5,10 @@ import {
   featureVisibleForVersion,
   itemsForFeature,
   aggregateWorkState,
+  resolveHighlight,
   type PricingDoc,
 } from './pricing';
+import type { PricingFeature, PricingTier } from './types';
 import type { TimelineFileItem } from './types';
 
 const doc: PricingDoc = {
@@ -168,6 +170,35 @@ test('aggregateWorkState: ties broken Doing > Open > Done', () => {
   assert.equal(aggregateWorkState([mk('a', 'Doing'), mk('b', 'Open')]), 'doing'); // 1:1 → Doing
   assert.equal(aggregateWorkState([mk('a', 'Open'), mk('b', 'Done')]), 'open'); // 1:1 → Open
   assert.equal(aggregateWorkState([mk('a', 'Doing'), mk('b', 'Done')]), 'doing'); // 1:1 → Doing
+});
+
+const hFeatures: PricingFeature[] = [
+  { id: 'min', name: 'Inkludierte Minuten', version: '1.0' },
+  { id: 'crm', name: 'CRM', version: '2.0' },
+  { id: 'ticket', name: 'Ticketsysteme', version: '2.0' },
+];
+const tierFree: PricingTier = { id: 'free', name: 'Free', price: '0 €', values: { min: '500' } };
+const tierScale: PricingTier = { id: 'scale', name: 'Scale', price: '199 €', values: { min: '3.000', crm: true, ticket: true } };
+
+test('resolveHighlight: string values shown verbatim, booleans as feature name', () => {
+  const hMin = { id: 'h1', label: 'Freiminuten', featureIds: ['min'] };
+  const hInteg = { id: 'h2', label: 'Integrationen', featureIds: ['crm', 'ticket'] };
+  assert.deepEqual(resolveHighlight(hMin, tierScale, hFeatures, [], null), { included: true, parts: ['3.000'] });
+  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, [], null), { included: true, parts: ['CRM', 'Ticketsysteme'] });
+});
+
+test('resolveHighlight: not included when the tier has none of the features', () => {
+  const hInteg = { id: 'h2', label: 'Integrationen', featureIds: ['crm', 'ticket'] };
+  assert.deepEqual(resolveHighlight(hInteg, tierFree, hFeatures, [], null), { included: false, parts: [] });
+});
+
+test('resolveHighlight: version filter drops features beyond the selected version', () => {
+  const hInteg = { id: 'h2', label: 'Integrationen', featureIds: ['crm', 'ticket'] };
+  // At version 1.0, the 2.0 features are ignored → not included on Scale.
+  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, ['1.0', '2.0', '3.0'], '1.0'), {
+    included: false,
+    parts: [],
+  });
 });
 
 test('empty pricing renders a placeholder, no matrix', () => {

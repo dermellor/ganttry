@@ -37,7 +37,7 @@ import type { PresenceUser } from './presence';
 import { deleteItem } from './itemForm';
 import { hideDetail, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
-import { renderPricingMatrix, hasPricing } from './pricingMatrix';
+import { renderPricingView, hasPricing } from './pricingMatrix';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -139,7 +139,7 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   if (list) {
     renderListView();
   } else if (pricing) {
-    renderPricingMatrix();
+    renderPricingView();
   } else {
     // The timeline was display:none while the list showed, so vis-timeline
     // couldn't size itself. Redraw + re-pack point lanes now that it's visible.

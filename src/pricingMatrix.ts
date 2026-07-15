@@ -18,13 +18,19 @@ import {
 import { state, els } from './state';
 import { statusOrDefault, type StatusKey } from './status';
 import { showDetailForId } from './detailPanel';
+import { renderCardsHtml } from './pricingCards';
 import { type TimelineFile, type TimelineFileItem } from './types';
 
 const PRICING_VERSION_KEY = 'timelines.pricingVersion';
+const PRICING_SUBVIEW_KEY = 'timelines.pricingSubview';
+
+type SubView = 'matrix' | 'cards';
 
 // Selected version for the switcher. null = "Alle" (no filter). Persisted so the
 // choice survives re-renders (realtime, edits) and reloads.
 let selectedVersion: string | null = localStorage.getItem(PRICING_VERSION_KEY) || null;
+// Matrix (full grid) vs cards (curated highlight tiles). Persisted.
+let subView: SubView = localStorage.getItem(PRICING_SUBVIEW_KEY) === 'cards' ? 'cards' : 'matrix';
 
 const WORK_LABEL: Record<Exclude<WorkState, 'none'>, string> = {
   doing: 'In Arbeit',
@@ -50,19 +56,9 @@ export function hasPricing(file: TimelineFile | null | undefined): file is Timel
   );
 }
 
-export function renderPricingMatrix(): void {
-  const file = state.activeSourceFile;
-  const host = els.pricing;
-  if (!host) return;
-  if (!hasPricing(file)) {
-    host.innerHTML = '<p class="pricing-empty">Kein Preismodell hinterlegt.</p>';
-    return;
-  }
-
+// Build the full matrix table HTML (tiers × features + work column).
+function matrixHtml(file: TimelineFile, versions: string[]): string {
   const { tiers, features } = file.pricing!;
-  const versions = file.pricing!.versions ?? [];
-  if (selectedVersion && !versions.includes(selectedVersion)) selectedVersion = null;
-
   const items = file.items ?? [];
   // Show the work column when any item is linked to any feature at all (regardless
   // of the current version filter — otherwise the column would flicker in/out).
@@ -136,6 +132,53 @@ export function renderPricingMatrix(): void {
     }
   }
 
+  return `<div class="pricing-table-wrap"><table class="pricing-table"><thead>${head}${priceRow}</thead><tbody>${bodyRows.join('')}</tbody></table></div>`;
+}
+
+// Wire the work-popover item clicks (matrix only) + single-popover behaviour.
+function wireMatrix(host: HTMLElement): void {
+  host.querySelectorAll<HTMLButtonElement>('.pm-work-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.itemId;
+      if (id) showDetailForId(id);
+    });
+  });
+  host.querySelectorAll<HTMLDetailsElement>('details.pm-work').forEach((d) => {
+    d.addEventListener('toggle', () => {
+      if (!d.open) return;
+      host.querySelectorAll<HTMLDetailsElement>('details.pm-work[open]').forEach((o) => {
+        if (o !== d) o.open = false;
+      });
+    });
+  });
+}
+
+// Entry point for the pricing section: header (title + view toggle + version
+// switcher) plus the chosen body (matrix grid or highlight cards).
+export function renderPricingView(): void {
+  const file = state.activeSourceFile;
+  const host = els.pricing;
+  if (!host) return;
+  if (!hasPricing(file)) {
+    host.innerHTML = '<p class="pricing-empty">Kein Preismodell hinterlegt.</p>';
+    return;
+  }
+
+  const versions = file.pricing!.versions ?? [];
+  if (selectedVersion && !versions.includes(selectedVersion)) selectedVersion = null;
+  const hasHighlights = (file.pricing!.highlights?.length ?? 0) > 0;
+  // Cards need highlights; fall back to matrix when none are defined.
+  if (subView === 'cards' && !hasHighlights) subView = 'matrix';
+
+  const body = subView === 'cards' ? renderCardsHtml(file, versions, selectedVersion) : matrixHtml(file, versions);
+
+  const toggle = hasHighlights
+    ? `<div class="pm-subview" role="group" aria-label="Darstellung">` +
+      `<button type="button" class="pm-subview-btn" data-sub="cards" aria-pressed="${subView === 'cards'}">Kacheln</button>` +
+      `<button type="button" class="pm-subview-btn" data-sub="matrix" aria-pressed="${subView === 'matrix'}">Matrix</button>` +
+      `</div>`
+    : '';
+
   const switcher = versions.length
     ? `<label class="pm-version-switch">Version` +
       `<select class="pm-version-select"><option value="">Alle</option>` +
@@ -149,34 +192,26 @@ export function renderPricingMatrix(): void {
     `<div class="pricing-inner">` +
     `<div class="pricing-header">` +
     `<h2 class="pricing-title">${escapeHtml(file.name ?? 'Preismodell')} — Preise</h2>` +
-    switcher +
+    `<div class="pricing-controls">${toggle}${switcher}</div>` +
     `</div>` +
-    `<div class="pricing-table-wrap"><table class="pricing-table"><thead>${head}${priceRow}</thead><tbody>${bodyRows.join('')}</tbody></table></div>` +
+    body +
     `</div>`;
 
-  const select = host.querySelector<HTMLSelectElement>('.pm-version-select');
-  select?.addEventListener('change', () => {
-    selectedVersion = select.value || null;
+  host.querySelector<HTMLSelectElement>('.pm-version-select')?.addEventListener('change', (e) => {
+    const sel = e.currentTarget as HTMLSelectElement;
+    selectedVersion = sel.value || null;
     if (selectedVersion) localStorage.setItem(PRICING_VERSION_KEY, selectedVersion);
     else localStorage.removeItem(PRICING_VERSION_KEY);
-    renderPricingMatrix();
+    renderPricingView();
   });
 
-  // Clicking an item in a work popover opens it in the detail drawer.
-  host.querySelectorAll<HTMLButtonElement>('.pm-work-item').forEach((btn) => {
+  host.querySelectorAll<HTMLButtonElement>('.pm-subview-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const id = btn.dataset.itemId;
-      if (id) showDetailForId(id);
+      subView = (btn.dataset.sub as SubView) === 'cards' ? 'cards' : 'matrix';
+      localStorage.setItem(PRICING_SUBVIEW_KEY, subView);
+      renderPricingView();
     });
   });
 
-  // Close any other open work popover when one opens (single-popover behaviour).
-  host.querySelectorAll<HTMLDetailsElement>('details.pm-work').forEach((d) => {
-    d.addEventListener('toggle', () => {
-      if (!d.open) return;
-      host.querySelectorAll<HTMLDetailsElement>('details.pm-work[open]').forEach((o) => {
-        if (o !== d) o.open = false;
-      });
-    });
-  });
+  if (subView === 'matrix') wireMatrix(host);
 }

@@ -132,9 +132,27 @@ export type PricingTier = {
   values: Record<string, string | boolean>;
 };
 
+// A curated highlight tile for the card view: bundles one or more raw features
+// under a simplified label (the "Zwischenschicht"). Only features referenced by
+// some highlight are considered important and surface in the card view; the raw
+// matrix still shows everything. Per-tier presence/value is derived from the
+// tiers' existing `values`, so there is no separate per-tier maintenance.
+export type PricingHighlight = {
+  id: string;
+  label: string;
+  // Optional semantic icon key (resolved by the brand, like item icons).
+  icon?: string;
+  // Raw feature ids this tile summarizes.
+  featureIds: string[];
+  description?: string;
+};
+
 export type Pricing = {
   features: PricingFeature[];
   tiers: PricingTier[];
+  // Curated tiles for the card view (bundle features). Absent/empty = card view
+  // shows nothing (fall back to the matrix).
+  highlights?: PricingHighlight[];
   // Ordered list of version labels (e.g. ["1.0", "2.0", "3.0"]). Defines both the
   // ordering used for the cumulative version filter and the options of the
   // version switcher in the matrix view. A feature's `version` references one of
