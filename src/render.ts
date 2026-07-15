@@ -25,6 +25,7 @@ import {
   loadSource,
 } from './editor';
 import type { TimelineFile, TimelineFileItem, View } from './types';
+import { firstAssignableGroup, resolveAssignableGroup } from './groupHierarchy';
 import {
   state,
   els,
@@ -569,7 +570,12 @@ function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) =>
     delete src.end;
   }
   if (item.group != null && item.group !== src.group) {
-    src.group = String(item.group);
+    // Parent groups (with nestedGroups) are containers only: a drop onto a
+    // parent lane snaps into its first leaf child instead of the parent itself.
+    const groups = state.activeSourceFile.groups ?? state.activeBuild?.groups ?? [];
+    const resolved = resolveAssignableGroup(item.group, groups) ?? String(item.group);
+    src.group = resolved;
+    item.group = resolved;
   }
 
   callback(item);
@@ -586,9 +592,13 @@ function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) =>
 export function createItem(start: Date | string | null | undefined, group?: string | number | null): (TimelineFileItem & { id: string }) | null {
   if (!state.activeSourceFile) return null;
   const newId = generateNewId(state.activeSourceFile);
+  // Parent groups (with nestedGroups) are containers only: an explicit target
+  // that is a parent redirects to its first leaf child, and the default (no
+  // target) picks the first leaf group rather than a parent header.
+  const groups = state.activeSourceFile.groups ?? state.activeBuild?.groups ?? [];
   const groupId = group != null
-    ? String(group)
-    : state.activeSourceFile.groups?.[0]?.id ?? state.activeBuild?.groups[0]?.id;
+    ? resolveAssignableGroup(group, groups) ?? String(group)
+    : firstAssignableGroup(groups) ?? groups[0]?.id;
 
   const newItem: TimelineFileItem & { id: string } = {
     id: newId,

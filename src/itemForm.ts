@@ -23,10 +23,44 @@ import {
   type JiraIssue,
 } from './jira';
 import type { TimelineFileItem } from './types';
+import { assignableLeaves, parentGroupIds } from './groupHierarchy';
 import { state, els, setStatus, withPreservedZoom } from './state';
 import { commitItemForm, scheduleLiveEdit, schedulePersist } from './persistence';
 import { rebuildAndApply } from './render';
 import { hideDetail } from './detailPanel';
+
+// Build the group <select> options. Parent groups (those with nestedGroups) are
+// containers only, so they render as a non-selectable <optgroup> heading and
+// only their leaf children appear as options — an item can never be assigned to
+// a parent. Groups with no children render as plain top-level options.
+type GroupOption = { id: string; content: string; nestedGroups?: string[] };
+function buildGroupOptions(
+  groups: GroupOption[],
+  selected: string | number | null | undefined,
+): string {
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  const parents = parentGroupIds(groups);
+  const childIds = new Set<string>();
+  for (const g of groups) for (const c of g.nestedGroups ?? []) childIds.add(c);
+  const sel = selected == null ? null : String(selected);
+  const optHtml = (id: string): string => {
+    const g = byId.get(id);
+    if (!g) return '';
+    return `<option value="${escapeHtml(g.id)}"${g.id === sel ? ' selected' : ''}>${escapeHtml(g.content)}</option>`;
+  };
+
+  const out: string[] = [];
+  for (const g of groups) {
+    if (childIds.has(g.id)) continue; // rendered under its parent's optgroup
+    if (parents.has(g.id)) {
+      const children = assignableLeaves(g.id, groups).map(optHtml).join('');
+      out.push(`<optgroup label="${escapeHtml(g.content)}">${children}</optgroup>`);
+    } else {
+      out.push(optHtml(g.id));
+    }
+  }
+  return out.join('');
+}
 
 export function showItemForm(
   item: TimelineFileItem & { id?: string },
@@ -41,9 +75,10 @@ export function showItemForm(
   els.detailTitle.textContent = item.content || '(unbenannt)';
   els.detailMeta.innerHTML = '';
 
-  const groupOptions = (state.activeSourceFile.groups ?? state.activeBuild?.groups ?? []).map((g) =>
-    `<option value="${escapeHtml(g.id)}"${g.id === item.group ? ' selected' : ''}>${escapeHtml(g.content)}</option>`
-  ).join('');
+  const groupOptions = buildGroupOptions(
+    state.activeSourceFile.groups ?? state.activeBuild?.groups ?? [],
+    item.group,
+  );
 
   const metadata = (item.metadata ?? {}) as Record<string, unknown>;
   const dependsOn = Array.isArray(metadata.dependsOn) ? (metadata.dependsOn as unknown[]).map(String) : [];

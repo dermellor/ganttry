@@ -18,6 +18,7 @@ import { showDetailForId } from './detailPanel';
 import { state, els, syncUrl, isEditableView, LIST_GROUP_BY_KEY } from './state';
 import { getCustomFields } from './customFields';
 import { computeSections, groupByOptions, GROUP_DIM } from './listGrouping';
+import { parentGroupIds } from './groupHierarchy';
 
 const TYPE_LABELS: Record<TimelineItem['type'], string> = {
   point: 'Meilenstein',
@@ -94,12 +95,15 @@ export function renderListView(): void {
   // group, so they get no add button (the global toolbar "+ Eintrag" stays).
   const editable = isEditableView();
   const showAdd = editable && dim === GROUP_DIM;
+  // Parent groups (with nestedGroups) are containers only — no "+ Eintrag" that
+  // would pin a new item to a parent.
+  const parents = parentGroupIds(groups);
 
   const body = sections
     .map((s) => {
       const rows = s.items.map((it) => rowHtml(it, it.id === sel)).join('');
       const addBtn =
-        showAdd && !s.empty
+        showAdd && !s.empty && !parents.has(s.id)
           ? `<button type="button" class="list-add-item" data-add-group="${escapeHtml(s.id)}">+ Eintrag</button>`
           : '';
       const header = grouped
