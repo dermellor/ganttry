@@ -101,15 +101,16 @@ export function aggregateWorkState(items: TimelineFileItem[]): WorkState {
 export type ResolvedHighlight = {
   // Whether the tier includes this highlight at all (≥1 of its features present).
   included: boolean;
-  // Concise value parts to show on the card: a value-feature's string value, or
-  // an included boolean feature's name. Empty when not included.
-  parts: string[];
+  // Joined string value(s) for value-features (e.g. "3.000"); empty for a purely
+  // boolean highlight. Drives "Label: value" vs a plain checkmark on the card,
+  // and — together with `included` — the "Alles aus <prev>" inheritance diff.
+  value: string;
 };
 
 /**
- * Resolve a highlight for one tier: which of its features the tier includes and
- * how to summarise them. Version-aware (a feature beyond the selected version is
- * ignored). Pure — shared by the card view and testable in isolation.
+ * Resolve a highlight for one tier: whether the tier includes it and its value.
+ * A boolean feature (value === true) counts as included with no value; a string
+ * value contributes to `value`. Version-aware. Pure — shared by the card view.
  */
 export function resolveHighlight(
   highlight: PricingHighlight,
@@ -119,17 +120,20 @@ export function resolveHighlight(
   selected: string | null,
 ): ResolvedHighlight {
   const byId = new Map(features.map((f) => [f.id, f]));
-  const parts: string[] = [];
+  let included = false;
+  const vals: string[] = [];
   for (const fid of highlight.featureIds) {
     const feat = byId.get(fid);
     if (!feat) continue;
     if (selected && !featureVisibleForVersion(feat, versions, selected)) continue;
     const v = tier.values?.[fid];
-    if (v === true) parts.push(feat.name);
-    else if (typeof v === 'string' && v.trim()) parts.push(v.trim());
-    // false / absent → not part of this tier
+    if (v === true) included = true;
+    else if (typeof v === 'string' && v.trim()) {
+      included = true;
+      vals.push(v.trim());
+    }
   }
-  return { included: parts.length > 0, parts };
+  return { included, value: vals.join(', ') };
 }
 
 // Render one tier's value for a feature as Markdown cell content:

@@ -174,8 +174,8 @@ export function renderPricingView(): void {
 
   const toggle = hasHighlights
     ? `<div class="pm-subview" role="group" aria-label="Darstellung">` +
-      `<button type="button" class="pm-subview-btn" data-sub="cards" aria-pressed="${subView === 'cards'}">Kacheln</button>` +
       `<button type="button" class="pm-subview-btn" data-sub="matrix" aria-pressed="${subView === 'matrix'}">Matrix</button>` +
+      `<button type="button" class="pm-subview-btn" data-sub="cards" aria-pressed="${subView === 'cards'}">Kacheln</button>` +
       `</div>`
     : '';
 

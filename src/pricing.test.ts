@@ -180,16 +180,16 @@ const hFeatures: PricingFeature[] = [
 const tierFree: PricingTier = { id: 'free', name: 'Free', price: '0 €', values: { min: '500' } };
 const tierScale: PricingTier = { id: 'scale', name: 'Scale', price: '199 €', values: { min: '3.000', crm: true, ticket: true } };
 
-test('resolveHighlight: string values shown verbatim, booleans as feature name', () => {
+test('resolveHighlight: value-feature → value string; boolean → included, no value', () => {
   const hMin = { id: 'h1', label: 'Freiminuten', featureIds: ['min'] };
   const hInteg = { id: 'h2', label: 'Integrationen', featureIds: ['crm', 'ticket'] };
-  assert.deepEqual(resolveHighlight(hMin, tierScale, hFeatures, [], null), { included: true, parts: ['3.000'] });
-  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, [], null), { included: true, parts: ['CRM', 'Ticketsysteme'] });
+  assert.deepEqual(resolveHighlight(hMin, tierScale, hFeatures, [], null), { included: true, value: '3.000' });
+  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, [], null), { included: true, value: '' });
 });
 
 test('resolveHighlight: not included when the tier has none of the features', () => {
   const hInteg = { id: 'h2', label: 'Integrationen', featureIds: ['crm', 'ticket'] };
-  assert.deepEqual(resolveHighlight(hInteg, tierFree, hFeatures, [], null), { included: false, parts: [] });
+  assert.deepEqual(resolveHighlight(hInteg, tierFree, hFeatures, [], null), { included: false, value: '' });
 });
 
 test('resolveHighlight: version filter drops features beyond the selected version', () => {
@@ -197,7 +197,7 @@ test('resolveHighlight: version filter drops features beyond the selected versio
   // At version 1.0, the 2.0 features are ignored → not included on Scale.
   assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, ['1.0', '2.0', '3.0'], '1.0'), {
     included: false,
-    parts: [],
+    value: '',
   });
 });
 

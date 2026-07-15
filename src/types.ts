@@ -121,6 +121,9 @@ export type PricingFeature = {
 export type PricingTier = {
   id: string;
   name: string;
+  // Optional segment/tagline shown under the tier name on the card
+  // (e.g. "Micro · 1–5 Anrufe/Tag").
+  tagline?: string;
   // Free-form price string — carries currency and qualifiers ("ab 449,95 €").
   price: string;
   // Per-tier feature values, keyed by feature id:
@@ -140,6 +143,9 @@ export type PricingTier = {
 export type PricingHighlight = {
   id: string;
   label: string;
+  // Card section this bullet belongs to (e.g. "Inkludiert", "Agent Skills").
+  // Highlights are grouped by section on the tier cards; order follows first-seen.
+  section?: string;
   // Optional semantic icon key (resolved by the brand, like item icons).
   icon?: string;
   // Raw feature ids this tile summarizes.

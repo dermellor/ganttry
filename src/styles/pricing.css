@@ -68,64 +68,101 @@
 
 .pc-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 16px;
-  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 18px;
+  align-items: stretch;
 }
 
 .pc-card {
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--surface);
-  padding: 18px;
+  padding: 22px 20px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
 }
 
 .pc-card-head {
   border-bottom: 1px solid var(--border);
-  padding-bottom: 12px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
 }
 .pc-card-name {
   margin: 0;
   font-family: var(--font-headline);
   font-weight: var(--headline-weight);
-  font-size: 1.15rem;
+  font-size: 1.35rem;
+}
+.pc-card-tagline {
+  margin-top: 3px;
+  font-size: 0.82rem;
+  color: var(--fg-muted);
 }
 .pc-card-price {
-  margin-top: 4px;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--accent-strong);
+  margin-top: 12px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--fg);
 }
 
-.pc-tiles {
+.pc-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pc-section-head {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  font-weight: 600;
+  margin-bottom: 7px;
+}
+
+.pc-rows {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
-.pc-tile {
+
+.pc-row {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 8px 10px;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.92rem;
+  line-height: 1.35;
 }
-.pc-tile-label {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+
+/* Green check like the real cards. */
+.pc-check {
+  flex: 0 0 auto;
+  color: var(--success, #30A46C);
+  font-weight: 700;
+  transform: translateY(1px);
+}
+
+.pc-row-label { flex: 1 1 auto; }
+
+.pc-inherit .pc-row-label {
   color: var(--fg-muted);
+  font-style: italic;
 }
-.pc-tile-val {
-  font-size: 0.95rem;
+
+/* Value rows: label left, value right (e.g. "Minuten … 3.000"). */
+.pc-row-value {
+  justify-content: space-between;
+}
+.pc-row-value .pc-row-label { color: var(--fg-muted); }
+.pc-row-value-text {
+  flex: 0 0 auto;
+  font-weight: 600;
   color: var(--fg);
 }
+
 .pc-card-empty { color: var(--fg-muted); }
 
 .pm-version-switch {
