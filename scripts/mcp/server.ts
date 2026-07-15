@@ -230,6 +230,9 @@ const pricingFeature = z.object({
 const pricingTier = z.object({
   id: z.string().describe('Stable tier id.'),
   name: z.string().describe('Tier name, e.g. "Medium".'),
+  tagline: z.string().optional().describe('Short segment line, e.g. "Micro · 1–5 Anrufe/Tag".'),
+  useCase: z.string().optional().describe('One-line positioning / primary use case (card sub-headline).'),
+  targetGroup: z.string().optional().describe('Target-group description, shown as a "Zielgruppe" block.'),
   price: z.string().describe('Free-form price string, e.g. "74,95 €/Monat" or "ab 449,95 €".'),
   values: z
     .record(z.union([z.string(), z.boolean()]))
