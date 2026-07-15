@@ -7,6 +7,10 @@
   padding: 24px;
   background: var(--bg);
   color: var(--fg);
+  /* Status traffic-light: Open = red, Doing = yellow, Done = green. */
+  --pm-open: #E5484D;
+  --pm-doing: #E2B203;
+  --pm-done: #30A46C;
 }
 
 .pricing-inner {
@@ -170,9 +174,9 @@
 }
 .pm-work-dot::-webkit-details-marker { display: none; }
 
-.pm-work-doing { background: var(--accent); }
-.pm-work-done  { background: var(--success, #1D9E75); }
-.pm-work-open  { background: var(--fg-muted); }
+.pm-work-open  { background: var(--pm-open); color: #fff; }
+.pm-work-doing { background: var(--pm-doing); color: #1a1a1a; }
+.pm-work-done  { background: var(--pm-done); color: #fff; }
 
 /* Popover with the item list, anchored under the dot. */
 .pm-work-pop {
@@ -223,9 +227,9 @@
   border-radius: 999px;
   transform: translateY(1px);
 }
-.pm-work-item-dot.pm-work-open  { background: var(--fg-muted); }
-.pm-work-item-dot.pm-work-doing { background: var(--accent); }
-.pm-work-item-dot.pm-work-done  { background: var(--success, #1D9E75); }
+.pm-work-item-dot.pm-work-open  { background: var(--pm-open); }
+.pm-work-item-dot.pm-work-doing { background: var(--pm-doing); }
+.pm-work-item-dot.pm-work-done  { background: var(--pm-done); }
 
 .pm-work-item-name { flex: 1 1 auto; }
 

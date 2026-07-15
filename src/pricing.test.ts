@@ -154,11 +154,20 @@ test('itemsForFeature: filters by feature id and exact version (or all when null
   assert.deepEqual(itemsForFeature('voice', workItems, '2.0').map((i) => i.id), []);
 });
 
-test('aggregateWorkState: Doing wins, else all-Done → done, else open, empty → none', () => {
-  assert.equal(aggregateWorkState(itemsForFeature('crm', workItems, '2.0')), 'doing'); // a Doing + b Open
-  assert.equal(aggregateWorkState(itemsForFeature('voice', workItems, '3.0')), 'done'); // only c Done
-  assert.equal(aggregateWorkState([{ id: 'x', content: 'X', status: 'Open' }]), 'open');
+const mk = (id: string, status: 'Open' | 'Doing' | 'Done'): TimelineFileItem => ({ id, content: id, status });
+
+test('aggregateWorkState: majority wins; empty → none', () => {
+  assert.equal(aggregateWorkState([mk('a', 'Open'), mk('b', 'Open'), mk('c', 'Doing')]), 'open');
+  assert.equal(aggregateWorkState([mk('a', 'Done'), mk('b', 'Done'), mk('c', 'Doing')]), 'done');
+  assert.equal(aggregateWorkState([mk('a', 'Doing'), mk('b', 'Doing'), mk('c', 'Open')]), 'doing');
+  assert.equal(aggregateWorkState([mk('x', 'Open')]), 'open');
   assert.equal(aggregateWorkState([]), 'none');
+});
+
+test('aggregateWorkState: ties broken Doing > Open > Done', () => {
+  assert.equal(aggregateWorkState([mk('a', 'Doing'), mk('b', 'Open')]), 'doing'); // 1:1 → Doing
+  assert.equal(aggregateWorkState([mk('a', 'Open'), mk('b', 'Done')]), 'open'); // 1:1 → Open
+  assert.equal(aggregateWorkState([mk('a', 'Doing'), mk('b', 'Done')]), 'doing'); // 1:1 → Doing
 });
 
 test('empty pricing renders a placeholder, no matrix', () => {

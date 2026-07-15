@@ -4,7 +4,7 @@
 // document. Pure and deterministic (no Date / IO) so it's unit-testable and the
 // caller stamps the date.
 
-import { statusOrDefault } from './status';
+import { statusOrDefault, type StatusKey } from './status';
 import {
   PRICING_FEATURE_META_KEY,
   PRICING_ITEM_VERSION_META_KEY,
@@ -78,13 +78,21 @@ export function itemsForFeature(
   );
 }
 
-/** Aggregate: Doing wins (in progress); else all-Done → done; else open; none if empty. */
+/**
+ * Aggregate = the status the contained items hold by *majority*. Ties are broken
+ * by priority Doing > Open > Done (an in-progress signal wins over pending, which
+ * wins over completed). Empty → 'none'.
+ */
 export function aggregateWorkState(items: TimelineFileItem[]): WorkState {
   if (!items.length) return 'none';
-  const statuses = items.map((it) => statusOrDefault(it.status));
-  if (statuses.includes('Doing')) return 'doing';
-  if (statuses.every((s) => s === 'Done')) return 'done';
-  return 'open';
+  const counts: Record<StatusKey, number> = { Open: 0, Doing: 0, Done: 0 };
+  for (const it of items) counts[statusOrDefault(it.status)]++;
+  // Tie-break order: the first with a strictly greater count wins, so on equal
+  // counts the earlier entry (Doing, then Open, then Done) is kept.
+  const order: StatusKey[] = ['Doing', 'Open', 'Done'];
+  let best: StatusKey = order[0];
+  for (const k of order) if (counts[k] > counts[best]) best = k;
+  return best.toLowerCase() as WorkState;
 }
 
 // Render one tier's value for a feature as Markdown cell content:
