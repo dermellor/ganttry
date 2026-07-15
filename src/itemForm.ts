@@ -12,6 +12,7 @@ import {
   wireCustomFields,
 } from './customFields';
 import { TIMELINE_ICONS } from './icons';
+import { ITEM_STATUSES, statusOrDefault } from './status';
 import { findItemIndex, isoDateOnly } from './editor';
 import { createMarkdownEditor, type MarkdownEditor } from './wysiwyg';
 import {
@@ -101,6 +102,12 @@ export function showItemForm(
         <select id="f-icon" name="icon">
           <option value=""${!item.icon ? ' selected' : ''}>— kein Icon —</option>
           ${TIMELINE_ICONS.map(({ key, label }) => `<option value="${key}"${item.icon === key ? ' selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-status">Status</label>
+        <select id="f-status" name="status">
+          ${ITEM_STATUSES.map(({ key, label }) => `<option value="${key}"${statusOrDefault(item.status) === key ? ' selected' : ''}>${label}</option>`).join('')}
         </select>
       </div>
       <div class="field full">
@@ -775,6 +782,9 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   const iconVal = get('icon');
   if (iconVal) item.icon = iconVal;
   else delete item.icon;
+
+  // status is mandatory (NOT NULL, default Open) — always store a canonical value.
+  item.status = statusOrDefault(get('status'));
 
   const body = String(fd.get('body') ?? '');
   if (body) item.body = body;

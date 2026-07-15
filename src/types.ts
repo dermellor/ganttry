@@ -1,3 +1,5 @@
+import type { StatusKey } from './status';
+
 export type Note = {
   id: string;
   path: string;
@@ -57,6 +59,7 @@ export type TimelineFileItem = {
   type?: 'point' | 'range' | 'background' | 'box';
   className?: string;
   icon?: string;
+  status?: StatusKey; // built-in item status (Open/Doing/Done); defaults to Open
   body?: string;
   metadata?: Record<string, unknown>;
   version?: number; // DB row version for optimistic locking (server-managed)

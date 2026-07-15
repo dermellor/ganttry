@@ -140,6 +140,7 @@
 
 .list-date,
 .list-type,
+.list-status,
 .list-owner {
   white-space: nowrap;
   color: var(--fg-muted, #646464);

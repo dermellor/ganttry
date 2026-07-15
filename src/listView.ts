@@ -52,6 +52,7 @@ function rowHtml(item: TimelineItem, selected: boolean): string {
     <td class="list-date">${formatDate(item.start)}</td>
     <td class="list-date">${item.type === 'point' ? '—' : formatDate(item.end)}</td>
     <td class="list-type">${TYPE_LABELS[item.type] ?? escapeHtml(item.type)}</td>
+    <td class="list-status">${item.status ? escapeHtml(item.status) : '<span class="list-empty">—</span>'}</td>
     <td class="list-owner">${owner ? escapeHtml(owner) : '<span class="list-empty">—</span>'}</td>
   </tr>`;
 }
@@ -102,7 +103,7 @@ export function renderListView(): void {
           ? `<button type="button" class="list-add-item" data-add-group="${escapeHtml(s.id)}">+ Eintrag</button>`
           : '';
       const header = grouped
-        ? `<tr class="list-group-row"><th colspan="5" scope="colgroup"><span class="list-group-title">${escapeHtml(s.label)}</span>${addBtn}</th></tr>`
+        ? `<tr class="list-group-row"><th colspan="6" scope="colgroup"><span class="list-group-title">${escapeHtml(s.label)}</span>${addBtn}</th></tr>`
         : '';
       return header + rows;
     })
@@ -116,6 +117,7 @@ export function renderListView(): void {
             <th scope="col">Start</th>
             <th scope="col">Ende</th>
             <th scope="col">Typ</th>
+            <th scope="col">Status</th>
             <th scope="col">Owner</th>
           </tr>
         </thead>

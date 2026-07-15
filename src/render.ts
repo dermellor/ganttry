@@ -16,6 +16,7 @@ import {
 import { DependencyArrows } from './arrows';
 import { PhaseBand } from './phaseBand';
 import { iconSpanHtml } from './icons';
+import { DEFAULT_STATUS } from './status';
 import {
   ensureItemIds,
   findItemIndex,
@@ -593,6 +594,7 @@ export function createItem(start: Date | string | null | undefined, group?: stri
     id: newId,
     content: 'Neuer Eintrag',
     group: groupId,
+    status: DEFAULT_STATUS,
   };
   // A timeline-placed item gets a start + default 1-week extent so it renders
   // as a visible bar. A list-created item (start === null) stays dateless —

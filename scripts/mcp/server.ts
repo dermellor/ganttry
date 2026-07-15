@@ -185,6 +185,10 @@ const itemFields = {
     .describe(
       'Semantic icon key (brand resolves the glyph): milestone, launch, done, warning, blocked, review, deadline, meeting, idea, research, design, build, bug, release, decision, goal, info, note.',
     ),
+  status: z
+    .enum(['Open', 'Doing', 'Done'])
+    .optional()
+    .describe('Built-in item status: Open, Doing, or Done. Defaults to Open when omitted.'),
   body: z.string().optional().describe('Markdown shown in the detail panel.'),
   metadata: z
     .record(z.unknown())

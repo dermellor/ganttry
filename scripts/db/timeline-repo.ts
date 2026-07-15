@@ -9,6 +9,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CustomFieldDef, Pricing, TimelineFile, TimelineFileItem, TimelinePhase } from '../../src/types';
+import { statusOrDefault } from '../../src/status.ts';
 
 export type TimelineGroupDecl = {
   id: string;
@@ -33,7 +34,7 @@ export class NotFoundError extends Error {
 }
 
 const ITEM_SELECT =
-  'id, start, "end", duration, content, "group", type, title, body, icon, class_name, metadata, version, sort, created_at, created_by, updated_at, updated_by';
+  'id, start, "end", duration, content, "group", type, title, body, icon, status, class_name, metadata, version, sort, created_at, created_by, updated_at, updated_by';
 
 // ---- row <-> object mapping ------------------------------------------------
 
@@ -51,6 +52,7 @@ function rowToItem(row: Record<string, any>): TimelineFileItem {
   if (row.title != null) item.title = row.title;
   if (row.body != null) item.body = row.body;
   if (row.icon != null) item.icon = row.icon;
+  if (row.status != null) item.status = statusOrDefault(row.status);
   if (row.class_name != null) item.className = row.class_name;
   if (row.metadata && Object.keys(row.metadata).length > 0) item.metadata = row.metadata;
   if (row.version != null) item.version = row.version;
@@ -90,6 +92,10 @@ function itemToRow(timelineId: string, item: TimelineFileItem, sort?: number): R
     title: item.title ?? null,
     body: item.body ?? null,
     icon: item.icon ?? null,
+    // status is NOT NULL in the DB: always write a canonical value, never null
+    // (a missing/invalid status becomes the default so inserts never violate the
+    // constraint and every row carries exactly one of the three states).
+    status: statusOrDefault(item.status),
     class_name: item.className ?? null,
     metadata: item.metadata ?? {},
   };
@@ -248,7 +254,7 @@ export async function updateItem(
   const set: Record<string, any> = {};
   const map: Record<keyof TimelineFileItem | string, string> = {
     start: 'start', end: 'end', duration: 'duration', content: 'content', group: 'group',
-    type: 'type', title: 'title', body: 'body', icon: 'icon', className: 'class_name', metadata: 'metadata',
+    type: 'type', title: 'title', body: 'body', icon: 'icon', status: 'status', className: 'class_name', metadata: 'metadata',
   };
   for (const [k, col] of Object.entries(map)) {
     if (k in patch) set[col] = full[col];

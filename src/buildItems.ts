@@ -1,6 +1,8 @@
 import type { Config, FilterClause, Note, TimelineFile, TimelineFileItem, View } from './types';
 import { matches, resolveGroupBy } from './filter';
 import { normalizeIcon } from './icons';
+import { normalizeStatus } from './status';
+import type { StatusKey } from './status';
 
 export const UNGROUPED = '_ungrouped';
 
@@ -21,6 +23,7 @@ export type TimelineItem = {
   className?: string;
   style?: string;
   icon?: string;
+  status?: StatusKey;
   tags?: string[];
 };
 
@@ -500,6 +503,7 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
       title: raw.title ? escapeHtml(raw.title) : escapeHtml(raw.content),
       type: raw.type ?? (endIso ? 'range' : 'point'),
       icon: normalizeIcon(raw.icon),
+      status: normalizeStatus(raw.status),
       tags: readTags(raw.metadata),
     });
     details.set(id, detailFromJsonItem({ ...raw, id }));
