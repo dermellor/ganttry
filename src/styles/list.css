@@ -63,16 +63,17 @@
   border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.08));
 }
 
-/* Group header: title left, per-group "+ Eintrag" button pinned right. */
+/* Group header: title with the per-group "+ Eintrag" button sitting right
+   next to it (comfortable gap), not pushed to the far right edge. */
 .list-group-row th {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-start;
+  gap: 20px;
 }
 
 .list-group-title {
-  min-width: 0;
+  flex: none;
 }
 
 .list-add-item {
