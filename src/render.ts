@@ -595,14 +595,16 @@ function handleAdd(item: TimelineItem, callback: (item: TimelineItem | null) => 
 }
 
 // Toolbar "+ Eintrag": adds an item at the centre of the visible window (so it
-// lands on screen) and opens its form. No-op on read-only views.
-export function addNewItem(): void {
+// lands on screen) and opens its form. No-op on read-only views. Optionally
+// pins the new item to a specific group (used by the list view's per-group
+// "+ Eintrag" buttons).
+export function addNewItem(group?: string | null): void {
   if (!isEditableView()) return;
   const win = timeline?.getWindow();
   const start = win
     ? new Date((new Date(win.start).getTime() + new Date(win.end).getTime()) / 2)
     : new Date();
-  const newItem = createItem(start);
+  const newItem = createItem(start, group);
   if (!newItem) return;
   setTimeout(() => {
     try {

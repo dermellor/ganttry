@@ -245,7 +245,7 @@ async function bootstrap() {
     if (state.viewMode === 'list') renderListView();
     syncUrl();
   });
-  els.addBtn.addEventListener('click', addNewItem);
+  els.addBtn.addEventListener('click', () => addNewItem());
   els.exportBtn.addEventListener('click', handleExport);
 
   // Delete key (and Mac's ⌫) removes the item whose edit form is open — as long

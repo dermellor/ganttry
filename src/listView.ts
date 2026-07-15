@@ -6,9 +6,9 @@
 
 import { escapeHtml, tagPillsHtml, type TimelineItem } from './buildItems';
 import { iconSpanHtml } from './icons';
-import { filterBuildForDisplay } from './render';
+import { addNewItem, filterBuildForDisplay } from './render';
 import { showDetailForId } from './detailPanel';
-import { state, els, syncUrl } from './state';
+import { state, els, syncUrl, isEditableView } from './state';
 
 const TYPE_LABELS: Record<TimelineItem['type'], string> = {
   point: 'Meilenstein',
@@ -73,6 +73,7 @@ export function renderListView(): void {
 
   const sel = state.selectedItemId;
   const grouped = order.length > 1 || (order.length === 1 && order[0].id !== NO_GROUP);
+  const editable = isEditableView();
 
   const sections = order
     .filter((g) => byGroup.has(g.id))
@@ -83,8 +84,14 @@ export function renderListView(): void {
         .sort((a, b) => a.start.localeCompare(b.start))
         .map((it) => rowHtml(it, it.id === sel))
         .join('');
+      // Only real groups (not the synthetic "Ohne Gruppe" bucket) get an add
+      // button, and only on editable sources.
+      const addBtn =
+        editable && g.id !== NO_GROUP
+          ? `<button type="button" class="list-add-item" data-add-group="${escapeHtml(g.id)}">+ Eintrag</button>`
+          : '';
       const header = grouped
-        ? `<tr class="list-group-row"><th colspan="5" scope="colgroup">${escapeHtml(g.label)}</th></tr>`
+        ? `<tr class="list-group-row"><th colspan="5" scope="colgroup"><span class="list-group-title">${escapeHtml(g.label)}</span>${addBtn}</th></tr>`
         : '';
       return header + rows;
     })
@@ -114,6 +121,13 @@ export function setupListView(): void {
   if (wired) return;
   wired = true;
   const activate = (target: EventTarget | null) => {
+    // Per-group "+ Eintrag" button: add an item pinned to that group, then let
+    // addNewItem select it and open its form. Handled before row activation.
+    const addBtn = (target as HTMLElement | null)?.closest<HTMLElement>('.list-add-item');
+    if (addBtn) {
+      addNewItem(addBtn.dataset.addGroup ?? null);
+      return;
+    }
     const row = (target as HTMLElement | null)?.closest<HTMLElement>('.list-row');
     const id = row?.dataset.id;
     if (!id) return;

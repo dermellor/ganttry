@@ -45,6 +45,51 @@
   border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.08));
 }
 
+/* Group header: title left, per-group "+ Eintrag" button pinned right. */
+.list-group-row th {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.list-group-title {
+  min-width: 0;
+}
+
+.list-add-item {
+  flex: none;
+  align-self: center;
+  font-family: var(--font-body, sans-serif);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent, #2f0d5b);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.15));
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.1s ease, background 0.1s ease, border-color 0.1s ease;
+}
+
+.list-group-row:hover .list-add-item {
+  opacity: 1;
+}
+
+.list-add-item:hover {
+  opacity: 1;
+  background: var(--surface-alt, rgba(47, 13, 91, 0.06));
+  border-color: var(--accent, #2f0d5b);
+}
+
+.list-add-item:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent, #2f0d5b);
+  outline-offset: 2px;
+}
+
 .list-row {
   cursor: pointer;
   transition: background 0.08s ease;
