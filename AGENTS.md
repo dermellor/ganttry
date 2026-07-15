@@ -16,6 +16,31 @@ Feature branches *are* branch rot and don't fix working-tree rot, so
 "branch vs main" is the wrong axis. The rules below attack both roots directly:
 **session isolation**, a **hard done-gate**, and disciplined integration.
 
+**Base invariant — local `main` mirrors `origin/main` at all times.** Every
+divergence disaster starts here: the shared checkout accumulates commits that
+never reach `origin` (or the same work lands on `origin` via a squash-merge under
+a *different* SHA), so the two histories split while looking identical, and Git
+then reports conflicts where there is no real content difference. Prevent it —
+don't reconcile it after the fact:
+
+- **Start clean.** Before any change-session — and before spawning a worktree —
+  run `git fetch origin && git switch main && git merge --ff-only origin/main`.
+  If the fast-forward is refused, local `main` has already drifted: stop and
+  reconcile it *first* (rebase/merge the unique local commits onto `origin/main`,
+  or discard them), never build on top of the drift.
+- **Cut worktrees from `origin/main`, never from local `HEAD`.** A worktree
+  branched off a stale checkout inherits the drift and yields a PR whose base is
+  wrong — the noisy-diff / phantom-conflict trap.
+- **Never leave commits sitting on local `main` unpushed.** If you commit to
+  `main` directly, `git push` in the same breath. Unpushed local-`main` commits
+  are the seed of every "same feature, two SHAs" conflict, especially once the
+  same work also arrives through a PR.
+- **Re-sync the serving checkout after every merge.** PM2 serves 3120 from the
+  main checkout; merging a PR on GitHub does **not** update it. After a merge, in
+  the main checkout run `git fetch origin && git merge --ff-only origin/main`
+  (restart the PM2 service if it caches build output). Skip this and the live
+  preview keeps showing stale code — the exact "I don't see my change" trap.
+
 ### 1. Isolate every change-session in its own git worktree
 
 Any session that will modify code works in its **own git worktree**, never in the
@@ -60,7 +85,8 @@ the closing commit with `Closes #NN`.
 At the start of a change-session, check `git status`. If it already contains
 uncommitted changes you did not create, another session owns them — do not build on
 top of or commit them blindly. Surface them and either work in a fresh worktree off
-`HEAD` or coordinate before touching shared files.
+`origin/main` (per the base invariant — never off a possibly-stale local `HEAD`)
+or coordinate before touching shared files.
 
 ## Ports
 
