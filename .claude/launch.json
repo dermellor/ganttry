@@ -6,6 +6,24 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3120
+    },
+    {
+      "name": "vite-worktree",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:worktree"],
+      "port": 31200
+    },
+    {
+      "name": "vite-worktree-2",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "WT_PORT=31201 npm run dev:worktree"],
+      "port": 31201
+    },
+    {
+      "name": "vite-worktree-3",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "WT_PORT=31202 npm run dev:worktree"],
+      "port": 31202
     }
   ]
 }

@@ -26,9 +26,13 @@ before the session ends.
 
 **Live-preview caveat:** the Vite dev server (PM2) runs from the main checkout and
 does **not** see edits made in a worktree. When a task needs live visual
-verification, either run the dev server from the worktree for the session, or merge
-to `main` and verify there. Never assume the running app reflects worktree edits —
-that mismatch is a known trap.
+verification, start the worktree server on a five-digit preview port from the
+**31200–31209** pool (`npm run dev:worktree`, default 31200) so PM2 keeps serving
+3120 — **never stop PM2** to free 3120 (that tears down `timelines.localhost` for
+every other session). Details: „Ports → Worktree-Live-Preview". Alternatively
+merge to `main` and verify there.
+Never assume the running app reflects worktree edits — that mismatch is a known
+trap.
 
 ### 2. Done = committed + pushed + deploy-verified
 
@@ -62,16 +66,41 @@ top of or commit them blindly. Surface them and either work in a fresh worktree 
 
 Belegt im 3120er-Block (siehe [`~/Development/PORTS.md`](../PORTS.md)).
 
-| Port | Service                       |
-| ---- | ----------------------------- |
-| 3120 | Vite dev server (Timeline UI) |
+| Port          | Service                                            |
+| ------------- | -------------------------------------------------- |
+| 3120          | Vite dev server (Timeline UI) — PM2, Main-Checkout |
+| 31200–31209   | Vite dev server für Worktree-Live-Previews (Pool)  |
 
 URLs:
 
 - `https://timelines.localhost` — primärer Zugang über Caddy (HTTPS, von PM2 verwaltet)
-- `http://localhost:3120` — direkt auf Vite
+- `http://localhost:3120` — direkt auf Vite (Main-Checkout, von PM2)
+- `http://localhost:31200` … `31209` — Worktree-Previews (siehe unten)
 
 Crasht bei Port-Konflikt (`strictPort: true`), kein Auto-Fallback.
+
+### Worktree-Live-Preview (Pool 31200–31209) — PM2 nie stoppen
+
+Der PM2-Dev-Server auf 3120 läuft aus dem **Main-Checkout** und sieht
+Worktree-Edits nicht (siehe „Live-preview caveat" oben). Um Änderungen aus einem
+Worktree live zu sehen, **niemals PM2 stoppen** (das reißt `timelines.localhost`
+für alle anderen Sessions weg). Stattdessen den Worktree-Server auf einem eigenen
+fünfstelligen Preview-Port starten — PM2 bleibt parallel auf 3120:
+
+```bash
+npm run dev:worktree              # Default-Port 31200
+WT_PORT=31201 npm run dev:worktree  # zweite Worktree parallel, usw.
+```
+
+Die Preview-Ports leben bewusst **außerhalb** des engen 3120er-Blocks in einem
+fünfstelligen Pool **31200–31209** (abgeleitet: `3120` → `31200` + Index), damit
+beliebig viele Worktrees gleichzeitig laufen können, ohne sich oder andere
+Services zu blockieren. Default ist 31200; für weitere parallele Previews den
+`WT_PORT` hochzählen. Das Script lässt `dev-prep.sh` bewusst aus (killt also nicht
+den 3120-Prozess). In Claude Code entsprechen die Launch-Configs `vite-worktree`
+(31200), `vite-worktree-2` (31201), `vite-worktree-3` (31202) in
+`.claude/launch.json`. Regel: **Worktree-Previews immer auf 31200+, PM2 auf 3120
+laufen lassen — nie umgekehrt.**
 
 ## Architecture
 
