@@ -273,8 +273,12 @@ exactly one of the three states.
 - **Add/rename a state:** change `ITEM_STATUSES` in `src/status.ts` and the DB
   CHECK constraint (a new migration). It then flows to the form, column and MCP.
 
-> There is **no visual bar treatment yet** — status is field-only for now
-> (stored + editable), intended to grow visual/list-grouping affordances later.
+Status also surfaces on the built `TimelineItem` ([`src/buildItems.ts`](src/buildItems.ts))
+and renders as a **Status column in the Liste view** ([`src/listView.ts`](src/listView.ts));
+items without a status (file-based sources) show „—".
+
+> There is **no visual timeline-bar treatment yet** — on the bars status is
+> field-only for now (stored + editable). List-grouping-by-status could follow.
 
 ## Custom fields (per timeline)
 
@@ -611,9 +615,9 @@ active state driven by `aria-pressed`) switches between two renderings of the
 - **Timeline** — the vis-timeline (default).
 - **Liste** — a scrollable, grouped table ([`src/listView.ts`](src/listView.ts)):
   sections along a selectable **grouping dimension** (items sorted by start),
-  with columns Eintrag (icon + tag pills + content), Start, Ende, Typ, Owner.
-  Phase background items are omitted. The milestones-only filter applies here
-  too.
+  with columns Eintrag (icon + tag pills + content), Start, Ende, Typ, Status,
+  Owner. Phase background items are omitted. The milestones-only filter applies
+  here too.
 
   A **Gruppieren** dropdown in the list toolbar (a bar pinned above the
   scrollable body — not in the global app header, since it only applies to the
