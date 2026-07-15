@@ -150,6 +150,51 @@ body {
   border-radius: 4px;
 }
 
+.mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.15));
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface, #fff);
+}
+
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted, #646464);
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.mode-btn + .mode-btn {
+  border-left: 1px solid var(--border, rgba(0, 0, 0, 0.15));
+}
+
+.mode-btn:hover:not([aria-pressed="true"]) {
+  background: var(--surface-alt, rgba(47, 13, 91, 0.06));
+  color: var(--fg, #2c3333);
+}
+
+.mode-btn[aria-pressed="true"] {
+  background: var(--accent, #2f0d5b);
+  color: var(--surface, #fff);
+}
+
+.mode-btn:focus-visible {
+  outline: 2px solid var(--accent, #2f0d5b);
+  outline-offset: 2px;
+}
+
+.mode-btn svg {
+  display: block;
+}
+
 .export-btn {
   font: inherit;
   font-size: 13px;

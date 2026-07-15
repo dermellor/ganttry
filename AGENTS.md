@@ -518,8 +518,10 @@ The picker-response parsing is shared by both runtimes in
 
 ## View modes: Timeline / Liste
 
-The header **Ansicht** dropdown switches between two renderings of the *same*
-active build:
+The header **Ansicht** icon toggle (a segmented two-button control, styled in
+[`src/styles/base.css`](src/styles/base.css) as `.mode-toggle` / `.mode-btn`,
+active state driven by `aria-pressed`) switches between two renderings of the
+*same* active build:
 
 - **Timeline** — the vis-timeline (default).
 - **Liste** — a scrollable, grouped table ([`src/listView.ts`](src/listView.ts)):

@@ -98,6 +98,13 @@ async function applyView(viewId: string) {
   syncUrl();
 }
 
+// Reflect the active view mode on the segmented icon toggle (aria-pressed drives
+// the highlighted state via CSS).
+function setModeButtons(mode: ViewMode) {
+  els.modeTimelineBtn.setAttribute('aria-pressed', String(mode === 'timeline'));
+  els.modeListBtn.setAttribute('aria-pressed', String(mode === 'list'));
+}
+
 // Switch between the timeline and the list rendering of the same build. The
 // timeline instance is kept alive (just hidden) so all edit machinery — drags,
 // the form, persistence — keeps working; the list is a second view of the same
@@ -105,7 +112,7 @@ async function applyView(viewId: string) {
 // caller drives localStorage + URL syncing itself.
 function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean } = {}) {
   state.viewMode = mode;
-  els.modeSelect.value = mode;
+  setModeButtons(mode);
   const list = mode === 'list';
   els.timeline.hidden = list;
   els.list.hidden = !list;
@@ -191,7 +198,7 @@ async function bootstrap() {
     state.viewMode = urlState.mode;
     localStorage.setItem(VIEW_MODE_KEY, urlState.mode);
   }
-  els.modeSelect.value = state.viewMode;
+  setModeButtons(state.viewMode);
   setupListView();
 
   state.pendingItem = urlState.item ?? null;
@@ -232,10 +239,8 @@ async function bootstrap() {
     state.pendingWindow = null;
     applyView(els.viewSelect.value);
   });
-  els.modeSelect.addEventListener('change', () => {
-    const mode = els.modeSelect.value === 'list' ? 'list' : 'timeline';
-    applyViewMode(mode);
-  });
+  els.modeTimelineBtn.addEventListener('click', () => applyViewMode('timeline'));
+  els.modeListBtn.addEventListener('click', () => applyViewMode('list'));
   els.brandSelect.addEventListener('change', () => applyBrand(els.brandSelect.value));
   els.detailClose.addEventListener('click', () => {
     commitItemForm();
