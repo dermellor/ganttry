@@ -15,6 +15,7 @@ import {
 import { DependencyArrows } from './arrows';
 import { PhaseBand } from './phaseBand';
 import { iconSpanHtml } from './icons';
+import { DEFAULT_STATUS } from './status';
 import {
   ensureItemIds,
   findItemIndex,
@@ -577,6 +578,7 @@ export function createItem(start: Date, group?: string | number | null): (Timeli
     duration: '1w',
     content: 'Neuer Eintrag',
     group: groupId,
+    status: DEFAULT_STATUS,
   };
   state.activeSourceFile.items.push(newItem);
   rebuildAndApply();

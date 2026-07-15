@@ -165,6 +165,7 @@ File shape:
       "title": "Tooltip text",           // optional
       "type": "point",                   // optional: point | range | background | box
       "icon": "milestone",               // optional: semantic icon key (see "Item icons")
+      "status": "Open",                  // optional: Open | Doing | Done (see "Item status"); defaults to Open
       "body": "Markdown shown in detail panel",  // optional
       "metadata": { "owner": "Product Lead", "tags": ["Qualität & Daten"] }  // optional
     }
@@ -246,6 +247,34 @@ Acme neo-icons, defined in the `:root` block of
   form, the `timeline_items.icon` column, and the MCP `add_item`/`update_item` tools.
 
 Icons render on the live viewer, exported HTML, and the read-only Netlify deploy.
+
+## Item status
+
+Every item carries a built-in **status** — a first-class field with a fixed,
+universal value set: `Open` · `Doing` · `Done`, defaulting to `Open`. Unlike a
+per-timeline custom field, status is the *same* concept everywhere and is stored
+as its own column (`timeline_items.status`, `NOT NULL DEFAULT 'Open'` + a CHECK
+constraint), a peer of `icon` — so it round-trips through the DB, the editor,
+exports and the MCP tools unchanged, and every existing/new item always has
+exactly one of the three states.
+
+- **Single source of truth:** the value set + default + `normalizeStatus` /
+  `statusOrDefault` live in [`src/status.ts`](src/status.ts) (`StatusKey`,
+  `ITEM_STATUSES`, `DEFAULT_STATUS`), imported by both the client form and the
+  server data-access layer — no duplicated list.
+- **Editing:** the item form renders a Status dropdown
+  ([`src/itemForm.ts`](src/itemForm.ts)); new items seed `DEFAULT_STATUS`
+  ([`src/render.ts`](src/render.ts)).
+- **Server write:** `itemToRow` always writes a canonical value (never `null`,
+  so inserts satisfy `NOT NULL`); `updateItem`'s patch map carries `status`
+  ([`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts)).
+- **MCP:** `add_item` / `update_item` accept `status` as an enum
+  ([`scripts/mcp/server.ts`](scripts/mcp/server.ts)).
+- **Add/rename a state:** change `ITEM_STATUSES` in `src/status.ts` and the DB
+  CHECK constraint (a new migration). It then flows to the form, column and MCP.
+
+> There is **no visual bar treatment yet** — status is field-only for now
+> (stored + editable), intended to grow visual/list-grouping affordances later.
 
 ## Custom fields (per timeline)
 
@@ -344,7 +373,8 @@ Drei Tabellen (Migrationen in `supabase/migrations/`):
 
 - `timelines` — id, name, description, group_by, `phases` (jsonb).
 - `timeline_items` — Spalten für start/end/duration/content/group/type/title/
-  body/icon/class_name, `metadata` (jsonb: `dependsOn`, `owner`, `jira`, freie
+  body/icon/status/class_name (`status` `NOT NULL DEFAULT 'Open'` + CHECK
+  `Open|Doing|Done`, siehe „Item status"), `metadata` (jsonb: `dependsOn`, `owner`, `jira`, freie
   Extras), `version` (Trigger-Bump bei UPDATE), `sort`, `updated_by`. `end` und
   `duration` schließen sich aus (Ausdehnung entweder/oder, `end` gewinnt) —
   erzwungen im Write-Layer für alle Pfade (`enforceExtentExclusivity` +
