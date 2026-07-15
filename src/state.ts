@@ -22,6 +22,8 @@ import { writeUrlState, type UrlState } from './urlState';
 export const els = {
   timeline: document.getElementById('timeline') as HTMLDivElement,
   list: document.getElementById('list') as HTMLElement,
+  listBody: document.getElementById('list-body') as HTMLElement,
+  listGroupBy: document.getElementById('list-groupby') as HTMLSelectElement,
   viewSelect: document.getElementById('view-select') as HTMLSelectElement,
   modeSelect: document.getElementById('mode-select') as HTMLSelectElement,
   brandControl: document.getElementById('brand-control') as HTMLLabelElement,
@@ -40,6 +42,10 @@ export const els = {
 
 export const MILESTONES_ONLY_KEY = 'timelines.milestonesOnly';
 export const VIEW_MODE_KEY = 'timelines.viewMode';
+// Which dimension the list view groups by. 'group' (default), 'tag', or a custom
+// field key (e.g. 'cf:tier'). Persisted; validated against the active build on
+// render, falling back to 'group' when the chosen dimension isn't available.
+export const LIST_GROUP_BY_KEY = 'timelines.listGroupBy';
 
 export type ViewMode = 'timeline' | 'list';
 
@@ -118,6 +124,8 @@ export interface AppState {
   suppressUrlSync: boolean;
   milestonesOnly: boolean;
   viewMode: ViewMode;
+  // List-view grouping dimension (see LIST_GROUP_BY_KEY).
+  listGroupBy: string;
   persisting: boolean;
   persistAgain: boolean;
   lastFormPersistAt: number;
@@ -158,6 +166,7 @@ export const state: AppState = {
   suppressUrlSync: false,
   milestonesOnly: localStorage.getItem(MILESTONES_ONLY_KEY) === 'true',
   viewMode: localStorage.getItem(VIEW_MODE_KEY) === 'list' ? 'list' : 'timeline',
+  listGroupBy: localStorage.getItem(LIST_GROUP_BY_KEY) || 'group',
   persisting: false,
   persistAgain: false,
   lastFormPersistAt: 0,

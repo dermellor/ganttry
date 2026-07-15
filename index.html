@@ -47,7 +47,15 @@
     </header>
     <main class="app-main">
       <section id="timeline" class="timeline" aria-label="Timeline"></section>
-      <section id="list" class="list-view" aria-label="Liste" hidden></section>
+      <section id="list" class="list-view" aria-label="Liste" hidden>
+        <div class="list-toolbar">
+          <label class="control" id="list-groupby-control">
+            <span>Gruppieren</span>
+            <select id="list-groupby"></select>
+          </label>
+        </div>
+        <div id="list-body" class="list-body"></div>
+      </section>
       <aside id="detail" class="detail" hidden>
         <div class="detail-header">
           <button id="detail-close" class="detail-close" aria-label="Schließen">×</button>

@@ -475,9 +475,25 @@ active build:
 
 - **Timeline** — the vis-timeline (default).
 - **Liste** — a scrollable, grouped table ([`src/listView.ts`](src/listView.ts)):
-  one section per group (group order preserved, items sorted by start), with
-  columns Eintrag (icon + tag pills + content), Start, Ende, Typ, Owner. Phase
-  background items are omitted. The milestones-only filter applies here too.
+  sections along a selectable **grouping dimension** (items sorted by start),
+  with columns Eintrag (icon + tag pills + content), Start, Ende, Typ, Owner.
+  Phase background items are omitted. The milestones-only filter applies here
+  too.
+
+  A **Gruppieren** dropdown in the list toolbar (a bar pinned above the
+  scrollable body — not in the global app header, since it only applies to the
+  list) chooses the dimension: **Gruppe** (default, the item group — build order
+  preserved), **Tag** (offered when anything is tagged, from `metadata.tags`),
+  and one entry per **custom field** the timeline declares (e.g. **Tier**, from
+  `metadata.<key>`). The sectioning is a pure, DOM-free function
+  (`computeSections` in [`src/listGrouping.ts`](src/listGrouping.ts), unit-tested
+  in `src/listGrouping.test.ts`): multi-valued dimensions (tags, `multi-select`
+  fields) list an item under *every* value it carries; items without a value
+  land in an "Ohne …" bucket. Custom-field sections order by the field's declared
+  `options` first, then by first appearance. The per-section "+ Eintrag" button
+  shows only in the Gruppe dimension (it pins the new item to that group). The
+  choice persists in `localStorage` (`timelines.listGroupBy`) and falls back to
+  Gruppe when the chosen dimension isn't available on the active build.
 
 Both modes share all state and machinery: the timeline instance stays alive
 (just hidden) in list mode, so drags, the detail/edit form, and persistence keep

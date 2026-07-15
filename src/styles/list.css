@@ -4,12 +4,30 @@
 .list-view {
   min-height: 0;
   height: 100%;
-  overflow: auto;
-  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
 }
 
 .list-view[hidden] {
   display: none;
+}
+
+/* Toolbar pinned above the scrollable body — holds the "Gruppieren" selector,
+   which is list-view-specific (hence not in the global app header). */
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+
+.list-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 24px;
 }
 
 .list-table {

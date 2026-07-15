@@ -3,12 +3,21 @@
 // laid out as a grouped table instead of a horizontal timeline. Rows are
 // clickable and route through the same detail/edit panel as the timeline
 // (showDetailForId), so editing works identically in either mode.
+//
+// The grouping dimension is selectable (state.listGroupBy): the item's own
+// group (default), its tags, or any custom field the timeline defines
+// (e.g. "Tier"). Multi-valued dimensions (tags, multi-select fields) let an
+// item appear under every value it carries; items without a value fall into an
+// "Ohne …" bucket. The sectioning itself is a pure, DOM-free function
+// (computeSections in listGrouping.ts) so it can be unit-tested.
 
 import { escapeHtml, tagPillsHtml, type TimelineItem } from './buildItems';
 import { iconSpanHtml } from './icons';
 import { addNewItem, filterBuildForDisplay } from './render';
 import { showDetailForId } from './detailPanel';
-import { state, els, syncUrl, isEditableView } from './state';
+import { state, els, syncUrl, isEditableView, LIST_GROUP_BY_KEY } from './state';
+import { getCustomFields } from './customFields';
+import { computeSections, groupByOptions, GROUP_DIM } from './listGrouping';
 
 const TYPE_LABELS: Record<TimelineItem['type'], string> = {
   point: 'Meilenstein',
@@ -26,11 +35,12 @@ function formatDate(value?: string | null): string {
   return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
 }
 
+function metaOf(id: string): Record<string, unknown> | undefined {
+  return state.activeBuild?.details.get(id)?.frontmatter as Record<string, unknown> | undefined;
+}
+
 function ownerOf(id: string): string {
-  const fm = state.activeBuild?.details.get(id)?.frontmatter as
-    | Record<string, unknown>
-    | undefined;
-  const owner = fm?.owner;
+  const owner = metaOf(id)?.owner;
   return typeof owner === 'string' ? owner : '';
 }
 
@@ -46,58 +56,53 @@ function rowHtml(item: TimelineItem, selected: boolean): string {
   </tr>`;
 }
 
-// Real (non-background) items grouped by their group id, in group order, each
-// group's items sorted by start ascending. Phase-tint background items and
-// items in unknown groups are handled explicitly.
+// Real (non-background) items grouped by the active dimension, each section's
+// items sorted by start ascending. Phase-tint background items are omitted.
 export function renderListView(): void {
   const build = state.activeBuild;
   if (!build) {
-    els.list.innerHTML = '';
+    els.listBody.innerHTML = '';
     return;
   }
   const { items, groups } = filterBuildForDisplay(build);
-  const entries = items.filter((it) => it.type !== 'background');
+  const entries = items
+    .filter((it) => it.type !== 'background')
+    .sort((a, b) => a.start.localeCompare(b.start));
 
-  const byGroup = new Map<string, TimelineItem[]>();
-  const NO_GROUP = ' __nogroup';
-  for (const it of entries) {
-    const key = it.group && groups.some((g) => g.id === it.group) ? it.group : NO_GROUP;
-    (byGroup.get(key) ?? byGroup.set(key, []).get(key)!).push(it);
-  }
+  const customFields = getCustomFields();
+  const options = groupByOptions(entries, customFields);
+  const dim = options.some((o) => o.key === state.listGroupBy) ? state.listGroupBy : GROUP_DIM;
+  state.listGroupBy = dim;
+  populateGroupBySelect(options, dim);
 
-  const order: { id: string; label: string }[] = groups.map((g) => ({
-    id: g.id,
-    label: g.content || g.id,
-  }));
-  if (byGroup.has(NO_GROUP)) order.push({ id: NO_GROUP, label: 'Ohne Gruppe' });
+  const { sections, grouped } = computeSections(entries, dim, options, {
+    groups,
+    customFields,
+    metaOf,
+  });
 
   const sel = state.selectedItemId;
-  const grouped = order.length > 1 || (order.length === 1 && order[0].id !== NO_GROUP);
+  // The per-section "+ Eintrag" button only makes sense in the group dimension:
+  // it pins the new item to that group. Tag/custom-field sections aren't a
+  // group, so they get no add button (the global toolbar "+ Eintrag" stays).
   const editable = isEditableView();
+  const showAdd = editable && dim === GROUP_DIM;
 
-  const sections = order
-    .filter((g) => byGroup.has(g.id))
-    .map((g) => {
-      const rows = byGroup
-        .get(g.id)!
-        .slice()
-        .sort((a, b) => a.start.localeCompare(b.start))
-        .map((it) => rowHtml(it, it.id === sel))
-        .join('');
-      // Only real groups (not the synthetic "Ohne Gruppe" bucket) get an add
-      // button, and only on editable sources.
+  const body = sections
+    .map((s) => {
+      const rows = s.items.map((it) => rowHtml(it, it.id === sel)).join('');
       const addBtn =
-        editable && g.id !== NO_GROUP
-          ? `<button type="button" class="list-add-item" data-add-group="${escapeHtml(g.id)}">+ Eintrag</button>`
+        showAdd && !s.empty
+          ? `<button type="button" class="list-add-item" data-add-group="${escapeHtml(s.id)}">+ Eintrag</button>`
           : '';
       const header = grouped
-        ? `<tr class="list-group-row"><th colspan="5" scope="colgroup"><span class="list-group-title">${escapeHtml(g.label)}</span>${addBtn}</th></tr>`
+        ? `<tr class="list-group-row"><th colspan="5" scope="colgroup"><span class="list-group-title">${escapeHtml(s.label)}</span>${addBtn}</th></tr>`
         : '';
       return header + rows;
     })
     .join('');
 
-  els.list.innerHTML = entries.length
+  els.listBody.innerHTML = entries.length
     ? `<table class="list-table">
         <thead>
           <tr>
@@ -108,9 +113,24 @@ export function renderListView(): void {
             <th scope="col">Owner</th>
           </tr>
         </thead>
-        <tbody>${sections}</tbody>
+        <tbody>${body}</tbody>
       </table>`
     : '<p class="list-empty-msg">Keine Einträge in dieser View.</p>';
+}
+
+// Sync the header "Gruppieren" dropdown with the options for the current build,
+// preserving the active selection. Rebuilt on every render so tag/custom-field
+// changes (from edits) keep the choices current.
+function populateGroupBySelect(options: { key: string; label: string }[], dim: string): void {
+  const sel = els.listGroupBy;
+  const desired = options
+    .map((o) => `<option value="${escapeHtml(o.key)}">${escapeHtml(o.label)}</option>`)
+    .join('');
+  if (sel.dataset.built !== desired) {
+    sel.innerHTML = desired;
+    sel.dataset.built = desired;
+  }
+  sel.value = dim;
 }
 
 let wired = false;
@@ -150,5 +170,10 @@ export function setupListView(): void {
       e.preventDefault();
       activate(e.target);
     }
+  });
+  els.listGroupBy.addEventListener('change', () => {
+    state.listGroupBy = els.listGroupBy.value || GROUP_DIM;
+    localStorage.setItem(LIST_GROUP_BY_KEY, state.listGroupBy);
+    renderListView();
   });
 }
