@@ -67,7 +67,13 @@ export function renderListView(): void {
   const { items, groups } = filterBuildForDisplay(build);
   const entries = items
     .filter((it) => it.type !== 'background')
-    .sort((a, b) => a.start.localeCompare(b.start));
+    // Sort by start ascending; date-less items (no start yet) sink to the end.
+    .sort((a, b) => {
+      if (!a.start && !b.start) return 0;
+      if (!a.start) return 1;
+      if (!b.start) return -1;
+      return a.start.localeCompare(b.start);
+    });
 
   const customFields = getCustomFields();
   const options = groupByOptions(entries, customFields);

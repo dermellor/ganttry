@@ -45,7 +45,10 @@ export type View = {
 
 export type TimelineFileItem = {
   id?: string;
-  start: string;
+  // Optional: a list-created item can exist without a date yet. The timeline
+  // view hides start-less items (vis-timeline needs a start to place them); the
+  // list view shows them with an em-dash.
+  start?: string;
   end?: string;
   duration?: string | number;
   content: string;

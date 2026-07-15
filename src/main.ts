@@ -26,6 +26,7 @@ import {
 import {
   renderTimeline,
   filterBuildForDisplay,
+  timelineItems,
   applyBuildToDataSets,
   statusFor,
   addNewItem,
@@ -139,9 +140,11 @@ async function handleExport() {
   try {
     const { exportTimelineHtml } = await import('./export');
     const filtered = filterBuildForDisplay(state.activeBuild);
+    // The export renders a vis-timeline too, so start-less items are excluded
+    // (they can't be placed) — mirroring the live timeline view.
     await exportTimelineHtml({
       view: state.activeView,
-      build: { ...state.activeBuild, items: filtered.items, groups: filtered.groups },
+      build: { ...state.activeBuild, items: timelineItems(filtered.items), groups: filtered.groups },
       brand,
     });
   } catch (err) {

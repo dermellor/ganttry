@@ -11,6 +11,7 @@ import {
   type BuildResult,
   type TimelineGroup,
   type TimelineItem,
+  type TimelineItemWithStart,
 } from './buildItems';
 import { DependencyArrows } from './arrows';
 import { PhaseBand } from './phaseBand';
@@ -45,7 +46,9 @@ import { showPhaseFormByIndex, handlePhaseEdit } from './phaseForm';
 let timeline: Timeline | null = null;
 let arrows: DependencyArrows | null = null;
 let phaseBand: PhaseBand | null = null;
-let itemsDs: DataSet<TimelineItem> | null = null;
+// Holds only start-bearing items (vis-timeline can't place a date-less item);
+// `timelineItems()` narrows to that before every populate.
+let itemsDs: DataSet<TimelineItemWithStart> | null = null;
 let groupsDs: DataSet<TimelineGroup> | null = null;
 
 // Point-label measurement (see repackLanes). A single off-DOM canvas measures
@@ -102,6 +105,13 @@ export function rebuildAndApply(): void {
   setStatus(statusFor(state.activeView, built));
 }
 
+// Client-side timeline validation: vis-timeline needs a start to position an
+// item, so start-less items (which the DB now allows) are kept out of the
+// timeline DataSet. They still live in the build and show in the list view.
+export function timelineItems(items: TimelineItem[]): TimelineItemWithStart[] {
+  return items.filter((it): it is TimelineItemWithStart => !!it.start);
+}
+
 export function applyBuildToDataSets(): void {
   if (!state.activeBuild) return;
   const filtered = filterBuildForDisplay(state.activeBuild);
@@ -111,7 +121,7 @@ export function applyBuildToDataSets(): void {
   // that, snapping the view up on every rebuild (live edits, drags, switching
   // items). update()/remove() keep the surviving rows mounted, so the height
   // never collapses and the scroll position is left untouched.
-  if (itemsDs) syncDataSet(itemsDs, filtered.items);
+  if (itemsDs) syncDataSet(itemsDs, timelineItems(filtered.items));
   if (groupsDs) syncDataSet(groupsDs, filtered.groups);
   // Keep the list view in sync when it's the active display (edits, drags,
   // milestones-only toggle all funnel through here).
@@ -131,7 +141,11 @@ function syncDataSet(ds: DataSet<any>, next: Array<{ id?: string | number }>): v
 export function statusFor(view: View, build: BuildResult): string {
   const filtered = filterBuildForDisplay(build);
   const suffix = state.milestonesOnly ? ' · nur Meilensteine' : '';
-  return `${filtered.items.length} items in „${view.name}" · ${filtered.groups.length} groups${suffix}`;
+  // Start-less items exist in the data but can't be placed on the timeline —
+  // surface the count so they aren't silently missing from the timeline view.
+  const dateless = filtered.items.length - timelineItems(filtered.items).length;
+  const datelessHint = dateless > 0 ? ` · ${dateless} ohne Start (nur Liste)` : '';
+  return `${filtered.items.length} items in „${view.name}" · ${filtered.groups.length} groups${suffix}${datelessHint}`;
 }
 
 export async function renderTimeline(view: View) {
@@ -179,7 +193,7 @@ export async function renderTimeline(view: View) {
   setupRealtime();
 
   const filtered = filterBuildForDisplay(built);
-  itemsDs = new DataSet<TimelineItem>(filtered.items);
+  itemsDs = new DataSet<TimelineItemWithStart>(timelineItems(filtered.items));
   groupsDs = new DataSet<TimelineGroup>(filtered.groups);
 
   if (arrows) {
@@ -203,7 +217,7 @@ export async function renderTimeline(view: View) {
   const now = Date.now();
   const yearMs = 365 * 24 * 3600 * 1000;
   const recent = built.items
-    .map((i) => new Date(i.start).getTime())
+    .map((i) => (i.start ? new Date(i.start).getTime() : NaN))
     .filter((t) => t <= now + yearMs)
     .sort((a, b) => b - a);
   const focusMax = recent[0] ?? now;
@@ -564,7 +578,7 @@ function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) =>
 // Appends a new item to the active source at the given start/group, persists,
 // and opens its edit form. Shared by the double-click handler (handleAdd) and
 // the toolbar "+ Eintrag" button (addNewItem).
-export function createItem(start: Date, group?: string | number | null): (TimelineFileItem & { id: string }) | null {
+export function createItem(start: Date | string | null | undefined, group?: string | number | null): (TimelineFileItem & { id: string }) | null {
   if (!state.activeSourceFile) return null;
   const newId = generateNewId(state.activeSourceFile);
   const groupId = group != null
@@ -573,11 +587,16 @@ export function createItem(start: Date, group?: string | number | null): (Timeli
 
   const newItem: TimelineFileItem & { id: string } = {
     id: newId,
-    start: isoDateOnly(start),
-    duration: '1w',
     content: 'Neuer Eintrag',
     group: groupId,
   };
+  // A timeline-placed item gets a start + default 1-week extent so it renders
+  // as a visible bar. A list-created item (start === null) stays dateless —
+  // empty start/end/duration — until the user fills the form in.
+  if (start) {
+    newItem.start = isoDateOnly(start);
+    newItem.duration = '1w';
+  }
   state.activeSourceFile.items.push(newItem);
   rebuildAndApply();
   schedulePersist();
@@ -600,10 +619,16 @@ function handleAdd(item: TimelineItem, callback: (item: TimelineItem | null) => 
 // "+ Eintrag" buttons).
 export function addNewItem(group?: string | null): void {
   if (!isEditableView()) return;
-  const win = timeline?.getWindow();
-  const start = win
-    ? new Date((new Date(win.start).getTime() + new Date(win.end).getTime()) / 2)
-    : new Date();
+  // From the list view the new item starts dateless (empty start/end/duration)
+  // and is filled in via the form. From the timeline it needs a start so it
+  // lands on screen as a visible bar at the centre of the current window.
+  let start: Date | null = null;
+  if (state.viewMode !== 'list') {
+    const win = timeline?.getWindow();
+    start = win
+      ? new Date((new Date(win.start).getTime() + new Date(win.end).getTime()) / 2)
+      : new Date();
+  }
   const newItem = createItem(start, group);
   if (!newItem) return;
   setTimeout(() => {

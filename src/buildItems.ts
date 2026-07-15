@@ -11,7 +11,9 @@ export type TimelineItem = {
   // `a - b`, so a padded-string lane id ("l000") yields NaN and no sort. A plain
   // lane number sorts correctly (see layoutDependencyLanes).
   subgroup?: number;
-  start: string;
+  // Optional: start-less items live in the list view only; the timeline DataSet
+  // filters them out (vis-timeline requires a start to position an item).
+  start?: string;
   end?: string;
   content: string;
   title: string;
@@ -21,6 +23,11 @@ export type TimelineItem = {
   icon?: string;
   tags?: string[];
 };
+
+// A TimelineItem guaranteed to carry a start — the shape vis-timeline needs to
+// position an item. `timelineItems()` (render.ts) narrows to this before feeding
+// the vis DataSet.
+export type TimelineItemWithStart = TimelineItem & { start: string };
 
 export type TimelineGroup = {
   id: string;
@@ -138,7 +145,7 @@ export function detailFromJsonItem(raw: TimelineFileItem & { id: string }): Deta
   return {
     id: raw.id,
     title: raw.content,
-    start: raw.start,
+    start: raw.start ?? null,
     end: raw.end ?? null,
     dateSource: 'json',
     folder: '',
@@ -345,7 +352,9 @@ export function assignLaneSubgroups(
   dependencies: Map<string, string[]>,
   opts?: LanePackOptions,
 ): void {
-  const startMs = (it: TimelineItem) => new Date(it.start).getTime();
+  // Only start-bearing items are laned (the bucket loop below skips start-less
+  // ones), so `it.start` is present here.
+  const startMs = (it: TimelineItem) => new Date(it.start!).getTime();
   // Effective right edge used for packing. For range items this is the real end
   // (bar width == time span, so time already captures the visual footprint). A
   // point item's time span is zero, but its label renders to the RIGHT of the
@@ -358,15 +367,16 @@ export function assignLaneSubgroups(
     if (it.type === 'point' && opts && opts.pxPerDay > 0 && Number.isFinite(opts.pxPerDay)) {
       return startMs(it) + (opts.pointLabelPx(it) / opts.pxPerDay) * LANE_DAY_MS;
     }
-    return new Date(it.end ?? it.start).getTime();
+    return new Date(it.end ?? it.start!).getTime();
   };
 
   const byGroup = new Map<string, TimelineItem[]>();
   for (const it of items) {
     // Background items (phase tints) span the full group height and are not
     // laned; everything else gets a subgroup so nothing overlaps under
-    // `stack: false`.
-    if (!it.group || it.type === 'background') continue;
+    // `stack: false`. Start-less items never reach the timeline DataSet, so
+    // they get no lane (their NaN start would corrupt the packing math).
+    if (!it.group || it.type === 'background' || !it.start) continue;
     let bucket = byGroup.get(it.group);
     if (!bucket) byGroup.set(it.group, (bucket = []));
     bucket.push(it);
@@ -457,13 +467,16 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
 
   let auto = 0;
   for (const raw of file.items) {
-    if (!raw.start || !raw.content) continue;
+    // A start-less item is kept (it shows in the list view); only `content` is
+    // required. The timeline DataSet filters out start-less items separately
+    // (they can't be placed) — see `filterBuildForDisplay` callers in render.ts.
+    if (!raw.content) continue;
     const id = raw.id || `__auto_${auto++}`;
     const deps = extractDependsOn(raw.metadata);
     if (deps.length) dependencies.set(id, deps);
 
     let endIso: string | undefined = raw.type === 'point' ? undefined : raw.end;
-    if (!endIso && raw.type !== 'point') {
+    if (!endIso && raw.type !== 'point' && raw.start) {
       const ms = durationToMs(raw.duration);
       if (ms && ms > 0) {
         endIso = endFromDuration(raw.start, ms) ?? endIso;

@@ -157,7 +157,7 @@ File shape:
   "items": [
     {
       "id": "kickoff",                   // optional
-      "start": "2026-01-15",
+      "start": "2026-01-15",             // optional; a date-less item shows only in the list view (see below)
       "end": "2026-02-28",               // optional; mutually exclusive with duration (end wins)
       "duration": "3w",                  // optional ("7d", "2w", "90m", number = ms) — only when no end
       "content": "Kickoff",
@@ -196,7 +196,10 @@ A phase needs a `label`, a `start`, and an extent (`end` or `duration`) to
 render; phases missing any of these are skipped. They show as a labeled ribbon
 pinned to the top plus a faint full-height tint behind the items.
 
-Items without `start` or `content` are skipped. Two reference files live in `data/`:
+Items without `content` are skipped. `start` is optional: a date-less item is
+kept and shown in the **list view** (dates render as „—"), but the **timeline
+view** filters it out (vis-timeline needs a start to place an item) and the
+status line notes how many are hidden. Two reference files live in `data/`:
 
 - `example-projektplan.json` — minimal 4-phase plan, single track per phase.
 - `launch-roadmap.json` — 5 parallel tracks with `dependsOn` cross-references in `metadata`.
@@ -345,7 +348,10 @@ Drei Tabellen (Migrationen in `supabase/migrations/`):
 - `timelines` — id, name, description, group_by, `phases` (jsonb).
 - `timeline_items` — Spalten für start/end/duration/content/group/type/title/
   body/icon/class_name, `metadata` (jsonb: `dependsOn`, `owner`, `jira`, freie
-  Extras), `version` (Trigger-Bump bei UPDATE), `sort`, `updated_by`. `end` und
+  Extras), `version` (Trigger-Bump bei UPDATE), `sort`, `updated_by`. Nur
+  `content` ist Pflicht; `start` ist seit Migration `0006` nullable (ein über die
+  Liste angelegter Eintrag darf datumslos sein und erscheint dann nur in der
+  Listenansicht, nicht auf der Timeline). `end` und
   `duration` schließen sich aus (Ausdehnung entweder/oder, `end` gewinnt) —
   erzwungen im Write-Layer für alle Pfade (`enforceExtentExclusivity` +
   patch-bewusstes Gegenstück-Löschen in [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts),
@@ -533,7 +539,7 @@ Menschen per Google-Login gated.
 When the active view points to a **DB-backed** source (the timeline exists in Supabase, so `GET /api/source/<id>` returns it), the viewer is editable. File-only sources load read-only.
 
 - **Drag** an item left/right to move start, drag the right edge to resize, drag vertically to switch group. Persists on drop.
-- **Double-click** on empty timeline space to add a new item (defaults: 1-week duration, current group, content "Neuer Eintrag"). Form opens for further edits. The **+ Eintrag** toolbar button (editable views only) does the same, placing the item at the centre of the visible window.
+- **Double-click** on empty timeline space to add a new item (defaults: 1-week duration, current group, content "Neuer Eintrag"). Form opens for further edits. The **+ Eintrag** toolbar button (editable views only) does the same, placing the item at the centre of the visible window. In **list mode** a new item (toolbar or per-section button) is created **date-less** — empty start/end/duration — so it starts as a clean row to fill in via the form; it stays list-only until a start is set.
 - **Click** an item to open the edit form in the side panel: title, start/end, duration, group, type, body (Markdown), dependencies, tags, owner, plus a free-form metadata JSON box. Save writes back; Delete removes the item.
 - **Depends on** is a title-autosuggest field: type to search the current timeline's items by title (or id), pick to link a dependency (rendered as a removable chip). Stored as `metadata.dependsOn` IDs — the chips just show the target's title.
 - **Tags** is a chip editor with autosuggest: type to match tags already used in the timeline, or type a new label and press Enter to create one. Each chip carries its resolved colour and a remove button. Stored as `metadata.tags` (string[]); saving migrates any legacy singular `metadata.tag` into the array.

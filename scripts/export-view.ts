@@ -97,7 +97,7 @@ function detailFromJsonItem(view: View, raw: TimelineFileItem & { id: string }):
   return {
     id: raw.id,
     title: raw.content,
-    start: raw.start,
+    start: raw.start ?? null,
     end: raw.end ?? null,
     dateSource: 'json',
     folder: '',

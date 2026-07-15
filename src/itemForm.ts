@@ -724,7 +724,10 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   const item = state.activeSourceFile.items[idx];
   item.content = get('content') || item.content;
   const startVal = get('start');
+  // Start is optional: clearing the field removes the date (the item then shows
+  // only in the list view, hidden from the timeline).
   if (startVal) item.start = startVal;
+  else delete item.start;
   const endVal = get('end');
   const durVal = get('duration');
 

@@ -56,6 +56,7 @@ export function canonicalItem(item: TimelineFileItem): string {
 // explicit `null` — otherwise the omitted key leaves the stale DB value intact
 // and it reappears on reload.
 const CLEARABLE_ITEM_FIELDS: (keyof TimelineFileItem)[] = [
+  'start',
   'end',
   'duration',
   'group',

@@ -156,7 +156,12 @@ async function mutate(
 
 const itemFields = {
   id: z.string().optional().describe('Stable item id (needed for dependsOn references and edits).'),
-  start: z.string().describe('Start date, YYYY-MM-DD (or ISO datetime if precision matters).'),
+  start: z
+    .string()
+    .optional()
+    .describe(
+      'Start date, YYYY-MM-DD (or ISO datetime if precision matters). Optional — an item may have no date yet (shown only in the list view, hidden from the timeline until a start is set).',
+    ),
   end: z
     .string()
     .optional()
@@ -290,7 +295,7 @@ server.registerTool(
   {
     title: 'Add item',
     description:
-      'Append a new item to a timeline. Requires start and content. Provide an explicit id if the item is a dependency target.',
+      'Append a new item to a timeline. Requires content; start is optional (a dateless item shows only in the list view). Provide an explicit id if the item is a dependency target.',
     inputSchema: { id: z.string().describe('Timeline id.'), item: z.object(itemFields) },
   },
   async ({ id, item }) => {

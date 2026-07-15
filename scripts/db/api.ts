@@ -75,7 +75,9 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
     if (sub.kind === 'item') {
       if (method === 'POST') {
         const item = req.body as TimelineFileItem;
-        if (!item || !item.start || !item.content) return err(400, 'item needs start and content');
+        // `start` is optional (a list-created item may have no date yet); only
+        // `content` is required.
+        if (!item || !item.content) return err(400, 'item needs content');
         return ok(await addItem(db, id, item, req.updatedBy), 201);
       }
       if (!sub.childId) return err(400, 'item id required');

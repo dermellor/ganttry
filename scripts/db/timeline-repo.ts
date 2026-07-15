@@ -40,9 +40,10 @@ const ITEM_SELECT =
 function rowToItem(row: Record<string, any>): TimelineFileItem {
   const item: TimelineFileItem = {
     id: row.id,
-    start: row.start,
     content: row.content,
   };
+  // `start` is optional now — a date-less item shows only in the list view.
+  if (row.start != null) item.start = row.start;
   if (row.end != null) item.end = row.end;
   if (row.duration != null) item.duration = row.duration;
   if (row.group != null) item.group = row.group;
@@ -80,7 +81,7 @@ function itemToRow(timelineId: string, item: TimelineFileItem, sort?: number): R
   const row: Record<string, any> = {
     timeline_id: timelineId,
     id: item.id,
-    start: item.start,
+    start: item.start ?? null,
     end: item.end ?? null,
     duration: item.duration != null ? String(item.duration) : null,
     content: item.content,
@@ -178,7 +179,8 @@ export async function replaceTimeline(db: SupabaseClient, id: string, file: Time
   if (del2.error) throw new Error(`replaceTimeline clear groups: ${del2.error.message}`);
 
   const itemRows = file.items
-    .filter((it) => it.id && it.start && it.content)
+    // `start` is optional: a list-created item can exist without a date yet.
+    .filter((it) => it.id && it.content)
     .map((it, i) => itemToRow(id, it, i));
   if (itemRows.length) {
     const ins = await db.from('timeline_items').insert(itemRows);
