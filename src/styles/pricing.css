@@ -192,6 +192,10 @@
 
 .pc-card-empty { color: var(--fg-muted); }
 
+/* Work dot pushed to the right edge of a card feature row. */
+.pc-feat-work { margin-left: auto; padding-left: 8px; }
+.pc-feat-work .pm-work-dot { min-width: 20px; height: 20px; font-size: 0.68rem; }
+
 .pm-version-switch {
   display: inline-flex;
   align-items: center;

@@ -11,15 +11,13 @@ import {
   groupFeatures,
   featureVisibleForVersion,
   itemsForFeature,
-  aggregateWorkState,
   readItemFeatureIds,
-  type WorkState,
 } from './pricing';
 import { state, els } from './state';
-import { statusOrDefault, type StatusKey } from './status';
 import { showDetailForId } from './detailPanel';
 import { renderCardsHtml } from './pricingCards';
-import { type TimelineFile, type TimelineFileItem } from './types';
+import { workDotHtml } from './pricingWork';
+import { type TimelineFile } from './types';
 
 const PRICING_VERSION_KEY = 'timelines.pricingVersion';
 const PRICING_SUBVIEW_KEY = 'timelines.pricingSubview';
@@ -31,20 +29,6 @@ type SubView = 'matrix' | 'cards';
 let selectedVersion: string | null = localStorage.getItem(PRICING_VERSION_KEY) || null;
 // Matrix (full grid) vs cards (curated highlight tiles). Persisted.
 let subView: SubView = localStorage.getItem(PRICING_SUBVIEW_KEY) === 'cards' ? 'cards' : 'matrix';
-
-const WORK_LABEL: Record<Exclude<WorkState, 'none'>, string> = {
-  doing: 'In Arbeit',
-  done: 'Erledigt',
-  open: 'Offen',
-};
-
-const STATUS_LABEL: Record<StatusKey, string> = { Open: 'Offen', Doing: 'In Arbeit', Done: 'Erledigt' };
-
-function fmtDate(it: TimelineFileItem): string {
-  const s = it.start?.slice(0, 10) ?? '';
-  const e = it.end?.slice(0, 10) ?? '';
-  return e ? `${s} → ${e}` : s;
-}
 
 /** True when the active timeline is a product timeline with a populated pricing model. */
 export function hasPricing(file: TimelineFile | null | undefined): file is TimelineFile {
@@ -97,33 +81,9 @@ function matrixHtml(file: TimelineFile, versions: string[]): string {
         })
         .join('');
 
-      let workCell = '';
-      if (anyLinked) {
-        const linked = itemsForFeature(f.id, items, selectedVersion);
-        const st = aggregateWorkState(linked);
-        if (st === 'none') {
-          workCell = `<td class="pm-work-col"></td>`;
-        } else {
-          const pop = linked
-            .map((it) => {
-              const s = statusOrDefault(it.status);
-              return (
-                `<button type="button" class="pm-work-item" data-item-id="${escapeHtml(it.id ?? '')}">` +
-                `<span class="pm-work-item-dot pm-work-${s.toLowerCase()}" aria-hidden="true"></span>` +
-                `<span class="pm-work-item-name">${escapeHtml(it.content)}</span>` +
-                `<span class="pm-work-item-meta">${escapeHtml(STATUS_LABEL[s])}${fmtDate(it) ? ' · ' + escapeHtml(fmtDate(it)) : ''}</span>` +
-                `</button>`
-              );
-            })
-            .join('');
-          workCell =
-            `<td class="pm-work-col">` +
-            `<details class="pm-work"><summary class="pm-work-dot pm-work-${st}" title="${WORK_LABEL[st]} — ${linked.length} Item(s)">` +
-            `<span class="pm-work-count">${linked.length}</span></summary>` +
-            `<div class="pm-work-pop"><div class="pm-work-pop-head">${WORK_LABEL[st]}</div>${pop}</div></details>` +
-            `</td>`;
-        }
-      }
+      const workCell = anyLinked
+        ? `<td class="pm-work-col">${workDotHtml(itemsForFeature(f.id, items, selectedVersion))}</td>`
+        : '';
 
       const versionAttr = f.version ? ` title="ab Version ${escapeHtml(f.version)}"` : '';
       bodyRows.push(
@@ -135,8 +95,8 @@ function matrixHtml(file: TimelineFile, versions: string[]): string {
   return `<div class="pricing-table-wrap"><table class="pricing-table"><thead>${head}${priceRow}</thead><tbody>${bodyRows.join('')}</tbody></table></div>`;
 }
 
-// Wire the work-popover item clicks (matrix only) + single-popover behaviour.
-function wireMatrix(host: HTMLElement): void {
+// Wire the work-popover item clicks + single-popover behaviour (matrix + cards).
+function wireWork(host: HTMLElement): void {
   host.querySelectorAll<HTMLButtonElement>('.pm-work-item').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.itemId;
@@ -213,5 +173,5 @@ export function renderPricingView(): void {
     });
   });
 
-  if (subView === 'matrix') wireMatrix(host);
+  wireWork(host);
 }

@@ -79,6 +79,26 @@ export function itemsForFeature(
   );
 }
 
+// Items linked to ANY of the given feature ids (deduped, version-filtered) —
+// used for a highlight tile that bundles several features on the card view.
+export function itemsForFeatures(
+  featureIds: string[],
+  items: TimelineFileItem[],
+  selected: string | null,
+): TimelineFileItem[] {
+  const seen = new Set<string>();
+  const out: TimelineFileItem[] = [];
+  for (const fid of featureIds) {
+    for (const it of itemsForFeature(fid, items, selected)) {
+      const key = it.id ?? `${it.content}:${it.start ?? ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(it);
+    }
+  }
+  return out;
+}
+
 /**
  * Aggregate = the status the contained items hold by *majority*. Ties are broken
  * by priority Doing > Open > Done (an in-progress signal wins over pending, which

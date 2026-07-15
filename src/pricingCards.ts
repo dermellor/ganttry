@@ -6,8 +6,9 @@
 // layer (pricing.highlights). Class names + SVGs match the rendered original.
 
 import { escapeHtml } from './buildItems';
-import { resolveHighlight, type ResolvedHighlight } from './pricing';
-import type { PricingHighlight, PricingTier, TimelineFile } from './types';
+import { resolveHighlight, itemsForFeatures, type ResolvedHighlight } from './pricing';
+import { workDotHtml } from './pricingWork';
+import type { PricingHighlight, PricingTier, TimelineFile, TimelineFileItem } from './types';
 
 const DEFAULT_SECTION = 'Weitere';
 
@@ -35,15 +36,22 @@ function sectionsOf(highlights: PricingHighlight[]): { section: string; items: P
   return order.map((section) => ({ section, items: by.get(section)! }));
 }
 
-function checkRow(inner: string): string {
-  return `<li class="pc-feat pc-yes">${CHECK_SVG}<span>${inner}</span></li>`;
+function checkRow(inner: string, dot: string): string {
+  return (
+    `<li class="pc-feat pc-yes">${CHECK_SVG}<span>${inner}</span>` +
+    (dot ? `<span class="pc-feat-work">${dot}</span>` : '') +
+    `</li>`
+  );
 }
 
-function bulletHtml(h: PricingHighlight, r: ResolvedHighlight): string {
+function bulletHtml(h: PricingHighlight, r: ResolvedHighlight, dot: string): string {
   if (r.value) {
-    return checkRow(`<span class="pc-label">${escapeHtml(h.label)}:</span> <span class="pc-value">${escapeHtml(r.value)}</span>`);
+    return checkRow(
+      `<span class="pc-label">${escapeHtml(h.label)}:</span> <span class="pc-value">${escapeHtml(r.value)}</span>`,
+      dot,
+    );
   }
-  return checkRow(escapeHtml(h.label));
+  return checkRow(escapeHtml(h.label), dot);
 }
 
 // Split a price string ("ab 449 €/Monat") into the big number + currency and a
@@ -77,6 +85,7 @@ export function renderCardsHtml(
     return '<p class="pricing-empty">Keine Highlight-Kacheln definiert. In der Matrix-Ansicht sind alle Features sichtbar; für die Kacheln müssen Highlights im Preismodell hinterlegt werden (pricing.highlights).</p>';
   }
   const sections = sectionsOf(highlights);
+  const allItems: TimelineFileItem[] = file.items ?? [];
 
   const cards = p.tiers
     .map((tier, i) => {
@@ -101,7 +110,10 @@ export function renderCardsHtml(
               `<li class="pc-feat pc-arrow">${ARROW_SVG}<span>Alles aus <span class="pc-pill">${escapeHtml(prev.name)}</span></span></li>`,
             );
           }
-          for (const r of changed) lines.push(bulletHtml(r.h, r.cur));
+          for (const r of changed) {
+            const dot = workDotHtml(itemsForFeatures(r.h.featureIds, allItems, selected));
+            lines.push(bulletHtml(r.h, r.cur, dot));
+          }
           return `<p class="pc-section-label">${escapeHtml(section)}</p><ul class="pc-features">${lines.join('')}</ul>`;
         })
         .join('');
