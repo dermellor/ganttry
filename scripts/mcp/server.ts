@@ -217,6 +217,10 @@ const pricingFeature = z.object({
   name: z.string().describe('Feature display name.'),
   group: z.string().optional().describe('Grouping label for the matrix rows, e.g. "Funktionen".'),
   description: z.string().optional(),
+  version: z
+    .string()
+    .optional()
+    .describe('Version this feature is available from (one of pricing.versions). Absent = from the start.'),
 });
 
 const pricingTier = z.object({
@@ -235,6 +239,10 @@ const pricingTier = z.object({
 const pricing = z.object({
   features: z.array(pricingFeature),
   tiers: z.array(pricingTier),
+  versions: z
+    .array(z.string())
+    .optional()
+    .describe('Ordered version labels (e.g. ["1.0","2.0","3.0"]); defines feature-version ordering + the matrix switcher.'),
 });
 
 const groupFields = {

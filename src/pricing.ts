@@ -18,6 +18,23 @@ function cell(s: string): string {
   return s.replace(/\|/g, '\\|').replace(/\n/g, ' ').trim();
 }
 
+// Cumulative version filter (shared by the app matrix + potential export use):
+// a feature is visible when no version is selected ("Alle"), when the feature has
+// no version (available from the start), or when its version comes at or before
+// the selected one in the ordered `versions` list. Unknown versions never hide.
+export function featureVisibleForVersion(
+  feature: PricingFeature,
+  versions: string[],
+  selected: string | null,
+): boolean {
+  if (!selected) return true;
+  if (!feature.version) return true;
+  const selIdx = versions.indexOf(selected);
+  const fIdx = versions.indexOf(feature.version);
+  if (selIdx < 0 || fIdx < 0) return true;
+  return fIdx <= selIdx;
+}
+
 // Render one tier's value for a feature as Markdown cell content:
 // true → ✓, false/absent → '' (blank), string → the text.
 function markdownCell(tier: PricingTier, featureId: string): string {
@@ -80,21 +97,27 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
     lines.push('');
   } else {
     // ---- Feature matrix --------------------------------------------------
+    // When versions are declared, add a trailing "Ab Version" column so the
+    // static doc still carries the availability info the app shows via the switcher.
+    const withVersions = (pricing.versions?.length ?? 0) > 0;
     lines.push('## Feature-Matrix');
     lines.push('');
-    const header = ['Feature', ...tiers.map((t) => cell(t.name))];
-    const align = ['---', ...tiers.map(() => ':--:')];
+    const header = ['Feature', ...tiers.map((t) => cell(t.name)), ...(withVersions ? ['Ab Version'] : [])];
+    const align = ['---', ...tiers.map(() => ':--:'), ...(withVersions ? [':--:'] : [])];
     lines.push(`| ${header.join(' | ')} |`);
     lines.push(`| ${align.join(' | ')} |`);
     // Price row directly under the header.
-    lines.push(`| **Preis** | ${tiers.map((t) => cell(t.price)).join(' | ')} |`);
+    const priceCells = [...tiers.map((t) => cell(t.price)), ...(withVersions ? [''] : [])];
+    lines.push(`| **Preis** | ${priceCells.join(' | ')} |`);
     for (const { group, features: fs } of groupFeatures(features)) {
       if (group) {
-        lines.push(`| **${cell(group)}** | ${tiers.map(() => '').join(' | ')} |`);
+        const emptyCells = [...tiers.map(() => ''), ...(withVersions ? [''] : [])];
+        lines.push(`| **${cell(group)}** | ${emptyCells.join(' | ')} |`);
       }
       for (const f of fs) {
         const marks = tiers.map((t) => markdownCell(t, f.id));
-        lines.push(`| ${cell(f.name)} | ${marks.join(' | ')} |`);
+        const tail = withVersions ? [f.version ? cell(f.version) : ''] : [];
+        lines.push(`| ${cell(f.name)} | ${[...marks, ...tail].join(' | ')} |`);
       }
     }
     lines.push('');

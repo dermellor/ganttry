@@ -1,13 +1,20 @@
 // Read-only pricing matrix for product timelines. Renders the timeline's
 // `pricing` model (tiers × features) into the #pricing section, plus a per-feature
 // count of roadmap items assigned to it (metadata.featureIds), tying the two
-// entities together. Edits happen via MCP `set_pricing` / the item form, not here.
+// entities together. A version switcher filters the feature rows cumulatively
+// (features available up to the chosen version). Edits happen via MCP
+// `set_pricing` / the item form, not here.
 
 import { escapeHtml } from './buildItems';
-import { groupFeatures } from './pricing';
-import { state } from './state';
-import { els } from './state';
+import { groupFeatures, featureVisibleForVersion } from './pricing';
+import { state, els } from './state';
 import { PRICING_FEATURE_META_KEY, type TimelineFile } from './types';
+
+const PRICING_VERSION_KEY = 'timelines.pricingVersion';
+
+// Selected version for the switcher. null = "Alle" (no filter). Persisted so the
+// choice survives re-renders (realtime, edits) and reloads.
+let selectedVersion: string | null = localStorage.getItem(PRICING_VERSION_KEY) || null;
 
 function readItemFeatureIds(meta: unknown): string[] {
   const v = (meta as Record<string, unknown> | undefined)?.[PRICING_FEATURE_META_KEY];
@@ -47,9 +54,13 @@ export function renderPricingMatrix(): void {
   }
 
   const { tiers, features } = file.pricing!;
+  const versions = file.pricing!.versions ?? [];
+  // Reset a stale selection that isn't part of the current version list.
+  if (selectedVersion && !versions.includes(selectedVersion)) selectedVersion = null;
+
   const counts = itemCountsByFeature(file);
-  const groups = groupFeatures(features);
   const anyCounts = [...counts.values()].some((n) => n > 0);
+  const totalCols = tiers.length + 1 + (anyCounts ? 1 : 0);
 
   const head =
     `<tr><th class="pm-feature">Feature</th>` +
@@ -64,13 +75,15 @@ export function renderPricingMatrix(): void {
     `</tr>`;
 
   const bodyRows: string[] = [];
-  for (const { group, features: fs } of groups) {
+  for (const { group, features: fs } of groupFeatures(features)) {
+    const visible = fs.filter((f) => featureVisibleForVersion(f, versions, selectedVersion));
+    if (!visible.length) continue; // skip a group with no visible features
     if (group) {
       bodyRows.push(
-        `<tr class="pm-group-row"><th class="pm-feature" colspan="${tiers.length + 1 + (anyCounts ? 1 : 0)}">${escapeHtml(group)}</th></tr>`,
+        `<tr class="pm-group-row"><th class="pm-feature" colspan="${totalCols}">${escapeHtml(group)}</th></tr>`,
       );
     }
-    for (const f of fs) {
+    for (const f of visible) {
       const cells = tiers
         .map((t) => {
           const v = t.values?.[f.id];
@@ -87,15 +100,40 @@ export function renderPricingMatrix(): void {
       const countCell = anyCounts
         ? `<td class="pm-count">${count > 0 ? `<span class="pm-count-badge">${count}</span>` : ''}</td>`
         : '';
+      const versionAttr = f.version ? ` title="ab Version ${escapeHtml(f.version)}"` : '';
       bodyRows.push(
-        `<tr><th class="pm-feature" scope="row">${escapeHtml(f.name)}</th>${cells}${countCell}</tr>`,
+        `<tr${versionAttr}><th class="pm-feature" scope="row">${escapeHtml(f.name)}</th>${cells}${countCell}</tr>`,
       );
     }
   }
 
+  const switcher = versions.length
+    ? `<label class="pm-version-switch">Version` +
+      `<select class="pm-version-select">` +
+      `<option value="">Alle</option>` +
+      versions
+        .map(
+          (v) =>
+            `<option value="${escapeHtml(v)}"${v === selectedVersion ? ' selected' : ''}>${escapeHtml(v)}</option>`,
+        )
+        .join('') +
+      `</select></label>`
+    : '';
+
   host.innerHTML =
     `<div class="pricing-inner">` +
+    `<div class="pricing-header">` +
     `<h2 class="pricing-title">${escapeHtml(file.name ?? 'Preismodell')} — Preise</h2>` +
+    switcher +
+    `</div>` +
     `<div class="pricing-table-wrap"><table class="pricing-table"><thead>${head}${priceRow}</thead><tbody>${bodyRows.join('')}</tbody></table></div>` +
     `</div>`;
+
+  const select = host.querySelector<HTMLSelectElement>('.pm-version-select');
+  select?.addEventListener('change', () => {
+    selectedVersion = select.value || null;
+    if (selectedVersion) localStorage.setItem(PRICING_VERSION_KEY, selectedVersion);
+    else localStorage.removeItem(PRICING_VERSION_KEY);
+    renderPricingMatrix();
+  });
 }

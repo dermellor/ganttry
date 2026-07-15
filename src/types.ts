@@ -110,6 +110,9 @@ export type PricingFeature = {
   // Optional grouping label for the matrix rows, e.g. "Funktionen".
   group?: string;
   description?: string;
+  // Version from which this feature is available; must be one of Pricing.versions.
+  // Absent = available from the start (always shown, regardless of the switcher).
+  version?: string;
 };
 
 export type PricingTier = {
@@ -129,6 +132,11 @@ export type PricingTier = {
 export type Pricing = {
   features: PricingFeature[];
   tiers: PricingTier[];
+  // Ordered list of version labels (e.g. ["1.0", "2.0", "3.0"]). Defines both the
+  // ordering used for the cumulative version filter and the options of the
+  // version switcher in the matrix view. A feature's `version` references one of
+  // these. Absent/empty = no versioning (switcher hidden).
+  versions?: string[];
 };
 
 // Item metadata key holding the feature ids an item is assigned to (string[]).

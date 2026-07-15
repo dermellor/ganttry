@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pricingToMarkdown, type PricingDoc } from './pricing';
+import { pricingToMarkdown, featureVisibleForVersion, type PricingDoc } from './pricing';
 
 const doc: PricingDoc = {
   timelineId: 'acme/timeline-example-timeline-v1',
@@ -79,6 +79,59 @@ test('pipes in names and values are escaped inside cells', () => {
   );
   assert.match(md, /A \\\| B/);
   assert.match(md, /ja \\\| nein/);
+});
+
+test('with versions: adds an "Ab Version" column carrying per-feature version', () => {
+  const md = pricingToMarkdown(
+    {
+      timelineId: 't',
+      pricing: {
+        versions: ['1.0', '2.0'],
+        features: [
+          { id: 'a', name: 'Basis', version: '1.0' },
+          { id: 'b', name: 'Neu', version: '2.0' },
+          { id: 'c', name: 'Immer' }, // no version
+        ],
+        tiers: [{ id: 't1', name: 'T', price: '1 €', values: { a: true, b: true, c: true } }],
+      },
+    },
+    { updated: '2026-07-15' },
+  );
+  assert.match(md, /\| Feature \| T \| Ab Version \|/);
+  assert.match(md, /\| Basis \| ✓ \| 1\.0 \|/);
+  assert.match(md, /\| Neu \| ✓ \| 2\.0 \|/);
+  assert.match(md, /\| Immer \| ✓ \|  \|/); // no version → blank cell
+});
+
+test('without versions: no "Ab Version" column', () => {
+  const md = pricingToMarkdown(doc, { updated: '2026-07-15' });
+  assert.doesNotMatch(md, /Ab Version/);
+});
+
+test('featureVisibleForVersion: "Alle" (null) shows everything', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  assert.equal(featureVisibleForVersion({ id: 'a', name: 'A', version: '3.0' }, V, null), true);
+});
+
+test('featureVisibleForVersion: cumulative — selected shows its version and earlier', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const v1 = { id: 'a', name: 'A', version: '1.0' };
+  const v2 = { id: 'b', name: 'B', version: '2.0' };
+  const v3 = { id: 'c', name: 'C', version: '3.0' };
+  // selecting 2.0 → 1.0 and 2.0 visible, 3.0 hidden
+  assert.equal(featureVisibleForVersion(v1, V, '2.0'), true);
+  assert.equal(featureVisibleForVersion(v2, V, '2.0'), true);
+  assert.equal(featureVisibleForVersion(v3, V, '2.0'), false);
+});
+
+test('featureVisibleForVersion: feature without version is always visible', () => {
+  const V = ['1.0', '2.0'];
+  assert.equal(featureVisibleForVersion({ id: 'x', name: 'X' }, V, '1.0'), true);
+});
+
+test('featureVisibleForVersion: unknown version never hides', () => {
+  const V = ['1.0', '2.0'];
+  assert.equal(featureVisibleForVersion({ id: 'x', name: 'X', version: '9.9' }, V, '1.0'), true);
 });
 
 test('empty pricing renders a placeholder, no matrix', () => {

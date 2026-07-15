@@ -14,11 +14,42 @@
   margin: 0 auto;
 }
 
+.pricing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 20px;
+  flex-wrap: wrap;
+}
+
 .pricing-title {
   font-family: var(--font-headline);
   font-weight: var(--headline-weight);
   font-size: 1.4rem;
-  margin: 0 0 20px;
+  margin: 0;
+}
+
+.pm-version-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pm-version-select {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
 }
 
 .pricing-empty {
