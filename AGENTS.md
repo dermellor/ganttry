@@ -31,10 +31,11 @@ don't reconcile it after the fact:
 - **Cut worktrees from `origin/main`, never from local `HEAD`.** A worktree
   branched off a stale checkout inherits the drift and yields a PR whose base is
   wrong — the noisy-diff / phantom-conflict trap.
-- **Never leave commits sitting on local `main` unpushed.** If you commit to
-  `main` directly, `git push` in the same breath. Unpushed local-`main` commits
-  are the seed of every "same feature, two SHAs" conflict, especially once the
-  same work also arrives through a PR.
+- **Never leave commits sitting on local `main` unpushed.** Push is a separate,
+  explicit step (never auto-coupled to the commit), but it must not be *deferred*:
+  push before you end the session, before you cut a worktree, and before you step
+  away. Unpushed local-`main` commits are the seed of every "same feature, two
+  SHAs" conflict, especially once the same work also arrives through a PR.
 - **Re-sync the serving checkout after every merge.** PM2 serves 3120 from the
   main checkout; merging a PR on GitHub does **not** update it. After a merge, in
   the main checkout run `git fetch origin && git merge --ff-only origin/main`
@@ -48,6 +49,14 @@ shared main checkout. Two concurrent sessions then cannot entangle each other's
 working tree. (Claude Code: use `isolation: "worktree"`.) The worktree is
 disposable; what matters is that its changes reach `main` via the done-gate below
 before the session ends.
+
+**Clean up the worktree when you're done.** Once its changes have reached `main`,
+remove it — `git worktree remove <path>`, and `git worktree prune` for any that
+were deleted by hand. Never leave abandoned worktrees behind: they accumulate in
+`git worktree list`, hold stale copies that mislead the next session, and
+detached-HEAD leftovers are pure clutter. Claude Code's `isolation: "worktree"`
+auto-removes a worktree that ends unchanged, but any worktree you committed work
+in must be cleaned up explicitly.
 
 **Live-preview caveat:** the Vite dev server (PM2) runs from the main checkout and
 does **not** see edits made in a worktree. When a task needs live visual
@@ -63,7 +72,10 @@ trap.
 
 A change is not "done" until it is committed, pushed to `main`, and the resulting
 Netlify deploy is confirmed green. **Never end a session with uncommitted or
-unpushed changes that belong to the task.** At session end, `git status` must be
+unpushed changes that belong to the task.** Committing and pushing are separate
+steps: commit as you go, but **push is always an explicit step** — never auto-push
+on commit, never bundle "commit + push" into one action (global rule: never
+`git push` without asking). At session end, `git status` must be
 clean except for deliberately-ignored artifacts. If work is genuinely unfinished,
 say so explicitly and leave it committed on a clearly-named branch — not loose in a
 working tree.
@@ -71,6 +83,7 @@ working tree.
 ### 3. Choose the integration path at the first change of a session
 
 - **Direct to `main`** — for small, low-risk changes. No branch, no issue ceremony.
+  Commit on `main`; the push follows as a separate explicit step.
 - **Worktree + branch + GitHub issue + PR** — for larger or riskier features where
   a review/merge checkpoint and traceability are worth it. An opened PR must be
   merged or closed within the session — never left to rot.

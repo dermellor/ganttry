@@ -6,7 +6,8 @@ Single Source of Truth lies in `AGENTS.md`.
 - **Branch-/Commit-Workflow (Session-Start):** Sobald absehbar ist, dass eine
   Session Code ändert, VOR der ersten `Edit`/`Write`-Operation den User per
   interaktiver Frage (`AskUserQuestion`) den Integrationspfad wählen lassen:
-  **(a) direkt auf `main`** (Kleinkram, low-risk) oder **(b) Worktree + Branch +
+  **(a) direkt auf `main`** (Kleinkram, low-risk — Commit auf `main`, der Push
+  ist ein separater expliziter Schritt danach) oder **(b) Worktree + Branch +
   GitHub-Issue + PR** (größere/riskantere Features). Für die Änderungsarbeit
   `isolation: "worktree"` nutzen, damit parallele Sessions sich nicht
   verschränken. Die Frage entfällt nur, wenn der User den Modus in der Nachricht
@@ -33,3 +34,7 @@ Single Source of Truth lies in `AGENTS.md`.
   Task-Änderungen beenden: „done" = committed + gepusht + Deploy verifiziert
   (Netlify grün). Vor Session-Ende muss `git status` sauber sein (außer bewusst
   ge-`.gitignore`-ten Artefakten).
+- **Push ist immer ein separater, expliziter Schritt.** Committen und Pushen
+  niemals als eine Aktion bündeln, niemals automatisch mit dem Commit pushen
+  (globale Regel „Never git push without asking"). Erst committen; der Push
+  erfolgt danach als eigener Schritt, wenn der User ihn bestätigt.
