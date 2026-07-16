@@ -45,13 +45,14 @@ function checkRow(inner: string, dot: string): string {
 }
 
 function bulletHtml(h: PricingHighlight, r: ResolvedHighlight, dot: string): string {
+  const badge = r.isNew ? '<span class="pricing-badge-new">Neu</span>' : '';
   if (r.value) {
     return checkRow(
-      `<span class="pc-label">${escapeHtml(h.label)}:</span> <span class="pc-value">${escapeHtml(r.value)}</span>`,
+      `<span class="pc-label">${escapeHtml(h.label)}:</span> <span class="pc-value">${escapeHtml(r.value)}</span>${badge}`,
       dot,
     );
   }
-  return checkRow(escapeHtml(h.label), dot);
+  return checkRow(`${escapeHtml(h.label)}${badge}`, dot);
 }
 
 // Split a price string ("ab 449 €/Monat") into the big number + currency and a

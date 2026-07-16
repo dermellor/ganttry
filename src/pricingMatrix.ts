@@ -10,6 +10,7 @@ import { escapeHtml } from './buildItems';
 import {
   groupFeatures,
   featureVisibleForVersion,
+  isNewFeature,
   itemsForFeature,
   readItemFeatureIds,
 } from './pricing';
@@ -86,8 +87,11 @@ function matrixHtml(file: TimelineFile, versions: string[]): string {
         : '';
 
       const versionAttr = f.version ? ` title="ab Version ${escapeHtml(f.version)}"` : '';
+      const badge = isNewFeature(f, versions, selectedVersion)
+        ? '<span class="pricing-badge-new">Neu</span>'
+        : '';
       bodyRows.push(
-        `<tr${versionAttr}><th class="pm-feature" scope="row">${escapeHtml(f.name)}</th>${cells}${workCell}</tr>`,
+        `<tr${versionAttr}><th class="pm-feature" scope="row">${escapeHtml(f.name)}${badge}</th>${cells}${workCell}</tr>`,
       );
     }
   }

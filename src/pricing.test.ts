@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   pricingToMarkdown,
   featureVisibleForVersion,
+  referenceVersion,
+  isNewFeature,
   itemsForFeature,
   aggregateWorkState,
   resolveHighlight,
@@ -183,13 +185,25 @@ const tierScale: PricingTier = { id: 'scale', name: 'Scale', price: '199 €', v
 test('resolveHighlight: value-feature → value string; boolean → included, no value', () => {
   const hMin = { id: 'h1', label: 'Freiminuten', featureIds: ['min'] };
   const hInteg = { id: 'h2', label: 'Integrationen', featureIds: ['crm', 'ticket'] };
-  assert.deepEqual(resolveHighlight(hMin, tierScale, hFeatures, [], null), { included: true, value: '3.000' });
-  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, [], null), { included: true, value: '' });
+  assert.deepEqual(resolveHighlight(hMin, tierScale, hFeatures, [], null), {
+    included: true,
+    value: '3.000',
+    isNew: false,
+  });
+  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, [], null), {
+    included: true,
+    value: '',
+    isNew: false,
+  });
 });
 
 test('resolveHighlight: not included when the tier has none of the features', () => {
   const hInteg = { id: 'h2', label: 'Integrationen', featureIds: ['crm', 'ticket'] };
-  assert.deepEqual(resolveHighlight(hInteg, tierFree, hFeatures, [], null), { included: false, value: '' });
+  assert.deepEqual(resolveHighlight(hInteg, tierFree, hFeatures, [], null), {
+    included: false,
+    value: '',
+    isNew: false,
+  });
 });
 
 test('resolveHighlight: version filter drops features beyond the selected version', () => {
@@ -198,7 +212,41 @@ test('resolveHighlight: version filter drops features beyond the selected versio
   assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, ['1.0', '2.0', '3.0'], '1.0'), {
     included: false,
     value: '',
+    isNew: false,
   });
+});
+
+test('resolveHighlight: isNew when an included feature matches the reference version', () => {
+  const hInteg = { id: 'h2', label: 'Integrationen', featureIds: ['crm', 'ticket'] };
+  const V = ['1.0', '2.0'];
+  // "Alle" (null) → reference is the newest version (2.0); crm/ticket are 2.0 → New.
+  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, V, null), {
+    included: true,
+    value: '',
+    isNew: true,
+  });
+  // Pinning the switcher to 1.0 hides the 2.0 features entirely → not included, not new.
+  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, V, '1.0'), {
+    included: false,
+    value: '',
+    isNew: false,
+  });
+});
+
+test('referenceVersion: selected version wins; "Alle" falls back to the newest declared version', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  assert.equal(referenceVersion(V, '2.0'), '2.0');
+  assert.equal(referenceVersion(V, null), '3.0');
+  assert.equal(referenceVersion([], null), undefined);
+});
+
+test('isNewFeature: true only when the feature version matches the reference version', () => {
+  const V = ['1.0', '2.0'];
+  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, null), true, 'latest version + "Alle"');
+  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '1.0' }, V, null), false, 'older version + "Alle"');
+  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, '2.0'), true, 'exact selected match');
+  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, '1.0'), false, 'pinned to an earlier version');
+  assert.equal(isNewFeature({ id: 'a', name: 'A' }, V, null), false, 'no version at all');
 });
 
 test('empty pricing renders a placeholder, no matrix', () => {

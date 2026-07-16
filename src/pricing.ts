@@ -44,6 +44,19 @@ export function featureVisibleForVersion(
   return fIdx <= selIdx;
 }
 
+// The version a "New" badge is judged against: the selected switcher version, or
+// (when "Alle" is selected) the newest declared version — so "New" always points
+// at the latest release until the user pins an older one.
+export function referenceVersion(versions: string[], selected: string | null): string | undefined {
+  return selected ?? versions[versions.length - 1];
+}
+
+// A feature is "New" when it was introduced exactly at the reference version.
+export function isNewFeature(feature: PricingFeature, versions: string[], selected: string | null): boolean {
+  const ref = referenceVersion(versions, selected);
+  return !!feature.version && feature.version === ref;
+}
+
 // ---- work indicator (pure helpers, shared with the matrix view) ------------
 
 // Aggregate work state for a feature row, derived from its linked items' status.
@@ -125,12 +138,16 @@ export type ResolvedHighlight = {
   // boolean highlight. Drives "Label: value" vs a plain checkmark on the card,
   // and — together with `included` — the "Alles aus <prev>" inheritance diff.
   value: string;
+  // True when at least one of the highlight's included features is "New" at the
+  // reference version (see `isNewFeature`) — drives the "Neu" badge on the card.
+  isNew: boolean;
 };
 
 /**
- * Resolve a highlight for one tier: whether the tier includes it and its value.
- * A boolean feature (value === true) counts as included with no value; a string
- * value contributes to `value`. Version-aware. Pure — shared by the card view.
+ * Resolve a highlight for one tier: whether the tier includes it, its value, and
+ * whether it's "New". A boolean feature (value === true) counts as included with
+ * no value; a string value contributes to `value`. Version-aware. Pure — shared
+ * by the card view.
  */
 export function resolveHighlight(
   highlight: PricingHighlight,
@@ -140,20 +157,25 @@ export function resolveHighlight(
   selected: string | null,
 ): ResolvedHighlight {
   const byId = new Map(features.map((f) => [f.id, f]));
+  const ref = referenceVersion(versions, selected);
   let included = false;
+  let isNew = false;
   const vals: string[] = [];
   for (const fid of highlight.featureIds) {
     const feat = byId.get(fid);
     if (!feat) continue;
     if (selected && !featureVisibleForVersion(feat, versions, selected)) continue;
     const v = tier.values?.[fid];
-    if (v === true) included = true;
-    else if (typeof v === 'string' && v.trim()) {
+    if (v === true) {
+      included = true;
+      if (feat.version && feat.version === ref) isNew = true;
+    } else if (typeof v === 'string' && v.trim()) {
       included = true;
       vals.push(v.trim());
+      if (feat.version && feat.version === ref) isNew = true;
     }
   }
-  return { included, value: vals.join(', ') };
+  return { included, value: vals.join(', '), isNew };
 }
 
 // Render one tier's value for a feature as Markdown cell content:
