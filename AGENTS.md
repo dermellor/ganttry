@@ -824,10 +824,18 @@ Shape:
 Item↔Feature: `metadata.featureIds` (n:m) + `metadata.featureVersion` (die Version,
 für die gearbeitet wird) + `status` (Open/Doing/Done) → speisen den Arbeits-Punkt
 und die Zeilen-Badges:
-- **„Neu"**: `feature.version` == gepinnte Version (nicht „Alle", nicht Baseline).
+- **„Neu"**: `feature.version` == gepinnte Version (nicht „Alle"). Gilt auch für
+  die Baseline (`versions[0]`): ein dort eingeführtes Feature badged „Neu", wenn
+  die Baseline gepinnt ist — pre-existing (kein `version`) badged nie.
 - **„Modified"**: Feature ist älter als die gepinnte Version (inkl. pre-existing)
   UND es gibt ein Item mit diesem Feature + `featureVersion` == gepinnte Version.
   Schließt „Neu" aus; nur bei gepinnter Version.
+- **„ab \<Version\>"**: nur in der „Alle"-Ansicht (keine Version gepinnt, wo „Neu"/
+  „Modified" nie feuern). Neutrale Chip, die angibt, ab welcher Version das Feature
+  bzw. Highlight dazukam. Matrix: pro Feature mit `version`. Kacheln: pro Highlight
+  die früheste `version` seiner beitragenden Features (`introducedVersion` in
+  `resolveHighlight`); ein pre-existing Feature im Bündel unterdrückt die Chip.
+  Pre-existing Features (kein `version`) bekommen nie eine Chip.
 
 ## Offene Ausbaustufen – Preismodell / Kacheln
 

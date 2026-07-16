@@ -286,12 +286,18 @@ test('isNewFeature: true only when the switcher is pinned to the exact feature v
   assert.equal(isNewFeature({ id: 'a', name: 'A' }, V, '1.0'), false, 'no version at all');
 });
 
-test('isNewFeature: the baseline (first) version never badges, even on an exact match', () => {
+test('isNewFeature: the baseline (first) version badges too when a feature is introduced there', () => {
   const V = ['1.0', '2.0', '3.0'];
   assert.equal(
     isNewFeature({ id: 'a', name: 'A', version: '1.0' }, V, '1.0'),
+    true,
+    'a feature tagged with the baseline version was introduced there → New',
+  );
+  // A pre-existing (unversioned) feature existed before the baseline → never New.
+  assert.equal(
+    isNewFeature({ id: 'b', name: 'B' }, V, '1.0'),
     false,
-    'v1 is the baseline — nothing is "new" relative to it',
+    'pre-existing (no version) never badges, not even at the baseline',
   );
   assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, '2.0'), true, '2.0 is a real increment');
 });

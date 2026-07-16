@@ -51,15 +51,15 @@ export function referenceVersion(versions: string[], selected: string | null): s
   return selected ?? versions[versions.length - 1];
 }
 
-// A feature is "New" only once the user pins the switcher to the exact version it
-// was introduced at — "Alle" never shows a badge (it's the cumulative "everything"
-// view, not a claim about what's newest). The very first declared version is the
-// baseline release: nothing is "new" relative to it (there's no prior version to
-// compare against), so it never badges even when a feature is explicitly tagged
-// with that version instead of left unversioned.
+// A feature is "New" once the user pins the switcher to the exact version it was
+// introduced at — including the very first (baseline) version: a feature
+// explicitly tagged with a version was introduced in that release (as opposed to
+// pre-existing/unversioned features, which existed before and never badge).
+// "Alle" never shows a badge (it's the cumulative "everything" view, not a claim
+// about what's newest; there the "ab <version>" chip carries that info instead).
 export function isNewFeature(feature: PricingFeature, versions: string[], selected: string | null): boolean {
-  if (!selected || selected === versions[0]) return false;
-  return feature.version === selected;
+  if (!selected) return false;
+  return !!feature.version && feature.version === selected;
 }
 
 // A feature is "Modified" for the pinned version when it is NOT new there (it
