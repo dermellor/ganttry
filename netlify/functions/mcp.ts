@@ -119,6 +119,17 @@ function buildServer(updatedBy: string): McpServer {
     { id: z.string(), file: z.record(z.any()) },
     async ({ id, file }) => ok(await run({ method: 'PUT', id, body: file })),
   );
+  server.tool(
+    'set_pricing',
+    "Set a timeline's pricing model (features + tiers + highlights) and optionally its type. " +
+      'Patched as a unit — the whole pricing object replaces the old one, so include highlights if ' +
+      "the timeline already has any. Items are untouched. Set type to 'product' to surface the " +
+      'pricing matrix in the viewer. Note: the AI-Agents pricing is normally authored in ' +
+      'Preismodell.md and synced automatically; use this for other product timelines or ad-hoc fixes.',
+    { id: z.string(), pricing: z.record(z.any()), type: z.string().optional() },
+    async ({ id, pricing, type }) =>
+      ok(await run({ method: 'PATCH', id, body: type !== undefined ? { pricing, type } : { pricing } })),
+  );
   return server;
 }
 
