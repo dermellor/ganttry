@@ -223,6 +223,11 @@ export type ResolvedHighlight = {
   // True when at least one of the highlight's included features is "New" at the
   // reference version (see `isNewFeature`) — drives the "Neu" badge on the card.
   isNew: boolean;
+  // The version at which the highlight first became available for this tier: the
+  // earliest version among its included, version-carrying features. `undefined`
+  // when any included feature is pre-existing (no version → available from the
+  // start) or none carry a version. Drives the "ab <version>" chip in "Alle" mode.
+  introducedVersion?: string;
 };
 
 /**
@@ -241,22 +246,43 @@ export function resolveHighlight(
   const byId = new Map(features.map((f) => [f.id, f]));
   let included = false;
   let isNew = false;
+  let hasPreexisting = false;
+  let earliestIdx = Infinity;
+  let introducedVersion: string | undefined;
   const vals: string[] = [];
   for (const fid of highlight.featureIds) {
     const feat = byId.get(fid);
     if (!feat) continue;
     if (selected && !featureVisibleForVersion(feat, versions, selected)) continue;
     const v = tier.values?.[fid];
+    let contributes = false;
     if (v === true) {
       included = true;
+      contributes = true;
       if (isNewFeature(feat, versions, selected)) isNew = true;
     } else if (typeof v === 'string' && v.trim()) {
       included = true;
+      contributes = true;
       vals.push(v.trim());
       if (isNewFeature(feat, versions, selected)) isNew = true;
     }
+    if (!contributes) continue;
+    // Track when the highlight first became available: pre-existing (no version)
+    // features win — they mean it was always there, so no "ab" chip. Otherwise
+    // keep the earliest declared version among the contributing features.
+    if (!feat.version) {
+      hasPreexisting = true;
+    } else {
+      const idx = versions.indexOf(feat.version);
+      const rank = idx < 0 ? Number.MAX_SAFE_INTEGER : idx;
+      if (rank < earliestIdx) {
+        earliestIdx = rank;
+        introducedVersion = feat.version;
+      }
+    }
   }
-  return { included, value: vals.join(', '), isNew };
+  if (hasPreexisting) introducedVersion = undefined;
+  return { included, value: vals.join(', '), isNew, introducedVersion };
 }
 
 // Render one tier's value for a feature as Markdown cell content:

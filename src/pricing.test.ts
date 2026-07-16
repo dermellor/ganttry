@@ -193,11 +193,13 @@ test('resolveHighlight: value-feature → value string; boolean → included, no
     included: true,
     value: '3.000',
     isNew: false,
+    introducedVersion: '1.0',
   });
   assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, [], null), {
     included: true,
     value: '',
     isNew: false,
+    introducedVersion: '2.0',
   });
 });
 
@@ -207,6 +209,7 @@ test('resolveHighlight: not included when the tier has none of the features', ()
     included: false,
     value: '',
     isNew: false,
+    introducedVersion: undefined,
   });
 });
 
@@ -217,6 +220,7 @@ test('resolveHighlight: version filter drops features beyond the selected versio
     included: false,
     value: '',
     isNew: false,
+    introducedVersion: undefined,
   });
 });
 
@@ -228,19 +232,42 @@ test('resolveHighlight: isNew only when the switcher is pinned to the exact feat
     included: true,
     value: '',
     isNew: false,
+    introducedVersion: '2.0',
   });
   // Pinning the switcher to 2.0 (their exact version) → New.
   assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, V, '2.0'), {
     included: true,
     value: '',
     isNew: true,
+    introducedVersion: '2.0',
   });
   // Pinning the switcher to 1.0 hides the 2.0 features entirely → not included, not new.
   assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, V, '1.0'), {
     included: false,
     value: '',
     isNew: false,
+    introducedVersion: undefined,
   });
+});
+
+test('resolveHighlight: introducedVersion = earliest contributing version; pre-existing → undefined', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const feats: PricingFeature[] = [
+    { id: 'old', name: 'Alt' }, // pre-existing, no version
+    { id: 'v2', name: 'Zwei', version: '2.0' },
+    { id: 'v3', name: 'Drei', version: '3.0' },
+  ];
+  const tier: PricingTier = { id: 't', name: 'T', price: '0', values: { old: true, v2: true, v3: true } };
+  // Bundle of 2.0 + 3.0 features → earliest (2.0) wins.
+  assert.equal(
+    resolveHighlight({ id: 'h', label: 'H', featureIds: ['v3', 'v2'] }, tier, feats, V, null).introducedVersion,
+    '2.0',
+  );
+  // Any pre-existing feature in the bundle → available from the start, no chip.
+  assert.equal(
+    resolveHighlight({ id: 'h', label: 'H', featureIds: ['v2', 'old'] }, tier, feats, V, null).introducedVersion,
+    undefined,
+  );
 });
 
 test('referenceVersion: selected version wins; "Alle" falls back to the newest declared version', () => {

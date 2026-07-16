@@ -6,9 +6,8 @@
 // layer (pricing.highlights). Class names + SVGs match the rendered original.
 
 import { escapeHtml } from './buildItems';
-import { resolveHighlight, resolveHighlightLabel, itemsForFeatures, type ResolvedHighlight } from './pricing';
-import { workDotHtml } from './pricingWork';
-import type { PricingHighlight, PricingTier, TimelineFile, TimelineFileItem } from './types';
+import { resolveHighlight, resolveHighlightLabel, type ResolvedHighlight } from './pricing';
+import type { PricingHighlight, PricingTier, TimelineFile } from './types';
 
 const DEFAULT_SECTION = 'Weitere';
 
@@ -36,23 +35,28 @@ function sectionsOf(highlights: PricingHighlight[]): { section: string; items: P
   return order.map((section) => ({ section, items: by.get(section)! }));
 }
 
-function checkRow(inner: string, dot: string): string {
-  return (
-    `<li class="pc-feat pc-yes">${CHECK_SVG}<span>${inner}</span>` +
-    (dot ? `<span class="pc-feat-work">${dot}</span>` : '') +
-    `</li>`
-  );
+function checkRow(inner: string): string {
+  return `<li class="pc-feat pc-yes">${CHECK_SVG}<span>${inner}</span></li>`;
 }
 
-function bulletHtml(label: string, r: ResolvedHighlight, dot: string): string {
-  const badge = r.isNew ? '<span class="pricing-badge-new">Neu</span>' : '';
+// Badge shown after a highlight label: "Neu" when the switcher pins the exact
+// introducing version, otherwise (in "Alle" mode) an "ab <version>" chip stating
+// when the highlight became available. Pre-existing highlights get neither.
+function highlightBadge(r: ResolvedHighlight, selected: string | null): string {
+  if (r.isNew) return '<span class="pricing-badge-new">Neu</span>';
+  if (!selected && r.introducedVersion)
+    return `<span class="pricing-badge-version">ab ${escapeHtml(r.introducedVersion)}</span>`;
+  return '';
+}
+
+function bulletHtml(label: string, r: ResolvedHighlight, selected: string | null): string {
+  const badge = highlightBadge(r, selected);
   if (r.value) {
     return checkRow(
       `<span class="pc-label">${escapeHtml(label)}:</span> <span class="pc-value">${escapeHtml(r.value)}</span>${badge}`,
-      dot,
     );
   }
-  return checkRow(`${escapeHtml(label)}${badge}`, dot);
+  return checkRow(`${escapeHtml(label)}${badge}`);
 }
 
 // Split a price string ("ab 449 €/Monat") into the big number + currency and a
@@ -86,7 +90,6 @@ export function renderCardsHtml(
     return '<p class="pricing-empty">Keine Highlight-Kacheln definiert. In der Matrix-Ansicht sind alle Features sichtbar; für die Kacheln müssen Highlights im Preismodell hinterlegt werden (pricing.highlights).</p>';
   }
   const sections = sectionsOf(highlights);
-  const allItems: TimelineFileItem[] = file.items ?? [];
 
   const cards = p.tiers
     .map((tier, i) => {
@@ -112,8 +115,7 @@ export function renderCardsHtml(
             );
           }
           for (const r of changed) {
-            const dot = workDotHtml(itemsForFeatures(r.h.featureIds, allItems, selected));
-            lines.push(bulletHtml(resolveHighlightLabel(r.h, versions, selected), r.cur, dot));
+            lines.push(bulletHtml(resolveHighlightLabel(r.h, versions, selected), r.cur, selected));
           }
           return `<p class="pc-section-label">${escapeHtml(section)}</p><ul class="pc-features">${lines.join('')}</ul>`;
         })
