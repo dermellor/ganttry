@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
 import { getServiceClient } from './scripts/db/client';
 import { handleTimelineApi, parseSourcePath, type ApiRequest } from './scripts/db/api';
+import { getPublicPricing } from './scripts/db/timeline-repo';
 
 const ID_SEGMENT = /^[a-zA-Z0-9_-]+$/;
 
@@ -128,6 +129,22 @@ function timelinesApi(): Plugin {
         try {
           const result = await handleTimelineApi(db, { method: 'GET', id: '' });
           send(res, result.status, result.json);
+        } catch (err) {
+          send(res, 500, { error: 'server_error', message: String(err) });
+        }
+      });
+
+      // GET /api/pricing/<id> — PUBLIC pricing model (mirror of the edge fn).
+      server.middlewares.use('/api/pricing', async (req, res, next) => {
+        if (req.method !== 'GET') return next();
+        const db = getServiceClient();
+        if (!db) return send(res, 503, { error: 'db_not_configured' });
+        const id = (req.url ?? '').replace(/\?.*$/, '').replace(/^\/+|\/+$/g, '');
+        if (!id) return send(res, 400, { error: 'id required' });
+        try {
+          const pricing = await getPublicPricing(db, decodeURIComponent(id));
+          if (pricing) send(res, 200, pricing);
+          else send(res, 404, { error: 'not found' });
         } catch (err) {
           send(res, 500, { error: 'server_error', message: String(err) });
         }

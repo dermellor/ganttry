@@ -80,6 +80,8 @@ export const config: Config = {
   excludedPath: [
     '/favicon.ico',
     '/robots.txt',
+    // Public pricing endpoint for external marketing pages — no login gate.
+    '/api/pricing/*',
     '/mcp',
     '/mcp-oauth/*',
     '/.well-known/oauth-protected-resource',

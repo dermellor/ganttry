@@ -168,6 +168,33 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
   return file;
 }
 
+// ---- public pricing (marketing sites consume this) -------------------------
+
+export type PublicPricing = { id: string; name?: string; pricing: Pricing };
+
+/**
+ * Pricing-only view of a product timeline for public consumption (e.g. the Astro
+ * pricing page). Returns just name + the pricing model — never roadmap items or
+ * status. Null when the timeline isn't a product timeline or has no pricing, so
+ * the caller can 404. This is the single source of truth for external pages.
+ */
+export async function getPublicPricing(db: SupabaseClient, id: string): Promise<PublicPricing | null> {
+  const { data, error } = await db
+    .from('timelines')
+    .select('name, type, pricing')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error(`getPublicPricing: ${error.message}`);
+  if (!data || data.type !== 'product') return null;
+  const pricing = data.pricing as Pricing | null;
+  if (!pricing || typeof pricing !== 'object' || !Array.isArray(pricing.tiers) || !pricing.tiers.length) {
+    return null;
+  }
+  const out: PublicPricing = { id, pricing };
+  if (data.name != null) out.name = data.name;
+  return out;
+}
+
 // ---- whole-timeline replace (import, MCP bulk, PUT fallback) ---------------
 
 export async function replaceTimeline(db: SupabaseClient, id: string, file: TimelineFile): Promise<void> {

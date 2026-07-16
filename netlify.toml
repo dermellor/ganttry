@@ -34,6 +34,12 @@
   function = "timelines-api"
   path = "/api/sources"
 
+# PUBLIC pricing model for external marketing pages (Astro). No auth (see
+# auth.ts excludedPath); serves only the pricing model, never roadmap items.
+[[edge_functions]]
+  function = "pricing-api"
+  path = "/api/pricing/*"
+
 # Current-user probe for the header presence badge. Runs after auth, so it only
 # sees a session when the gate is active.
 [[edge_functions]]
