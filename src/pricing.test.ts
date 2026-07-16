@@ -8,6 +8,9 @@ import {
   itemsForFeature,
   aggregateWorkState,
   resolveHighlight,
+  resolveVersionedText,
+  resolveFeatureName,
+  resolveHighlightLabel,
   type PricingDoc,
 } from './pricing';
 import type { PricingFeature, PricingTier } from './types';
@@ -247,6 +250,70 @@ test('isNewFeature: true only when the feature version matches the reference ver
   assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, '2.0'), true, 'exact selected match');
   assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, '1.0'), false, 'pinned to an earlier version');
   assert.equal(isNewFeature({ id: 'a', name: 'A' }, V, null), false, 'no version at all');
+});
+
+test('resolveVersionedText: no overrides → base text unchanged', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  assert.equal(resolveVersionedText('Termine vereinbaren', undefined, V, '1.0'), 'Termine vereinbaren');
+  assert.equal(resolveVersionedText('Termine vereinbaren', {}, V, null), 'Termine vereinbaren');
+});
+
+test('resolveVersionedText: cumulative — override applies from its version onward', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const overrides = { '3.0': 'Termine vereinbaren und ändern' };
+  assert.equal(resolveVersionedText('Termine vereinbaren', overrides, V, '1.0'), 'Termine vereinbaren');
+  assert.equal(resolveVersionedText('Termine vereinbaren', overrides, V, '2.0'), 'Termine vereinbaren');
+  assert.equal(resolveVersionedText('Termine vereinbaren', overrides, V, '3.0'), 'Termine vereinbaren und ändern');
+});
+
+test('resolveVersionedText: "Alle" (null) resolves against the newest declared version', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const overrides = { '3.0': 'Termine vereinbaren und ändern' };
+  assert.equal(resolveVersionedText('Termine vereinbaren', overrides, V, null), 'Termine vereinbaren und ändern');
+});
+
+test('resolveVersionedText: later override wins when multiple thresholds are at/before selected', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const overrides = { '2.0': 'B', '3.0': 'C' };
+  assert.equal(resolveVersionedText('A', overrides, V, '2.0'), 'B');
+  assert.equal(resolveVersionedText('A', overrides, V, '3.0'), 'C');
+});
+
+test('resolveFeatureName / resolveHighlightLabel: delegate to resolveVersionedText', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const feature: PricingFeature = {
+    id: 'skill-termine',
+    name: 'Termine vereinbaren',
+    nameByVersion: { '3.0': 'Termine vereinbaren und ändern' },
+  };
+  assert.equal(resolveFeatureName(feature, V, '2.0'), 'Termine vereinbaren');
+  assert.equal(resolveFeatureName(feature, V, '3.0'), 'Termine vereinbaren und ändern');
+
+  const highlight = {
+    id: 'h-termine',
+    label: 'Termine vereinbaren',
+    featureIds: ['skill-termine'],
+    labelByVersion: { '3.0': 'Termine vereinbaren und ändern' },
+  };
+  assert.equal(resolveHighlightLabel(highlight, V, '2.0'), 'Termine vereinbaren');
+  assert.equal(resolveHighlightLabel(highlight, V, '3.0'), 'Termine vereinbaren und ändern');
+});
+
+test('pricingToMarkdown: feature row shows the resolved (fully-evolved) name', () => {
+  const md = pricingToMarkdown(
+    {
+      timelineId: 't',
+      pricing: {
+        versions: ['1.0', '3.0'],
+        features: [
+          { id: 'a', name: 'Termine vereinbaren', nameByVersion: { '3.0': 'Termine vereinbaren und ändern' } },
+        ],
+        tiers: [{ id: 't1', name: 'T', price: '1 €', values: { a: true } }],
+      },
+    },
+    { updated: '2026-07-15' },
+  );
+  assert.match(md, /\| Termine vereinbaren und ändern \| ✓ \|  \|/);
 });
 
 test('empty pricing renders a placeholder, no matrix', () => {

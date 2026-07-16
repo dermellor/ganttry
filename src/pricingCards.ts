@@ -6,7 +6,7 @@
 // layer (pricing.highlights). Class names + SVGs match the rendered original.
 
 import { escapeHtml } from './buildItems';
-import { resolveHighlight, itemsForFeatures, type ResolvedHighlight } from './pricing';
+import { resolveHighlight, resolveHighlightLabel, itemsForFeatures, type ResolvedHighlight } from './pricing';
 import { workDotHtml } from './pricingWork';
 import type { PricingHighlight, PricingTier, TimelineFile, TimelineFileItem } from './types';
 
@@ -44,15 +44,15 @@ function checkRow(inner: string, dot: string): string {
   );
 }
 
-function bulletHtml(h: PricingHighlight, r: ResolvedHighlight, dot: string): string {
+function bulletHtml(label: string, r: ResolvedHighlight, dot: string): string {
   const badge = r.isNew ? '<span class="pricing-badge-new">Neu</span>' : '';
   if (r.value) {
     return checkRow(
-      `<span class="pc-label">${escapeHtml(h.label)}:</span> <span class="pc-value">${escapeHtml(r.value)}</span>${badge}`,
+      `<span class="pc-label">${escapeHtml(label)}:</span> <span class="pc-value">${escapeHtml(r.value)}</span>${badge}`,
       dot,
     );
   }
-  return checkRow(`${escapeHtml(h.label)}${badge}`, dot);
+  return checkRow(`${escapeHtml(label)}${badge}`, dot);
 }
 
 // Split a price string ("ab 449 €/Monat") into the big number + currency and a
@@ -113,7 +113,7 @@ export function renderCardsHtml(
           }
           for (const r of changed) {
             const dot = workDotHtml(itemsForFeatures(r.h.featureIds, allItems, selected));
-            lines.push(bulletHtml(r.h, r.cur, dot));
+            lines.push(bulletHtml(resolveHighlightLabel(r.h, versions, selected), r.cur, dot));
           }
           return `<p class="pc-section-label">${escapeHtml(section)}</p><ul class="pc-features">${lines.join('')}</ul>`;
         })

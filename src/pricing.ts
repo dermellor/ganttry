@@ -57,6 +57,44 @@ export function isNewFeature(feature: PricingFeature, versions: string[], select
   return !!feature.version && feature.version === ref;
 }
 
+// Resolve a version-scoped text override cumulatively: the latest override at or
+// before the effective version wins, falling back to `base`. "Alle" (selected =
+// null) resolves against the newest declared version, i.e. the fully-evolved
+// text. Shared by feature names (`nameByVersion`) and highlight labels
+// (`labelByVersion`) — same cumulative semantics as `feature.version`.
+export function resolveVersionedText(
+  base: string,
+  overrides: Record<string, string> | undefined,
+  versions: string[],
+  selected: string | null,
+): string {
+  if (!overrides || !Object.keys(overrides).length) return base;
+  const effective = referenceVersion(versions, selected);
+  if (!effective) return base;
+  const idx = versions.indexOf(effective);
+  if (idx < 0) return base;
+  let resolved = base;
+  for (let i = 0; i <= idx; i++) {
+    const ov = overrides[versions[i]];
+    if (ov) resolved = ov;
+  }
+  return resolved;
+}
+
+/** Display name of a feature at the selected version (see `resolveVersionedText`). */
+export function resolveFeatureName(feature: PricingFeature, versions: string[], selected: string | null): string {
+  return resolveVersionedText(feature.name, feature.nameByVersion, versions, selected);
+}
+
+/** Card label of a highlight at the selected version (see `resolveVersionedText`). */
+export function resolveHighlightLabel(
+  highlight: PricingHighlight,
+  versions: string[],
+  selected: string | null,
+): string {
+  return resolveVersionedText(highlight.label, highlight.labelByVersion, versions, selected);
+}
+
 // ---- work indicator (pure helpers, shared with the matrix view) ------------
 
 // Aggregate work state for a feature row, derived from its linked items' status.
@@ -216,6 +254,7 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
   const { timelineId, name, pricing } = doc;
   const tiers = pricing.tiers ?? [];
   const features = pricing.features ?? [];
+  const versions = pricing.versions ?? [];
   const title = (name?.trim() || timelineId) + ' – Preismodell';
 
   const lines: string[] = [];
@@ -260,7 +299,7 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
       for (const f of fs) {
         const marks = tiers.map((t) => markdownCell(t, f.id));
         const tail = withVersions ? [f.version ? cell(f.version) : ''] : [];
-        lines.push(`| ${cell(f.name)} | ${[...marks, ...tail].join(' | ')} |`);
+        lines.push(`| ${cell(resolveFeatureName(f, versions, null))} | ${[...marks, ...tail].join(' | ')} |`);
       }
     }
     lines.push('');

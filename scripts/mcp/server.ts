@@ -225,6 +225,27 @@ const pricingFeature = z.object({
     .string()
     .optional()
     .describe('Version this feature is available from (one of pricing.versions). Absent = from the start.'),
+  nameByVersion: z
+    .record(z.string())
+    .optional()
+    .describe(
+      'Version-scoped display-name overrides, keyed by a pricing.versions entry. Resolved cumulatively ' +
+        '(latest override at or before the selected version wins, falling back to name) — lets a feature ' +
+        'rename itself across versions, e.g. {"3.0": "Termine vereinbaren und ändern"}.',
+    ),
+});
+
+const pricingHighlight = z.object({
+  id: z.string().describe('Stable highlight id.'),
+  label: z.string().describe('Curated label shown on the pricing card.'),
+  section: z.string().optional().describe('Card section this bullet belongs to, e.g. "Inkludiert".'),
+  icon: z.string().optional().describe('Optional semantic icon key (brand-resolved).'),
+  featureIds: z.array(z.string()).describe('Raw feature ids this tile summarizes.'),
+  description: z.string().optional(),
+  labelByVersion: z
+    .record(z.string())
+    .optional()
+    .describe('Version-scoped label overrides, same semantics as pricingFeature.nameByVersion.'),
 });
 
 const pricingTier = z.object({
@@ -243,6 +264,10 @@ const pricingTier = z.object({
 const pricing = z.object({
   features: z.array(pricingFeature),
   tiers: z.array(pricingTier),
+  highlights: z
+    .array(pricingHighlight)
+    .optional()
+    .describe('Curated card-view tiles bundling one or more features under a simplified label.'),
   versions: z
     .array(z.string())
     .optional()
@@ -314,12 +339,13 @@ server.registerTool(
   {
     title: 'Set pricing model',
     description:
-      "Set a timeline's pricing model (features + tiers) and optionally its type. Patched as a " +
-      'unit (like set_custom_fields); items are untouched. Set type to "product" to surface the ' +
-      'pricing matrix in the viewer. Pass an empty features/tiers array to clear. Item→feature ' +
-      'links live per item in metadata.featureIds (string[]) — set via add_item / update_item. ' +
-      'Note: for the AI-Agents timeline the pricing model is normally authored in Preismodell.md ' +
-      'and synced automatically; use this tool for other product timelines or ad-hoc fixes.',
+      "Set a timeline's pricing model (features + tiers + highlights) and optionally its type. " +
+      'Patched as a unit (like set_custom_fields) — the whole pricing object is replaced, so include ' +
+      'highlights if the timeline already has any; items are untouched. Set type to "product" to ' +
+      'surface the pricing matrix in the viewer. Pass an empty features/tiers array to clear. ' +
+      'Item→feature links live per item in metadata.featureIds (string[]) — set via add_item / ' +
+      'update_item. Note: for the AI-Agents timeline the pricing model is normally authored in ' +
+      'Preismodell.md and synced automatically; use this tool for other product timelines or ad-hoc fixes.',
     inputSchema: {
       id: z.string().describe('Timeline id.'),
       type: z.string().optional().describe("Timeline kind, usually 'product'."),
@@ -330,7 +356,14 @@ server.registerTool(
     const meta: Record<string, unknown> = { pricing: pricingModel };
     if (type !== undefined) meta.type = type;
     await patchMeta(id, meta);
-    return ok({ ok: true, id, type, features: pricingModel.features.length, tiers: pricingModel.tiers.length });
+    return ok({
+      ok: true,
+      id,
+      type,
+      features: pricingModel.features.length,
+      tiers: pricingModel.tiers.length,
+      highlights: pricingModel.highlights?.length ?? 0,
+    });
   },
 );
 
