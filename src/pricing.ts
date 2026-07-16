@@ -53,9 +53,13 @@ export function referenceVersion(versions: string[], selected: string | null): s
 
 // A feature is "New" only once the user pins the switcher to the exact version it
 // was introduced at — "Alle" never shows a badge (it's the cumulative "everything"
-// view, not a claim about what's newest).
+// view, not a claim about what's newest). The very first declared version is the
+// baseline release: nothing is "new" relative to it (there's no prior version to
+// compare against), so it never badges even when a feature is explicitly tagged
+// with that version instead of left unversioned.
 export function isNewFeature(feature: PricingFeature, versions: string[], selected: string | null): boolean {
-  return !!selected && feature.version === selected;
+  if (!selected || selected === versions[0]) return false;
+  return feature.version === selected;
 }
 
 // Resolve a version-scoped text override cumulatively: the latest override at or

@@ -258,6 +258,16 @@ test('isNewFeature: true only when the switcher is pinned to the exact feature v
   assert.equal(isNewFeature({ id: 'a', name: 'A' }, V, '1.0'), false, 'no version at all');
 });
 
+test('isNewFeature: the baseline (first) version never badges, even on an exact match', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  assert.equal(
+    isNewFeature({ id: 'a', name: 'A', version: '1.0' }, V, '1.0'),
+    false,
+    'v1 is the baseline — nothing is "new" relative to it',
+  );
+  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, '2.0'), true, '2.0 is a real increment');
+});
+
 test('resolveVersionedText: no overrides → base text unchanged', () => {
   const V = ['1.0', '2.0', '3.0'];
   assert.equal(resolveVersionedText('Termine vereinbaren', undefined, V, '1.0'), 'Termine vereinbaren');
