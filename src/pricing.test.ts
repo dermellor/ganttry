@@ -219,11 +219,17 @@ test('resolveHighlight: version filter drops features beyond the selected versio
   });
 });
 
-test('resolveHighlight: isNew when an included feature matches the reference version', () => {
+test('resolveHighlight: isNew only when the switcher is pinned to the exact feature version', () => {
   const hInteg = { id: 'h2', label: 'Integrationen', featureIds: ['crm', 'ticket'] };
   const V = ['1.0', '2.0'];
-  // "Alle" (null) → reference is the newest version (2.0); crm/ticket are 2.0 → New.
+  // "Alle" (null) never marks anything New, even though crm/ticket are the newest version.
   assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, V, null), {
+    included: true,
+    value: '',
+    isNew: false,
+  });
+  // Pinning the switcher to 2.0 (their exact version) → New.
+  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, V, '2.0'), {
     included: true,
     value: '',
     isNew: true,
@@ -243,13 +249,13 @@ test('referenceVersion: selected version wins; "Alle" falls back to the newest d
   assert.equal(referenceVersion([], null), undefined);
 });
 
-test('isNewFeature: true only when the feature version matches the reference version', () => {
+test('isNewFeature: true only when the switcher is pinned to the exact feature version', () => {
   const V = ['1.0', '2.0'];
-  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, null), true, 'latest version + "Alle"');
-  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '1.0' }, V, null), false, 'older version + "Alle"');
+  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, null), false, '"Alle" never shows New');
+  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '1.0' }, V, null), false, '"Alle" never shows New');
   assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, '2.0'), true, 'exact selected match');
   assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, '1.0'), false, 'pinned to an earlier version');
-  assert.equal(isNewFeature({ id: 'a', name: 'A' }, V, null), false, 'no version at all');
+  assert.equal(isNewFeature({ id: 'a', name: 'A' }, V, '1.0'), false, 'no version at all');
 });
 
 test('resolveVersionedText: no overrides → base text unchanged', () => {

@@ -51,10 +51,11 @@ export function referenceVersion(versions: string[], selected: string | null): s
   return selected ?? versions[versions.length - 1];
 }
 
-// A feature is "New" when it was introduced exactly at the reference version.
+// A feature is "New" only once the user pins the switcher to the exact version it
+// was introduced at — "Alle" never shows a badge (it's the cumulative "everything"
+// view, not a claim about what's newest).
 export function isNewFeature(feature: PricingFeature, versions: string[], selected: string | null): boolean {
-  const ref = referenceVersion(versions, selected);
-  return !!feature.version && feature.version === ref;
+  return !!selected && feature.version === selected;
 }
 
 // Resolve a version-scoped text override cumulatively: the latest override at or
@@ -195,7 +196,6 @@ export function resolveHighlight(
   selected: string | null,
 ): ResolvedHighlight {
   const byId = new Map(features.map((f) => [f.id, f]));
-  const ref = referenceVersion(versions, selected);
   let included = false;
   let isNew = false;
   const vals: string[] = [];
@@ -206,11 +206,11 @@ export function resolveHighlight(
     const v = tier.values?.[fid];
     if (v === true) {
       included = true;
-      if (feat.version && feat.version === ref) isNew = true;
+      if (isNewFeature(feat, versions, selected)) isNew = true;
     } else if (typeof v === 'string' && v.trim()) {
       included = true;
       vals.push(v.trim());
-      if (feat.version && feat.version === ref) isNew = true;
+      if (isNewFeature(feat, versions, selected)) isNew = true;
     }
   }
   return { included, value: vals.join(', '), isNew };
