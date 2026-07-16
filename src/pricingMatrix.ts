@@ -1,10 +1,12 @@
-// Read-only pricing matrix for product timelines. Renders the timeline's
-// `pricing` model (tiers × features). Each feature row carries a work indicator:
-// an aggregate status dot (derived from the built-in item status of the roadmap
-// items linked to that feature) plus a popover listing those items — each click
-// opens the item in the detail drawer. A version switcher filters both the
-// feature rows (cumulative) and the work items (exact selected version).
-// Editing happens via the item form / MCP, not here.
+// Pricing matrix for product timelines. Renders the timeline's `pricing`
+// model (tiers × features). Each feature row carries a work indicator: an
+// aggregate status dot (derived from the built-in item status of the roadmap
+// items linked to that feature) plus a popover listing those items — each
+// click opens the item in the detail drawer. A version switcher filters both
+// the feature rows (cumulative) and the work items (exact selected version).
+// On editable (DB-backed) timelines, clicking a feature row itself opens its
+// Stammdaten in the same drawer (featureForm.ts). Tier/highlight editing still
+// happens via the item form / MCP, not here.
 
 import { escapeHtml } from './buildItems';
 import {
@@ -15,8 +17,9 @@ import {
   readItemFeatureIds,
   resolveFeatureName,
 } from './pricing';
-import { state, els } from './state';
+import { state, els, isEditableView } from './state';
 import { showDetailForId } from './detailPanel';
+import { showFeatureForm } from './featureForm';
 import { renderCardsHtml } from './pricingCards';
 import { workDotHtml } from './pricingWork';
 import { type TimelineFile } from './types';
@@ -43,7 +46,7 @@ export function hasPricing(file: TimelineFile | null | undefined): file is Timel
 }
 
 // Build the full matrix table HTML (tiers × features + work column).
-function matrixHtml(file: TimelineFile, versions: string[]): string {
+function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): string {
   const { tiers, features } = file.pricing!;
   const items = file.items ?? [];
   // Show the work column when any item is linked to any feature at all (regardless
@@ -92,13 +95,26 @@ function matrixHtml(file: TimelineFile, versions: string[]): string {
         ? '<span class="pricing-badge-new">Neu</span>'
         : '';
       const name = escapeHtml(resolveFeatureName(f, versions, selectedVersion));
+      const featureThClass = editable ? 'pm-feature pm-feature-editable' : 'pm-feature';
+      const featureThAttr = editable ? ` data-feature-id="${escapeHtml(f.id)}"` : '';
       bodyRows.push(
-        `<tr${versionAttr}><th class="pm-feature" scope="row">${name}${badge}</th>${cells}${workCell}</tr>`,
+        `<tr${versionAttr}><th class="${featureThClass}" scope="row"${featureThAttr}>${name}${badge}</th>${cells}${workCell}</tr>`,
       );
     }
   }
 
   return `<div class="pricing-table-wrap"><table class="pricing-table"><thead>${head}${priceRow}</thead><tbody>${bodyRows.join('')}</tbody></table></div>`;
+}
+
+// Wire feature-row clicks to open the Stammdaten drawer (editable timelines
+// only — matrixHtml only emits the [data-feature-id] attribute when editable).
+function wireFeatureClicks(host: HTMLElement): void {
+  host.querySelectorAll<HTMLElement>('.pm-feature-editable[data-feature-id]').forEach((th) => {
+    th.addEventListener('click', () => {
+      const id = th.dataset.featureId;
+      if (id) showFeatureForm(id);
+    });
+  });
 }
 
 // Wire the work-popover item clicks + single-popover behaviour (matrix + cards).
@@ -136,7 +152,9 @@ export function renderPricingView(): void {
   // Cards need highlights; fall back to matrix when none are defined.
   if (subView === 'cards' && !hasHighlights) subView = 'matrix';
 
-  const body = subView === 'cards' ? renderCardsHtml(file, versions, selectedVersion) : matrixHtml(file, versions);
+  const editable = isEditableView();
+  const body =
+    subView === 'cards' ? renderCardsHtml(file, versions, selectedVersion) : matrixHtml(file, versions, editable);
 
   const toggle = hasHighlights
     ? `<div class="pm-subview" role="group" aria-label="Darstellung">` +
@@ -180,4 +198,5 @@ export function renderPricingView(): void {
   });
 
   wireWork(host);
+  wireFeatureClicks(host);
 }

@@ -30,8 +30,9 @@ export function showPhaseFormByIndex(srcIndex: number): void {
 export function showPhaseForm(srcIndex: number): void {
   const phase = state.activeSourceFile?.phases?.[srcIndex];
   if (!phase) return;
-  // Opening a phase form supersedes any open item form.
+  // Opening a phase form supersedes any open item/feature form.
   state.activeFormItemId = null;
+  state.activeFormFeatureId = null;
   state.activeFormPhaseIndex = srcIndex;
   state.timeline?.setSelection([]);
   state.selectedItemId = null;

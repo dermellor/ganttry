@@ -86,8 +86,12 @@ export interface AppState {
   savedItems: Map<string, string>; // id -> canonical JSON (version stripped)
   savedItemVersions: Map<string, number>; // id -> last known version
   savedPhasesJson: string;
+  savedPricingJson: string;
   activeFormItemId: string | null;
   activeFormPhaseIndex: number | null;
+  // Feature id whose Stammdaten form is open in the detail drawer (pricing
+  // matrix), mutually exclusive with activeFormItemId / activeFormPhaseIndex.
+  activeFormFeatureId: string | null;
   // True while showItemForm is swapping the form's DOM. Removing the old
   // (focused) form fires a focusout → commit; suppress it so the previous
   // form's values aren't written onto the item being switched to.
@@ -147,8 +151,10 @@ export const state: AppState = {
   savedItems: new Map(),
   savedItemVersions: new Map(),
   savedPhasesJson: '[]',
+  savedPricingJson: '{}',
   activeFormItemId: null,
   activeFormPhaseIndex: null,
+  activeFormFeatureId: null,
   formRebuilding: false,
   formJiraIssues: [],
   formDependsOn: [],

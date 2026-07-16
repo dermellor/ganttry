@@ -1,4 +1,4 @@
-import type { TimelineFile, TimelineFileItem, TimelinePhase } from './types';
+import type { Pricing, TimelineFile, TimelineFileItem, TimelinePhase } from './types';
 
 export type LoadResult = { file: TimelineFile; editable: boolean };
 
@@ -58,6 +58,19 @@ export async function apiPutPhases(sourceId: string, phases: TimelinePhase[]): P
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phases }),
+    }),
+  );
+}
+
+// Pricing is patched as a unit through the generic timeline-meta PATCH
+// (updateMeta writes the whole `pricing` jsonb column), the same route used
+// for name/description/customFields.
+export async function apiPatchPricing(sourceId: string, pricing: Pricing): Promise<void> {
+  await apiJson(
+    await fetch(`/api/source/${sourceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pricing }),
     }),
   );
 }

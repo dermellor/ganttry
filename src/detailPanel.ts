@@ -67,5 +67,6 @@ export function hideDetail() {
   els.detailBody.classList.remove('detail-form');
   state.activeFormItemId = null;
   state.activeFormPhaseIndex = null;
+  state.activeFormFeatureId = null;
   setTimeout(() => state.timeline?.redraw(), 0);
 }

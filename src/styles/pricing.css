@@ -331,6 +331,12 @@
   color: var(--accent-strong);
 }
 
+/* Feature rows are clickable on editable (DB-backed) timelines — opens the
+   Stammdaten drawer, same as clicking an item or a phase segment. */
+.pm-feature-editable {
+  cursor: pointer;
+}
+
 /* ---- Work indicator (aggregate status dot + popover) -------------------- */
 
 .pm-work-col {
