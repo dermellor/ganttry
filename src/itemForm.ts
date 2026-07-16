@@ -72,6 +72,7 @@ export function showItemForm(
   if (state.activeFormItemId && state.activeFormItemId !== id) commitItemForm();
   state.activeFormItemId = id;
   state.activeFormPhaseIndex = null;
+  state.activeFormFeatureId = null;
   els.detailTitle.textContent = item.content || '(unbenannt)';
   els.detailMeta.innerHTML = '';
 

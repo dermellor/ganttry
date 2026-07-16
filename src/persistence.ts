@@ -2,12 +2,13 @@
 // source against the last-saved snapshot and issues item-level writes so
 // concurrent edits don't clobber each other.
 
-import type { TimelineFileItem } from './types';
+import type { Pricing, TimelineFileItem } from './types';
 import {
   apiAddItem,
   apiUpdateItem,
   apiDeleteItem,
   apiPutPhases,
+  apiPatchPricing,
   ConflictError,
 } from './editor';
 import { isRealtimeEnabled, subscribeTimeline, joinPresence } from './realtime';
@@ -48,6 +49,12 @@ export function canonicalItem(item: TimelineFileItem): string {
   const { version: _v, createdAt: _ca, createdBy: _cb, updatedAt: _ua, updatedBy: _ub, ...rest } =
     item;
   return JSON.stringify(sortDeep(rest));
+}
+
+// Canonical JSON of the pricing model, key-order independent (see sortDeep) —
+// used to diff against the last-saved snapshot the same way items/phases are.
+function canonicalPricing(pricing: Pricing | undefined): string {
+  return JSON.stringify(sortDeep(pricing ?? {}));
 }
 
 // Optional item columns that can be cleared. A PATCH only touches a column when
@@ -103,6 +110,7 @@ export function snapshotSaved(): void {
     if (it.version != null) state.savedItemVersions.set(it.id, it.version);
   }
   state.savedPhasesJson = JSON.stringify(state.activeSourceFile?.phases ?? []);
+  state.savedPricingJson = canonicalPricing(state.activeSourceFile?.pricing);
 }
 
 // True when the in-memory model differs from the last-saved snapshot, i.e. there
@@ -120,7 +128,8 @@ export function hasUnsavedChanges(): boolean {
     if (prev === undefined || prev !== canonicalItem(it)) return true;
   }
   for (const id of state.savedItems.keys()) if (!currentIds.has(id)) return true;
-  return JSON.stringify(file.phases ?? []) !== state.savedPhasesJson;
+  if (JSON.stringify(file.phases ?? []) !== state.savedPhasesJson) return true;
+  return canonicalPricing(file.pricing) !== state.savedPricingJson;
 }
 
 export async function persist(): Promise<void> {
@@ -172,6 +181,15 @@ export async function persist(): Promise<void> {
       setStatus('Speichere…');
       await apiPutPhases(sourceId, file.phases ?? []);
       state.savedPhasesJson = phasesJson;
+    }
+
+    // Pricing model (replaced as a unit, like phases — the feature form edits
+    // a single feature but the jsonb column is written whole).
+    const pricingJson = canonicalPricing(file.pricing);
+    if (pricingJson !== state.savedPricingJson) {
+      setStatus('Speichere…');
+      await apiPatchPricing(sourceId, file.pricing ?? { features: [], tiers: [] });
+      state.savedPricingJson = pricingJson;
     }
 
     setStatus(`Gespeichert · ${file.items.length} items`);
