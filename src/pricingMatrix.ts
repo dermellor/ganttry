@@ -103,11 +103,16 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
         : '';
 
       const versionAttr = f.version ? ` title="ab Version ${escapeHtml(f.version)}"` : '';
+      // In "Alle" mode (no pinned version) the Neu/Modified badges never fire, so
+      // instead show a neutral "ab <version>" chip stating when the feature was
+      // introduced. Pre-existing features (no version) get no chip.
       const badge = isNewFeature(f, versions, selectedVersion)
         ? '<span class="pricing-badge-new">Neu</span>'
         : isModifiedFeature(f, items, versions, selectedVersion)
           ? '<span class="pricing-badge-modified">Modified</span>'
-          : '';
+          : !selectedVersion && f.version
+            ? `<span class="pricing-badge-version">ab ${escapeHtml(f.version)}</span>`
+            : '';
       const name = escapeHtml(resolveFeatureName(f, versions, selectedVersion));
       const featureThClass = editable ? 'pm-feature pm-feature-editable' : 'pm-feature';
       const featureThAttr = editable ? ` data-feature-id="${escapeHtml(f.id)}"` : '';

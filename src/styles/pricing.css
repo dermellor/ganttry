@@ -268,6 +268,26 @@
   vertical-align: middle;
 }
 
+/* "ab <version>" chip shown in the "Alle" view: a neutral, muted pill stating
+   the version a feature was introduced in — informational, so it stays quieter
+   than the accent "Neu" / "Modified" badges. */
+.pricing-badge-version {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  font-family: var(--font-body);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
 .pricing-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);
