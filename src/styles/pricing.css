@@ -483,3 +483,99 @@
   color: var(--fg-muted);
   white-space: nowrap;
 }
+
+/* Info icon next to a feature name: the trigger for the description tooltip.
+   Rendered only when the feature carries a base description or version notes. */
+.pm-info {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-left: 6px;
+  vertical-align: middle;
+  background-color: var(--fg-muted);
+  -webkit-mask: var(--icon-info) center / contain no-repeat;
+  mask: var(--icon-info) center / contain no-repeat;
+  cursor: help;
+  opacity: 0.7;
+}
+
+.pm-info:hover,
+.pm-info:focus-visible {
+  background-color: var(--accent);
+  opacity: 1;
+  outline: none;
+}
+
+/* ---- feature description tooltip ----------------------------------------- */
+/* Lives on <body>, position:fixed, positioned in JS (see pricingMatrix.ts). */
+.pm-tip {
+  position: fixed;
+  z-index: 60;
+  /* Size to content (a fixed element otherwise shrink-to-fits far too narrow),
+     capped so long notes wrap instead of running off-screen. positionTip()
+     clamps the left edge to keep it on-screen on narrow viewports. */
+  width: max-content;
+  max-width: 320px;
+  padding: 10px 12px;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  text-align: left;
+  pointer-events: none;
+}
+
+.pm-tip[hidden] {
+  display: none;
+}
+
+.pm-tip-avail {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin-bottom: 6px;
+}
+
+.pm-tip-desc {
+  margin: 0;
+  color: var(--fg);
+}
+
+/* Space the notes list off the base description when both are present. */
+.pm-tip-desc + .pm-tip-notes {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.pm-tip-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-tip-notes li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pm-tip-ver {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.pm-tip-note {
+  color: var(--fg);
+}

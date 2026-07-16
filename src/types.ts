@@ -123,6 +123,13 @@ export type PricingFeature = {
   // different feature id, e.g. "Termine vereinbaren" (1.0/2.0) → "Termine
   // vereinbaren und ändern" (ab 3.0).
   nameByVersion?: Record<string, string>;
+  // Additional, version-scoped descriptions on top of `description`, keyed by a
+  // Pricing.versions entry. Unlike `nameByVersion` (a cumulative *override* of
+  // the name), these are ADDITIVE changelog notes: the base `description` always
+  // stays, and each entry renders as its own "ab <version>: <text>" line, in the
+  // declared version order (see resolveFeatureDescription in pricing.ts). Lets a
+  // feature document what a specific version added without losing the base text.
+  descriptionByVersion?: Record<string, string>;
 };
 
 export type PricingTier = {

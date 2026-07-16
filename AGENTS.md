@@ -809,11 +809,25 @@ Tarife + Features. Externe Seiten konsumieren es über `GET /api/pricing/<id>`
 `PATCH /api/source/<id>` mit `{pricing}`; Markdown-Spiegel: `npm run export:pricing`.
 
 Shape:
-- `features[]`: `{ id, name, group, version? }`. `version` = ab welcher getrackten
+- `features[]`: `{ id, name, group, version?, description?, nameByVersion?,
+  descriptionByVersion? }`. `version` = ab welcher getrackten
   Version verfügbar. **Kein `version` = pre-existing** (existierte vor der ersten
   Version) → immer sichtbar, nie „Neu", aber „Modified"-fähig. `feature.version`
   auf die Baseline (`versions[0]`) zu setzen bedeutet „in dieser Version eingeführt"
   — NICHT „schon immer da"; dafür `version` weglassen.
+  - `nameByVersion` (`Record<version, string>`): versionsabhängige Namens-
+    *Überschreibung*, **kumulativ** aufgelöst (neuester Override ≤ gewählte Version
+    gewinnt) — `resolveFeatureName`.
+  - `descriptionByVersion` (`Record<version, string>`): zusätzliche, versions-
+    gebundene Beschreibungen **on top of** `description`. Im Gegensatz zu
+    `nameByVersion` **additiv** (kein Override): die Basis-`description` bleibt,
+    jede Notiz erscheint als eigene Zeile „ab \<version\>: …" in Versionsreihenfolge
+    — `resolveFeatureDescription` ([`src/pricing.ts`](src/pricing.ts)). Angezeigt
+    in der Matrix als gestylter Tooltip hinter einem **Info-Icon** neben dem
+    Feature-Namen (nur wenn eine Beschreibung existiert; Hover/Fokus/Klick,
+    zeigt „ab Version X" + Basis + Versionsnotizen untereinander),
+    editierbar im Feature-Formular über einen „+ Versionsbeschreibung"-Button
+    (dynamische Liste: pro Eintrag eine Version wählen + Text, Entfernen je Zeile).
 - `tiers[]`: `{ id, name, tagline?, useCase?, targetGroup?, price, values }`.
   `values[featureId]` = `true` (✓) / fehlt|false (–) / String (Wert je Tarif).
 - `highlights[]`: `{ id, label, section?, featureIds }` — kuratierte Kacheln der
@@ -828,8 +842,10 @@ und die Zeilen-Badges:
   die Baseline (`versions[0]`): ein dort eingeführtes Feature badged „Neu", wenn
   die Baseline gepinnt ist — pre-existing (kein `version`) badged nie.
 - **„Modified"**: Feature ist älter als die gepinnte Version (inkl. pre-existing)
-  UND es gibt ein Item mit diesem Feature + `featureVersion` == gepinnte Version.
-  Schließt „Neu" aus; nur bei gepinnter Version.
+  UND diese Version brachte eine Änderung — entweder ein Item mit diesem Feature +
+  `featureVersion` == gepinnte Version, ODER eine Versionsbeschreibung für die
+  gepinnte Version (`descriptionByVersion[gepinnte Version]`). Letzteres badged
+  auch ohne Work-Item. Schließt „Neu" aus; nur bei gepinnter Version.
 - **„ab \<Version\>"**: nur in der „Alle"-Ansicht (keine Version gepinnt, wo „Neu"/
   „Modified" nie feuern). Neutrale Chip, die angibt, ab welcher Version das Feature
   bzw. Highlight dazukam. Matrix: pro Feature mit `version`. Kacheln: pro Highlight

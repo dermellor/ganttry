@@ -18,13 +18,14 @@ import {
   needsWorkWarning,
   readItemFeatureIds,
   resolveFeatureName,
+  resolveFeatureDescriptionParts,
 } from './pricing';
 import { state, els, isEditableView } from './state';
 import { showDetailForId } from './detailPanel';
 import { showFeatureForm } from './featureForm';
 import { renderCardsHtml } from './pricingCards';
 import { workDotHtml } from './pricingWork';
-import { type TimelineFile } from './types';
+import { type TimelineFile, type PricingFeature } from './types';
 
 const PRICING_VERSION_KEY = 'timelines.pricingVersion';
 const PRICING_SUBVIEW_KEY = 'timelines.pricingSubview';
@@ -102,7 +103,6 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
           }</td>`
         : '';
 
-      const versionAttr = f.version ? ` title="ab Version ${escapeHtml(f.version)}"` : '';
       // In "Alle" mode (no pinned version) the Neu/Modified badges never fire, so
       // instead show a neutral "ab <version>" chip stating when the feature was
       // introduced. Pre-existing features (no version) get no chip.
@@ -115,9 +115,19 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
             : '';
       const name = escapeHtml(resolveFeatureName(f, versions, selectedVersion));
       const featureThClass = editable ? 'pm-feature pm-feature-editable' : 'pm-feature';
-      const featureThAttr = editable ? ` data-feature-id="${escapeHtml(f.id)}"` : '';
+      // Info icon only when there's an actual description (base text or version
+      // notes) — availability alone is already conveyed by the badge/switcher.
+      // The icon is the tooltip trigger; it reads the feature id off the <th>.
+      const { base, notes } = resolveFeatureDescriptionParts(f, versions);
+      const info =
+        base || notes.length
+          ? `<span class="pm-info" tabindex="0" role="button" aria-label="Beschreibung anzeigen"></span>`
+          : '';
+      // data-feature-id is emitted always — it lets the info-icon tooltip look up
+      // the feature in read-only views too. Click-to-edit stays gated by
+      // pm-feature-editable.
       bodyRows.push(
-        `<tr${versionAttr}><th class="${featureThClass}" scope="row"${featureThAttr}>${name}${badge}</th>${cells}${workCell}</tr>`,
+        `<tr><th class="${featureThClass}" scope="row" data-feature-id="${escapeHtml(f.id)}">${name}${badge}${info}</th>${cells}${workCell}</tr>`,
       );
     }
   }
@@ -134,6 +144,102 @@ function wireFeatureClicks(host: HTMLElement): void {
       if (id) showFeatureForm(id);
     });
   });
+}
+
+// ---- feature description tooltip -------------------------------------------
+// A single styled tooltip, reused across all feature rows and re-renders. It
+// lives on <body> and is position:fixed, so the table's `overflow-x` clip (which
+// also clips overflow-y) can't cut it off, and it can sit right next to the row.
+
+function ensureTip(): HTMLElement {
+  let tip = document.getElementById('pm-tip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'pm-tip';
+    tip.className = 'pm-tip';
+    tip.setAttribute('role', 'tooltip');
+    tip.hidden = true;
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+
+// Structured description → styled tooltip HTML: availability line, base
+// description, then per-version notes laid out underneath each other. '' when
+// there is nothing to show (so the caller can skip opening the tooltip).
+function featureTipHtml(f: PricingFeature, versions: string[]): string {
+  const { base, notes } = resolveFeatureDescriptionParts(f, versions);
+  if (!f.version && !base && !notes.length) return '';
+  const parts: string[] = [];
+  if (f.version) parts.push(`<div class="pm-tip-avail">ab Version ${escapeHtml(f.version)}</div>`);
+  if (base) parts.push(`<p class="pm-tip-desc">${escapeHtml(base)}</p>`);
+  if (notes.length) {
+    parts.push(
+      `<ul class="pm-tip-notes">` +
+        notes
+          .map(
+            (n) =>
+              `<li><span class="pm-tip-ver">ab ${escapeHtml(n.version)}</span>` +
+              `<span class="pm-tip-note">${escapeHtml(n.text)}</span></li>`,
+          )
+          .join('') +
+        `</ul>`,
+    );
+  }
+  return parts.join('');
+}
+
+function positionTip(tip: HTMLElement, anchor: HTMLElement): void {
+  const r = anchor.getBoundingClientRect();
+  const gap = 8;
+  const tw = tip.offsetWidth;
+  const th = tip.offsetHeight;
+  const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+  const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+  let left = r.left;
+  let top = r.bottom + gap;
+  // Flip above the anchor only when we know the viewport height and it would
+  // overflow the bottom. (Guarding on vh>0 avoids a spurious flip when viewport
+  // metrics are unavailable, e.g. a not-yet-painted tab.)
+  if (vh > 0 && top + th > vh - gap) top = r.top - gap - th;
+  // Clamp inside the viewport when its width is known.
+  if (vw > 0) left = Math.max(gap, Math.min(left, vw - gap - tw));
+  top = Math.max(gap, top);
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+
+function wireFeatureTooltips(host: HTMLElement): void {
+  const tip = ensureTip();
+  tip.hidden = true; // reset across re-renders
+  const hide = () => {
+    tip.hidden = true;
+  };
+  const show = (icon: HTMLElement) => {
+    const featureId = icon.closest<HTMLElement>('[data-feature-id]')?.dataset.featureId;
+    const pricing = state.activeSourceFile?.pricing;
+    const f = pricing?.features.find((x) => x.id === featureId);
+    if (!f) return;
+    const html = featureTipHtml(f, pricing?.versions ?? []);
+    if (!html) return;
+    tip.innerHTML = html;
+    tip.hidden = false;
+    positionTip(tip, icon);
+  };
+  host.querySelectorAll<HTMLElement>('.pm-info').forEach((icon) => {
+    icon.addEventListener('mouseenter', () => show(icon));
+    icon.addEventListener('mouseleave', hide);
+    icon.addEventListener('focus', () => show(icon));
+    icon.addEventListener('blur', hide);
+    // Tap/click the icon: toggle the tip and don't let it open the edit form.
+    icon.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (tip.hidden) show(icon);
+      else hide();
+    });
+  });
+  // A stale tooltip after scrolling would float over the wrong icon — hide it.
+  host.querySelector('.pricing-table-wrap')?.addEventListener('scroll', hide, { passive: true });
 }
 
 // Wire the work-popover item clicks + single-popover behaviour (matrix + cards).
@@ -218,4 +324,5 @@ export function renderPricingView(): void {
 
   wireWork(host);
   wireFeatureClicks(host);
+  wireFeatureTooltips(host);
 }

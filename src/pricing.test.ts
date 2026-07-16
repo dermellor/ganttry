@@ -12,6 +12,8 @@ import {
   resolveHighlight,
   resolveVersionedText,
   resolveFeatureName,
+  resolveFeatureDescription,
+  resolveFeatureDescriptionParts,
   resolveHighlightLabel,
   type PricingDoc,
 } from './pricing';
@@ -338,6 +340,21 @@ test('isModifiedFeature: pre-existing feature (no version) is modifiable even at
   assert.equal(isModifiedFeature(pre, work2, V, '2.0'), true, 'pre-existing + work for 2.0 → modified at 2.0');
 });
 
+test('isModifiedFeature: a version description marks the feature Modified even without work items', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const f: PricingFeature = { id: 'crm', name: 'CRM', version: '1.0', descriptionByVersion: { '2.0': 'Jetzt mit X.' } };
+  assert.equal(isModifiedFeature(f, [], V, '2.0'), true, '1.0 feature + 2.0 description, no work → modified at 2.0');
+  assert.equal(isModifiedFeature(f, [], V, '3.0'), false, 'no description/work for 3.0 → not modified there');
+  assert.equal(isModifiedFeature(f, [], V, '1.0'), false, 'introduced in 1.0 → "New" at 1.0, not modified');
+  assert.equal(isModifiedFeature(f, [], V, null), false, '"Alle" never badges');
+  // A newly-introduced feature that also carries a note for its intro version stays "New", not Modified.
+  const newWithNote: PricingFeature = { id: 'x', name: 'X', version: '2.0', descriptionByVersion: { '2.0': 'Neu.' } };
+  assert.equal(isModifiedFeature(newWithNote, [], V, '2.0'), false, 'introduced in 2.0 → New, not Modified');
+  // A pre-existing feature with a baseline-version note badges Modified at the baseline.
+  const pre: PricingFeature = { id: 'faq', name: 'FAQ', descriptionByVersion: { '1.0': 'Überarbeitet.' } };
+  assert.equal(isModifiedFeature(pre, [], V, '1.0'), true, 'pre-existing + 1.0 note → modified at baseline');
+});
+
 test('needsWorkWarning: New feature at the pinned version with no linked work', () => {
   const V = ['1.0', '2.0'];
   const f = { id: 'crm', name: 'CRM', version: '2.0' };
@@ -401,6 +418,72 @@ test('resolveFeatureName / resolveHighlightLabel: delegate to resolveVersionedTe
   };
   assert.equal(resolveHighlightLabel(highlight, V, '2.0'), 'Termine vereinbaren');
   assert.equal(resolveHighlightLabel(highlight, V, '3.0'), 'Termine vereinbaren und ändern');
+});
+
+test('resolveFeatureDescription: empty when no description at all', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  assert.equal(resolveFeatureDescription({ id: 'a', name: 'A' }, V), '');
+  assert.equal(resolveFeatureDescription({ id: 'a', name: 'A', descriptionByVersion: {} }, V), '');
+});
+
+test('resolveFeatureDescription: base only when no version notes', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  assert.equal(resolveFeatureDescription({ id: 'a', name: 'A', description: 'Basistext' }, V), 'Basistext');
+});
+
+test('resolveFeatureDescription: additive — base first, then version notes in declared order', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const feature: PricingFeature = {
+    id: 'skill-pb',
+    name: 'Playbooks',
+    description: 'Geführte Dialoge.',
+    // Intentionally out of order in the object to prove `versions` drives ordering.
+    descriptionByVersion: { '3.0': 'Mit Verzweigungen.', '2.0': 'Jetzt mit Slot-Filling.' },
+  };
+  assert.equal(
+    resolveFeatureDescription(feature, V),
+    'Geführte Dialoge.\nab 2.0: Jetzt mit Slot-Filling.\nab 3.0: Mit Verzweigungen.',
+  );
+});
+
+test('resolveFeatureDescription: version notes without a base description', () => {
+  const V = ['1.0', '2.0'];
+  const feature: PricingFeature = {
+    id: 'x',
+    name: 'X',
+    descriptionByVersion: { '2.0': 'Neu in 2.0.' },
+  };
+  assert.equal(resolveFeatureDescription(feature, V), 'ab 2.0: Neu in 2.0.');
+});
+
+test('resolveFeatureDescriptionParts: structured base + ordered notes for the styled tooltip', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const feature: PricingFeature = {
+    id: 'skill-pb',
+    name: 'Playbooks',
+    description: 'Geführte Dialoge.',
+    descriptionByVersion: { '3.0': 'Mit Verzweigungen.', '2.0': 'Jetzt mit Slot-Filling.' },
+  };
+  assert.deepEqual(resolveFeatureDescriptionParts(feature, V), {
+    base: 'Geführte Dialoge.',
+    notes: [
+      { version: '2.0', text: 'Jetzt mit Slot-Filling.' },
+      { version: '3.0', text: 'Mit Verzweigungen.' },
+    ],
+  });
+  // No description at all → base undefined, empty notes.
+  assert.deepEqual(resolveFeatureDescriptionParts({ id: 'x', name: 'X' }, V), { base: undefined, notes: [] });
+});
+
+test('resolveFeatureDescription: blank notes skipped; falls back to object key order without versions', () => {
+  const feature: PricingFeature = {
+    id: 'x',
+    name: 'X',
+    description: 'Basis',
+    descriptionByVersion: { '2.0': '   ', '3.0': 'Echt.' },
+  };
+  // No declared versions → iterate the object's own keys, skipping blanks.
+  assert.equal(resolveFeatureDescription(feature, []), 'Basis\nab 3.0: Echt.');
 });
 
 test('pricingToMarkdown: feature row shows the resolved (fully-evolved) name', () => {

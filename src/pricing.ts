@@ -63,10 +63,13 @@ export function isNewFeature(feature: PricingFeature, versions: string[], select
 }
 
 // A feature is "Modified" for the pinned version when it is NOT new there (it
-// existed in an earlier version) but has roadmap work targeting that version —
-// i.e. an item links to the feature AND its featureVersion equals the selection.
+// existed in an earlier version) AND that version brought a change to it. A
+// change is signalled by EITHER roadmap work targeting that version (an item
+// links to the feature with featureVersion == selection) OR a version-scoped
+// description for that version (descriptionByVersion[selected]) — the latter lets
+// a documented-but-untracked change badge as Modified even without any work item.
 // Mutually exclusive with "New" (a newly-introduced feature badges as New, not
-// Modified). Like New, it needs a pinned, non-baseline version ("Alle" → none).
+// Modified). Like New, it needs a pinned version ("Alle" → none).
 export function isModifiedFeature(
   feature: PricingFeature,
   items: TimelineFileItem[],
@@ -83,7 +86,8 @@ export function isModifiedFeature(
     !feature.version ||
     (versions.indexOf(feature.version) >= 0 && versions.indexOf(feature.version) < versions.indexOf(selected));
   if (!predates) return false;
-  return itemsForFeature(feature.id, items, selected).length > 0;
+  const hasVersionDescription = !!feature.descriptionByVersion?.[selected]?.trim();
+  return hasVersionDescription || itemsForFeature(feature.id, items, selected).length > 0;
 }
 
 // A feature needs a work warning when it was just introduced at the pinned
@@ -128,6 +132,55 @@ export function resolveVersionedText(
 /** Display name of a feature at the selected version (see `resolveVersionedText`). */
 export function resolveFeatureName(feature: PricingFeature, versions: string[], selected: string | null): string {
   return resolveVersionedText(feature.name, feature.nameByVersion, versions, selected);
+}
+
+/** One version-scoped description note, resolved for display. */
+export type FeatureDescriptionNote = { version: string; text: string };
+
+/** Structured, display-ready description of a feature (see `resolveFeatureDescriptionParts`). */
+export type FeatureDescriptionParts = {
+  /** The base `description`, trimmed; undefined when absent/blank. */
+  base?: string;
+  /** Version-scoped notes in declared version order (blank entries dropped). */
+  notes: FeatureDescriptionNote[];
+};
+
+/**
+ * Structured, additive description of a feature (changelog-style): the base
+ * `description` plus every non-blank `descriptionByVersion` note, ordered by the
+ * declared `versions` (falling back to the object's own key order when no
+ * versions are declared). Consumers render this however they like — the styled
+ * matrix tooltip lays base + notes out underneath each other.
+ */
+export function resolveFeatureDescriptionParts(
+  feature: PricingFeature,
+  versions: string[],
+): FeatureDescriptionParts {
+  const base = feature.description?.trim() || undefined;
+  const notes: FeatureDescriptionNote[] = [];
+  const raw = feature.descriptionByVersion;
+  if (raw) {
+    const order = versions.length ? versions : Object.keys(raw);
+    for (const v of order) {
+      const text = raw[v]?.trim();
+      if (text) notes.push({ version: v, text });
+    }
+  }
+  return { base, notes };
+}
+
+/**
+ * Flat text form of {@link resolveFeatureDescriptionParts}: the base description
+ * first, then each note as its own "ab <version>: <text>" line. Returns '' when
+ * the feature carries no description at all. Kept for non-HTML consumers (tests,
+ * plain-text contexts).
+ */
+export function resolveFeatureDescription(feature: PricingFeature, versions: string[]): string {
+  const { base, notes } = resolveFeatureDescriptionParts(feature, versions);
+  const lines: string[] = [];
+  if (base) lines.push(base);
+  for (const n of notes) lines.push(`ab ${n.version}: ${n.text}`);
+  return lines.join('\n');
 }
 
 /** Card label of a highlight at the selected version (see `resolveVersionedText`). */

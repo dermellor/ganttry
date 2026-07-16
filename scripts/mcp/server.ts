@@ -233,6 +233,14 @@ const pricingFeature = z.object({
         '(latest override at or before the selected version wins, falling back to name) — lets a feature ' +
         'rename itself across versions, e.g. {"3.0": "Termine vereinbaren und ändern"}.',
     ),
+  descriptionByVersion: z
+    .record(z.string())
+    .optional()
+    .describe(
+      'Additive, version-scoped description notes on top of `description`, keyed by a pricing.versions ' +
+        'entry. Unlike nameByVersion these are NOT cumulative overrides — the base description stays and ' +
+        'each note shows as its own "ab <version>: …" line, e.g. {"2.0": "Jetzt mit Slot-Filling"}.',
+    ),
 });
 
 const pricingHighlight = z.object({
