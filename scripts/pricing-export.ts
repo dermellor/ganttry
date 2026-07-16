@@ -24,7 +24,7 @@ import { pricingToMarkdown } from '../src/pricing.ts';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
 
-const DEFAULT_TIMELINE_ID = 'acme/timeline-example-timeline-v1';
+const DEFAULT_TIMELINE_ID = 'acme/example-roadmap';
 const DEFAULT_OUT = resolve(
   homedir(),
   'Library/Mobile Documents/iCloud~md~obsidian/Documents/_NOTIZEN/Strategie/Acme AI Agents/Preismodell.md',
