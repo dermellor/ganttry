@@ -73,11 +73,10 @@ test('features grouped by group label, ungrouped last, group header row present'
   assert.ok(iAm > iFunk, 'ungrouped feature rendered last');
 });
 
-test('machine-readable JSON block round-trips the model', () => {
+test('no machine-readable JSON block — the .md is a human-readable mirror only', () => {
   const md = pricingToMarkdown(doc, { updated: '2026-07-15' });
-  const m = md.match(/```json\n([\s\S]*?)\n```/);
-  assert.ok(m, 'json block present');
-  assert.deepEqual(JSON.parse(m![1]), doc.pricing);
+  assert.doesNotMatch(md, /```json/);
+  assert.doesNotMatch(md, /## Rohdaten/);
 });
 
 test('pipes in names and values are escaped inside cells', () => {

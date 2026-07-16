@@ -307,14 +307,6 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
       }
     }
     lines.push('');
-
-    // ---- Machine-readable block -----------------------------------------
-    lines.push('## Rohdaten');
-    lines.push('');
-    lines.push('```json');
-    lines.push(JSON.stringify(pricing, null, 2));
-    lines.push('```');
-    lines.push('');
   }
 
   return lines.join('\n');
