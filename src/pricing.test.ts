@@ -6,6 +6,7 @@ import {
   referenceVersion,
   isNewFeature,
   isModifiedFeature,
+  needsWorkWarning,
   itemsForFeature,
   aggregateWorkState,
   resolveHighlight,
@@ -18,7 +19,7 @@ import type { PricingFeature, PricingTier } from './types';
 import type { TimelineFileItem } from './types';
 
 const doc: PricingDoc = {
-  timelineId: 'acme/timeline-example-timeline-v1',
+  timelineId: 'acme/example-roadmap',
   name: 'Example Timeline',
   type: 'product',
   pricing: {
@@ -42,7 +43,7 @@ const doc: PricingDoc = {
 
 test('renders frontmatter with generated marker + timeline id', () => {
   const md = pricingToMarkdown(doc, { updated: '2026-07-15' });
-  assert.match(md, /^---\ngenerated: true\nsource: timelines\ntimeline: Acme\/timeline-example-timeline-v1\nupdated: 2026-07-15\n---/);
+  assert.match(md, /^---\ngenerated: true\nsource: timelines\ntimeline: Acme\/example-roadmap\nupdated: 2026-07-15\n---/);
   assert.match(md, /Automatisch generiert/);
 });
 
@@ -302,6 +303,24 @@ test('isModifiedFeature: pre-existing feature (no version) is modifiable even at
     { id: 'p2', content: 'P2', status: 'Doing', metadata: { featureIds: ['faq'], featureVersion: '2.0' } },
   ];
   assert.equal(isModifiedFeature(pre, work2, V, '2.0'), true, 'pre-existing + work for 2.0 → modified at 2.0');
+});
+
+test('needsWorkWarning: New feature at the pinned version with no linked work', () => {
+  const V = ['1.0', '2.0'];
+  const f = { id: 'crm', name: 'CRM', version: '2.0' };
+  assert.equal(needsWorkWarning(f, [], V, '2.0'), true, 'new at 2.0, no work at all → warn');
+  const workOther: TimelineFileItem[] = [
+    { id: 'x', content: 'X', status: 'Doing', metadata: { featureIds: ['crm'], featureVersion: '1.0' } },
+  ];
+  assert.equal(needsWorkWarning(f, workOther, V, '2.0'), true, 'work exists but not for the pinned version → warn');
+  const work2: TimelineFileItem[] = [
+    { id: 'y', content: 'Y', status: 'Doing', metadata: { featureIds: ['crm'], featureVersion: '2.0' } },
+  ];
+  assert.equal(needsWorkWarning(f, work2, V, '2.0'), false, 'work targets the pinned version → no warning');
+  assert.equal(needsWorkWarning(f, [], V, '1.0'), false, 'not new at 1.0 → no warning');
+  assert.equal(needsWorkWarning(f, [], V, null), false, '"Alle" never warns');
+  const pre = { id: 'faq', name: 'FAQ-Editor' }; // pre-existing, never "New"
+  assert.equal(needsWorkWarning(pre, [], V, '2.0'), false, 'pre-existing feature is never New, so never warns');
 });
 
 test('resolveVersionedText: no overrides → base text unchanged', () => {

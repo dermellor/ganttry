@@ -15,6 +15,7 @@ import {
   isNewFeature,
   isModifiedFeature,
   itemsForFeature,
+  needsWorkWarning,
   readItemFeatureIds,
   resolveFeatureName,
 } from './pricing';
@@ -51,20 +52,23 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
   const { tiers, features } = file.pricing!;
   const items = file.items ?? [];
   // Show the work column when any item is linked to any feature at all (regardless
-  // of the current version filter — otherwise the column would flicker in/out).
+  // of the current version filter — otherwise the column would flicker in/out), or
+  // when a feature needs a "new but unworked" warning there (see needsWorkWarning).
   const anyLinked = items.some((it) => readItemFeatureIds(it.metadata).length > 0);
-  const totalCols = tiers.length + 1 + (anyLinked ? 1 : 0);
+  const anyWarning = features.some((f) => needsWorkWarning(f, items, versions, selectedVersion));
+  const showWorkCol = anyLinked || anyWarning;
+  const totalCols = tiers.length + 1 + (showWorkCol ? 1 : 0);
 
   const head =
     `<tr><th class="pm-feature">Feature</th>` +
     tiers.map((t) => `<th class="pm-tier">${escapeHtml(t.name)}</th>`).join('') +
-    (anyLinked ? `<th class="pm-work-col" title="Roadmap-Arbeit an diesem Feature">Arbeit</th>` : '') +
+    (showWorkCol ? `<th class="pm-work-col" title="Roadmap-Arbeit an diesem Feature">Arbeit</th>` : '') +
     `</tr>`;
 
   const priceRow =
     `<tr class="pm-price-row"><th class="pm-feature">Preis</th>` +
     tiers.map((t) => `<td class="pm-tier">${escapeHtml(t.price)}</td>`).join('') +
-    (anyLinked ? `<td class="pm-work-col"></td>` : '') +
+    (showWorkCol ? `<td class="pm-work-col"></td>` : '') +
     `</tr>`;
 
   const bodyRows: string[] = [];
@@ -87,8 +91,15 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
         })
         .join('');
 
-      const workCell = anyLinked
-        ? `<td class="pm-work-col">${workDotHtml(itemsForFeature(f.id, items, selectedVersion))}</td>`
+      const workItems = itemsForFeature(f.id, items, selectedVersion);
+      const workCell = showWorkCol
+        ? `<td class="pm-work-col">${
+            workItems.length
+              ? workDotHtml(workItems)
+              : needsWorkWarning(f, items, versions, selectedVersion)
+                ? '<span class="pm-work-warn" title="Neu in dieser Version, aber noch keine Roadmap-Arbeit verknüpft" aria-label="Warnung: keine Roadmap-Arbeit verknüpft">⚠</span>'
+                : ''
+          }</td>`
         : '';
 
       const versionAttr = f.version ? ` title="ab Version ${escapeHtml(f.version)}"` : '';

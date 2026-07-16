@@ -86,6 +86,21 @@ export function isModifiedFeature(
   return itemsForFeature(feature.id, items, selected).length > 0;
 }
 
+// A feature needs a work warning when it was just introduced at the pinned
+// version (isNewFeature) but no roadmap item targets it there yet — i.e. it
+// shipped on the price list without any tracked work behind it. Like New /
+// Modified, this needs a pinned, non-baseline version ("Alle" → none, since
+// isNewFeature itself never fires there).
+export function needsWorkWarning(
+  feature: PricingFeature,
+  items: TimelineFileItem[],
+  versions: string[],
+  selected: string | null,
+): boolean {
+  if (!isNewFeature(feature, versions, selected)) return false;
+  return itemsForFeature(feature.id, items, selected).length === 0;
+}
+
 // Resolve a version-scoped text override cumulatively: the latest override at or
 // before the effective version wins, falling back to `base`. "Alle" (selected =
 // null) resolves against the newest declared version, i.e. the fully-evolved
