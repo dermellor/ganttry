@@ -124,6 +124,12 @@ export type PricingTier = {
   // Optional segment/tagline shown under the tier name on the card
   // (e.g. "Micro · 1–5 Anrufe/Tag").
   tagline?: string;
+  // One-line positioning / primary use case (e.g. "Verpasste Anrufe auffangen").
+  // Shown as the card's sub-headline (falls back to `tagline`).
+  useCase?: string;
+  // Longer target-group description ("Einstiegslösung für kleine Unternehmen").
+  // Shown as a "Zielgruppe" block at the top of the card body.
+  targetGroup?: string;
   // Free-form price string — carries currency and qualifiers ("ab 449,95 €").
   price: string;
   // Per-tier feature values, keyed by feature id:

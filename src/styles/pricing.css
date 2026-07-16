@@ -192,6 +192,15 @@
 
 .pc-card-empty { color: var(--fg-muted); }
 
+/* Zielgruppe description block at the top of the card body. */
+.pc-target {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--fg-muted);
+  margin: 0 0 0.25rem;
+}
+
 /* Work dot pushed to the right edge of a card feature row. */
 .pc-feat-work { margin-left: auto; padding-left: 8px; }
 .pc-feat-work .pm-work-dot { min-width: 20px; height: 20px; font-size: 0.68rem; }

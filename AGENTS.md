@@ -800,3 +800,15 @@ unset/`false` for local previews. Required runtime env vars:
 
 If the site moves to a new domain, add the new redirect URI in the Google
 Cloud Console — otherwise the callback returns `redirect_uri_mismatch`.
+
+## Offene Ausbaustufen – Preismodell / Kacheln
+
+Noch nicht im Datenmodell abgebildet (aus dem Original-Preismodell), als Backlog:
+
+- Minutenpreis (€/Min) je Tarif als eigenes Feld — aktuell nur `Overage` als Feature-Wert.
+- Enterprise-Minutenpakete (S/M/L/Custom mit Staffelpreisen).
+- GTM-/Strategie-Daten (a competitor-Äquivalent, Ersparnis vs. a competitor, GTM Product-/Sales-Led, Upgrade-Trigger).
+- `highlight.icon` ist im Schema vorhanden, aber ungenutzt (keine Icons je Kachel).
+
+Bekanntes Verhalten: Wert-Highlights (z.B. „Charaktere") erscheinen auf jeder
+Tarif-Karte (Wert variiert je Tarif) → der Arbeits-Punkt wiederholt sich dort.

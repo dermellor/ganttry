@@ -118,13 +118,17 @@ export function renderCardsHtml(
         })
         .join('');
 
+      const suit = tier.useCase || tier.tagline || '';
+      const targetBlock = tier.targetGroup
+        ? `<p class="pc-section-label">Zielgruppe</p><p class="pc-target">${escapeHtml(tier.targetGroup)}</p>`
+        : '';
       return (
         `<article class="pc-card">` +
         `<div class="pc-name">${escapeHtml(tier.name)}</div>` +
-        `<div class="pc-suit">${tier.tagline ? escapeHtml(tier.tagline) : ''}</div>` +
+        `<div class="pc-suit">${escapeHtml(suit)}</div>` +
         priceHtml(tier.price) +
         `<hr class="pc-divider" />` +
-        `<div class="pc-body">${body || '<p class="pc-card-empty">—</p>'}</div>` +
+        `<div class="pc-body">${targetBlock}${body || '<p class="pc-card-empty">—</p>'}</div>` +
         `</article>`
       );
     })
