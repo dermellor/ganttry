@@ -801,6 +801,34 @@ unset/`false` for local previews. Required runtime env vars:
 If the site moves to a new domain, add the new redirect URI in the Google
 Cloud Console — otherwise the callback returns `redirect_uri_mismatch`.
 
+## Pricing
+
+`pricing` (jsonb auf der `timelines`-Zeile, nur `type='product'`) ist die SSOT für
+Tarife + Features. Externe Seiten konsumieren es über `GET /api/pricing/<id>`
+(öffentlich). Schreiben: MCP `set_pricing` (ersetzt das ganze Modell) bzw.
+`PATCH /api/source/<id>` mit `{pricing}`; Markdown-Spiegel: `npm run export:pricing`.
+
+Shape:
+- `features[]`: `{ id, name, group, version? }`. `version` = ab welcher getrackten
+  Version verfügbar. **Kein `version` = pre-existing** (existierte vor der ersten
+  Version) → immer sichtbar, nie „Neu", aber „Modified"-fähig. `feature.version`
+  auf die Baseline (`versions[0]`) zu setzen bedeutet „in dieser Version eingeführt"
+  — NICHT „schon immer da"; dafür `version` weglassen.
+- `tiers[]`: `{ id, name, tagline?, useCase?, targetGroup?, price, values }`.
+  `values[featureId]` = `true` (✓) / fehlt|false (–) / String (Wert je Tarif).
+- `highlights[]`: `{ id, label, section?, featureIds }` — kuratierte Kacheln der
+  Card-Ansicht (bündeln Features); nur was hier referenziert wird, erscheint auf
+  den Karten. Matrix zeigt alle Features.
+- `versions[]`: geordnete Labels; Switcher filtert Feature-Zeilen kumulativ.
+
+Item↔Feature: `metadata.featureIds` (n:m) + `metadata.featureVersion` (die Version,
+für die gearbeitet wird) + `status` (Open/Doing/Done) → speisen den Arbeits-Punkt
+und die Zeilen-Badges:
+- **„Neu"**: `feature.version` == gepinnte Version (nicht „Alle", nicht Baseline).
+- **„Modified"**: Feature ist älter als die gepinnte Version (inkl. pre-existing)
+  UND es gibt ein Item mit diesem Feature + `featureVersion` == gepinnte Version.
+  Schließt „Neu" aus; nur bei gepinnter Version.
+
 ## Offene Ausbaustufen – Preismodell / Kacheln
 
 Noch nicht im Datenmodell abgebildet (aus dem Original-Preismodell), als Backlog:

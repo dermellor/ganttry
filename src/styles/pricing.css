@@ -247,6 +247,27 @@
   vertical-align: middle;
 }
 
+/* "Modified" badge: an existing feature reworked in the pinned version.
+   Secondary to "Neu": a muted neutral OUTLINE (ghost) chip, not a filled accent.
+   The fill-vs-outline contrast — not a competing hue — sets it apart from the
+   accent "Neu" badge, and it avoids the red/yellow/green status colors. */
+.pricing-badge-modified {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  font-family: var(--font-body);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1.6;
+  vertical-align: middle;
+}
+
 .pricing-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);

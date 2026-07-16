@@ -5,6 +5,7 @@ import {
   featureVisibleForVersion,
   referenceVersion,
   isNewFeature,
+  isModifiedFeature,
   itemsForFeature,
   aggregateWorkState,
   resolveHighlight,
@@ -265,6 +266,42 @@ test('isNewFeature: the baseline (first) version never badges, even on an exact 
     'v1 is the baseline — nothing is "new" relative to it',
   );
   assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, '2.0'), true, '2.0 is a real increment');
+});
+
+test('isModifiedFeature: feature from an earlier version, work targeting the pinned version', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const f = { id: 'crm', name: 'CRM', version: '1.0' };
+  const work2: TimelineFileItem[] = [
+    { id: 'x', content: 'X', status: 'Doing', metadata: { featureIds: ['crm'], featureVersion: '2.0' } },
+  ];
+  assert.equal(isModifiedFeature(f, work2, V, '2.0'), true, '1.0 feature + work for 2.0 → modified');
+  assert.equal(isModifiedFeature(f, work2, V, '1.0'), false, 'introduced in 1.0 → not modified at 1.0');
+  assert.equal(isModifiedFeature(f, work2, V, null), false, '"Alle" never badges');
+  assert.equal(isModifiedFeature(f, [], V, '2.0'), false, 'no work → not modified');
+  assert.equal(
+    isModifiedFeature({ id: 'crm', name: 'CRM', version: '2.0' }, work2, V, '2.0'),
+    false,
+    'new-in-2.0 is "New", not "Modified"',
+  );
+  const work3: TimelineFileItem[] = [
+    { id: 'y', content: 'Y', status: 'Doing', metadata: { featureIds: ['crm'], featureVersion: '3.0' } },
+  ];
+  assert.equal(isModifiedFeature(f, work3, V, '2.0'), false, 'work targets a different version → not modified for 2.0');
+});
+
+test('isModifiedFeature: pre-existing feature (no version) is modifiable even at the baseline', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const pre = { id: 'faq', name: 'FAQ-Editor' }; // no version → existed before 1.0
+  const work1: TimelineFileItem[] = [
+    { id: 'p1', content: 'P1', status: 'Open', metadata: { featureIds: ['faq'], featureVersion: '1.0' } },
+  ];
+  assert.equal(isModifiedFeature(pre, work1, V, '1.0'), true, 'pre-existing + work for 1.0 → modified at baseline');
+  assert.equal(isModifiedFeature(pre, work1, V, '2.0'), false, 'work is for 1.0, not the pinned 2.0');
+  assert.equal(isModifiedFeature(pre, work1, V, null), false, '"Alle" never badges');
+  const work2: TimelineFileItem[] = [
+    { id: 'p2', content: 'P2', status: 'Doing', metadata: { featureIds: ['faq'], featureVersion: '2.0' } },
+  ];
+  assert.equal(isModifiedFeature(pre, work2, V, '2.0'), true, 'pre-existing + work for 2.0 → modified at 2.0');
 });
 
 test('resolveVersionedText: no overrides → base text unchanged', () => {

@@ -62,6 +62,30 @@ export function isNewFeature(feature: PricingFeature, versions: string[], select
   return feature.version === selected;
 }
 
+// A feature is "Modified" for the pinned version when it is NOT new there (it
+// existed in an earlier version) but has roadmap work targeting that version —
+// i.e. an item links to the feature AND its featureVersion equals the selection.
+// Mutually exclusive with "New" (a newly-introduced feature badges as New, not
+// Modified). Like New, it needs a pinned, non-baseline version ("Alle" → none).
+export function isModifiedFeature(
+  feature: PricingFeature,
+  items: TimelineFileItem[],
+  versions: string[],
+  selected: string | null,
+): boolean {
+  if (!selected) return false; // "Alle" → no badge
+  if (feature.version === selected) return false; // introduced here → "New", not modified
+  // The feature must PREDATE the selected version: either pre-existing (no
+  // version = existed before the first tracked version) or introduced in an
+  // earlier tracked version. (This is what lets a pre-existing feature badge as
+  // "Modified" even at the baseline version.)
+  const predates =
+    !feature.version ||
+    (versions.indexOf(feature.version) >= 0 && versions.indexOf(feature.version) < versions.indexOf(selected));
+  if (!predates) return false;
+  return itemsForFeature(feature.id, items, selected).length > 0;
+}
+
 // Resolve a version-scoped text override cumulatively: the latest override at or
 // before the effective version wins, falling back to `base`. "Alle" (selected =
 // null) resolves against the newest declared version, i.e. the fully-evolved

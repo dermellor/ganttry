@@ -11,6 +11,7 @@ import {
   groupFeatures,
   featureVisibleForVersion,
   isNewFeature,
+  isModifiedFeature,
   itemsForFeature,
   readItemFeatureIds,
   resolveFeatureName,
@@ -90,7 +91,9 @@ function matrixHtml(file: TimelineFile, versions: string[]): string {
       const versionAttr = f.version ? ` title="ab Version ${escapeHtml(f.version)}"` : '';
       const badge = isNewFeature(f, versions, selectedVersion)
         ? '<span class="pricing-badge-new">Neu</span>'
-        : '';
+        : isModifiedFeature(f, items, versions, selectedVersion)
+          ? '<span class="pricing-badge-modified">Modified</span>'
+          : '';
       const name = escapeHtml(resolveFeatureName(f, versions, selectedVersion));
       bodyRows.push(
         `<tr${versionAttr}><th class="pm-feature" scope="row">${name}${badge}</th>${cells}${workCell}</tr>`,
