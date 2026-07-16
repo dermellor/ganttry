@@ -44,6 +44,62 @@ export function featureVisibleForVersion(
   return fIdx <= selIdx;
 }
 
+// The version a "New" badge is judged against: the selected switcher version, or
+// (when "Alle" is selected) the newest declared version — so "New" always points
+// at the latest release until the user pins an older one.
+export function referenceVersion(versions: string[], selected: string | null): string | undefined {
+  return selected ?? versions[versions.length - 1];
+}
+
+// A feature is "New" only once the user pins the switcher to the exact version it
+// was introduced at — "Alle" never shows a badge (it's the cumulative "everything"
+// view, not a claim about what's newest). The very first declared version is the
+// baseline release: nothing is "new" relative to it (there's no prior version to
+// compare against), so it never badges even when a feature is explicitly tagged
+// with that version instead of left unversioned.
+export function isNewFeature(feature: PricingFeature, versions: string[], selected: string | null): boolean {
+  if (!selected || selected === versions[0]) return false;
+  return feature.version === selected;
+}
+
+// Resolve a version-scoped text override cumulatively: the latest override at or
+// before the effective version wins, falling back to `base`. "Alle" (selected =
+// null) resolves against the newest declared version, i.e. the fully-evolved
+// text. Shared by feature names (`nameByVersion`) and highlight labels
+// (`labelByVersion`) — same cumulative semantics as `feature.version`.
+export function resolveVersionedText(
+  base: string,
+  overrides: Record<string, string> | undefined,
+  versions: string[],
+  selected: string | null,
+): string {
+  if (!overrides || !Object.keys(overrides).length) return base;
+  const effective = referenceVersion(versions, selected);
+  if (!effective) return base;
+  const idx = versions.indexOf(effective);
+  if (idx < 0) return base;
+  let resolved = base;
+  for (let i = 0; i <= idx; i++) {
+    const ov = overrides[versions[i]];
+    if (ov) resolved = ov;
+  }
+  return resolved;
+}
+
+/** Display name of a feature at the selected version (see `resolveVersionedText`). */
+export function resolveFeatureName(feature: PricingFeature, versions: string[], selected: string | null): string {
+  return resolveVersionedText(feature.name, feature.nameByVersion, versions, selected);
+}
+
+/** Card label of a highlight at the selected version (see `resolveVersionedText`). */
+export function resolveHighlightLabel(
+  highlight: PricingHighlight,
+  versions: string[],
+  selected: string | null,
+): string {
+  return resolveVersionedText(highlight.label, highlight.labelByVersion, versions, selected);
+}
+
 // ---- work indicator (pure helpers, shared with the matrix view) ------------
 
 // Aggregate work state for a feature row, derived from its linked items' status.
@@ -125,12 +181,16 @@ export type ResolvedHighlight = {
   // boolean highlight. Drives "Label: value" vs a plain checkmark on the card,
   // and — together with `included` — the "Alles aus <prev>" inheritance diff.
   value: string;
+  // True when at least one of the highlight's included features is "New" at the
+  // reference version (see `isNewFeature`) — drives the "Neu" badge on the card.
+  isNew: boolean;
 };
 
 /**
- * Resolve a highlight for one tier: whether the tier includes it and its value.
- * A boolean feature (value === true) counts as included with no value; a string
- * value contributes to `value`. Version-aware. Pure — shared by the card view.
+ * Resolve a highlight for one tier: whether the tier includes it, its value, and
+ * whether it's "New". A boolean feature (value === true) counts as included with
+ * no value; a string value contributes to `value`. Version-aware. Pure — shared
+ * by the card view.
  */
 export function resolveHighlight(
   highlight: PricingHighlight,
@@ -141,19 +201,23 @@ export function resolveHighlight(
 ): ResolvedHighlight {
   const byId = new Map(features.map((f) => [f.id, f]));
   let included = false;
+  let isNew = false;
   const vals: string[] = [];
   for (const fid of highlight.featureIds) {
     const feat = byId.get(fid);
     if (!feat) continue;
     if (selected && !featureVisibleForVersion(feat, versions, selected)) continue;
     const v = tier.values?.[fid];
-    if (v === true) included = true;
-    else if (typeof v === 'string' && v.trim()) {
+    if (v === true) {
+      included = true;
+      if (isNewFeature(feat, versions, selected)) isNew = true;
+    } else if (typeof v === 'string' && v.trim()) {
       included = true;
       vals.push(v.trim());
+      if (isNewFeature(feat, versions, selected)) isNew = true;
     }
   }
-  return { included, value: vals.join(', ') };
+  return { included, value: vals.join(', '), isNew };
 }
 
 // Render one tier's value for a feature as Markdown cell content:
@@ -194,6 +258,7 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
   const { timelineId, name, pricing } = doc;
   const tiers = pricing.tiers ?? [];
   const features = pricing.features ?? [];
+  const versions = pricing.versions ?? [];
   const title = (name?.trim() || timelineId) + ' – Preismodell';
 
   const lines: string[] = [];
@@ -238,7 +303,7 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
       for (const f of fs) {
         const marks = tiers.map((t) => markdownCell(t, f.id));
         const tail = withVersions ? [f.version ? cell(f.version) : ''] : [];
-        lines.push(`| ${cell(f.name)} | ${[...marks, ...tail].join(' | ')} |`);
+        lines.push(`| ${cell(resolveFeatureName(f, versions, null))} | ${[...marks, ...tail].join(' | ')} |`);
       }
     }
     lines.push('');

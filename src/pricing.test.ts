@@ -3,9 +3,14 @@ import assert from 'node:assert/strict';
 import {
   pricingToMarkdown,
   featureVisibleForVersion,
+  referenceVersion,
+  isNewFeature,
   itemsForFeature,
   aggregateWorkState,
   resolveHighlight,
+  resolveVersionedText,
+  resolveFeatureName,
+  resolveHighlightLabel,
   type PricingDoc,
 } from './pricing';
 import type { PricingFeature, PricingTier } from './types';
@@ -183,13 +188,25 @@ const tierScale: PricingTier = { id: 'scale', name: 'Scale', price: '199 €', v
 test('resolveHighlight: value-feature → value string; boolean → included, no value', () => {
   const hMin = { id: 'h1', label: 'Freiminuten', featureIds: ['min'] };
   const hInteg = { id: 'h2', label: 'Integrationen', featureIds: ['crm', 'ticket'] };
-  assert.deepEqual(resolveHighlight(hMin, tierScale, hFeatures, [], null), { included: true, value: '3.000' });
-  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, [], null), { included: true, value: '' });
+  assert.deepEqual(resolveHighlight(hMin, tierScale, hFeatures, [], null), {
+    included: true,
+    value: '3.000',
+    isNew: false,
+  });
+  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, [], null), {
+    included: true,
+    value: '',
+    isNew: false,
+  });
 });
 
 test('resolveHighlight: not included when the tier has none of the features', () => {
   const hInteg = { id: 'h2', label: 'Integrationen', featureIds: ['crm', 'ticket'] };
-  assert.deepEqual(resolveHighlight(hInteg, tierFree, hFeatures, [], null), { included: false, value: '' });
+  assert.deepEqual(resolveHighlight(hInteg, tierFree, hFeatures, [], null), {
+    included: false,
+    value: '',
+    isNew: false,
+  });
 });
 
 test('resolveHighlight: version filter drops features beyond the selected version', () => {
@@ -198,7 +215,121 @@ test('resolveHighlight: version filter drops features beyond the selected versio
   assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, ['1.0', '2.0', '3.0'], '1.0'), {
     included: false,
     value: '',
+    isNew: false,
   });
+});
+
+test('resolveHighlight: isNew only when the switcher is pinned to the exact feature version', () => {
+  const hInteg = { id: 'h2', label: 'Integrationen', featureIds: ['crm', 'ticket'] };
+  const V = ['1.0', '2.0'];
+  // "Alle" (null) never marks anything New, even though crm/ticket are the newest version.
+  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, V, null), {
+    included: true,
+    value: '',
+    isNew: false,
+  });
+  // Pinning the switcher to 2.0 (their exact version) → New.
+  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, V, '2.0'), {
+    included: true,
+    value: '',
+    isNew: true,
+  });
+  // Pinning the switcher to 1.0 hides the 2.0 features entirely → not included, not new.
+  assert.deepEqual(resolveHighlight(hInteg, tierScale, hFeatures, V, '1.0'), {
+    included: false,
+    value: '',
+    isNew: false,
+  });
+});
+
+test('referenceVersion: selected version wins; "Alle" falls back to the newest declared version', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  assert.equal(referenceVersion(V, '2.0'), '2.0');
+  assert.equal(referenceVersion(V, null), '3.0');
+  assert.equal(referenceVersion([], null), undefined);
+});
+
+test('isNewFeature: true only when the switcher is pinned to the exact feature version', () => {
+  const V = ['1.0', '2.0'];
+  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, null), false, '"Alle" never shows New');
+  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '1.0' }, V, null), false, '"Alle" never shows New');
+  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, '2.0'), true, 'exact selected match');
+  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, '1.0'), false, 'pinned to an earlier version');
+  assert.equal(isNewFeature({ id: 'a', name: 'A' }, V, '1.0'), false, 'no version at all');
+});
+
+test('isNewFeature: the baseline (first) version never badges, even on an exact match', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  assert.equal(
+    isNewFeature({ id: 'a', name: 'A', version: '1.0' }, V, '1.0'),
+    false,
+    'v1 is the baseline — nothing is "new" relative to it',
+  );
+  assert.equal(isNewFeature({ id: 'a', name: 'A', version: '2.0' }, V, '2.0'), true, '2.0 is a real increment');
+});
+
+test('resolveVersionedText: no overrides → base text unchanged', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  assert.equal(resolveVersionedText('Termine vereinbaren', undefined, V, '1.0'), 'Termine vereinbaren');
+  assert.equal(resolveVersionedText('Termine vereinbaren', {}, V, null), 'Termine vereinbaren');
+});
+
+test('resolveVersionedText: cumulative — override applies from its version onward', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const overrides = { '3.0': 'Termine vereinbaren und ändern' };
+  assert.equal(resolveVersionedText('Termine vereinbaren', overrides, V, '1.0'), 'Termine vereinbaren');
+  assert.equal(resolveVersionedText('Termine vereinbaren', overrides, V, '2.0'), 'Termine vereinbaren');
+  assert.equal(resolveVersionedText('Termine vereinbaren', overrides, V, '3.0'), 'Termine vereinbaren und ändern');
+});
+
+test('resolveVersionedText: "Alle" (null) resolves against the newest declared version', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const overrides = { '3.0': 'Termine vereinbaren und ändern' };
+  assert.equal(resolveVersionedText('Termine vereinbaren', overrides, V, null), 'Termine vereinbaren und ändern');
+});
+
+test('resolveVersionedText: later override wins when multiple thresholds are at/before selected', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const overrides = { '2.0': 'B', '3.0': 'C' };
+  assert.equal(resolveVersionedText('A', overrides, V, '2.0'), 'B');
+  assert.equal(resolveVersionedText('A', overrides, V, '3.0'), 'C');
+});
+
+test('resolveFeatureName / resolveHighlightLabel: delegate to resolveVersionedText', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  const feature: PricingFeature = {
+    id: 'skill-termine',
+    name: 'Termine vereinbaren',
+    nameByVersion: { '3.0': 'Termine vereinbaren und ändern' },
+  };
+  assert.equal(resolveFeatureName(feature, V, '2.0'), 'Termine vereinbaren');
+  assert.equal(resolveFeatureName(feature, V, '3.0'), 'Termine vereinbaren und ändern');
+
+  const highlight = {
+    id: 'h-termine',
+    label: 'Termine vereinbaren',
+    featureIds: ['skill-termine'],
+    labelByVersion: { '3.0': 'Termine vereinbaren und ändern' },
+  };
+  assert.equal(resolveHighlightLabel(highlight, V, '2.0'), 'Termine vereinbaren');
+  assert.equal(resolveHighlightLabel(highlight, V, '3.0'), 'Termine vereinbaren und ändern');
+});
+
+test('pricingToMarkdown: feature row shows the resolved (fully-evolved) name', () => {
+  const md = pricingToMarkdown(
+    {
+      timelineId: 't',
+      pricing: {
+        versions: ['1.0', '3.0'],
+        features: [
+          { id: 'a', name: 'Termine vereinbaren', nameByVersion: { '3.0': 'Termine vereinbaren und ändern' } },
+        ],
+        tiers: [{ id: 't1', name: 'T', price: '1 €', values: { a: true } }],
+      },
+    },
+    { updated: '2026-07-15' },
+  );
+  assert.match(md, /\| Termine vereinbaren und ändern \| ✓ \|  \|/);
 });
 
 test('empty pricing renders a placeholder, no matrix', () => {

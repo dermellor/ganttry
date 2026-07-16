@@ -10,8 +10,10 @@ import { escapeHtml } from './buildItems';
 import {
   groupFeatures,
   featureVisibleForVersion,
+  isNewFeature,
   itemsForFeature,
   readItemFeatureIds,
+  resolveFeatureName,
 } from './pricing';
 import { state, els } from './state';
 import { showDetailForId } from './detailPanel';
@@ -86,8 +88,12 @@ function matrixHtml(file: TimelineFile, versions: string[]): string {
         : '';
 
       const versionAttr = f.version ? ` title="ab Version ${escapeHtml(f.version)}"` : '';
+      const badge = isNewFeature(f, versions, selectedVersion)
+        ? '<span class="pricing-badge-new">Neu</span>'
+        : '';
+      const name = escapeHtml(resolveFeatureName(f, versions, selectedVersion));
       bodyRows.push(
-        `<tr${versionAttr}><th class="pm-feature" scope="row">${escapeHtml(f.name)}</th>${cells}${workCell}</tr>`,
+        `<tr${versionAttr}><th class="pm-feature" scope="row">${name}${badge}</th>${cells}${workCell}</tr>`,
       );
     }
   }

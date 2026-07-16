@@ -116,6 +116,13 @@ export type PricingFeature = {
   // Version from which this feature is available; must be one of Pricing.versions.
   // Absent = available from the start (always shown, regardless of the switcher).
   version?: string;
+  // Version-scoped display-name overrides, keyed by a Pricing.versions entry.
+  // Resolved cumulatively like `version` (see resolveFeatureName in pricing.ts):
+  // the latest override at or before the selected version wins, falling back to
+  // `name`. Lets a feature rename itself across versions without becoming a
+  // different feature id, e.g. "Termine vereinbaren" (1.0/2.0) → "Termine
+  // vereinbaren und ändern" (ab 3.0).
+  nameByVersion?: Record<string, string>;
 };
 
 export type PricingTier = {
@@ -157,6 +164,8 @@ export type PricingHighlight = {
   // Raw feature ids this tile summarizes.
   featureIds: string[];
   description?: string;
+  // Version-scoped label overrides, same semantics as PricingFeature.nameByVersion.
+  labelByVersion?: Record<string, string>;
 };
 
 export type Pricing = {
