@@ -398,8 +398,10 @@ Abzug von etwas anderem.)
 Drei Tabellen (Migrationen in `supabase/migrations/`):
 
 - `timelines` — id, name, description, group_by, `type`, `phases` (jsonb),
-  `custom_fields` (jsonb), `pricing` (jsonb; Tarife + Features für
-  `type='product'`, siehe „Pricing").
+  `custom_fields` (jsonb), `pricing_versions` (jsonb; geordnete Versions-Labels
+  für `type='product'`, siehe „Pricing"). Das Preismodell selbst liegt seit
+  Migration `0009` **nicht** mehr als jsonb-Blob hier, sondern normalisiert in
+  eigenen Tabellen (siehe unten).
 - `timeline_items` — Spalten für start/end/duration/content/group/type/title/
   body/icon/status/class_name (`status` `NOT NULL DEFAULT 'Open'` + CHECK
   `Open|Doing|Done`, siehe „Item status"), `metadata` (jsonb: `dependsOn`, `owner`, `jira`, freie
@@ -412,6 +414,15 @@ Drei Tabellen (Migrationen in `supabase/migrations/`):
   patch-bewusstes Gegenstück-Löschen in [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts),
   MCP `add_item`/`update_item`, Client-Form).
 - `timeline_groups` — id, content, nested_groups, show_nested, sort.
+- **Pricing-Tabellen** (Migration `0009`, nur relevant für `type='product'`):
+  `pricing_features`, `pricing_tiers`, `pricing_highlights` — je Zeile pro
+  Entität mit eigener `version`-Spalte (Trigger-Bump, optimistisches Locking wie
+  `timeline_items`; der Client sieht sie als `rowVersion`). Das Feature-Domänen-
+  feld „ab Version" heißt in der DB `available_from` (nicht `version`, um die
+  Kollision mit der Locking-Spalte zu vermeiden). `pricing_tier_values` — die
+  Matrix, **eine Zeile pro (tier_id, feature_id)** mit `value` (jsonb: `true`
+  oder String); FK-Cascade von Features/Tiers, kein Locking (eine Zelle ist
+  atomar). Damit editieren zwei Leute verschiedene Matrix-Zellen kollisionsfrei.
 
 RLS ist an; Server-Zugriff läuft über den Service-Key (bypassed RLS). Anon-
 SELECT-Policies existieren nur für die Realtime-Subscription (siehe unten).
@@ -546,10 +557,18 @@ auf der Live-Site read-only und daher nicht manipulierbar.
 | `update_group`      | Group patchen                                                 |
 | `delete_group`      | Group entfernen                                               |
 | `replace_timeline`  | ganze Timeline ersetzen (Bulk)                               |
+| `set_pricing`       | Preismodell komplett ersetzen (Bulk-Seed, `type='product'`)  |
+| `add_/update_/delete_feature` | einzelnes Pricing-Feature (granular)               |
+| `add_/update_/delete_tier`    | einzelnen Tarif (granular)                         |
+| `set_tier_value`    | eine Matrix-Zelle (tier × feature); `false`/`null` löscht    |
+| `add_/update_/delete_highlight` | eine Card-Kachel (granular)                      |
+| `set_versions`      | geordnete Versionsliste ersetzen                             |
 
 Die granularen Item-/Group-Tools laufen read-modify-write: der Server holt die
 Timeline, mutiert im Speicher und schreibt sie per PUT (Bulk-Replace) zurück.
-`dependsOn` und `owner` liegen unter `metadata`.
+`dependsOn` und `owner` liegen unter `metadata`. Die granularen **Pricing**-Tools
+dagegen treffen direkt den jeweiligen Zeilen-Endpoint (kein read-modify-write,
+kein Komplett-Dump) — Details unter „Pricing".
 
 ### Auth: Service-Token-Bypass
 
@@ -803,36 +822,59 @@ Cloud Console — otherwise the callback returns `redirect_uri_mismatch`.
 
 ## Pricing
 
-`pricing` (jsonb auf der `timelines`-Zeile, nur `type='product'`) ist die SSOT für
-Tarife + Features. Externe Seiten konsumieren es über `GET /api/pricing/<id>`
-(öffentlich). Schreiben: MCP `set_pricing` (ersetzt das ganze Modell) bzw.
-`PATCH /api/source/<id>` mit `{pricing}`; Markdown-Spiegel: `npm run export:pricing`.
+Das Preismodell (Tarife + Features, nur `type='product'`) ist die SSOT für
+externe Preisseiten. Es liegt **normalisiert** in eigenen Tabellen (Migration
+`0009`, siehe „Schema"): `pricing_features`, `pricing_tiers`,
+`pricing_tier_values` (die Matrix, zell-granular), `pricing_highlights`, plus die
+geordnete Versionsliste als `timelines.pricing_versions` (jsonb-Array). Der
+Server assembliert daraus die unten beschriebene `Pricing`-Shape
+(`assemblePricing` in [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts)) —
+der Viewer und der Markdown-Export sehen sie unverändert.
 
-Shape:
-- `features[]`: `{ id, name, group, version?, description?, nameByVersion?,
-  descriptionByVersion? }`. `version` = ab welcher getrackten
-  Version verfügbar. **Kein `version` = pre-existing** (existierte vor der ersten
-  Version) → immer sichtbar, nie „Neu", aber „Modified"-fähig. `feature.version`
-  auf die Baseline (`versions[0]`) zu setzen bedeutet „in dieser Version eingeführt"
-  — NICHT „schon immer da"; dafür `version` weglassen.
-  - `nameByVersion` (`Record<version, string>`): versionsabhängige Namens-
-    *Überschreibung*, **kumulativ** aufgelöst (neuester Override ≤ gewählte Version
-    gewinnt) — `resolveFeatureName`.
-  - `descriptionByVersion` (`Record<version, string>`): zusätzliche, versions-
-    gebundene Beschreibungen **on top of** `description`. Im Gegensatz zu
-    `nameByVersion` **additiv** (kein Override): die Basis-`description` bleibt,
-    jede Notiz erscheint als eigene Zeile „ab \<version\>: …" in Versionsreihenfolge
-    — `resolveFeatureDescription` ([`src/pricing.ts`](src/pricing.ts)). Angezeigt
-    in der Matrix als gestylter Tooltip hinter einem **Info-Icon** neben dem
-    Feature-Namen (nur wenn eine Beschreibung existiert; Hover/Fokus/Klick,
-    zeigt „ab Version X" + Basis + Versionsnotizen untereinander),
-    editierbar im Feature-Formular über einen „+ Versionsbeschreibung"-Button
-    (dynamische Liste: pro Eintrag eine Version wählen + Text, Entfernen je Zeile).
-- `tiers[]`: `{ id, name, tagline?, useCase?, targetGroup?, price, values }`.
+Lesen: Viewer über `GET /api/source/<id>` (assembliert, inkl. `rowVersion` je
+Entität), externe Seiten über `GET /api/pricing/<id>` (öffentlich, `rowVersion`
+gestrippt). Markdown-Spiegel: `npm run export:pricing`.
+
+**Schreiben — granular, kollisionsfrei** (die alte „ganzes Modell ersetzen"-
+Semantik ist weg; genau sie führte zu Überschreibungen bei parallelen Edits):
+- Endpoints unter `/api/source/<id>/`: `feature[/<id>]`, `tier[/<id>]`,
+  `tier-value` (PUT `{tierId, featureId, value}`; `value=false/null` löscht die
+  Zelle), `highlight[/<id>]` (je POST/PATCH/DELETE), `pversion` (PUT der ganzen
+  Versionsliste, wie `phases`), und `pricing` (PUT — Bulk-Ersatz zum Seeden).
+  PATCH trägt die `rowVersion` im `If-Match`-Header → `409` bei Stale.
+  **Wichtig:** die Lock-Version kommt bei Features **nur** aus `If-Match`, nie aus
+  `body.version` (dort ist `version` das Domänenfeld „ab Version").
+- MCP: granulare Tools `add_/update_/delete_feature`, `…_tier`, `set_tier_value`,
+  `…_highlight`, `set_versions` (je ein Call, kein read-modify-write, kein
+  Komplett-Dump im Kontext). `set_pricing` bleibt als Bulk-Seed/Rewrite.
+- Client: das Feature-Formular schreibt granular per `PATCH …/feature/<id>` mit
+  `If-Match`; Tiers/Matrix/Highlights/Versionen werden aktuell über MCP gepflegt.
+
+Shape (assembliert):
+- `features[]`: `{ id, name, group, version?, description?, nameByVersion?, descriptionByVersion?, rowVersion? }`.
+  `version` = ab welcher getrackten Version verfügbar (DB-Spalte `available_from`).
+  **Kein `version` = pre-existing** (existierte vor der ersten Version) → immer
+  sichtbar, nie „Neu", aber „Modified"-fähig. `feature.version` auf die Baseline
+  (`versions[0]`) zu setzen bedeutet „in dieser Version eingeführt" — NICHT „schon
+  immer da"; dafür `version` weglassen.
+  - `nameByVersion` (`Record<version, string>`, DB-Spalte `name_by_version`):
+    versionsabhängige Namens-*Überschreibung*, **kumulativ** aufgelöst (neuester
+    Override ≤ gewählte Version gewinnt) — `resolveFeatureName`.
+  - `descriptionByVersion` (`Record<version, string>`, DB-Spalte
+    `description_by_version`): zusätzliche, versionsgebundene Beschreibungen **on
+    top of** `description`. Im Gegensatz zu `nameByVersion` **additiv** (kein
+    Override): die Basis-`description` bleibt, jede Notiz erscheint als eigene
+    Zeile „ab \<version\>: …" in Versionsreihenfolge — `resolveFeatureDescription`
+    ([`src/pricing.ts`](src/pricing.ts)). Matrix-Tooltip hinter einem **Info-Icon**,
+    editierbar im Feature-Formular über „+ Versionsbeschreibung".
+  - `rowVersion` = server-verwalteter Lock-Zähler (nicht editieren; im
+    Public-Output gestrippt).
+- `tiers[]`: `{ id, name, tagline?, useCase?, targetGroup?, price, values, rowVersion? }`.
   `values[featureId]` = `true` (✓) / fehlt|false (–) / String (Wert je Tarif).
-- `highlights[]`: `{ id, label, section?, featureIds }` — kuratierte Kacheln der
-  Card-Ansicht (bündeln Features); nur was hier referenziert wird, erscheint auf
-  den Karten. Matrix zeigt alle Features.
+  Falsy/leere Zellen werden nicht gespeichert (rendern ohnehin als „–").
+- `highlights[]`: `{ id, label, section?, featureIds, rowVersion? }` — kuratierte
+  Kacheln der Card-Ansicht (bündeln Features); nur was hier referenziert wird,
+  erscheint auf den Karten. Matrix zeigt alle Features.
 - `versions[]`: geordnete Labels; Switcher filtert Feature-Zeilen kumulativ.
 
 Item↔Feature: `metadata.featureIds` (n:m) + `metadata.featureVersion` (die Version,

@@ -1,16 +1,17 @@
 // Feature edit form for the pricing matrix: Stammdaten of a single
 // PricingFeature (name, group, description, version), shown in the same
-// detail drawer as items (itemForm.ts) and phases (phaseForm.ts). The pricing
-// model is persisted as a unit (see persistence.ts), so saving here just
-// mutates the in-memory feature and defers to schedulePersist() — same
-// pattern as phases.
+// detail drawer as items (itemForm.ts) and phases (phaseForm.ts). Unlike the
+// old whole-model persist, saving here writes the ONE edited feature row
+// through the granular PATCH endpoint (optimistic-locked on rowVersion), so a
+// concurrent edit elsewhere in the model is never clobbered.
 
 import { escapeHtml } from './buildItems';
 import type { PricingFeature } from './types';
 import { state, els, setStatus, withPreservedZoom } from './state';
-import { schedulePersist } from './persistence';
+import { apiUpdateFeature, apiDeleteFeature, ConflictError } from './editor';
 import { hideDetail } from './detailPanel';
 import { renderPricingView } from './pricingMatrix';
+import { renderTimeline } from './render';
 
 function findFeature(featureId: string): PricingFeature | undefined {
   return state.activeSourceFile?.pricing?.features.find((f) => f.id === featureId);
@@ -154,53 +155,75 @@ export function showFeatureForm(featureId: string): void {
   });
 }
 
-function saveFeatureFromForm(featureId: string, form: HTMLFormElement): void {
+async function saveFeatureFromForm(featureId: string, form: HTMLFormElement): Promise<void> {
   const feature = findFeature(featureId);
-  if (!feature) return;
+  const sourceId = state.activeSourceId;
+  if (!feature || !sourceId) return;
   const fd = new FormData(form);
   const get = (name: string) => String(fd.get(name) ?? '').trim();
 
-  feature.name = get('name') || feature.name;
-
-  const group = get('group');
-  if (group) feature.group = group;
-  else delete feature.group;
-
-  const version = get('version');
-  if (version) feature.version = version;
-  else delete feature.version;
-
-  const description = get('description');
-  if (description) feature.description = description;
-  else delete feature.description;
-
-  // Collect per-version description notes straight off the dynamic rows. Keyed by
-  // version → a later row wins if two rows pick the same version. Empty text is
-  // skipped; no rows → drop the field entirely.
+  // Build the patch: name always, the optionals cleared with explicit null when
+  // emptied so the server resets the column (an omitted key would leave the old
+  // value intact and it'd reappear on reload).
+  // Collect the per-version description notes off the dynamic rows (PR #22 UI).
+  // Keyed by version → a later row wins on a duplicate; empty text is skipped.
   const notes: Record<string, string> = {};
   for (const row of form.querySelectorAll<HTMLElement>('.version-desc-row')) {
     const v = row.querySelector<HTMLSelectElement>('.version-desc-select')?.value.trim();
     const text = row.querySelector<HTMLTextAreaElement>('.version-desc-text')?.value.trim();
     if (v && text) notes[v] = text;
   }
-  if (Object.keys(notes).length) feature.descriptionByVersion = notes;
-  else delete feature.descriptionByVersion;
 
-  renderPricingView();
-  schedulePersist();
-  setStatus(`Feature „${feature.name}" aktualisiert`);
-  showFeatureForm(featureId);
+  // Build the patch: name always; the optionals cleared with an explicit null
+  // when emptied so the server resets the column (an omitted key would leave the
+  // old value intact and it'd reappear on reload). Version notes: no rows → null.
+  const patch: Partial<PricingFeature> = {
+    name: get('name') || feature.name,
+    group: get('group') || null,
+    version: get('version') || null,
+    description: get('description') || null,
+    descriptionByVersion: Object.keys(notes).length ? notes : null,
+  } as Partial<PricingFeature>;
+
+  try {
+    const saved = await apiUpdateFeature(sourceId, featureId, patch, feature.rowVersion);
+    // Adopt the authoritative row back into the in-memory model (reset the
+    // clearable optionals first so a cleared field doesn't linger).
+    Object.assign(
+      feature,
+      { group: undefined, version: undefined, description: undefined, descriptionByVersion: undefined },
+      saved,
+    );
+    renderPricingView();
+    setStatus(`Feature „${feature.name}" aktualisiert`);
+    showFeatureForm(featureId);
+  } catch (err) {
+    if (err instanceof ConflictError) {
+      setStatus('Feature wurde extern geändert — lade neu…');
+      if (state.activeView) await renderTimeline(state.activeView);
+      return;
+    }
+    setStatus(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
-function deleteFeature(featureId: string): void {
+async function deleteFeature(featureId: string): Promise<void> {
   const pricing = state.activeSourceFile?.pricing;
+  const sourceId = state.activeSourceId;
   const feature = pricing && findFeature(featureId);
-  if (!pricing || !feature) return;
+  if (!pricing || !feature || !sourceId) return;
   if (!confirm(`Feature „${feature.name}" wirklich löschen?`)) return;
 
+  try {
+    await apiDeleteFeature(sourceId, featureId);
+  } catch (err) {
+    setStatus(`Löschen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  // Server-side the value rows cascade away and the id is stripped from
+  // highlights; mirror that in memory for an immediate repaint.
   pricing.features = pricing.features.filter((f) => f.id !== featureId);
-  // Drop dangling references so tiers/highlights don't keep pointing at a
-  // feature that no longer exists.
   for (const tier of pricing.tiers) {
     if (tier.values && featureId in tier.values) delete tier.values[featureId];
   }
@@ -210,6 +233,5 @@ function deleteFeature(featureId: string): void {
 
   state.activeFormFeatureId = null;
   renderPricingView();
-  schedulePersist();
   hideDetail();
 }

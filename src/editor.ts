@@ -1,4 +1,4 @@
-import type { Pricing, TimelineFile, TimelineFileItem, TimelinePhase } from './types';
+import type { PricingFeature, TimelineFile, TimelineFileItem, TimelinePhase } from './types';
 
 export type LoadResult = { file: TimelineFile; editable: boolean };
 
@@ -62,17 +62,35 @@ export async function apiPutPhases(sourceId: string, phases: TimelinePhase[]): P
   );
 }
 
-// Pricing is patched as a unit through the generic timeline-meta PATCH
-// (updateMeta writes the whole `pricing` jsonb column), the same route used
-// for name/description/customFields.
-export async function apiPatchPricing(sourceId: string, pricing: Pricing): Promise<void> {
-  await apiJson(
-    await fetch(`/api/source/${sourceId}`, {
+// Pricing is edited row-by-row through the granular endpoints (like items), not
+// as a whole-model blob — so a single feature edit no longer clobbers concurrent
+// changes. The browser currently only edits feature Stammdaten; tiers, matrix
+// cells, highlights and versions are authored via MCP.
+
+/**
+ * Patch a single pricing feature with optimistic locking. `rowVersion` is the
+ * feature's server-managed lock counter (sent as If-Match). Throws ConflictError
+ * on a stale version. Returns the stored feature (with the bumped rowVersion).
+ */
+export async function apiUpdateFeature(
+  sourceId: string,
+  featureId: string,
+  patch: Partial<PricingFeature>,
+  rowVersion?: number,
+): Promise<PricingFeature> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (rowVersion != null) headers['If-Match'] = String(rowVersion);
+  return apiJson(
+    await fetch(`/api/source/${sourceId}/feature/${featureId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pricing }),
+      headers,
+      body: JSON.stringify(patch),
     }),
   );
+}
+
+export async function apiDeleteFeature(sourceId: string, featureId: string): Promise<void> {
+  await apiJson(await fetch(`/api/source/${sourceId}/feature/${featureId}`, { method: 'DELETE' }));
 }
 
 export async function loadSource(id: string): Promise<LoadResult> {

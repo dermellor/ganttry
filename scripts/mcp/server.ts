@@ -141,6 +141,19 @@ async function patchMeta(id: string, meta: Record<string, unknown>): Promise<voi
   });
 }
 
+/** Call a sub-resource endpoint (item/feature/tier/…) on a timeline. */
+async function apiSub(
+  id: string,
+  subPath: string,
+  method: string,
+  body?: unknown,
+): Promise<unknown> {
+  return api(`/api/source/${encodeId(id)}/${subPath}`, {
+    method,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+}
+
 /** Read-modify-write helper: fetch, mutate in memory, push back. Returns the new file. */
 async function mutate(
   id: string,
@@ -348,15 +361,14 @@ server.registerTool(
 server.registerTool(
   'set_pricing',
   {
-    title: 'Set pricing model',
+    title: 'Set pricing model (bulk)',
     description:
-      "Set a timeline's pricing model (features + tiers + highlights) and optionally its type. " +
-      'Patched as a unit (like set_custom_fields) — the whole pricing object is replaced, so include ' +
-      'highlights if the timeline already has any; items are untouched. Set type to "product" to ' +
-      'surface the pricing matrix in the viewer. Pass an empty features/tiers array to clear. ' +
-      'Item→feature links live per item in metadata.featureIds (string[]) — set via add_item / ' +
-      'update_item. Note: for the AI-Agents timeline the pricing model is normally authored in ' +
-      'Preismodell.md and synced automatically; use this tool for other product timelines or ad-hoc fixes.',
+      "BULK replace of a timeline's whole pricing model (features + tiers + highlights + versions) in " +
+      'one call, plus optionally its type. Prefer the granular tools (add_/update_/delete_feature, ' +
+      '…_tier, set_tier_value, …_highlight, set_versions) for single edits — each touches one row and ' +
+      "won't clobber concurrent browser/MCP edits. Use this only to seed a new model or fully rewrite " +
+      'one. Set type to "product" to surface the matrix. Item→feature links live per item in ' +
+      'metadata.featureIds (set via add_item / update_item).',
     inputSchema: {
       id: z.string().describe('Timeline id.'),
       type: z.string().optional().describe("Timeline kind, usually 'product'."),
@@ -364,9 +376,8 @@ server.registerTool(
     },
   },
   async ({ id, type, pricing: pricingModel }) => {
-    const meta: Record<string, unknown> = { pricing: pricingModel };
-    if (type !== undefined) meta.type = type;
-    await patchMeta(id, meta);
+    if (type !== undefined) await patchMeta(id, { type });
+    await apiSub(id, 'pricing', 'PUT', { pricing: pricingModel });
     return ok({
       ok: true,
       id,
@@ -376,6 +387,146 @@ server.registerTool(
       highlights: pricingModel.highlights?.length ?? 0,
     });
   },
+);
+
+// ---------- granular pricing tools (one row per call) ----------
+
+server.registerTool(
+  'add_feature',
+  {
+    title: 'Add pricing feature',
+    description:
+      'Add a single pricing feature. `version` = the version label the feature is available from ' +
+      '(omit for pre-existing features that predate versioning).',
+    inputSchema: { id: z.string().describe('Timeline id.'), feature: pricingFeature },
+  },
+  async ({ id, feature }) => ok(await apiSub(id, 'feature', 'POST', feature)),
+);
+
+server.registerTool(
+  'update_feature',
+  {
+    title: 'Update pricing feature',
+    description:
+      'Patch a feature by id (only provided fields change). Send an explicit null to clear an optional ' +
+      'field (group / version / description).',
+    inputSchema: {
+      id: z.string().describe('Timeline id.'),
+      featureId: z.string().describe('Id of the feature to patch.'),
+      patch: pricingFeature.partial(),
+    },
+  },
+  async ({ id, featureId, patch }) => ok(await apiSub(id, `feature/${encodeId(featureId)}`, 'PATCH', patch)),
+);
+
+server.registerTool(
+  'delete_feature',
+  {
+    title: 'Delete pricing feature',
+    description: 'Delete a feature by id. Its matrix cells cascade away and it is stripped from highlights.',
+    inputSchema: { id: z.string().describe('Timeline id.'), featureId: z.string() },
+  },
+  async ({ id, featureId }) => ok(await apiSub(id, `feature/${encodeId(featureId)}`, 'DELETE')),
+);
+
+server.registerTool(
+  'add_tier',
+  {
+    title: 'Add pricing tier',
+    description: 'Add a single pricing tier. `values` maps featureId → true | "verbatim string".',
+    inputSchema: { id: z.string().describe('Timeline id.'), tier: pricingTier },
+  },
+  async ({ id, tier }) => ok(await apiSub(id, 'tier', 'POST', tier)),
+);
+
+server.registerTool(
+  'update_tier',
+  {
+    title: 'Update pricing tier',
+    description:
+      'Patch a tier by id (name / price / tagline / useCase / targetGroup). To set a single matrix ' +
+      'cell prefer set_tier_value; `values` passed here are applied cell-by-cell.',
+    inputSchema: {
+      id: z.string().describe('Timeline id.'),
+      tierId: z.string().describe('Id of the tier to patch.'),
+      patch: pricingTier.partial(),
+    },
+  },
+  async ({ id, tierId, patch }) => ok(await apiSub(id, `tier/${encodeId(tierId)}`, 'PATCH', patch)),
+);
+
+server.registerTool(
+  'delete_tier',
+  {
+    title: 'Delete pricing tier',
+    description: 'Delete a tier by id (its matrix cells cascade away).',
+    inputSchema: { id: z.string().describe('Timeline id.'), tierId: z.string() },
+  },
+  async ({ id, tierId }) => ok(await apiSub(id, `tier/${encodeId(tierId)}`, 'DELETE')),
+);
+
+server.registerTool(
+  'set_tier_value',
+  {
+    title: 'Set matrix cell',
+    description:
+      'Set ONE matrix cell (tier × feature). value = true (✓) or a verbatim string ("3.000"); ' +
+      'value = false / null clears the cell (–). The collision-free way to edit the matrix.',
+    inputSchema: {
+      id: z.string().describe('Timeline id.'),
+      tierId: z.string(),
+      featureId: z.string(),
+      value: z.union([z.string(), z.boolean(), z.null()]),
+    },
+  },
+  async ({ id, tierId, featureId, value }) =>
+    ok(await apiSub(id, 'tier-value', 'PUT', { tierId, featureId, value })),
+);
+
+server.registerTool(
+  'add_highlight',
+  {
+    title: 'Add card highlight',
+    description: 'Add a curated card highlight bundling one or more feature ids.',
+    inputSchema: { id: z.string().describe('Timeline id.'), highlight: pricingHighlight },
+  },
+  async ({ id, highlight }) => ok(await apiSub(id, 'highlight', 'POST', highlight)),
+);
+
+server.registerTool(
+  'update_highlight',
+  {
+    title: 'Update card highlight',
+    description: 'Patch a highlight by id (label / section / icon / featureIds / description / labelByVersion).',
+    inputSchema: {
+      id: z.string().describe('Timeline id.'),
+      highlightId: z.string(),
+      patch: pricingHighlight.partial(),
+    },
+  },
+  async ({ id, highlightId, patch }) => ok(await apiSub(id, `highlight/${encodeId(highlightId)}`, 'PATCH', patch)),
+);
+
+server.registerTool(
+  'delete_highlight',
+  {
+    title: 'Delete card highlight',
+    description: 'Delete a highlight by id.',
+    inputSchema: { id: z.string().describe('Timeline id.'), highlightId: z.string() },
+  },
+  async ({ id, highlightId }) => ok(await apiSub(id, `highlight/${encodeId(highlightId)}`, 'DELETE')),
+);
+
+server.registerTool(
+  'set_versions',
+  {
+    title: 'Set pricing versions',
+    description:
+      'Replace the ordered list of pricing version labels (e.g. ["1.0","2.0","3.0"]) — drives the ' +
+      "matrix version switcher and features' available-from ordering.",
+    inputSchema: { id: z.string().describe('Timeline id.'), versions: z.array(z.string()) },
+  },
+  async ({ id, versions }) => ok(await apiSub(id, 'pversion', 'PUT', { versions })),
 );
 
 server.registerTool(

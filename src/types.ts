@@ -123,13 +123,19 @@ export type PricingFeature = {
   // different feature id, e.g. "Termine vereinbaren" (1.0/2.0) → "Termine
   // vereinbaren und ändern" (ab 3.0).
   nameByVersion?: Record<string, string>;
-  // Additional, version-scoped descriptions on top of `description`, keyed by a
-  // Pricing.versions entry. Unlike `nameByVersion` (a cumulative *override* of
-  // the name), these are ADDITIVE changelog notes: the base `description` always
-  // stays, and each entry renders as its own "ab <version>: <text>" line, in the
-  // declared version order (see resolveFeatureDescription in pricing.ts). Lets a
-  // feature document what a specific version added without losing the base text.
+  // Additive, version-scoped descriptions on top of `description`, keyed by a
+  // Pricing.versions entry (PR #22). Unlike `nameByVersion` (a cumulative
+  // *override* of the name), these are ADDITIVE changelog notes: the base
+  // `description` always stays, and each entry renders as its own
+  // "ab <version>: <text>" line, in declared version order (see
+  // resolveFeatureDescription in pricing.ts).
   descriptionByVersion?: Record<string, string>;
+  // Server-managed optimistic-lock counter of the backing row (peer of
+  // TimelineFileItem.version). Named `rowVersion` — NOT `version` — because
+  // `version` above is the domain "available from" label. Surfaced only on the
+  // editable path (getTimeline), sent back as If-Match on a granular feature
+  // PATCH, and stripped from public output. Ignored by render / markdown.
+  rowVersion?: number;
 };
 
 export type PricingTier = {
@@ -153,6 +159,9 @@ export type PricingTier = {
   // This lets one feature (e.g. "Inkludierte Minuten") differ per tier instead of
   // exploding into a boolean row per value.
   values: Record<string, string | boolean>;
+  // Server-managed optimistic-lock counter of the backing tier row (see
+  // PricingFeature.rowVersion). Stripped from public output.
+  rowVersion?: number;
 };
 
 // A curated highlight tile for the card view: bundles one or more raw features
@@ -173,6 +182,9 @@ export type PricingHighlight = {
   description?: string;
   // Version-scoped label overrides, same semantics as PricingFeature.nameByVersion.
   labelByVersion?: Record<string, string>;
+  // Server-managed optimistic-lock counter of the backing highlight row (see
+  // PricingFeature.rowVersion). Stripped from public output.
+  rowVersion?: number;
 };
 
 export type Pricing = {

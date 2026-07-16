@@ -121,14 +121,94 @@ function buildServer(updatedBy: string): McpServer {
   );
   server.tool(
     'set_pricing',
-    "Set a timeline's pricing model (features + tiers + highlights) and optionally its type. " +
-      'Patched as a unit — the whole pricing object replaces the old one, so include highlights if ' +
-      "the timeline already has any. Items are untouched. Set type to 'product' to surface the " +
-      'pricing matrix in the viewer. Note: the AI-Agents pricing is normally authored in ' +
-      'Preismodell.md and synced automatically; use this for other product timelines or ad-hoc fixes.',
+    'BULK: replace a timeline\'s whole pricing model (features + tiers + highlights + versions) in one ' +
+      "call, and optionally set its type. Prefer the granular tools below (add_/update_/delete_feature, " +
+      '…_tier, set_tier_value, …_highlight, set_versions) for single edits — they touch one row and ' +
+      "don't clobber concurrent edits. Use this only to seed a new model or do a full rewrite. Set " +
+      "type to 'product' to surface the matrix.",
     { id: z.string(), pricing: z.record(z.any()), type: z.string().optional() },
-    async ({ id, pricing, type }) =>
-      ok(await run({ method: 'PATCH', id, body: type !== undefined ? { pricing, type } : { pricing } })),
+    async ({ id, pricing, type }) => {
+      if (type !== undefined) await run({ method: 'PATCH', id, body: { type } });
+      return ok(await run({ method: 'PUT', id, sub: { kind: 'pricing' }, body: { pricing } }));
+    },
+  );
+
+  // ---- granular pricing tools (one row per call; no whole-model dump) ------
+  server.tool(
+    'add_feature',
+    'Add a pricing feature. Body: { id, name, group?, description?, version? (the version label it is ' +
+      'available from — omit for pre-existing), nameByVersion? }.',
+    { id: z.string(), feature: z.record(z.any()) },
+    async ({ id, feature }) => ok(await run({ method: 'POST', id, sub: { kind: 'feature' }, body: feature })),
+  );
+  server.tool(
+    'update_feature',
+    'Patch a pricing feature by id (only provided fields change). Fields: name, group, description, ' +
+      'version (available-from label), nameByVersion. Send null to clear an optional field.',
+    { id: z.string(), featureId: z.string(), patch: z.record(z.any()) },
+    async ({ id, featureId, patch }) =>
+      ok(await run({ method: 'PATCH', id, sub: { kind: 'feature', childId: featureId }, body: patch })),
+  );
+  server.tool(
+    'delete_feature',
+    'Delete a pricing feature by id. Its matrix cells cascade away and it is stripped from highlights.',
+    { id: z.string(), featureId: z.string() },
+    async ({ id, featureId }) => ok(await run({ method: 'DELETE', id, sub: { kind: 'feature', childId: featureId } })),
+  );
+  server.tool(
+    'add_tier',
+    'Add a pricing tier. Body: { id, name, price, tagline?, useCase?, targetGroup?, values? } where ' +
+      'values maps featureId → true | "verbatim string".',
+    { id: z.string(), tier: z.record(z.any()) },
+    async ({ id, tier }) => ok(await run({ method: 'POST', id, sub: { kind: 'tier' }, body: tier })),
+  );
+  server.tool(
+    'update_tier',
+    'Patch a pricing tier by id. Fields: name, price, tagline, useCase, targetGroup. To change a single ' +
+      'matrix cell use set_tier_value instead (values passed here are applied cell-by-cell too).',
+    { id: z.string(), tierId: z.string(), patch: z.record(z.any()) },
+    async ({ id, tierId, patch }) =>
+      ok(await run({ method: 'PATCH', id, sub: { kind: 'tier', childId: tierId }, body: patch })),
+  );
+  server.tool(
+    'delete_tier',
+    'Delete a pricing tier by id (its matrix cells cascade away).',
+    { id: z.string(), tierId: z.string() },
+    async ({ id, tierId }) => ok(await run({ method: 'DELETE', id, sub: { kind: 'tier', childId: tierId } })),
+  );
+  server.tool(
+    'set_tier_value',
+    'Set ONE matrix cell (tier × feature). value = true (✓) or a verbatim string ("3.000"). ' +
+      'value = false / null clears the cell (–). This is the collision-free way to edit the matrix.',
+    { id: z.string(), tierId: z.string(), featureId: z.string(), value: z.union([z.string(), z.boolean(), z.null()]) },
+    async ({ id, tierId, featureId, value }) =>
+      ok(await run({ method: 'PUT', id, sub: { kind: 'tier-value' }, body: { tierId, featureId, value } })),
+  );
+  server.tool(
+    'add_highlight',
+    'Add a card highlight. Body: { id, label, section?, icon?, featureIds: [], description?, labelByVersion? }.',
+    { id: z.string(), highlight: z.record(z.any()) },
+    async ({ id, highlight }) => ok(await run({ method: 'POST', id, sub: { kind: 'highlight' }, body: highlight })),
+  );
+  server.tool(
+    'update_highlight',
+    'Patch a card highlight by id. Fields: label, section, icon, featureIds, description, labelByVersion.',
+    { id: z.string(), highlightId: z.string(), patch: z.record(z.any()) },
+    async ({ id, highlightId, patch }) =>
+      ok(await run({ method: 'PATCH', id, sub: { kind: 'highlight', childId: highlightId }, body: patch })),
+  );
+  server.tool(
+    'delete_highlight',
+    'Delete a card highlight by id.',
+    { id: z.string(), highlightId: z.string() },
+    async ({ id, highlightId }) => ok(await run({ method: 'DELETE', id, sub: { kind: 'highlight', childId: highlightId } })),
+  );
+  server.tool(
+    'set_versions',
+    'Replace the ordered list of pricing version labels (e.g. ["1.0","2.0","3.0"]). Drives the matrix ' +
+      "version switcher and features' available-from ordering.",
+    { id: z.string(), versions: z.array(z.string()) },
+    async ({ id, versions }) => ok(await run({ method: 'PUT', id, sub: { kind: 'pversion' }, body: { versions } })),
   );
   return server;
 }

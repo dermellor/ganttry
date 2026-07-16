@@ -86,7 +86,6 @@ export interface AppState {
   savedItems: Map<string, string>; // id -> canonical JSON (version stripped)
   savedItemVersions: Map<string, number>; // id -> last known version
   savedPhasesJson: string;
-  savedPricingJson: string;
   activeFormItemId: string | null;
   activeFormPhaseIndex: number | null;
   // Feature id whose Stammdaten form is open in the detail drawer (pricing
@@ -151,7 +150,6 @@ export const state: AppState = {
   savedItems: new Map(),
   savedItemVersions: new Map(),
   savedPhasesJson: '[]',
-  savedPricingJson: '{}',
   activeFormItemId: null,
   activeFormPhaseIndex: null,
   activeFormFeatureId: null,

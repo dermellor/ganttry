@@ -22,10 +22,20 @@ function getClient(): SupabaseClient | null {
   return client;
 }
 
+// Pricing child tables that carry their own rows (versions live on the
+// `timelines` row, so they arrive via the `timelines` UPDATE listener).
+export const PRICING_TABLES = [
+  'pricing_features',
+  'pricing_tiers',
+  'pricing_tier_values',
+  'pricing_highlights',
+] as const;
+export type PricingTable = (typeof PRICING_TABLES)[number];
+
 export type RemoteChange = {
-  table: 'timeline_items' | 'timelines';
+  table: 'timeline_items' | 'timelines' | PricingTable;
   event: 'INSERT' | 'UPDATE' | 'DELETE';
-  id: string; // item id (items) or timeline id (timelines)
+  id: string; // item id (items) or timeline id (timelines); row id for pricing tables
   version?: number; // new row version for items (own-echo suppression)
 };
 
@@ -38,7 +48,7 @@ export function subscribeTimeline(timelineId: string, onChange: (c: RemoteChange
   const db = getClient();
   if (!db) return () => {};
 
-  const channel = db
+  let channel = db
     .channel(`timeline:${timelineId}`)
     .on(
       'postgres_changes',
@@ -57,8 +67,20 @@ export function subscribeTimeline(timelineId: string, onChange: (c: RemoteChange
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'timelines', filter: `id=eq.${timelineId}` },
       () => onChange({ table: 'timelines', event: 'UPDATE', id: timelineId }),
-    )
-    .subscribe();
+    );
+
+  // Pricing child tables: any row change re-reads the assembled model.
+  for (const table of PRICING_TABLES) {
+    channel = channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table, filter: `timeline_id=eq.${timelineId}` },
+      (payload) => {
+        const row = (payload.new ?? payload.old) as Record<string, any>;
+        onChange({ table, event: payload.eventType as RemoteChange['event'], id: row?.id });
+      },
+    );
+  }
+  channel.subscribe();
 
   return () => {
     void db.removeChannel(channel);
