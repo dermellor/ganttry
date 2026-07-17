@@ -159,6 +159,15 @@ export type PricingTier = {
   // This lets one feature (e.g. "Inkludierte Minuten") differ per tier instead of
   // exploding into a boolean row per value.
   values: Record<string, string | boolean>;
+  // Optional per-cell "available from" version labels, keyed by feature id (a
+  // subset of `values`' keys). A cell listed here counts as included only from
+  // that version onward; before it the cell renders as "–" (see
+  // cellActiveForVersion in pricing.ts). The stored `values[fid]` stays the
+  // end-state value — this map only gates *when* it appears, mirroring
+  // PricingFeature.version but at the tier×feature level. Absent key = available
+  // from the start (unchanged behaviour). An additive sibling of `values`, so
+  // every existing reader of `values` is untouched.
+  valueVersions?: Record<string, string>;
   // Server-managed optimistic-lock counter of the backing tier row (see
   // PricingFeature.rowVersion). Stripped from public output.
   rowVersion?: number;

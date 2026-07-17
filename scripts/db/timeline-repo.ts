@@ -222,11 +222,16 @@ function rowToFeature(row: Record<string, any>): PricingFeature {
   return f;
 }
 
-function rowToTier(row: Record<string, any>, values: Record<string, string | boolean>): PricingTier {
+function rowToTier(
+  row: Record<string, any>,
+  values: Record<string, string | boolean>,
+  valueVersions?: Record<string, string>,
+): PricingTier {
   const t: PricingTier = { id: row.id, name: row.name ?? '', price: row.price ?? '', values };
   if (row.tagline != null) t.tagline = row.tagline;
   if (row.use_case != null) t.useCase = row.use_case;
   if (row.target_group != null) t.targetGroup = row.target_group;
+  if (valueVersions && Object.keys(valueVersions).length) t.valueVersions = valueVersions;
   if (row.version != null) t.rowVersion = row.version;
   return t;
 }
@@ -265,19 +270,25 @@ const HIGHLIGHT_SELECT = 'id, label, section, icon, feature_ids, description, la
 export function rowsToPricing(
   featureRows: Record<string, any>[],
   tierRows: Record<string, any>[],
-  valueRows: { tier_id: string; feature_id: string; value: string | boolean }[],
+  valueRows: { tier_id: string; feature_id: string; value: string | boolean; available_from?: string | null }[],
   highlightRows: Record<string, any>[],
   versions: string[],
 ): Pricing {
   const valuesByTier = new Map<string, Record<string, string | boolean>>();
+  const versionsByTier = new Map<string, Record<string, string>>();
   for (const v of valueRows) {
     let bucket = valuesByTier.get(v.tier_id);
     if (!bucket) valuesByTier.set(v.tier_id, (bucket = {}));
     bucket[v.feature_id] = v.value;
+    if (v.available_from != null) {
+      let vb = versionsByTier.get(v.tier_id);
+      if (!vb) versionsByTier.set(v.tier_id, (vb = {}));
+      vb[v.feature_id] = v.available_from;
+    }
   }
   const pricing: Pricing = {
     features: featureRows.map(rowToFeature),
-    tiers: tierRows.map((t) => rowToTier(t, valuesByTier.get(t.id) ?? {})),
+    tiers: tierRows.map((t) => rowToTier(t, valuesByTier.get(t.id) ?? {}, versionsByTier.get(t.id))),
   };
   const highlights = highlightRows.map(rowToHighlight);
   if (highlights.length) pricing.highlights = highlights;
@@ -300,7 +311,7 @@ export async function assemblePricing(
   const [featRes, tierRes, valRes, hlRes] = await Promise.all([
     db.from('pricing_features').select(FEATURE_SELECT).eq('timeline_id', id).order('sort', { ascending: true, nullsFirst: true }),
     db.from('pricing_tiers').select(TIER_SELECT).eq('timeline_id', id).order('sort', { ascending: true, nullsFirst: true }),
-    db.from('pricing_tier_values').select('tier_id, feature_id, value').eq('timeline_id', id),
+    db.from('pricing_tier_values').select('tier_id, feature_id, value, available_from').eq('timeline_id', id),
     db.from('pricing_highlights').select(HIGHLIGHT_SELECT).eq('timeline_id', id).order('sort', { ascending: true, nullsFirst: true }),
   ]);
   if (featRes.error) throw new Error(`assemblePricing features: ${featRes.error.message}`);
@@ -311,7 +322,7 @@ export async function assemblePricing(
   return rowsToPricing(
     featRes.data ?? [],
     tierRes.data ?? [],
-    (valRes.data ?? []) as { tier_id: string; feature_id: string; value: string | boolean }[],
+    (valRes.data ?? []) as { tier_id: string; feature_id: string; value: string | boolean; available_from?: string | null }[],
     hlRes.data ?? [],
     versions,
   );
@@ -684,10 +695,11 @@ export async function addTier(
   if (error) throw new Error(`addTier: ${error.message}`);
   // Seed any values supplied with the tier (e.g. from a bulk-ish add).
   const values = tier.values ?? {};
+  const valueVersions = tier.valueVersions ?? {};
   for (const [featureId, value] of Object.entries(values)) {
-    await setTierValue(db, timelineId, tier.id, featureId, value, updatedBy);
+    await setTierValue(db, timelineId, tier.id, featureId, value, updatedBy, valueVersions[featureId]);
   }
-  return rowToTier(data, values);
+  return rowToTier(data, values, valueVersions);
 }
 
 export async function updateTier(
@@ -706,20 +718,26 @@ export async function updateTier(
   if ('price' in patch) set.price = patch.price ?? '';
   if (updatedBy) set.updated_by = updatedBy;
   const data = await updatePricingRow(db, 'pricing_tiers', TIER_SELECT, timelineId, tierId, set, expectedVersion);
-  // `values` are not tier columns — apply any provided cells individually.
+  // `values` are not tier columns — apply any provided cells individually. A
+  // provided `valueVersions[fid]` gates that cell's availability (see setTierValue).
   if (patch.values) {
+    const vv = patch.valueVersions ?? {};
     for (const [featureId, value] of Object.entries(patch.values)) {
-      await setTierValue(db, timelineId, tierId, featureId, value, updatedBy);
+      await setTierValue(db, timelineId, tierId, featureId, value, updatedBy, vv[featureId]);
     }
   }
   const { data: valRows } = await db
     .from('pricing_tier_values')
-    .select('feature_id, value')
+    .select('feature_id, value, available_from')
     .eq('timeline_id', timelineId)
     .eq('tier_id', tierId);
   const values: Record<string, string | boolean> = {};
-  for (const v of valRows ?? []) values[v.feature_id] = v.value as string | boolean;
-  return rowToTier(data, values);
+  const valueVersions: Record<string, string> = {};
+  for (const v of valRows ?? []) {
+    values[v.feature_id] = v.value as string | boolean;
+    if (v.available_from != null) valueVersions[v.feature_id] = v.available_from as string;
+  }
+  return rowToTier(data, values, valueVersions);
 }
 
 export async function deleteTier(db: SupabaseClient, timelineId: string, tierId: string): Promise<void> {
@@ -734,6 +752,10 @@ export async function deleteTier(db: SupabaseClient, timelineId: string, tierId:
  * Set one matrix cell. A boolean `true` or a non-empty string is stored; a
  * `false` / `null` / empty value clears the cell (deletes the row) — both render
  * as "–" anyway, so there's no reason to keep a falsy row around.
+ *
+ * `availableFrom` gates *when* the cell counts as included (a version label, or
+ * null/undefined = from the start). It rides along with the value on the same
+ * row, so it is dropped automatically when the cell is cleared.
  */
 export async function setTierValue(
   db: SupabaseClient,
@@ -742,6 +764,7 @@ export async function setTierValue(
   featureId: string,
   value: string | boolean | null | undefined,
   updatedBy?: string,
+  availableFrom?: string | null,
 ): Promise<void> {
   if (value === false || value === null || value === undefined || value === '') {
     await clearTierValue(db, timelineId, tierId, featureId);
@@ -752,6 +775,7 @@ export async function setTierValue(
     tier_id: tierId,
     feature_id: featureId,
     value,
+    available_from: availableFrom ?? null,
     updated_at: new Date().toISOString(),
     updated_by: updatedBy ?? null,
   });
@@ -864,10 +888,11 @@ export async function replacePricingRows(
   const valueRows: Record<string, any>[] = [];
   for (const t of pricing.tiers ?? []) {
     if (!t.id) continue;
+    const vv = t.valueVersions ?? {};
     for (const [featureId, value] of Object.entries(t.values ?? {})) {
       if (value === false || value == null || value === '') continue; // falsy = not-included
       if (!featureIds.has(featureId)) continue;
-      valueRows.push({ timeline_id: id, tier_id: t.id, feature_id: featureId, value });
+      valueRows.push({ timeline_id: id, tier_id: t.id, feature_id: featureId, value, available_from: vv[featureId] ?? null });
     }
   }
   if (valueRows.length) {

@@ -212,9 +212,14 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
     // coordinates so no dotted ids ever land in the path.
     if (sub.kind === 'tier-value') {
       if (method === 'PUT' || method === 'POST') {
-        const b = (req.body ?? {}) as { tierId?: string; featureId?: string; value?: string | boolean | null };
+        const b = (req.body ?? {}) as {
+          tierId?: string;
+          featureId?: string;
+          value?: string | boolean | null;
+          availableFrom?: string | null;
+        };
         if (!b.tierId || !b.featureId) return err(400, 'tier-value needs tierId and featureId');
-        await setTierValue(db, id, b.tierId, b.featureId, b.value ?? null, req.updatedBy);
+        await setTierValue(db, id, b.tierId, b.featureId, b.value ?? null, req.updatedBy, b.availableFrom ?? null);
         return ok({ ok: true });
       }
       return err(405, 'method not allowed');

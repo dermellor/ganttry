@@ -471,16 +471,20 @@ server.registerTool(
     title: 'Set matrix cell',
     description:
       'Set ONE matrix cell (tier × feature). value = true (✓) or a verbatim string ("3.000"); ' +
-      'value = false / null clears the cell (–). The collision-free way to edit the matrix.',
+      'value = false / null clears the cell (–). The collision-free way to edit the matrix. ' +
+      'availableFrom (optional) = a version label (one of the timeline\'s pricing versions) from ' +
+      'which this cell counts as included; before it the cell renders as "–" even when value is set. ' +
+      'Omit / null = available from the start. Use it to model "included in tier X now, in tier Y only from v4".',
     inputSchema: {
       id: z.string().describe('Timeline id.'),
       tierId: z.string(),
       featureId: z.string(),
       value: z.union([z.string(), z.boolean(), z.null()]),
+      availableFrom: z.string().nullish().describe('Version label the cell is available from (e.g. "4.0"); omit = from the start.'),
     },
   },
-  async ({ id, tierId, featureId, value }) =>
-    ok(await apiSub(id, 'tier-value', 'PUT', { tierId, featureId, value })),
+  async ({ id, tierId, featureId, value, availableFrom }) =>
+    ok(await apiSub(id, 'tier-value', 'PUT', { tierId, featureId, value, availableFrom })),
 );
 
 server.registerTool(

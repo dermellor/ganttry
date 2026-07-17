@@ -28,12 +28,14 @@ function roundTrip(pricing: Pricing): Pricing {
   const highlightRows = (pricing.highlights ?? []).map((h, i) => highlightToRow(ID, h, i));
 
   const featureIds = new Set(pricing.features.map((f) => f.id));
-  const valueRows: { tier_id: string; feature_id: string; value: string | boolean }[] = [];
+  const valueRows: { tier_id: string; feature_id: string; value: string | boolean; available_from?: string | null }[] =
+    [];
   for (const t of pricing.tiers) {
+    const vv = t.valueVersions ?? {};
     for (const [featureId, value] of Object.entries(t.values ?? {})) {
       if (value === false || value == null || value === '') continue; // falsy → not stored
       if (!featureIds.has(featureId)) continue; // dangling → dropped
-      valueRows.push({ tier_id: t.id, feature_id: featureId, value });
+      valueRows.push({ tier_id: t.id, feature_id: featureId, value, available_from: vv[featureId] ?? null });
     }
   }
 
@@ -47,12 +49,18 @@ function normalizeExpected(pricing: Pricing): Pricing {
   const clone: Pricing = JSON.parse(JSON.stringify(pricing));
   for (const t of clone.tiers) {
     const kept: Record<string, string | boolean> = {};
+    const keptVersions: Record<string, string> = {};
     for (const [k, v] of Object.entries(t.values ?? {})) {
       if (v === false || v == null || v === '') continue;
       if (!featureIds.has(k)) continue;
       kept[k] = v;
+      // valueVersions only survive for cells that are actually stored.
+      const af = t.valueVersions?.[k];
+      if (af != null) keptVersions[k] = af;
     }
     t.values = kept;
+    if (Object.keys(keptVersions).length) t.valueVersions = keptVersions;
+    else delete t.valueVersions;
   }
   return clone;
 }
@@ -92,6 +100,9 @@ const FIXTURE: Pricing = {
       useCase: 'Wachstum',
       targetGroup: 'KMU',
       values: { minutes: '3.000', crm: true, termine: true, ghost: true }, // ghost = dangling → dropped
+      // Per-cell availability gate: CRM is in Scale only from v3 (the feature
+      // itself is v2). ghost's gate must die with its dangling cell.
+      valueVersions: { crm: '3.0', ghost: '2.0' },
     },
   ],
   highlights: [
@@ -132,6 +143,18 @@ test('pricing round-trip: pre-existing feature keeps no version; versioned keeps
     '2.0': 'Jetzt mit Slot-Filling.',
     '3.0': 'Auch Absagen.',
   });
+});
+
+test('pricing round-trip: per-cell valueVersions survive; dangling/false gates are dropped', () => {
+  const out = roundTrip(FIXTURE);
+  const scale = out.tiers.find((t) => t.id === 'scale')!;
+  // The stored CRM cell keeps its "ab 3.0" gate.
+  assert.deepEqual(scale.valueVersions, { crm: '3.0' });
+  // The dangling ghost cell (and thus its gate) is gone.
+  assert.equal('ghost' in (scale.valueVersions ?? {}), false);
+  // A tier with no gated cells has no valueVersions map at all.
+  const free = out.tiers.find((t) => t.id === 'free')!;
+  assert.equal(free.valueVersions, undefined);
 });
 
 test('pricing round-trip: highlights and versions survive', () => {

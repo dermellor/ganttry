@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   pricingToMarkdown,
   featureVisibleForVersion,
+  cellActiveForVersion,
   referenceVersion,
   isNewFeature,
   isModifiedFeature,
@@ -144,6 +145,64 @@ test('featureVisibleForVersion: cumulative — selected shows its version and ea
 test('featureVisibleForVersion: feature without version is always visible', () => {
   const V = ['1.0', '2.0'];
   assert.equal(featureVisibleForVersion({ id: 'x', name: 'X' }, V, '1.0'), true);
+});
+
+test('cellActiveForVersion: "Alle" (null) always active — end state shown', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  assert.equal(cellActiveForVersion('3.0', V, null), true);
+  assert.equal(cellActiveForVersion(undefined, V, null), true);
+});
+
+test('cellActiveForVersion: no availableFrom → active from the start', () => {
+  const V = ['1.0', '2.0', '3.0'];
+  assert.equal(cellActiveForVersion(undefined, V, '1.0'), true);
+});
+
+test('cellActiveForVersion: cumulative — active at its version and later, dash before', () => {
+  const V = ['1.0', '2.0', '3.0', '4.0'];
+  assert.equal(cellActiveForVersion('4.0', V, '3.0'), false); // before → dash
+  assert.equal(cellActiveForVersion('4.0', V, '4.0'), true); // at → active
+  assert.equal(cellActiveForVersion('2.0', V, '4.0'), true); // earlier gate, later pin → active
+});
+
+test('cellActiveForVersion: unknown version never gates (stays active)', () => {
+  const V = ['1.0', '2.0'];
+  assert.equal(cellActiveForVersion('9.9', V, '1.0'), true);
+});
+
+test('resolveHighlight: a cell gated to a later version is excluded until reached', () => {
+  const V = ['1.0', '2.0', '3.0', '4.0'];
+  // "Anrufer verifizieren"-shaped: a pre-existing feature, included in Scale only from 4.0.
+  const feats: PricingFeature[] = [{ id: 'verify', name: 'Anrufer verifizieren' }];
+  const scale: PricingTier = {
+    id: 'scale',
+    name: 'Scale',
+    price: '199 €',
+    values: { verify: true },
+    valueVersions: { verify: '4.0' },
+  };
+  const h = { id: 'h', label: 'Verifizierung', featureIds: ['verify'] };
+  // Pinned before 4.0 → not included for Scale yet.
+  assert.deepEqual(resolveHighlight(h, scale, feats, V, '3.0'), {
+    included: false,
+    value: '',
+    isNew: false,
+    introducedVersion: undefined,
+  });
+  // Pinned at 4.0 → included and New (the cell just became available for this tier).
+  assert.deepEqual(resolveHighlight(h, scale, feats, V, '4.0'), {
+    included: true,
+    value: '',
+    isNew: true,
+    introducedVersion: '4.0',
+  });
+  // "Alle" → end state included, and the "ab 4.0" chip is driven by introducedVersion.
+  assert.deepEqual(resolveHighlight(h, scale, feats, V, null), {
+    included: true,
+    value: '',
+    isNew: false,
+    introducedVersion: '4.0',
+  });
 });
 
 test('featureVisibleForVersion: unknown version never hides', () => {

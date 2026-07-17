@@ -364,6 +364,15 @@
   background: color-mix(in srgb, var(--fg-muted) 5%, transparent);
 }
 
+/* "ab <version>" chip inside a matrix cell (shown only in the "Alle" view for a
+   version-gated cell). Slightly tighter than the feature-row chip and allowed to
+   wrap under the value/✓ so a narrow tier column stays readable. */
+.pm-cell-ver {
+  margin-left: 4px;
+  font-size: 0.56rem;
+  padding: 0 5px;
+}
+
 .pricing-table tbody tr:hover th.pm-feature {
   color: var(--accent-strong);
 }

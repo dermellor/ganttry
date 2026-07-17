@@ -44,6 +44,25 @@ export function featureVisibleForVersion(
   return fIdx <= selIdx;
 }
 
+// Per-cell version gate (tier×feature), the cell-level analog of
+// `featureVisibleForVersion`: a matrix cell counts as included when no version is
+// selected ("Alle" → show the end state), when the cell carries no
+// `availableFrom` (included from the start), or when its `availableFrom` comes at
+// or before the selected version in the ordered list. Unknown versions never
+// gate. `availableFrom` comes from `PricingTier.valueVersions[featureId]`.
+export function cellActiveForVersion(
+  availableFrom: string | undefined,
+  versions: string[],
+  selected: string | null,
+): boolean {
+  if (!selected) return true;
+  if (!availableFrom) return true;
+  const selIdx = versions.indexOf(selected);
+  const aIdx = versions.indexOf(availableFrom);
+  if (selIdx < 0 || aIdx < 0) return true;
+  return aIdx <= selIdx;
+}
+
 // The version a "New" badge is judged against: the selected switcher version, or
 // (when "Alle" is selected) the newest declared version — so "New" always points
 // at the latest release until the user pins an older one.
@@ -307,30 +326,39 @@ export function resolveHighlight(
     const feat = byId.get(fid);
     if (!feat) continue;
     if (selected && !featureVisibleForVersion(feat, versions, selected)) continue;
+    // Per-cell gate: a feature can arrive in *this tier* only from a later
+    // version than it was introduced globally (valueVersions[fid]). When pinned
+    // before that version the cell isn't included here yet.
+    const af = tier.valueVersions?.[fid];
+    if (selected && !cellActiveForVersion(af, versions, selected)) continue;
+    // Effective introduction version for this tier: the cell gate wins over the
+    // feature's own introduction version.
+    const effVersion = af ?? feat.version;
+    const cellIsNew = !!selected && !!effVersion && effVersion === selected;
     const v = tier.values?.[fid];
     let contributes = false;
     if (v === true) {
       included = true;
       contributes = true;
-      if (isNewFeature(feat, versions, selected)) isNew = true;
     } else if (typeof v === 'string' && v.trim()) {
       included = true;
       contributes = true;
       vals.push(v.trim());
-      if (isNewFeature(feat, versions, selected)) isNew = true;
     }
     if (!contributes) continue;
-    // Track when the highlight first became available: pre-existing (no version)
-    // features win — they mean it was always there, so no "ab" chip. Otherwise
-    // keep the earliest declared version among the contributing features.
-    if (!feat.version) {
+    if (isNewFeature(feat, versions, selected) || cellIsNew) isNew = true;
+    // Track when the highlight first became available for this tier: pre-existing
+    // (no effective version) features win — they mean it was always there, so no
+    // "ab" chip. Otherwise keep the earliest effective version among the
+    // contributing features.
+    if (!effVersion) {
       hasPreexisting = true;
     } else {
-      const idx = versions.indexOf(feat.version);
+      const idx = versions.indexOf(effVersion);
       const rank = idx < 0 ? Number.MAX_SAFE_INTEGER : idx;
       if (rank < earliestIdx) {
         earliestIdx = rank;
-        introducedVersion = feat.version;
+        introducedVersion = effVersion;
       }
     }
   }

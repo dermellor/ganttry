@@ -12,6 +12,7 @@ import { escapeHtml } from './buildItems';
 import {
   groupFeatures,
   featureVisibleForVersion,
+  cellActiveForVersion,
   isNewFeature,
   isModifiedFeature,
   itemsForFeature,
@@ -85,10 +86,23 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
       const cells = tiers
         .map((t) => {
           const v = t.values?.[f.id];
-          if (v === true) return `<td class="pm-cell is-on"><span class="pm-check" aria-label="enthalten">✓</span></td>`;
-          if (v === false || v == null || v === '')
-            return `<td class="pm-cell is-off"><span class="pm-dash" aria-hidden="true">–</span></td>`;
-          return `<td class="pm-cell is-value">${escapeHtml(String(v))}</td>`;
+          const off = v === false || v == null || v === '';
+          const dash = `<td class="pm-cell is-off"><span class="pm-dash" aria-hidden="true">–</span></td>`;
+          if (off) return dash;
+          // Version-gated cell: not yet available at the pinned version → dash.
+          // In "Alle" mode (no pin) show the end state plus an "ab <version>" chip
+          // stating from which version this tier includes the feature (mirrors the
+          // feature-row chip). No chip once a version is pinned — the gating itself
+          // (cell present vs. dash) already carries the information.
+          const af = t.valueVersions?.[f.id];
+          if (!cellActiveForVersion(af, versions, selectedVersion)) return dash;
+          const chip =
+            !selectedVersion && af
+              ? ` <span class="pricing-badge-version pm-cell-ver">ab ${escapeHtml(af)}</span>`
+              : '';
+          if (v === true)
+            return `<td class="pm-cell is-on"><span class="pm-check" aria-label="enthalten">✓</span>${chip}</td>`;
+          return `<td class="pm-cell is-value">${escapeHtml(String(v))}${chip}</td>`;
         })
         .join('');
 

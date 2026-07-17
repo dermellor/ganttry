@@ -421,8 +421,14 @@ Drei Tabellen (Migrationen in `supabase/migrations/`):
   feld „ab Version" heißt in der DB `available_from` (nicht `version`, um die
   Kollision mit der Locking-Spalte zu vermeiden). `pricing_tier_values` — die
   Matrix, **eine Zeile pro (tier_id, feature_id)** mit `value` (jsonb: `true`
-  oder String); FK-Cascade von Features/Tiers, kein Locking (eine Zelle ist
-  atomar). Damit editieren zwei Leute verschiedene Matrix-Zellen kollisionsfrei.
+  oder String) und optionalem `available_from` (Migration `0011`, Text-Version-
+  Label); FK-Cascade von Features/Tiers, kein Locking (eine Zelle ist atomar).
+  Damit editieren zwei Leute verschiedene Matrix-Zellen kollisionsfrei.
+  `available_from` macht die **Zell-Verfügbarkeit versionsabhängig** — dieselbe
+  Semantik wie `pricing_features.available_from`, nur eine Ebene tiefer (pro
+  Tarif×Feature): die Zelle zählt erst ab dieser Version als enthalten, davor
+  rendert sie „–". `value` bleibt der Endzustand. So lässt sich „in Enterprise
+  jetzt, in Scale erst ab v4" abbilden (siehe „Pricing → Zell-Versionierung").
 
 RLS ist an; Server-Zugriff läuft über den Service-Key (bypassed RLS). Anon-
 SELECT-Policies existieren nur für die Realtime-Subscription (siehe unten).
@@ -560,7 +566,7 @@ auf der Live-Site read-only und daher nicht manipulierbar.
 | `set_pricing`       | Preismodell komplett ersetzen (Bulk-Seed, `type='product'`)  |
 | `add_/update_/delete_feature` | einzelnes Pricing-Feature (granular)               |
 | `add_/update_/delete_tier`    | einzelnen Tarif (granular)                         |
-| `set_tier_value`    | eine Matrix-Zelle (tier × feature); `false`/`null` löscht    |
+| `set_tier_value`    | eine Matrix-Zelle (tier × feature); `false`/`null` löscht; opt. `availableFrom` (Zell-Verfügbarkeit ab Version) |
 | `add_/update_/delete_highlight` | eine Card-Kachel (granular)                      |
 | `set_versions`      | geordnete Versionsliste ersetzen                             |
 
@@ -838,8 +844,9 @@ gestrippt). Markdown-Spiegel: `npm run export:pricing`.
 **Schreiben — granular, kollisionsfrei** (die alte „ganzes Modell ersetzen"-
 Semantik ist weg; genau sie führte zu Überschreibungen bei parallelen Edits):
 - Endpoints unter `/api/source/<id>/`: `feature[/<id>]`, `tier[/<id>]`,
-  `tier-value` (PUT `{tierId, featureId, value}`; `value=false/null` löscht die
-  Zelle), `highlight[/<id>]` (je POST/PATCH/DELETE), `pversion` (PUT der ganzen
+  `tier-value` (PUT `{tierId, featureId, value, availableFrom?}`; `value=false/null`
+  löscht die Zelle; `availableFrom` = Version-Label ab dem die Zelle gilt, sonst
+  ab Start), `highlight[/<id>]` (je POST/PATCH/DELETE), `pversion` (PUT der ganzen
   Versionsliste, wie `phases`), und `pricing` (PUT — Bulk-Ersatz zum Seeden).
   PATCH trägt die `rowVersion` im `If-Match`-Header → `409` bei Stale.
   **Wichtig:** die Lock-Version kommt bei Features **nur** aus `If-Match`, nie aus
@@ -869,9 +876,17 @@ Shape (assembliert):
     editierbar im Feature-Formular über „+ Versionsbeschreibung".
   - `rowVersion` = server-verwalteter Lock-Zähler (nicht editieren; im
     Public-Output gestrippt).
-- `tiers[]`: `{ id, name, tagline?, useCase?, targetGroup?, price, values, rowVersion? }`.
+- `tiers[]`: `{ id, name, tagline?, useCase?, targetGroup?, price, values, valueVersions?, rowVersion? }`.
   `values[featureId]` = `true` (✓) / fehlt|false (–) / String (Wert je Tarif).
   Falsy/leere Zellen werden nicht gespeichert (rendern ohnehin als „–").
+  `valueVersions[featureId]` (DB-Spalte `pricing_tier_values.available_from`) =
+  optionale Zell-**Verfügbarkeit ab Version**: die Zelle zählt erst ab diesem
+  Label als enthalten, davor „–" (kumulativ, `cellActiveForVersion` in
+  [`src/pricing.ts`](src/pricing.ts)). `values` bleibt der Endzustand — die Map
+  gated nur *wann* er erscheint (Geschwister von `values`, additiv). In „Alle"
+  zeigt die Matrix den Endzustand + dezenten „ab \<version\>"-Chip in der Zelle;
+  bei gepinnter Version trägt das Erscheinen/„–" selbst die Info. Kein Key =
+  ab Start (unverändertes Verhalten). Siehe „Zell-Versionierung" unten.
 - `highlights[]`: `{ id, label, section?, featureIds, rowVersion? }` — kuratierte
   Kacheln der Card-Ansicht (bündeln Features); nur was hier referenziert wird,
   erscheint auf den Karten. Matrix zeigt alle Features.
@@ -894,6 +909,33 @@ und die Zeilen-Badges:
   die früheste `version` seiner beitragenden Features (`introducedVersion` in
   `resolveHighlight`); ein pre-existing Feature im Bündel unterdrückt die Chip.
   Pre-existing Features (kein `version`) bekommen nie eine Chip.
+
+### Zell-Versionierung (Tarif×Feature-Verfügbarkeit ab Version)
+
+Während `feature.version` steuert, ab wann ein Feature (die ganze Zeile)
+existiert, steuert `tier.valueVersions[featureId]` (DB:
+`pricing_tier_values.available_from`), ab wann eine **einzelne Zelle** als
+enthalten gilt. Damit lässt sich „Feature X ist in Enterprise sofort, in Scale
+erst ab v4" abbilden, ohne die ganze Feature-Zeile zu gaten.
+
+- **Auflösung** — `cellActiveForVersion(availableFrom, versions, selected)` in
+  [`src/pricing.ts`](src/pricing.ts), kumulativ und formgleich zu
+  `featureVisibleForVersion`: „Alle" → immer aktiv; kein `availableFrom` → ab
+  Start aktiv; sonst aktiv sobald die gepinnte Version ≥ `availableFrom`. Vor der
+  Version rendert die Zelle als „–", der gespeicherte `value` bleibt der
+  Endzustand.
+- **Matrix** ([`src/pricingMatrix.ts`](src/pricingMatrix.ts)): gepinnt → Zelle
+  erscheint/„–" (das trägt die Info selbst); „Alle" → Endzustand + dezenter
+  „ab \<version\>"-Chip (`.pm-cell-ver`) in der Zelle.
+- **Kacheln** (`resolveHighlight`): eine noch nicht verfügbare Zelle zählt für
+  den Tarif nicht als enthalten; die effektive Einführungsversion des Highlights
+  je Tarif ist `valueVersions[fid] ?? feature.version` (die Zell-Gate gewinnt),
+  speist `isNew` und die „ab"-Chip.
+- **Schreiben** — `set_tier_value(..., availableFrom)` (MCP) bzw.
+  `PUT …/tier-value {availableFrom}`; beim Löschen der Zelle verschwindet die
+  Gate mit. Round-Trip getestet in
+  [`src/pricingNormalize.test.ts`](src/pricingNormalize.test.ts), Gating-Logik in
+  [`src/pricing.test.ts`](src/pricing.test.ts).
 
 ## Offene Ausbaustufen – Preismodell / Kacheln
 
