@@ -2,20 +2,50 @@
    variables defined in brands.css. */
 
 .pricing-view {
-  overflow: auto;
   height: 100%;
   padding: 24px;
   background: var(--bg);
   color: var(--fg);
+  /* Flex column so the header stays pinned and the body (matrix/cards) owns the
+     scrolling — that's what makes the header + sticky thead rows work.
+     min-height:0 is essential: #pricing is itself a flex item, and without it its
+     min-height:auto resolves to min-content (full table height) so it overflows
+     the viewport instead of being constrained (body is overflow:hidden → nothing
+     scrolls). Previously the removed `overflow:auto` implicitly forced this to 0. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   /* Status traffic-light: Open = red, Doing = yellow, Done = green. */
   --pm-open: #E5484D;
   --pm-doing: #E2B203;
   --pm-done: #30A46C;
 }
 
+/* The [hidden] attribute must still win: the author `display:flex` above overrides
+   the UA `[hidden]{display:none}` (equal specificity, author origin wins), which
+   would keep the pricing view showing over the timeline/list. Restore it. */
+.pricing-view[hidden] {
+  display: none;
+}
+
 .pricing-inner {
   max-width: 1100px;
+  width: 100%;
   margin: 0 auto;
+  /* Fill the view and become a flex column too, so the body child can flex-grow
+     and scroll while the header keeps its natural height above it. */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The scrollable body under the (pinned) header — both matrix and cards. */
+.pricing-inner > .pricing-table-wrap,
+.pricing-inner > .pc-cards {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .pricing-header {
@@ -25,6 +55,8 @@
   gap: 16px;
   margin: 0 0 20px;
   flex-wrap: wrap;
+  /* Never shrink: it's the pinned bar above the scrolling body. */
+  flex: none;
 }
 
 .pricing-title {
@@ -285,7 +317,7 @@
 }
 
 .pricing-table-wrap {
-  overflow-x: auto;
+  overflow: auto;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
@@ -306,11 +338,22 @@
   vertical-align: middle;
 }
 
+/* Sticky header rows: the head row (Feature | tiers | Arbeit) pins to the top of
+   the scrolling wrap, and the price row pins directly beneath it. --pm-head-row-h
+   (the measured height of the head row) is set per-render in pricingMatrix.ts so
+   the price row's offset tracks the real rendered height across brands/fonts. */
 .pricing-table thead th {
   position: sticky;
   top: 0;
   background: var(--surface);
-  z-index: 1;
+  z-index: 3;
+}
+
+.pricing-table thead tr.pm-price-row th,
+.pricing-table thead tr.pm-price-row td {
+  position: sticky;
+  top: var(--pm-head-row-h, 41px);
+  z-index: 2;
 }
 
 .pricing-table th.pm-tier {

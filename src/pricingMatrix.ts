@@ -256,6 +256,29 @@ function wireFeatureTooltips(host: HTMLElement): void {
   host.querySelector('.pricing-table-wrap')?.addEventListener('scroll', hide, { passive: true });
 }
 
+// The price row sticks directly beneath the head row, so its `top` offset must
+// equal the head row's rendered height. That height varies by brand/font (and can
+// change on resize if a tier name wraps), so we measure it and expose it as the
+// --pm-head-row-h CSS custom property the sticky rule reads. A single ResizeObserver
+// is reused across renders (disconnected first) to avoid leaking observers.
+let headRowObserver: ResizeObserver | null = null;
+
+function syncStickyHeadOffset(host: HTMLElement): void {
+  headRowObserver?.disconnect();
+  const wrap = host.querySelector<HTMLElement>('.pricing-table-wrap');
+  const headRow = host.querySelector<HTMLElement>('.pricing-table thead tr');
+  if (!wrap || !headRow) return;
+  const apply = () => {
+    const h = headRow.getBoundingClientRect().height;
+    if (h > 0) wrap.style.setProperty('--pm-head-row-h', `${Math.round(h)}px`);
+  };
+  apply();
+  if (typeof ResizeObserver !== 'undefined') {
+    headRowObserver = new ResizeObserver(apply);
+    headRowObserver.observe(headRow);
+  }
+}
+
 // Wire the work-popover item clicks + single-popover behaviour (matrix + cards).
 function wireWork(host: HTMLElement): void {
   host.querySelectorAll<HTMLButtonElement>('.pm-work-item').forEach((btn) => {
@@ -339,4 +362,6 @@ export function renderPricingView(): void {
   wireWork(host);
   wireFeatureClicks(host);
   wireFeatureTooltips(host);
+  if (subView === 'matrix') syncStickyHeadOffset(host);
+  else headRowObserver?.disconnect();
 }
