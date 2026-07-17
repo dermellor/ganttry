@@ -565,6 +565,7 @@ auf der Live-Site read-only und daher nicht manipulierbar.
 | `replace_timeline`  | ganze Timeline ersetzen (Bulk)                               |
 | `set_pricing`       | Preismodell komplett ersetzen (Bulk-Seed, `type='product'`)  |
 | `add_/update_/delete_feature` | einzelnes Pricing-Feature (granular)               |
+| `move_feature`      | Feature umsortieren (nach/vor einem anderen Feature)         |
 | `add_/update_/delete_tier`    | einzelnen Tarif (granular)                         |
 | `set_tier_value`    | eine Matrix-Zelle (tier × feature); `false`/`null` löscht; opt. `availableFrom` (Zell-Verfügbarkeit ab Version) |
 | `add_/update_/delete_highlight` | eine Card-Kachel (granular)                      |
@@ -851,11 +852,20 @@ Semantik ist weg; genau sie führte zu Überschreibungen bei parallelen Edits):
   PATCH trägt die `rowVersion` im `If-Match`-Header → `409` bei Stale.
   **Wichtig:** die Lock-Version kommt bei Features **nur** aus `If-Match`, nie aus
   `body.version` (dort ist `version` das Domänenfeld „ab Version").
-- MCP: granulare Tools `add_/update_/delete_feature`, `…_tier`, `set_tier_value`,
-  `…_highlight`, `set_versions` (je ein Call, kein read-modify-write, kein
-  Komplett-Dump im Kontext). `set_pricing` bleibt als Bulk-Seed/Rewrite.
+- MCP: granulare Tools `add_/update_/delete_feature`, `move_feature`, `…_tier`,
+  `set_tier_value`, `…_highlight`, `set_versions` (je ein Call, kein
+  read-modify-write, kein Komplett-Dump im Kontext). `set_pricing` bleibt als
+  Bulk-Seed/Rewrite.
+- **Feature-Reihenfolge** (`sort`-Spalte): `add_feature` hängt immer ans
+  Gruppenende. Zum präzisen Platzieren `POST …/feature-move {featureId, after? |
+  before?}` (MCP: `move_feature`) — genau ein Anker, `after` gewinnt bei beidem.
+  Der Server lädt die aktuelle Reihenfolge, positioniert relativ zum Anker um
+  (`reorderIds`, rein + getestet) und nummeriert `sort` neu (nur geänderte
+  Zeilen). `sort` ist sonst über keinen anderen Schreibpfad exponiert; ein
+  Feature behält dabei seine `group` (Gruppe wechseln → `update_feature`).
 - Client: das Feature-Formular schreibt granular per `PATCH …/feature/<id>` mit
-  `If-Match`; Tiers/Matrix/Highlights/Versionen werden aktuell über MCP gepflegt.
+  `If-Match`; Tiers/Matrix/Highlights/Versionen/Reihenfolge werden aktuell über
+  MCP gepflegt.
 
 Shape (assembliert):
 - `features[]`: `{ id, name, group, version?, description?, nameByVersion?, descriptionByVersion?, rowVersion? }`.

@@ -15,6 +15,7 @@ import {
   tierToRow,
   highlightToRow,
   stripRowVersions,
+  reorderIds,
 } from '../scripts/db/timeline-repo.ts';
 import type { Pricing } from './types';
 
@@ -162,4 +163,28 @@ test('pricing round-trip: highlights and versions survive', () => {
   assert.deepEqual(out.versions, ['1.0', '2.0', '3.0']);
   assert.equal(out.highlights?.length, 2);
   assert.deepEqual(out.highlights?.find((h) => h.id === 'h-crm')!.labelByVersion, { '3.0': 'CRM & Termine' });
+});
+
+test('reorderIds: move after an anchor', () => {
+  assert.deepEqual(reorderIds(['a', 'b', 'c', 'd'], 'a', { after: 'c' }), ['b', 'c', 'a', 'd']);
+});
+
+test('reorderIds: move before an anchor', () => {
+  assert.deepEqual(reorderIds(['a', 'b', 'c', 'd'], 'd', { before: 'b' }), ['a', 'd', 'b', 'c']);
+});
+
+test('reorderIds: after wins when both anchors are given', () => {
+  assert.deepEqual(reorderIds(['a', 'b', 'c'], 'a', { after: 'b', before: 'c' }), ['b', 'a', 'c']);
+});
+
+test('reorderIds: moving next to its current neighbour is a no-op-ish stable result', () => {
+  // "a after b" when order is already a,b,c → a lands right after b.
+  assert.deepEqual(reorderIds(['a', 'b', 'c'], 'a', { after: 'b' }), ['b', 'a', 'c']);
+});
+
+test('reorderIds: throws on missing move id, missing anchor, or self-anchor', () => {
+  assert.throws(() => reorderIds(['a', 'b'], 'x', { after: 'a' }));
+  assert.throws(() => reorderIds(['a', 'b'], 'a', { after: 'x' }));
+  assert.throws(() => reorderIds(['a', 'b'], 'a', {}));
+  assert.throws(() => reorderIds(['a', 'b'], 'a', { after: 'a' }));
 });

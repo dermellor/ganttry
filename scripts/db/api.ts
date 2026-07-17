@@ -21,6 +21,7 @@ import {
   addItem,
   addTier,
   deleteFeature,
+  moveFeature,
   deleteGroup,
   deleteHighlight,
   deleteItem,
@@ -48,6 +49,7 @@ export type SubKind =
   | 'phases'
   | 'pricing'
   | 'feature'
+  | 'feature-move'
   | 'tier'
   | 'tier-value'
   | 'highlight'
@@ -189,6 +191,20 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
       return err(405, 'method not allowed');
     }
 
+    // ---- pricing: reorder a feature (relative to another) -----------------
+    // POST { featureId, after? | before? }. Exactly one anchor; `after` wins if
+    // both are sent. Renumbers the matrix row order server-side.
+    if (sub.kind === 'feature-move') {
+      if (method === 'POST' || method === 'PUT') {
+        const b = (req.body ?? {}) as { featureId?: string; after?: string; before?: string };
+        if (!b.featureId) return err(400, 'feature-move needs featureId');
+        if (!b.after && !b.before) return err(400, 'feature-move needs after or before');
+        const order = await moveFeature(db, id, b.featureId, { after: b.after, before: b.before }, req.updatedBy);
+        return ok({ ok: true, order });
+      }
+      return err(405, 'method not allowed');
+    }
+
     // ---- pricing: tiers ---------------------------------------------------
     if (sub.kind === 'tier') {
       if (method === 'POST') {
@@ -266,7 +282,7 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
 export function parseSourcePath(path: string): { id: string; sub?: ApiRequest['sub'] } | null {
   const clean = path.replace(/^\/+|\/+$/g, '');
   const segs = clean.split('/').filter(Boolean);
-  const subKinds = ['item', 'group', 'phases', 'pricing', 'feature', 'tier', 'tier-value', 'highlight', 'pversion'] as const;
+  const subKinds = ['item', 'group', 'phases', 'pricing', 'feature', 'feature-move', 'tier', 'tier-value', 'highlight', 'pversion'] as const;
   // find a trailing sub-resource marker
   for (let i = segs.length - 1; i >= 0; i--) {
     if ((subKinds as readonly string[]).includes(segs[i])) {

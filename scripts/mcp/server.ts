@@ -430,6 +430,27 @@ server.registerTool(
 );
 
 server.registerTool(
+  'move_feature',
+  {
+    title: 'Reorder a pricing feature',
+    description:
+      'Reposition a feature in the matrix row order by placing it immediately after OR before another ' +
+      'feature. Provide exactly one anchor (after / before); `after` wins if both are sent. The server ' +
+      'renumbers the sort order and returns the new ordered id list. (add_feature always appends to the ' +
+      'group end — use this to place it precisely afterwards.) A feature keeps its `group`; to change the ' +
+      'group, patch it via update_feature.',
+    inputSchema: {
+      id: z.string().describe('Timeline id.'),
+      featureId: z.string().describe('Id of the feature to move.'),
+      after: z.string().optional().describe('Place featureId immediately AFTER this feature id.'),
+      before: z.string().optional().describe('Place featureId immediately BEFORE this feature id.'),
+    },
+  },
+  async ({ id, featureId, after, before }) =>
+    ok(await apiSub(id, 'feature-move', 'POST', { featureId, after, before })),
+);
+
+server.registerTool(
   'add_tier',
   {
     title: 'Add pricing tier',

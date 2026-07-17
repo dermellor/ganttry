@@ -681,6 +681,63 @@ export async function deleteFeature(db: SupabaseClient, timelineId: string, feat
   if (error) throw new Error(`deleteFeature: ${error.message}`);
 }
 
+/**
+ * Pure reorder: return `ids` with `moveId` repositioned immediately after
+ * `anchor.after` (preferred when both are given) or immediately before
+ * `anchor.before`. DB-free so it can be unit-tested. Throws when `moveId` or the
+ * chosen anchor is absent, or when they are the same id (no-op ambiguity).
+ */
+export function reorderIds(ids: string[], moveId: string, anchor: { after?: string; before?: string }): string[] {
+  if (!ids.includes(moveId)) throw new NotFoundError();
+  const anchorId = anchor.after ?? anchor.before;
+  const useAfter = anchor.after != null;
+  if (!anchorId) throw new Error('reorderIds: after or before required');
+  if (anchorId === moveId) throw new Error('reorderIds: anchor must differ from the moved feature');
+  if (!ids.includes(anchorId)) throw new NotFoundError();
+  const without = ids.filter((x) => x !== moveId);
+  const at = without.indexOf(anchorId);
+  without.splice(useAfter ? at + 1 : at, 0, moveId);
+  return without;
+}
+
+/**
+ * Reposition a feature in the matrix row order relative to another feature.
+ * Loads the current order (by `sort`), computes the new sequence via
+ * `reorderIds`, and renumbers `sort` to a contiguous 0..n-1 — writing only the
+ * rows whose position actually changed (each write bumps the row version).
+ * Returns the new ordered id list.
+ */
+export async function moveFeature(
+  db: SupabaseClient,
+  timelineId: string,
+  featureId: string,
+  anchor: { after?: string; before?: string },
+  updatedBy?: string,
+): Promise<string[]> {
+  const { data, error } = await db
+    .from('pricing_features')
+    .select('id, sort')
+    .eq('timeline_id', timelineId)
+    .order('sort', { ascending: true, nullsFirst: true });
+  if (error) throw new Error(`moveFeature load: ${error.message}`);
+  const rows = (data ?? []) as { id: string; sort: number | null }[];
+  const currentSort = new Map(rows.map((r) => [r.id, r.sort]));
+  const nextOrder = reorderIds(rows.map((r) => r.id), featureId, anchor);
+  for (let i = 0; i < nextOrder.length; i++) {
+    const fid = nextOrder[i];
+    if (currentSort.get(fid) === i) continue; // unchanged → skip write
+    const set: Record<string, any> = { sort: i };
+    if (updatedBy) set.updated_by = updatedBy;
+    const { error: upErr } = await db
+      .from('pricing_features')
+      .update(set)
+      .eq('timeline_id', timelineId)
+      .eq('id', fid);
+    if (upErr) throw new Error(`moveFeature renumber ${fid}: ${upErr.message}`);
+  }
+  return nextOrder;
+}
+
 // -- tiers --
 
 export async function addTier(
