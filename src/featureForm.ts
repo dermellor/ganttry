@@ -6,6 +6,7 @@
 // concurrent edit elsewhere in the model is never clobbered.
 
 import { escapeHtml } from './buildItems';
+import { createMarkdownEditor } from './wysiwyg';
 import type { PricingFeature } from './types';
 import { state, els, setStatus, withPreservedZoom } from './state';
 import { apiUpdateFeature, apiDeleteFeature, ConflictError } from './editor';
@@ -31,9 +32,29 @@ function vdescRowHtml(versions: string[], selectedVersion: string, text: string)
   return `
     <div class="version-desc-row" data-vdesc-row>
       <select class="version-desc-select" aria-label="Version">${versionSelectOptions(versions, selectedVersion)}</select>
-      <textarea class="version-desc-text" rows="2" placeholder="Was kam in dieser Version dazu?">${escapeHtml(text)}</textarea>
+      <div class="version-desc-editor" data-role="vdesc-editor"></div>
+      <textarea class="version-desc-text" hidden>${escapeHtml(text)}</textarea>
       <button type="button" class="vdesc-remove" data-action="remove-vdesc" aria-label="Versionsbeschreibung entfernen" title="Entfernen">×</button>
     </div>`;
+}
+
+// Mount the shared Markdown WYSIWYG editor over a hidden <textarea>, keeping the
+// textarea's value in sync (Markdown) so the existing form/save pipeline reads it
+// unchanged — same integration as the item Body field (itemForm.ts).
+function wireMarkdownField(mount: HTMLElement, textarea: HTMLTextAreaElement): void {
+  const editor = createMarkdownEditor(textarea.value, () => {
+    textarea.value = editor.getMarkdown();
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  mount.appendChild(editor.el);
+}
+
+// Wire the WYSIWYG editor for a single version-description row (used for both the
+// seeded rows and rows added later via the "+" button).
+function wireVdescRow(row: HTMLElement): void {
+  const mount = row.querySelector<HTMLElement>('[data-role="vdesc-editor"]');
+  const textarea = row.querySelector<HTMLTextAreaElement>('.version-desc-text');
+  if (mount && textarea) wireMarkdownField(mount, textarea);
 }
 
 // Distinct group labels already used by other features, offered as a
@@ -109,7 +130,8 @@ export function showFeatureForm(featureId: string): void {
       </div>
       <div class="field full">
         <label for="ft-description">Beschreibung</label>
-        <textarea id="ft-description" name="description" rows="3">${escapeHtml(feature.description ?? '')}</textarea>
+        <div data-role="desc-editor"></div>
+        <textarea id="ft-description" name="description" hidden>${escapeHtml(feature.description ?? '')}</textarea>
       </div>
       ${versionDescFields}
       <div class="field">
@@ -132,17 +154,28 @@ export function showFeatureForm(featureId: string): void {
     deleteFeature(featureId);
   });
 
+  // Beschreibung: same Markdown WYSIWYG editor as the item Body field.
+  const descMount = form.querySelector<HTMLElement>('[data-role="desc-editor"]');
+  const descTextarea = form.querySelector<HTMLTextAreaElement>('#ft-description');
+  if (descMount && descTextarea) wireMarkdownField(descMount, descTextarea);
+
   // Dynamic version-description rows: "+" appends a row defaulting to the first
   // version not yet used; the per-row "×" removes it.
   const vdescList = form.querySelector<HTMLElement>('.version-desc-list');
   if (vdescList) {
+    // Seeded rows get their WYSIWYG editor mounted up front.
+    vdescList.querySelectorAll<HTMLElement>('.version-desc-row').forEach(wireVdescRow);
     form.querySelector<HTMLButtonElement>('[data-action="add-vdesc"]')?.addEventListener('click', () => {
       const used = new Set(
         [...vdescList.querySelectorAll<HTMLSelectElement>('.version-desc-select')].map((s) => s.value),
       );
       const next = versions.find((v) => !used.has(v)) ?? versions[0];
       vdescList.insertAdjacentHTML('beforeend', vdescRowHtml(versions, next, ''));
-      vdescList.querySelector<HTMLTextAreaElement>('.version-desc-row:last-child .version-desc-text')?.focus();
+      const row = vdescList.querySelector<HTMLElement>('.version-desc-row:last-child');
+      if (row) {
+        wireVdescRow(row);
+        row.querySelector<HTMLElement>('.version-desc-editor .wysiwyg-surface')?.focus();
+      }
     });
     vdescList.addEventListener('click', (e) => {
       const btn = (e.target as HTMLElement).closest('[data-action="remove-vdesc"]');
