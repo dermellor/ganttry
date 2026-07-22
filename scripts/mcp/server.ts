@@ -1,19 +1,20 @@
 // Timelines MCP server (stdio).
 //
-// Lets Claude Code read and manipulate sheet-backed timelines by talking to the
+// Lets Claude Code read and manipulate DB-backed timelines by talking to the
 // live Acme Timelines deploy. Every read/write goes through the site's
-// /api/source(s) endpoints, which proxy the underlying Google Sheet — so the
-// sheet stays the single source of truth and edits are immediately live.
+// /api/source(s) endpoints, which hit the timelines-api edge function backed by
+// Supabase (Postgres) — so the DB stays the single source of truth and edits are
+// immediately live.
 //
 // Auth: the auth gate is bypassed with an X-MCP-Token header; server-side the
-// sheets-api function uses a stored service refresh token to reach Google.
+// timelines-api function uses the Supabase service key to reach the DB.
 //
 // Config (env, with fallback to ~/_AGENTS/.env then <repo>/.env.local):
 //   MCP_API_TOKEN      — required; must match the Netlify env var of the same name
 //   TIMELINES_LIVE_URL — optional; default https://example-timelines.netlify.app
 //
-// Only Google-Sheets-backed timelines are exposed. File-based sources are
-// read-only on the live site and therefore not manipulable here.
+// Only DB-backed timelines are exposed. File-based sources are read-only on the
+// live site and therefore not manipulable here.
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -318,7 +319,7 @@ server.registerTool(
   {
     title: 'List timelines',
     description:
-      'List all Google-Sheets-backed timelines available on the live site (id, name, description). Only these are editable via this server.',
+      'List all DB-backed timelines available on the live site (id, name, description). Only these are editable via this server.',
     inputSchema: {},
   },
   async () => ok(await listSources()),
@@ -329,7 +330,7 @@ server.registerTool(
   {
     title: 'Get timeline',
     description:
-      'Fetch a full timeline (name, description, items, groups) by id, as it currently is in the Google Sheet.',
+      'Fetch a full timeline (name, description, items, groups) by id, as it currently is in the DB.',
     inputSchema: { id: z.string().describe('Timeline id from list_timelines.') },
   },
   async ({ id }) => ok(await getTimeline(id)),

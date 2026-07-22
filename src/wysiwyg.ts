@@ -2,7 +2,7 @@
 //
 // The editor edits *rendered* Markdown inside a contenteditable surface —
 // headings show large, bold shows bold, lists indent — while the stored value
-// stays plain Markdown so it round-trips through the model, Google Sheets, and
+// stays plain Markdown so it round-trips through the model, the DB, and
 // the HTML export unchanged. Markdown in (via `marked`) → HTML editing → Markdown
 // out (via `turndown`).
 //
