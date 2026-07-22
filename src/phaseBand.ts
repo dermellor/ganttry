@@ -1,11 +1,32 @@
 import type { Timeline } from 'vis-timeline/standalone';
 import { phaseCssId, type ResolvedPhase } from './buildItems';
+import { parseLocalDay } from './date';
 import { iconSpanHtml } from './icons';
 
 // Pointer travel (px) below which a press-release counts as a click, not a drag.
 const CLICK_SLOP_PX = 3;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+// vis-timeline positions its items (including the phase background tints) with an
+// internal time→pixel conversion, `body.util.toScreen`, applied over
+// `body.domProps.center.width` — the panel's *content* width, which already
+// subtracts a reserved vertical scrollbar (`verticalScroll`). Re-deriving the
+// mapping ourselves from `getWindow()` + `getBoundingClientRect().width` (the
+// border box, which still includes the scrollbar gutter) makes the ribbon drift
+// right of the tints, growing toward the right edge. We therefore reuse vis's own
+// conversion so the ribbon segment and the tint share one coordinate system.
+// These internals aren't part of vis-timeline's public typings.
+type VisInternals = {
+  body: {
+    util: { toScreen(time: Date): number };
+    domProps: { center: { width: number } };
+  };
+};
+
+// Timeline events the band redraws on: a re-layout plus the window-motion pair
+// (continuous during pan/zoom, and on settle after the initial load).
+const PHASE_BAND_EVENTS = ['changed', 'rangechange', 'rangechanged'] as const;
 
 /** A drag/resize result, reported to the host so it can persist the change. */
 export type PhaseEdit = { srcIndex: number; start: Date; end: Date };
@@ -17,8 +38,6 @@ type DragState = {
   mode: DragMode;
   originX: number;
   msPerPx: number;
-  t0: number;
-  span: number;
   width: number;
   startMs: number;
   endMs: number;
@@ -47,6 +66,8 @@ export class PhaseBand {
   private phases: ResolvedPhase[] = [];
   private resizeObserver: ResizeObserver;
   private rafToken = 0;
+  private drawTimers: ReturnType<typeof setTimeout>[] = [];
+  private disposed = false;
   private editable = false;
   private onEdit: ((edit: PhaseEdit) => void) | null = null;
   private onSelect: ((srcIndex: number) => void) | null = null;
@@ -72,7 +93,12 @@ export class PhaseBand {
     this.styleEl = document.createElement('style');
     document.head.appendChild(this.styleEl);
 
-    timeline.on('changed', this.onChanged);
+    // Redraw whenever the timeline re-lays-out (`changed`) or the visible window
+    // moves. `rangechange` fires continuously during pan/zoom and `rangechanged`
+    // on settle — including the post-load window adjustment vis makes after the
+    // initial `start`/`end`, which `changed` alone can miss, leaving the ribbon
+    // stale relative to the tints. `scheduleRedraw` coalesces to one draw/frame.
+    for (const evt of PHASE_BAND_EVENTS) timeline.on(evt, this.onChanged);
     this.resizeObserver = new ResizeObserver(this.onChanged);
     this.resizeObserver.observe(this.host);
   }
@@ -87,7 +113,7 @@ export class PhaseBand {
         return `.vis-item.vis-background.phase-bg-${phaseCssId(p.id)}{background-color:${tint} !important;}`;
       })
       .join('\n');
-    this.scheduleRedraw();
+    this.redrawSoon();
   }
 
   /**
@@ -107,12 +133,29 @@ export class PhaseBand {
   }
 
   dispose(): void {
+    this.disposed = true;
     if (this.rafToken) cancelAnimationFrame(this.rafToken);
+    this.drawTimers.forEach(clearTimeout);
+    this.drawTimers = [];
     this.endDragListeners();
     this.resizeObserver.disconnect();
-    this.timeline.off('changed', this.onChanged);
+    for (const evt of PHASE_BAND_EVENTS) this.timeline.off(evt, this.onChanged);
     this.band.remove();
     this.styleEl.remove();
+  }
+
+  // vis's own time→pixel conversion (see `VisInternals`), so ribbon segments
+  // land on the exact same x as the phase tints.
+  private get vis(): VisInternals {
+    return this.timeline as unknown as VisInternals;
+  }
+  private contentWidth(): number {
+    return this.vis.body.domProps.center.width;
+  }
+  private toX(time: number | string | Date): number {
+    // Parse day strings as *local* midnight (as vis does) — a UTC `new Date(iso)`
+    // would offset the segment from its tint by the timezone offset. See date.ts.
+    return this.vis.body.util.toScreen(parseLocalDay(time));
   }
 
   private scheduleRedraw(): void {
@@ -123,25 +166,45 @@ export class PhaseBand {
     });
   }
 
+  // Positioning needs vis to have laid out (its `toScreen` conversion and the
+  // content width are only valid after the timeline's first — throttled —
+  // redraw). A single rAF right after the band is built can therefore land
+  // before that, drawing nothing, with no later `changed` event to correct it on
+  // a static page. Mirror the arrows overlay: attempt a few times across frames
+  // until the width is real. `redraw` is idempotent (it no-ops while the width is
+  // 0), so the extra attempts are cheap once a draw has landed.
+  private redrawSoon(): void {
+    this.drawTimers.forEach(clearTimeout);
+    this.drawTimers = [];
+    this.scheduleRedraw();
+    for (const delay of [100, 500]) {
+      this.drawTimers.push(setTimeout(() => this.redraw(), delay));
+    }
+  }
+
   private redraw(): void {
+    // A pending retry timer may fire after the band was torn down.
+    if (this.disposed) return;
     // Don't rip out the segment the user is actively dragging.
     if (this.drag) return;
+    if (!this.phases.length) {
+      this.band.innerHTML = '';
+      return;
+    }
+
+    // Map dates through vis's own conversion over the content width, so segments
+    // sit on the same x-grid as the tints (no scrollbar-gutter drift). Until vis
+    // has laid out — width still 0, e.g. the band was built before the first
+    // layout, or the timeline is hidden in list mode — keep the current segments
+    // rather than clearing to an empty band; the ResizeObserver / 'changed'
+    // handler redraws once the width is real.
+    const width = this.contentWidth();
+    if (!(width > 0)) return;
+
     this.band.innerHTML = '';
-    if (!this.phases.length) return;
-
-    const width = this.host.getBoundingClientRect().width;
-    if (width <= 0) return;
-
-    const win = this.timeline.getWindow();
-    const t0 = win.start.getTime();
-    const span = win.end.getTime() - t0;
-    if (!(span > 0)) return;
-
-    const xOf = (iso: string) => ((new Date(iso).getTime() - t0) / span) * width;
-
     this.phases.forEach((p, i) => {
-      const left = xOf(p.start);
-      const right = xOf(p.end);
+      const left = this.toX(p.start);
+      const right = this.toX(p.end);
       if (right <= 0 || left >= width) return; // fully outside the window
 
       const clippedLeft = Math.max(left, 0);
@@ -179,21 +242,18 @@ export class PhaseBand {
     e.preventDefault();
     e.stopPropagation();
 
-    const width = this.host.getBoundingClientRect().width;
+    const width = this.contentWidth();
     const win = this.timeline.getWindow();
-    const t0 = win.start.getTime();
-    const span = win.end.getTime() - t0;
-    if (!(span > 0) || width <= 0) return;
+    const span = win.end.getTime() - win.start.getTime();
+    if (!(span > 0) || !(width > 0)) return;
 
-    const startMs = new Date(phase.start).getTime();
-    const endMs = new Date(phase.end).getTime();
+    const startMs = parseLocalDay(phase.start).getTime();
+    const endMs = parseLocalDay(phase.end).getTime();
     this.drag = {
       phase,
       mode,
       originX: e.clientX,
       msPerPx: span / width,
-      t0,
-      span,
       width,
       startMs,
       endMs,
@@ -237,8 +297,8 @@ export class PhaseBand {
     d.newStart = start;
     d.newEnd = end;
 
-    const left = ((start - d.t0) / d.span) * d.width;
-    const right = ((end - d.t0) / d.span) * d.width;
+    const left = this.toX(start);
+    const right = this.toX(end);
     const clippedLeft = Math.max(left, 0);
     const clippedRight = Math.min(right, d.width);
     d.seg.style.left = `${clippedLeft}px`;

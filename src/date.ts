@@ -17,6 +17,21 @@ function localDay(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+// Inverse of `isoDateOnly` for the string→Date boundary: parse a stored day the
+// same way vis-timeline does — a bare "YYYY-MM-DD" is **local midnight**, not
+// UTC. `new Date("2026-10-15")` would parse as UTC midnight and land the value
+// up to a timezone offset away from where vis places the matching item, so any
+// hand-rolled time→pixel mapping (e.g. the phase ribbon) must go through here to
+// stay pixel-aligned with vis. Values carrying a time component, and Date/number
+// inputs, pass through the native Date constructor unchanged.
+export function parseLocalDay(value: Date | number | string): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === 'number') return new Date(value);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return new Date(value);
+}
+
 // Normalises any date-ish value to a "YYYY-MM-DD" calendar day. Date/number
 // inputs are read in local time (see module note); a string already in
 // YYYY-MM-DD form is returned as-is (it's already a calendar day).

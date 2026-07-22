@@ -470,15 +470,24 @@ export async function renderTimeline(view: View) {
   }
 
   if (built.phases.length > 0) {
-    requestAnimationFrame(() => {
+    // Same fragility as the arrows overlay: the .vis-panel.vis-center the band
+    // attaches to only exists once the timeline has laid out, and a single rAF
+    // sometimes fires too early (constructor throws, band never appears). Retry
+    // across a few frames/timeouts until it succeeds; `phaseBand` is only set on
+    // success, so later ticks are no-ops once it's up.
+    const initBand = () => {
+      if (!timeline || phaseBand) return;
       try {
-        phaseBand = new PhaseBand(timeline!, els.timeline);
+        phaseBand = new PhaseBand(timeline, els.timeline);
         phaseBand.setPhases(built.phases);
         if (isEditableView()) phaseBand.setEditable(true, handlePhaseEdit, showPhaseFormByIndex);
-      } catch (err) {
-        console.warn('PhaseBand init failed:', err);
+      } catch {
+        // panel not ready yet — a later attempt will pick it up
       }
-    });
+    };
+    requestAnimationFrame(initBand);
+    setTimeout(initBand, 100);
+    setTimeout(initBand, 500);
   }
 
   updateTagDensity();
