@@ -2,7 +2,7 @@
    variables defined in brands.css. */
 
 .pricing-view {
-  height: 100%;
+  flex: 1;
   padding: 24px;
   background: var(--bg);
   color: var(--fg);

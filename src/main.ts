@@ -21,6 +21,7 @@ import {
   DEFAULT_BRAND,
   MILESTONES_ONLY_KEY,
   VIEW_MODE_KEY,
+  GROUP_BY_KEY,
   type ViewMode,
 } from './state';
 import {
@@ -31,12 +32,16 @@ import {
   statusFor,
   addNewItem,
   repackLanes,
+  applyGrouping,
+  displayIdsFor,
 } from './render';
+import { GROUP_DIM } from './listGrouping';
 import { commitItemForm } from './persistence';
 import type { PresenceUser } from './presence';
 import { deleteItem } from './itemForm';
 import { hideDetail, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
+import { setupFilterControl } from './filterControl';
 import { renderPricingView, hasPricing } from './pricingMatrix';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
@@ -136,6 +141,9 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   els.timeline.hidden = list || pricing;
   els.list.hidden = !list;
   els.pricing.hidden = !pricing;
+  // The grouping toolbar is shared by the timeline and list views; pricing has
+  // no grouping, so hide it there.
+  els.viewToolbar.hidden = pricing;
   if (list) {
     renderListView();
   } else if (pricing) {
@@ -224,6 +232,7 @@ async function bootstrap() {
   }
   setModeButtons(state.viewMode);
   setupListView();
+  setupFilterControl();
 
   state.pendingItem = urlState.item ?? null;
   if (urlState.from && urlState.to) {
@@ -250,6 +259,7 @@ async function bootstrap() {
     localStorage.setItem(MILESTONES_ONLY_KEY, String(state.milestonesOnly));
     if (state.activeView && state.activeBuild) {
       applyBuildToDataSets();
+      repackLanes();
       setStatus(statusFor(state.activeView, state.activeBuild));
       state.timeline?.redraw();
     }
@@ -266,6 +276,14 @@ async function bootstrap() {
   els.modeTimelineBtn.addEventListener('click', () => applyViewMode('timeline'));
   els.modeListBtn.addEventListener('click', () => applyViewMode('list'));
   els.modePricingBtn.addEventListener('click', () => applyViewMode('pricing'));
+  // Shared grouping dropdown: drives both the timeline lanes and the list
+  // sections. Persist the choice, then repaint whichever view is active.
+  els.groupBy.addEventListener('change', () => {
+    state.groupBy = els.groupBy.value || GROUP_DIM;
+    localStorage.setItem(GROUP_BY_KEY, state.groupBy);
+    if (state.viewMode === 'list') renderListView();
+    else applyGrouping();
+  });
   els.brandSelect.addEventListener('change', () => applyBrand(els.brandSelect.value));
   els.detailClose.addEventListener('click', () => {
     commitItemForm();
@@ -334,7 +352,7 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
       if (incoming.item && incoming.item !== state.selectedItemId) {
         state.selectedItemId = incoming.item;
         try {
-          state.timeline?.setSelection([incoming.item]);
+          state.timeline?.setSelection(displayIdsFor(incoming.item));
         } catch {
           /* ignore */
         }

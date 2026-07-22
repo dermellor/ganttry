@@ -5,6 +5,7 @@
 import { Timeline, DataSet } from 'vis-timeline/standalone';
 import {
   assignLaneSubgroups,
+  assignLanes,
   buildFromJson,
   buildFromNotes,
   tagPillsHtml,
@@ -13,6 +14,16 @@ import {
   type TimelineItem,
   type TimelineItemWithStart,
 } from './buildItems';
+import {
+  isFilterActive,
+  passesFilter,
+  realIdOf,
+  regroupForTimeline,
+  resolveGrouping,
+  syncGroupByControl,
+} from './grouping';
+import { syncFilterControl } from './filterControl';
+import { GROUP_DIM } from './listGrouping';
 import { DependencyArrows } from './arrows';
 import { PhaseBand } from './phaseBand';
 import { iconSpanHtml } from './icons';
@@ -54,6 +65,84 @@ let phaseBand: PhaseBand | null = null;
 let itemsDs: DataSet<TimelineItemWithStart> | null = null;
 let groupsDs: DataSet<TimelineGroup> | null = null;
 
+// What the timeline actually shows for the current build + filter + grouping
+// dimension. For the default 'group' dimension these mirror the build; for a
+// tag/custom-field dimension the items are regrouped into value lanes (with
+// multi-valued items cloned across lanes) and the id maps let selection/editing
+// map a clone back to its real item. Recomputed by computeDisplay(); repackLanes
+// and applyBuildToDataSets both operate on this display set, not the raw build.
+let displayItems: TimelineItem[] = [];
+let displayGroups: TimelineGroup[] = [];
+let displayDeps = new Map<string, string[]>();
+let displayToReal = new Map<string, string>();
+let realToDisplay = new Map<string, string[]>();
+// True when grouping by anything other than the item's own group — the timeline
+// lanes are derived (tag/field values), so group-changing drags and dependency
+// arrows are suppressed.
+let regroupedMode = false;
+
+// The display ids a real item currently renders as (its clones across lanes).
+// Falls back to the id itself when not regrouped or the item has a single lane.
+export function displayIdsFor(realId: string): string[] {
+  return realToDisplay.get(realId) ?? [realId];
+}
+
+// vis-timeline editable config for the active source. When regrouped, the lanes
+// are derived values (tags / custom-field), not the item's editable group — so a
+// vertical drag between lanes (updateGroup) and double-click-to-add (which would
+// guess a bogus group from the lane) are disabled. Horizontal move, resize and
+// delete still work on the real item. Shared by the initial render and the live
+// grouping switch.
+function editableOptions(): false | Record<string, boolean> {
+  return isEditableView()
+    ? {
+        updateTime: true,
+        updateGroup: !regroupedMode,
+        add: !regroupedMode,
+        remove: true,
+        overrideItems: false,
+      }
+    : false;
+}
+
+// Recompute the display items/groups for the active build, milestones filter and
+// grouping dimension; refresh the shared dropdown and the id maps. Lanes get a
+// coarse first pass here (no zoom info yet); repackLanes refines them once the
+// timeline has a width. Returns the display set for the caller to feed the vis
+// DataSets.
+function computeDisplay(): { items: TimelineItem[]; groups: TimelineGroup[] } {
+  const build = state.activeBuild;
+  if (!build) {
+    displayItems = [];
+    displayGroups = [];
+    displayDeps = new Map();
+    displayToReal = new Map();
+    realToDisplay = new Map();
+    regroupedMode = false;
+    return { items: [], groups: [] };
+  }
+  const filtered = filterBuildForDisplay(build);
+  const entries = filtered.items.filter((it) => it.type !== 'background');
+  const { dim, options } = resolveGrouping(entries);
+  state.groupBy = dim;
+  syncGroupByControl(options, dim);
+  syncFilterControl();
+  regroupedMode = dim !== GROUP_DIM;
+
+  const regroup = regroupForTimeline(filtered.items, filtered.groups, dim, options);
+  displayItems = regroup.items;
+  displayGroups = regroup.groups;
+  displayToReal = regroup.displayToReal;
+  realToDisplay = regroup.realToDisplay;
+  // Cross-lane dependency arrows only make sense along the item's own group; a
+  // tag/field regroup would tangle them across values, so it runs deps-free.
+  displayDeps = regroupedMode ? new Map() : build.dependencies;
+
+  assignLaneSubgroups(displayItems, displayGroups, displayDeps);
+  assignLanes(displayItems, displayGroups);
+  return { items: displayItems, groups: displayGroups };
+}
+
 // Point-label measurement (see repackLanes). A single off-DOM canvas measures
 // text width in the timeline's own font; results are cached by `font|text`.
 // `labelFont` is resolved lazily from a rendered item and reset per render.
@@ -62,18 +151,17 @@ let labelFont: string | null = null;
 const labelWidthCache = new Map<string, number>();
 let repackRaf = 0;
 
-export function filterBuildForDisplay(build: BuildResult): {
-  items: TimelineItem[];
-  groups: TimelineGroup[];
-} {
-  if (!state.milestonesOnly) return { items: build.items, groups: build.groups };
-  const items = build.items.filter((it) => it.type === 'point');
+// Prune a group list to only those referenced by `items` — directly, or (for a
+// parent/container) via a nested child that survives. Nested-group references are
+// trimmed to the survivors too. Shared by the milestones-only filter and the
+// value filter, both of which drop items and then need the empty lanes removed.
+function pruneGroupsToItems(items: TimelineItem[], groups: TimelineGroup[]): TimelineGroup[] {
   const referenced = new Set<string>();
   for (const it of items) if (it.group) referenced.add(it.group);
   const keep = new Set<string>();
   const visit = (id: string): boolean => {
     if (keep.has(id)) return true;
-    const g = build.groups.find((x) => x.id === id);
+    const g = groups.find((x) => x.id === id);
     if (!g) return false;
     let kept = referenced.has(id);
     if (g.nestedGroups) {
@@ -84,14 +172,31 @@ export function filterBuildForDisplay(build: BuildResult): {
     if (kept) keep.add(id);
     return kept;
   };
-  for (const g of build.groups) visit(g.id);
-  const groups = build.groups
+  for (const g of groups) visit(g.id);
+  return groups
     .filter((g) => keep.has(g.id))
     .map((g) =>
       g.nestedGroups
         ? { ...g, nestedGroups: g.nestedGroups.filter((c) => keep.has(c)) }
         : g,
     );
+}
+
+// Items + groups actually shown, after the milestones-only toggle and the value
+// filter (both shared across the timeline and list views). Background phase-tint
+// items always pass the value filter. Empty lanes are pruned once at the end.
+export function filterBuildForDisplay(build: BuildResult): {
+  items: TimelineItem[];
+  groups: TimelineGroup[];
+} {
+  const filterOn = isFilterActive();
+  if (!state.milestonesOnly && !filterOn) return { items: build.items, groups: build.groups };
+  let items = build.items;
+  if (state.milestonesOnly) items = items.filter((it) => it.type === 'point');
+  if (filterOn) {
+    items = items.filter((it) => it.type === 'background' || passesFilter(it, build.groups));
+  }
+  const groups = pruneGroupsToItems(items, build.groups);
   return { items, groups };
 }
 
@@ -117,15 +222,15 @@ export function timelineItems(items: TimelineItem[]): TimelineItemWithStart[] {
 
 export function applyBuildToDataSets(): void {
   if (!state.activeBuild) return;
-  const filtered = filterBuildForDisplay(state.activeBuild);
+  const display = computeDisplay();
   // Diff the DataSets in place instead of clear()+add(). Clearing momentarily
   // empties the timeline, collapsing its content height — the browser then clamps
   // the vertical-scroll container's scrollTop to the top and vis-timeline latches
   // that, snapping the view up on every rebuild (live edits, drags, switching
   // items). update()/remove() keep the surviving rows mounted, so the height
   // never collapses and the scroll position is left untouched.
-  if (itemsDs) syncDataSet(itemsDs, timelineItems(filtered.items));
-  if (groupsDs) syncDataSet(groupsDs, filtered.groups);
+  if (itemsDs) syncDataSet(itemsDs, timelineItems(display.items));
+  if (groupsDs) syncDataSet(groupsDs, display.groups);
   // Keep the list view in sync when it's the active display (edits, drags,
   // milestones-only toggle all funnel through here).
   if (state.viewMode === 'list') renderListView();
@@ -197,9 +302,9 @@ export async function renderTimeline(view: View) {
   snapshotSaved();
   setupRealtime();
 
-  const filtered = filterBuildForDisplay(built);
-  itemsDs = new DataSet<TimelineItemWithStart>(timelineItems(filtered.items));
-  groupsDs = new DataSet<TimelineGroup>(filtered.groups);
+  const display = computeDisplay();
+  itemsDs = new DataSet<TimelineItemWithStart>(timelineItems(display.items));
+  groupsDs = new DataSet<TimelineGroup>(display.groups);
 
   if (arrows) {
     arrows.dispose();
@@ -217,7 +322,7 @@ export async function renderTimeline(view: View) {
     els.timeline.innerHTML = '';
   }
 
-  const useGroups = filtered.groups.length > 0;
+  const useGroups = display.groups.length > 0;
 
   const now = Date.now();
   const yearMs = 365 * 24 * 3600 * 1000;
@@ -232,9 +337,7 @@ export async function renderTimeline(view: View) {
 
   const containerHeight = els.timeline.clientHeight || 600;
 
-  const editable = isEditableView()
-    ? { updateTime: true, updateGroup: true, add: true, remove: true, overrideItems: false }
-    : false;
+  const editable = editableOptions();
 
   els.addBtn.hidden = !isEditableView();
 
@@ -356,7 +459,7 @@ export async function renderTimeline(view: View) {
       if (!timeline) return;
       try {
         if (!arrows) arrows = new DependencyArrows(timeline, els.timeline);
-        arrows.setDependencies(built.dependencies);
+        arrows.setDependencies(displayDeps);
       } catch {
         // panel not ready yet — a later attempt will pick it up
       }
@@ -388,13 +491,24 @@ export async function renderTimeline(view: View) {
   });
 
   timeline.on('select', (props: { items: string[] }) => {
-    const id = props.items[0];
-    if (!id) {
+    const clicked = props.items[0];
+    if (!clicked) {
       state.selectedItemId = null;
       syncUrl();
       return;
     }
+    // The clicked id may be a clone; track/select by the real item id. When the
+    // item lives in several lanes, highlight all of its clones at once.
+    const id = realIdOf(clicked);
     state.selectedItemId = id;
+    const clones = displayIdsFor(id);
+    if (clones.length > 1) {
+      try {
+        timeline?.setSelection(clones);
+      } catch {
+        /* ignore */
+      }
+    }
     syncUrl();
     showDetailForId(id);
   });
@@ -410,7 +524,7 @@ export async function renderTimeline(view: View) {
     state.pendingItem = null;
     setTimeout(() => {
       try {
-        timeline?.setSelection([id]);
+        timeline?.setSelection(displayIdsFor(id));
       } catch {
         /* item may not exist in this build */
       }
@@ -470,13 +584,14 @@ function scheduleRepack(): void {
 // zooming out — where the same label spans more days — spreads crowded
 // milestones onto more lanes, and zooming back in re-packs them tight again.
 export function repackLanes(): void {
-  const build = state.activeBuild;
-  if (!timeline || !build || !itemsDs) return;
+  if (!timeline || !state.activeBuild || !itemsDs) return;
   const pxPerDay = currentPxPerDay();
   if (pxPerDay === null) return;
 
-  const before = new Map(build.items.map((it) => [it.id, it.subgroup]));
-  assignLaneSubgroups(build.items, build.groups, build.dependencies, {
+  // Pack the *display* set (regrouped/cloned when grouping by tag/field), so the
+  // clones on their derived lanes get label-width-aware spacing too.
+  const before = new Map(displayItems.map((it) => [it.id, it.subgroup]));
+  assignLaneSubgroups(displayItems, displayGroups, displayDeps, {
     pxPerDay,
     pointLabelPx: measurePointLabelPx,
   });
@@ -484,7 +599,7 @@ export function repackLanes(): void {
   // Only touch items that are actually mounted (milestones-only filter may hide
   // some) and whose lane moved — a partial update keeps vis's redraw minimal.
   const present = new Set((itemsDs.getIds() as (string | number)[]).map(String));
-  const changed = build.items
+  const changed = displayItems
     .filter((it) => present.has(String(it.id)) && it.subgroup !== before.get(it.id))
     .map((it) => ({ id: it.id, subgroup: it.subgroup }));
   if (changed.length) itemsDs.update(changed);
@@ -550,7 +665,9 @@ function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) =>
     callback(item);
     return;
   }
-  const idx = findItemIndex(state.activeSourceFile, item.id);
+  // `item.id` may be a clone (when regrouped): edit the real source item.
+  const realId = realIdOf(item.id);
+  const idx = findItemIndex(state.activeSourceFile, realId);
   if (idx === -1) {
     callback(item);
     return;
@@ -569,7 +686,10 @@ function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) =>
   } else {
     delete src.end;
   }
-  if (item.group != null && item.group !== src.group) {
+  // Group changes only happen along the item's own group dimension. When
+  // regrouped, `item.group` is a derived lane id (updateGroup is off anyway), so
+  // never write it back over the real group.
+  if (!regroupedMode && item.group != null && item.group !== src.group) {
     // Parent groups (with nestedGroups) are containers only: a drop onto a
     // parent lane snaps into its first leaf child instead of the parent itself.
     const groups = state.activeSourceFile.groups ?? state.activeBuild?.groups ?? [];
@@ -581,7 +701,7 @@ function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) =>
   callback(item);
   rebuildAndApply();
   schedulePersist();
-  if (state.activeFormItemId === item.id) {
+  if (state.activeFormItemId === realId) {
     showItemForm(src);
   }
 }
@@ -649,12 +769,44 @@ export function addNewItem(group?: string | null): void {
   if (!newItem) return;
   setTimeout(() => {
     try {
-      timeline?.setSelection([newItem.id]);
+      timeline?.setSelection(displayIdsFor(newItem.id));
     } catch {
       /* item may be filtered out of the current view */
     }
     showItemForm(newItem, { focusTitle: true });
   }, 50);
+}
+
+// Re-apply the active grouping/filter to the live views without a full rebuild,
+// so the current window/scroll is preserved. Recomputes the display set (via
+// computeDisplay inside applyBuildToDataSets, which repaints the list/pricing
+// too), repacks the timeline lanes, refreshes the dependency arrows, and updates
+// the status line to the visible counts.
+export function refreshDisplay(): void {
+  if (!state.activeBuild) return;
+  applyBuildToDataSets();
+  if (timeline) {
+    repackLanes();
+    if (arrows) arrows.setDependencies(displayDeps);
+    timeline.redraw();
+  }
+  if (state.activeView) setStatus(statusFor(state.activeView, state.activeBuild));
+}
+
+// Grouping change: same as a display refresh, but the grouping dimension also
+// flips the editable behaviour (updateGroup/add are off when regrouped) and the
+// "+ Eintrag" button availability, so re-apply those to the live timeline.
+export function applyGrouping(): void {
+  refreshDisplay();
+  if (!timeline) return;
+  timeline.setOptions({ editable: editableOptions() } as any);
+  els.addBtn.hidden = !isEditableView();
+}
+
+// Filter change: only the visible item set changes, so a plain display refresh
+// is enough (grouping dimension and editability are untouched).
+export function applyFilter(): void {
+  refreshDisplay();
 }
 
 function handleRemove(item: TimelineItem, callback: (item: TimelineItem | null) => void): void {

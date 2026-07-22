@@ -667,25 +667,59 @@ active state driven by `aria-pressed`) switches between two renderings of the
 
 - **Timeline** — the vis-timeline (default).
 - **Liste** — a scrollable, grouped table ([`src/listView.ts`](src/listView.ts)):
-  sections along a selectable **grouping dimension** (items sorted by start),
+  sections along the active **grouping dimension** (items sorted by start),
   with columns Eintrag (icon + tag pills + content), Start, Ende, Typ, Status,
   Owner. Phase background items are omitted. The milestones-only filter applies
   here too.
 
-  A **Gruppieren** dropdown in the list toolbar (a bar pinned above the
-  scrollable body — not in the global app header, since it only applies to the
-  list) chooses the dimension: **Gruppe** (default, the item group — build order
-  preserved), **Tag** (offered when anything is tagged, from `metadata.tags`),
-  and one entry per **custom field** the timeline declares (e.g. **Tier**, from
-  `metadata.<key>`). The sectioning is a pure, DOM-free function
-  (`computeSections` in [`src/listGrouping.ts`](src/listGrouping.ts), unit-tested
-  in `src/listGrouping.test.ts`): multi-valued dimensions (tags, `multi-select`
-  fields) list an item under *every* value it carries; items without a value
-  land in an "Ohne …" bucket. Custom-field sections order by the field's declared
-  `options` first, then by first appearance. The per-section "+ Eintrag" button
-  shows only in the Gruppe dimension (it pins the new item to that group). The
-  choice persists in `localStorage` (`timelines.listGroupBy`) and falls back to
-  Gruppe when the chosen dimension isn't available on the active build.
+### Shared toolbar: Gruppieren + Filter
+
+A single toolbar (`#view-toolbar`, styled `.view-toolbar` in
+[`src/styles/base.css`](src/styles/base.css)) sits above **both** the timeline
+and the list (in the shared `.content-area` column, left of the detail panel)
+and is identical in either mode — hidden only in the pricing view. It holds two
+controls that drive both views from one shared state; the app-state-aware glue
+lives in [`src/grouping.ts`](src/grouping.ts), the pure sectioning stays in
+[`src/listGrouping.ts`](src/listGrouping.ts) (`computeSections`, unit-tested in
+`src/listGrouping.test.ts`).
+
+- **Gruppieren** (`#groupby`, `state.groupBy`, persisted as
+  `timelines.listGroupBy`) chooses the dimension: **Gruppe** (default, the item
+  group — build order preserved), **Tag** (offered when anything is tagged, from
+  `metadata.tags`), and one entry per **custom field** (e.g. **Tier**, from
+  `metadata.<key>`). Multi-valued dimensions (tags, `multi-select` fields) place
+  an item under *every* value it carries; items without a value land in an
+  "Ohne …" bucket. Custom-field order follows the declared `options` first, then
+  first appearance. Falls back to Gruppe when the chosen dimension isn't
+  available on the active build.
+
+  In the **list** these are the table sections. In the **timeline** they are the
+  vis lanes: for a non-Gruppe dimension the build is *regrouped*
+  (`regroupForTimeline` in `grouping.ts`) into one lane per value, and a
+  multi-valued item is **cloned into each lane** (the first clone keeps the real
+  id; extras get a `<id>␟<n>` id). Display↔real id maps
+  ([`src/render.ts`](src/render.ts)) map a clicked/dragged clone back to its real
+  item and highlight all clones of a selection at once. While regrouped, the
+  lanes are derived values, so vertical group-drag (`updateGroup`),
+  double-click-add and dependency arrows are suppressed; horizontal move, resize,
+  delete and click-to-edit keep working on the real item. Lane assignment
+  (`assignLaneSubgroups`/`assignLanes`) and repacking run on this display set.
+
+- **Filter** ([`src/filterControl.ts`](src/filterControl.ts)) narrows the visible
+  items. It is **independent** of grouping: a dimension `<select>` (`#filter-dim`,
+  same categories as Gruppieren, plus an "Aus" option) selects *what* to filter
+  on, and a popover checklist (`#filter-menu`) of that dimension's values selects
+  *which* to keep. An item passes if it carries a selected value (the "Ohne …"
+  bucket, `NO_BUCKET`, is selectable to keep value-less items); an **empty
+  selection means no restriction**. Persisted as `timelines.filterDim` /
+  `timelines.filterValues`; a persisted dimension that no longer exists turns the
+  filter off. The filtering itself lives in `filterBuildForDisplay`
+  ([`src/render.ts`](src/render.ts)) via `passesFilter`, so every consumer
+  (timeline, list, export, status line) honours it from one place, composed with
+  the milestones-only toggle; empty lanes are pruned once by `pruneGroupsToItems`.
+
+The per-section "+ Eintrag" button (list) shows only in the Gruppe dimension (it
+pins the new item to that group).
 
 Both modes share all state and machinery: the timeline instance stays alive
 (just hidden) in list mode, so drags, the detail/edit form, and persistence keep

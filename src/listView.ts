@@ -4,20 +4,22 @@
 // clickable and route through the same detail/edit panel as the timeline
 // (showDetailForId), so editing works identically in either mode.
 //
-// The grouping dimension is selectable (state.listGroupBy): the item's own
-// group (default), its tags, or any custom field the timeline defines
-// (e.g. "Tier"). Multi-valued dimensions (tags, multi-select fields) let an
+// The grouping dimension is selectable (state.groupBy, shared with the timeline
+// view via the toolbar dropdown): the item's own group (default), its tags, or
+// any custom field the timeline defines (e.g. "Tier"). Multi-valued dimensions
+// (tags, multi-select fields) let an
 // item appear under every value it carries; items without a value fall into an
 // "Ohne …" bucket. The sectioning itself is a pure, DOM-free function
 // (computeSections in listGrouping.ts) so it can be unit-tested.
 
 import { escapeHtml, tagPillsHtml, type TimelineItem } from './buildItems';
 import { iconSpanHtml } from './icons';
-import { addNewItem, filterBuildForDisplay } from './render';
+import { addNewItem, filterBuildForDisplay, displayIdsFor } from './render';
 import { showDetailForId } from './detailPanel';
-import { state, els, syncUrl, isEditableView, LIST_GROUP_BY_KEY } from './state';
-import { getCustomFields } from './customFields';
-import { computeSections, groupByOptions, GROUP_DIM } from './listGrouping';
+import { state, els, syncUrl, isEditableView } from './state';
+import { computeSections, GROUP_DIM } from './listGrouping';
+import { metaOf, resolveGrouping, sectionContext, syncGroupByControl } from './grouping';
+import { syncFilterControl } from './filterControl';
 import { parentGroupIds } from './groupHierarchy';
 
 const TYPE_LABELS: Record<TimelineItem['type'], string> = {
@@ -34,10 +36,6 @@ function formatDate(value?: string | null): string {
   const iso = value.slice(0, 10);
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
-}
-
-function metaOf(id: string): Record<string, unknown> | undefined {
-  return state.activeBuild?.details.get(id)?.frontmatter as Record<string, unknown> | undefined;
 }
 
 function ownerOf(id: string): string {
@@ -77,17 +75,12 @@ export function renderListView(): void {
       return a.start.localeCompare(b.start);
     });
 
-  const customFields = getCustomFields();
-  const options = groupByOptions(entries, customFields);
-  const dim = options.some((o) => o.key === state.listGroupBy) ? state.listGroupBy : GROUP_DIM;
-  state.listGroupBy = dim;
-  populateGroupBySelect(options, dim);
+  const { dim, options } = resolveGrouping(entries);
+  state.groupBy = dim;
+  syncGroupByControl(options, dim);
+  syncFilterControl();
 
-  const { sections, grouped } = computeSections(entries, dim, options, {
-    groups,
-    customFields,
-    metaOf,
-  });
+  const { sections, grouped } = computeSections(entries, dim, options, sectionContext(groups));
 
   const sel = state.selectedItemId;
   // The per-section "+ Eintrag" button only makes sense in the group dimension:
@@ -130,21 +123,6 @@ export function renderListView(): void {
     : '<p class="list-empty-msg">Keine Einträge in dieser View.</p>';
 }
 
-// Sync the header "Gruppieren" dropdown with the options for the current build,
-// preserving the active selection. Rebuilt on every render so tag/custom-field
-// changes (from edits) keep the choices current.
-function populateGroupBySelect(options: { key: string; label: string }[], dim: string): void {
-  const sel = els.listGroupBy;
-  const desired = options
-    .map((o) => `<option value="${escapeHtml(o.key)}">${escapeHtml(o.label)}</option>`)
-    .join('');
-  if (sel.dataset.built !== desired) {
-    sel.innerHTML = desired;
-    sel.dataset.built = desired;
-  }
-  sel.value = dim;
-}
-
 let wired = false;
 
 // Delegated click/keyboard handling: rows are re-rendered on every data change,
@@ -168,7 +146,7 @@ export function setupListView(): void {
     // open the same detail/edit panel.
     state.selectedItemId = id;
     try {
-      state.timeline?.setSelection([id]);
+      state.timeline?.setSelection(displayIdsFor(id));
     } catch {
       /* item may be filtered out of the current view */
     }
@@ -182,10 +160,5 @@ export function setupListView(): void {
       e.preventDefault();
       activate(e.target);
     }
-  });
-  els.listGroupBy.addEventListener('change', () => {
-    state.listGroupBy = els.listGroupBy.value || GROUP_DIM;
-    localStorage.setItem(LIST_GROUP_BY_KEY, state.listGroupBy);
-    renderListView();
   });
 }

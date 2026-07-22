@@ -48,7 +48,7 @@ function laneClass(index: number): string {
   return `lane-${index % LANE_COUNT}`;
 }
 
-function assignLanes(items: TimelineItem[], groups: TimelineGroup[]): void {
+export function assignLanes(items: TimelineItem[], groups: TimelineGroup[]): void {
   if (groups.length === 0) return;
   const laneByGroup = new Map<string, string>();
   groups.forEach((g, i) => {

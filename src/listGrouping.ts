@@ -9,7 +9,10 @@ import type { CustomFieldDef } from './types';
 export const GROUP_DIM = 'group';
 export const TAG_DIM = 'tag';
 export const CF_PREFIX = 'cf:';
-const NO_BUCKET = ' __nobucket';
+// Sentinel bucket key for entries that carry no value for the active dimension
+// (the "Ohne …" section). Exported so the filter can offer it as a selectable
+// value ("show only items without a value").
+export const NO_BUCKET = ' __nobucket';
 
 export type GroupByOption = { key: string; label: string };
 // `empty` marks the synthetic "Ohne …" bucket (items without a value for the
@@ -37,7 +40,7 @@ export function toValues(raw: unknown): string[] {
 }
 
 // Bucket keys an item belongs to under the current dimension. Empty = ungrouped.
-function bucketsFor(item: TimelineItem, dim: string, ctx: SectionContext): string[] {
+export function bucketsFor(item: TimelineItem, dim: string, ctx: SectionContext): string[] {
   if (dim === TAG_DIM) return item.tags ?? [];
   if (dim.startsWith(CF_PREFIX)) return toValues(ctx.metaOf(item.id)?.[dim.slice(CF_PREFIX.length)]);
   // Default: the item's own group, if it resolves to a real group.

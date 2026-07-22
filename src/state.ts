@@ -24,7 +24,12 @@ export const els = {
   list: document.getElementById('list') as HTMLElement,
   listBody: document.getElementById('list-body') as HTMLElement,
   pricing: document.getElementById('pricing') as HTMLElement,
-  listGroupBy: document.getElementById('list-groupby') as HTMLSelectElement,
+  viewToolbar: document.getElementById('view-toolbar') as HTMLDivElement,
+  groupBy: document.getElementById('groupby') as HTMLSelectElement,
+  filterControl: document.getElementById('filter-control') as HTMLDivElement,
+  filterDim: document.getElementById('filter-dim') as HTMLSelectElement,
+  filterToggle: document.getElementById('filter-toggle') as HTMLButtonElement,
+  filterMenu: document.getElementById('filter-menu') as HTMLDivElement,
   viewSelect: document.getElementById('view-select') as HTMLSelectElement,
   modeTimelineBtn: document.getElementById('mode-timeline') as HTMLButtonElement,
   modeListBtn: document.getElementById('mode-list') as HTMLButtonElement,
@@ -45,10 +50,16 @@ export const els = {
 
 export const MILESTONES_ONLY_KEY = 'timelines.milestonesOnly';
 export const VIEW_MODE_KEY = 'timelines.viewMode';
-// Which dimension the list view groups by. 'group' (default), 'tag', or a custom
-// field key (e.g. 'cf:tier'). Persisted; validated against the active build on
-// render, falling back to 'group' when the chosen dimension isn't available.
-export const LIST_GROUP_BY_KEY = 'timelines.listGroupBy';
+// Which dimension both the timeline and list views group by. 'group' (default),
+// 'tag', or a custom field key (e.g. 'cf:tier'). Persisted; validated against the
+// active build on render, falling back to 'group' when the chosen dimension isn't
+// available. The localStorage key keeps its historical name for back-compat.
+export const GROUP_BY_KEY = 'timelines.listGroupBy';
+// The filter dimension ('' = off) and the selected values within it. Independent
+// of the grouping dimension: you can group by one dimension and filter by
+// another. Both shared across the timeline and list views. Persisted.
+export const FILTER_DIM_KEY = 'timelines.filterDim';
+export const FILTER_VALUES_KEY = 'timelines.filterValues';
 
 export type ViewMode = 'timeline' | 'list' | 'pricing';
 
@@ -130,8 +141,12 @@ export interface AppState {
   suppressUrlSync: boolean;
   milestonesOnly: boolean;
   viewMode: ViewMode;
-  // List-view grouping dimension (see LIST_GROUP_BY_KEY).
-  listGroupBy: string;
+  // Shared grouping dimension for the timeline and list views (see GROUP_BY_KEY).
+  groupBy: string;
+  // Shared value filter (see FILTER_DIM_KEY): the dimension to filter on ('' =
+  // off) and the selected bucket values within it.
+  filterDim: string;
+  filterValues: string[];
   persisting: boolean;
   persistAgain: boolean;
   lastFormPersistAt: number;
@@ -176,7 +191,16 @@ export const state: AppState = {
     const m = localStorage.getItem(VIEW_MODE_KEY);
     return m === 'list' || m === 'pricing' ? m : 'timeline';
   })(),
-  listGroupBy: localStorage.getItem(LIST_GROUP_BY_KEY) || 'group',
+  groupBy: localStorage.getItem(GROUP_BY_KEY) || 'group',
+  filterDim: localStorage.getItem(FILTER_DIM_KEY) || '',
+  filterValues: (() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(FILTER_VALUES_KEY) || '[]');
+      return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : [];
+    } catch {
+      return [];
+    }
+  })(),
   persisting: false,
   persistAgain: false,
   lastFormPersistAt: 0,

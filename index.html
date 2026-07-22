@@ -66,17 +66,27 @@
       </div>
     </header>
     <main class="app-main">
-      <section id="timeline" class="timeline" aria-label="Timeline"></section>
-      <section id="list" class="list-view" aria-label="Liste" hidden>
-        <div class="list-toolbar">
-          <label class="control" id="list-groupby-control">
+      <div class="content-area">
+        <div id="view-toolbar" class="view-toolbar">
+          <label class="control" id="groupby-control">
             <span>Gruppieren</span>
-            <select id="list-groupby"></select>
+            <select id="groupby"></select>
           </label>
+          <div class="control filter-control" id="filter-control">
+            <span>Filter</span>
+            <select id="filter-dim" aria-label="Filter-Dimension"></select>
+            <div class="filter-values">
+              <button type="button" id="filter-toggle" class="filter-toggle" aria-haspopup="true" aria-expanded="false" hidden>Alle Werte</button>
+              <div id="filter-menu" class="filter-menu" role="group" aria-label="Filterwerte" hidden></div>
+            </div>
+          </div>
         </div>
-        <div id="list-body" class="list-body"></div>
-      </section>
-      <section id="pricing" class="pricing-view" aria-label="Preise" hidden></section>
+        <section id="timeline" class="timeline" aria-label="Timeline"></section>
+        <section id="list" class="list-view" aria-label="Liste" hidden>
+          <div id="list-body" class="list-body"></div>
+        </section>
+        <section id="pricing" class="pricing-view" aria-label="Preise" hidden></section>
+      </div>
       <aside id="detail" class="detail" hidden>
         <div class="detail-header">
           <button id="detail-close" class="detail-close" aria-label="Schließen">×</button>
