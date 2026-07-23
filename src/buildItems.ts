@@ -3,6 +3,7 @@ import { matches, resolveGroupBy } from './filter';
 import { normalizeIcon } from './icons';
 import { normalizeStatus } from './status';
 import type { StatusKey } from './status';
+import { durationToMs } from './date';
 
 export const UNGROUPED = '_ungrouped';
 
@@ -82,25 +83,10 @@ export function escapeHtml(s: string): string {
   });
 }
 
-const DURATION_RE = /^(\d+(?:\.\d+)?)\s*([a-zA-Z]+)$/;
-
-export function durationToMs(value: unknown): number | null {
-  if (value == null) return null;
-  if (typeof value === 'number') return value > 0 ? value : null;
-  if (typeof value !== 'string') return null;
-  const s = value.trim();
-  if (!s) return null;
-  const m = s.match(DURATION_RE);
-  if (!m) return null;
-  const n = parseFloat(m[1]);
-  const unit = m[2].toLowerCase();
-  const map: Record<string, number> = {
-    ms: 1, s: 1000, m: 60000, min: 60000, h: 3600000, hr: 3600000,
-    d: 86400000, day: 86400000, w: 604800000, wk: 604800000,
-    mo: 2592000000, month: 2592000000, y: 31536000000, year: 31536000000,
-  };
-  return n * (map[unit] ?? 0) || null;
-}
+// `durationToMs` now lives in ./date (pure date/duration maths, no client-graph
+// deps) so the Deno edge bundle can reach it via phaseOverlap without pulling in
+// filter/icons. Re-exported here to keep buildItems' public API stable.
+export { durationToMs };
 
 /**
  * Add a duration (ms) to a start date and return an end string in the SAME

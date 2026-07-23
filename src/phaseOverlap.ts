@@ -4,8 +4,12 @@
 // clamping). Touching boundaries (one phase's end == the next's start) are NOT
 // an overlap — gaps and back-to-back phases are both allowed.
 
-import { durationToMs } from './buildItems';
-import { parseLocalDay } from './date';
+// Explicit .ts extension: this module is reachable from the Deno edge bundle
+// (timeline-repo → phaseOverlap), and Deno resolves relative imports only with
+// their extension. Both come from ./date, which is dependency-free (safe to
+// pull server-side); importing durationToMs from ./buildItems instead would
+// drag the client graph (filter, icons) into the edge function.
+import { durationToMs, parseLocalDay } from './date.ts';
 import type { TimelinePhase } from './types';
 
 export type PhaseExtent = { start: number; end: number };

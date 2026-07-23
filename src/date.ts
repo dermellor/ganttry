@@ -32,6 +32,33 @@ export function parseLocalDay(value: Date | number | string): Date {
   return new Date(value);
 }
 
+// Duration parsing lives here (with the other pure date maths) rather than in
+// buildItems so the server write path — reachable from the Deno edge bundle via
+// phaseOverlap — can parse a phase/item `duration` without dragging the heavy,
+// client-oriented buildItems graph (filter, icons, …) into the edge function.
+const DURATION_RE = /^(\d+(?:\.\d+)?)\s*([a-zA-Z]+)$/;
+
+// Parse a `duration` value ("7d", "2w", "90m", ISO-ish "Nh|d|w|mo|y", or a raw
+// number of ms) into milliseconds. Returns null for empty/unparseable input or
+// a non-positive result.
+export function durationToMs(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === 'number') return value > 0 ? value : null;
+  if (typeof value !== 'string') return null;
+  const s = value.trim();
+  if (!s) return null;
+  const m = s.match(DURATION_RE);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  const unit = m[2].toLowerCase();
+  const map: Record<string, number> = {
+    ms: 1, s: 1000, m: 60000, min: 60000, h: 3600000, hr: 3600000,
+    d: 86400000, day: 86400000, w: 604800000, wk: 604800000,
+    mo: 2592000000, month: 2592000000, y: 31536000000, year: 31536000000,
+  };
+  return n * (map[unit] ?? 0) || null;
+}
+
 // Normalises any date-ish value to a "YYYY-MM-DD" calendar day. Date/number
 // inputs are read in local time (see module note); a string already in
 // YYYY-MM-DD form is returned as-is (it's already a calendar day).
