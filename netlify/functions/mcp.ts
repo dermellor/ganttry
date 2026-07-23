@@ -13,7 +13,7 @@ import { z } from 'zod';
 import crypto from 'node:crypto';
 import type { Config } from '@netlify/functions';
 import { getServiceClient } from '../../scripts/db/client.ts';
-import { handleTimelineApi, type ApiRequest } from '../../scripts/db/api.ts';
+import { resolveAdapter, type ApiRequest } from '../../scripts/db/api.ts';
 
 const ACCESS_TTL = 12 * 3600; // must match mcp-oauth.ts
 
@@ -70,7 +70,8 @@ function buildServer(updatedBy: string): McpServer {
 
   const run = async (req: Omit<ApiRequest, 'updatedBy'>) => {
     if (!db) throw new Error('Supabase not configured on the server.');
-    const result = await handleTimelineApi(db, { ...req, updatedBy });
+    const fullReq = { ...req, updatedBy } as ApiRequest;
+    const result = await resolveAdapter(db, fullReq.id).handle(fullReq);
     if (result.status >= 400) {
       const msg = (result.json as { error?: string; message?: string });
       throw new Error(msg.message || msg.error || `error ${result.status}`);

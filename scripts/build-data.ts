@@ -193,7 +193,12 @@ async function syncTimelinesOnce(): Promise<void> {
 
   for (const row of rows) {
     // Registration stub only — no items/groups/phases (that's the whole point).
-    const stub: Record<string, unknown> = { name: row.name ?? row.id };
+    // `kind: 'db'` marks this as a DB-backed source so the view generator (and,
+    // via the built config, the client loader) route it to /api/source instead
+    // of the static file. Genuine file sources carry no such marker. The marker
+    // survives into the committed stub, so even STATIC_ONLY deploy builds (which
+    // skip the DB query) still classify the source correctly.
+    const stub: Record<string, unknown> = { kind: 'db', name: row.name ?? row.id };
     if (row.description != null) stub.description = row.description;
     if (row.group_by != null) stub.groupBy = row.group_by;
     stub.items = [];
@@ -363,7 +368,7 @@ async function collectStandaloneSources(): Promise<unknown[]> {
     } catch {
       continue;
     }
-    let parsed: { name?: string; description?: string; groupBy?: string; items?: unknown[] };
+    let parsed: { kind?: string; name?: string; description?: string; groupBy?: string; items?: unknown[] };
     try {
       parsed = JSON.parse(raw);
     } catch (err) {
@@ -374,6 +379,11 @@ async function collectStandaloneSources(): Promise<unknown[]> {
       console.warn(`[build-data] skipping ${rel}: missing "items" array`);
       continue;
     }
+    // A `kind: 'db'` marker (written by syncTimelinesOnce) means this file is a
+    // registration stub for a DB-backed timeline → the client loads it live from
+    // /api/source. Everything else is a genuine file source, loaded read-only
+    // from the static copy.
+    const kind: 'db' | 'file' = parsed.kind === 'db' ? 'db' : 'file';
     const outPath = join(SOURCES_DIR_OUT, `${id}.json`);
     await mkdir(dirname(outPath), { recursive: true });
     await writeIfChanged(outPath, raw);
@@ -383,7 +393,7 @@ async function collectStandaloneSources(): Promise<unknown[]> {
       description: parsed.description ?? '',
       filter: {},
       groupBy: parsed.groupBy,
-      source: { type: 'json', id },
+      source: { kind, id },
     });
   }
   return views;

@@ -32,7 +32,17 @@ export type FilterClause = {
   not?: FilterClause;
 };
 
-export type ViewSource = { type: 'json'; id: string };
+// Where a source-backed view gets its data. The `kind` is the explicit
+// discriminator that drives loading — deliberately NOT a "try the API, then
+// fall back to a static file" guess, which conflates a live DB timeline with a
+// stale snapshot (see AGENTS.md „keine Notfall-Daten"). Extensible to further
+// API-served kinds (e.g. 'gsheet', external 'pg') later.
+//   - 'db'   → live from the DB via /api/source/<id> (editable, no fallback)
+//   - 'file' → read-only from the static /data/sources/<id>.json (the file IS
+//              the source, not a snapshot — so loading it is correct)
+export type SourceKind = 'db' | 'file';
+
+export type ViewSource = { kind: SourceKind; id: string };
 
 export type View = {
   id: string;

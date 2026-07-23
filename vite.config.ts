@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
 import { getServiceClient } from './scripts/db/client';
-import { handleTimelineApi, parseSourcePath, type ApiRequest } from './scripts/db/api';
+import { resolveAdapter, parseSourcePath, type ApiRequest } from './scripts/db/api';
 import { getPublicPricing } from './scripts/db/timeline-repo';
 
 const ID_SEGMENT = /^[a-zA-Z0-9_-]+$/;
@@ -199,7 +199,7 @@ function timelinesApi(): Plugin {
         };
 
         try {
-          const result = await handleTimelineApi(db, apiReq);
+          const result = await resolveAdapter(db, apiReq.id).handle(apiReq);
           // A GET 404 (source not in the DB) surfaces as a loud client error —
           // no static content fallback (see AGENTS.md „keine Notfall-Daten").
           send(res, result.status, result.json);

@@ -18,7 +18,7 @@
 import type { Context, Config } from '@netlify/edge-functions';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { readSession, hasValidMcpToken } from './_shared/session.ts';
-import { handleTimelineApi, parseSourcePath, type ApiRequest } from '../../scripts/db/api.ts';
+import { resolveAdapter, parseSourcePath, type ApiRequest } from '../../scripts/db/api.ts';
 
 function json(data: unknown, status = 200, headers?: Headers): Response {
   const h = headers ?? new Headers();
@@ -71,7 +71,7 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
 
   const db = createClient(url, key, { auth: { persistSession: false } });
   try {
-    const result = await handleTimelineApi(db, apiReq);
+    const result = await resolveAdapter(db, apiReq.id).handle(apiReq);
     // A GET 404 (source not in the DB) surfaces as a loud client error —
     // no static content fallback (see AGENTS.md „keine Notfall-Daten").
     return json(result.json, result.status);

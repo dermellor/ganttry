@@ -1,4 +1,4 @@
-import type { PricingFeature, TimelineFile, TimelineFileItem, TimelinePhase } from './types';
+import type { PricingFeature, TimelineFile, TimelineFileItem, TimelinePhase, ViewSource } from './types';
 
 export type LoadResult = { file: TimelineFile; editable: boolean };
 
@@ -93,12 +93,26 @@ export async function apiDeleteFeature(sourceId: string, featureId: string): Pro
   await apiJson(await fetch(`/api/source/${sourceId}/feature/${featureId}`, { method: 'DELETE' }));
 }
 
-export async function loadSource(id: string): Promise<LoadResult> {
-  // The timeline is served only from the DB via the API. There is deliberately
-  // NO static /data/sources fallback: a stale committed snapshot is visually
-  // indistinguishable from live data, and it was repeatedly mistaken for the
-  // real thing (e.g. a DB outage, or an id mismatch that 404s). Any failure to
-  // read from the DB now surfaces loudly instead of silently showing old data.
+export async function loadSource(source: ViewSource): Promise<LoadResult> {
+  const { kind, id } = source;
+
+  if (kind === 'file') {
+    // Genuine file source: the static file IS the source of truth, not a
+    // snapshot of something live. Loading it read-only is therefore correct and
+    // does not conflict with the "no fallback for DB timelines" principle below.
+    const res = await fetch(`/data/sources/${id}.json`).catch(() => null);
+    if (res && res.ok) {
+      return { file: await res.json(), editable: false };
+    }
+    const reason = res ? `HTTP ${res.status}` : 'keine Verbindung';
+    throw new Error(`Datei-Quelle „${id}“ konnte nicht geladen werden (${reason}).`);
+  }
+
+  // DB source: served only live from the DB via the API. There is deliberately
+  // NO static /data/sources fallback here — a stale committed snapshot is
+  // visually indistinguishable from live data and was repeatedly mistaken for
+  // the real thing (a DB outage, or an id mismatch that 404s). Any failure to
+  // read from the DB surfaces loudly instead of silently showing old data.
   const apiRes = await fetch(`/api/source/${id}`).catch(() => null);
   if (apiRes && apiRes.ok) {
     return { file: await apiRes.json(), editable: true };

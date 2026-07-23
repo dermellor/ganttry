@@ -353,7 +353,7 @@ async function main() {
   }
 
   let built: { items: ExportItem[]; groups: ExportGroup[]; details: Record<string, ExportNote> };
-  if (view.source?.type === 'json') {
+  if (view.source) {
     const srcPath = join(DATA_DIR, 'sources', `${view.source.id}.json`);
     if (!existsSync(srcPath)) {
       console.error(`[export] Source file not found: ${srcPath}`);

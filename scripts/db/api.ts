@@ -278,6 +278,43 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
   }
 }
 
+// ---------------------------------------------------------------------------
+// Source adapters
+// ---------------------------------------------------------------------------
+// The runtime glue (Vite middleware / edge function) no longer calls
+// handleTimelineApi directly — it resolves a SourceAdapter for the requested id
+// and dispatches through it. Today the only API-served adapter is Postgres
+// (handleTimelineApi is its implementation); genuine file sources are static
+// and never reach the API. New API-served kinds (e.g. a Google Sheet or an
+// external Postgres) register in resolveAdapter without touching the glue.
+
+export type SourceLive = 'realtime' | 'poll' | 'none';
+export type SourceCapabilities = { editable: boolean; live: SourceLive };
+
+export interface SourceAdapter {
+  readonly kind: string;
+  readonly capabilities: SourceCapabilities;
+  handle(req: ApiRequest): Promise<ApiResult>;
+}
+
+/** The DB-backed source: Supabase/Postgres via handleTimelineApi. */
+export function createPostgresSource(db: SupabaseClient): SourceAdapter {
+  return {
+    kind: 'db',
+    capabilities: { editable: true, live: 'realtime' },
+    handle: (req) => handleTimelineApi(db, req),
+  };
+}
+
+/**
+ * Resolve the adapter that serves a given timeline id through the API. Only the
+ * Postgres source is API-served today; the `id` argument is the seam future
+ * kinds key off (a registry lookup / prefix match) without changing callers.
+ */
+export function resolveAdapter(db: SupabaseClient, _id: string): SourceAdapter {
+  return createPostgresSource(db);
+}
+
 /** Parse a `/api/source/<id>[/<subkind>[/<childId>]]` path into id + sub. */
 export function parseSourcePath(path: string): { id: string; sub?: ApiRequest['sub'] } | null {
   const clean = path.replace(/^\/+|\/+$/g, '');

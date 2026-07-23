@@ -150,6 +150,39 @@ Two-step:
 
 Electron wrapper can later embed the same `dist/` build.
 
+### Source kinds (adapters)
+
+A source-backed view carries an explicit **kind** on `view.source`
+(`{ kind, id }`, `SourceKind` in [`src/types.ts`](src/types.ts)) that drives how
+its data is loaded. This is deliberately **not** a "try the API, then fall back
+to a static file" guess — that conflated a live DB timeline with a stale
+snapshot (see „Prinzip: keine Notfall-/Fallback-Daten"). The kind is set at build
+time and flows through the built config to the client:
+
+- **`db`** — live from the DB via `GET /api/source/<id>`, editable, **no** static
+  fallback (a DB failure surfaces loudly). `build-data.ts` marks these: every DB
+  registration stub is written with a `"kind": "db"` marker, which survives into
+  the committed stub so even STATIC_ONLY deploy builds classify it correctly.
+- **`file`** — read-only from the static `/data/sources/<id>.json` (`editable:
+  false`). The file genuinely *is* the source here (not a snapshot of something
+  live), so loading it is correct. Any `data/**/*.json` without the `db` marker
+  is a file source.
+
+`loadSource(source)` ([`src/editor.ts`](src/editor.ts)) routes on `kind`;
+`render.ts` renders a view whenever it has a `source` (notes-backed views have
+none). Adding a further API-served kind later (e.g. `gsheet`, external `pg`) is a
+new `SourceKind` value plus its loader — the routing seam already exists.
+
+**Server-side adapter seam:** the runtime glue (Vite middleware +
+`timelines-api` edge function) no longer calls the DB dispatcher directly. It
+resolves a `SourceAdapter` via `resolveAdapter(db, id)`
+([`scripts/db/api.ts`](scripts/db/api.ts)) and dispatches through
+`adapter.handle(req)`. Today the only API-served adapter is `PostgresSource`
+(wrapping `handleTimelineApi`); its `capabilities` declare `editable` and a
+`live` mode (`realtime` for Postgres). Future API-served kinds register in
+`resolveAdapter` without touching the middleware/edge glue. File sources are
+static and never reach this seam.
+
 ## Data extraction
 
 - **Date sources** (default order, configurable per view): `date` → `scheduled` → `created` → filename pattern.

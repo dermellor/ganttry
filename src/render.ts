@@ -277,9 +277,9 @@ export async function renderTimeline(view: View) {
 
   let sourceEditable = false;
 
-  if (view.source?.type === 'json') {
+  if (view.source) {
     try {
-      const loaded = await loadSource(view.source.id);
+      const loaded = await loadSource(view.source);
       sourceFile = loaded.file;
       sourceEditable = loaded.editable;
     } catch (err) {
