@@ -18,8 +18,8 @@ import {
   resolveHighlightLabel,
   type PricingDoc,
 } from './pricing';
-import type { PricingFeature, PricingTier } from './types';
-import type { TimelineFileItem } from './types';
+import type { PricingFeature, PricingTier } from '../../types';
+import type { TimelineFileItem } from '../../types';
 
 const doc: PricingDoc = {
   timelineId: 'acme/example-roadmap',

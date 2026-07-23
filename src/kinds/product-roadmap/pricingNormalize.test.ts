@@ -16,8 +16,8 @@ import {
   highlightToRow,
   stripRowVersions,
   reorderIds,
-} from '../scripts/db/timeline-repo.ts';
-import type { Pricing } from './types';
+} from '../../../scripts/db/timeline-repo.ts';
+import type { Pricing } from '../../types';
 
 const ID = 'acme/test';
 

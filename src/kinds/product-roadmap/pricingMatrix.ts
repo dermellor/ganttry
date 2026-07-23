@@ -8,7 +8,7 @@
 // Stammdaten in the same drawer (featureForm.ts). Tier/highlight editing still
 // happens via the item form / MCP, not here.
 
-import { escapeHtml } from './buildItems';
+import { escapeHtml } from '../../buildItems';
 import {
   groupFeatures,
   featureVisibleForVersion,
@@ -21,12 +21,12 @@ import {
   resolveFeatureName,
   resolveFeatureDescriptionParts,
 } from './pricing';
-import { state, els, isEditableView } from './state';
-import { showDetailForId } from './detailPanel';
+import { state, els, isEditableView } from '../../state';
+import { showDetailForId } from '../../detailPanel';
 import { showFeatureForm } from './featureForm';
 import { renderCardsHtml } from './pricingCards';
 import { workDotHtml } from './pricingWork';
-import { type TimelineFile, type PricingFeature } from './types';
+import { type TimelineFile, type PricingFeature } from '../../types';
 
 const PRICING_VERSION_KEY = 'timelines.pricingVersion';
 const PRICING_SUBVIEW_KEY = 'timelines.pricingSubview';

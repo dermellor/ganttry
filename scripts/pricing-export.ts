@@ -19,7 +19,7 @@ import { homedir } from 'node:os';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TimelineFile } from '../src/types.ts';
-import { pricingToMarkdown } from '../src/pricing.ts';
+import { pricingToMarkdown } from '../src/kinds/product-roadmap/pricing.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');

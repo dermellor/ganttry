@@ -5,14 +5,14 @@
 // through the granular PATCH endpoint (optimistic-locked on rowVersion), so a
 // concurrent edit elsewhere in the model is never clobbered.
 
-import { escapeHtml } from './buildItems';
-import { createMarkdownEditor } from './wysiwyg';
-import type { PricingFeature } from './types';
-import { state, els, setStatus, withPreservedZoom } from './state';
-import { apiUpdateFeature, apiDeleteFeature, ConflictError } from './editor';
-import { hideDetail } from './detailPanel';
+import { escapeHtml } from '../../buildItems';
+import { createMarkdownEditor } from '../../wysiwyg';
+import type { PricingFeature } from '../../types';
+import { state, els, setStatus, withPreservedZoom } from '../../state';
+import { apiUpdateFeature, apiDeleteFeature, ConflictError } from '../../editor';
+import { hideDetail } from '../../detailPanel';
 import { renderPricingView } from './pricingMatrix';
-import { renderTimeline } from './render';
+import { renderTimeline } from '../../render';
 
 function findFeature(featureId: string): PricingFeature | undefined {
   return state.activeSourceFile?.pricing?.features.find((f) => f.id === featureId);

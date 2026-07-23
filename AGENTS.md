@@ -183,6 +183,44 @@ resolves a `SourceAdapter` via `resolveAdapter(db, id)`
 `resolveAdapter` without touching the middleware/edge glue. File sources are
 static and never reach this seam.
 
+### Timeline kinds (`src/kinds/`)
+
+A **timeline kind** is the *orthogonal* axis to source kinds: it's the timeline's
+*flavour* (what extra views/renderers it carries), not where its data comes from.
+The generic timeline+list core knows nothing kind-specific; a kind plugs into a
+registration seam ([`src/kinds/registry.ts`](src/kinds/registry.ts)):
+
+- **`generic`** — the default: just timeline + list, no extra code.
+- **`product-roadmap`** — the pricing matrix/cards + feature form, living entirely
+  under [`src/kinds/product-roadmap/`](src/kinds/product-roadmap/) (`pricing.ts`,
+  `pricingCards.ts`, `pricingMatrix.ts`, `pricingWork.ts`, `featureForm.ts`,
+  `index.ts`).
+
+A `KindDescriptor` exposes a cheap synchronous `matches(file)` predicate + the
+extra `viewModes` it adds, plus a **`load()` that is a dynamic `import()`**. The
+core (`main.ts`, `render.ts`) only ever touches the descriptor's data (`activeKind`,
+`ensureKindLoaded`, `loadedKindView`) — it has **no static import of any pricing
+module**, so Rollup code-splits the kind into its own chunk and a **generic build
+downloads no pricing code** (the acceptance check: the entry chunk referenced by
+`dist/index.html` contains no `pm-cell-ver`/pricing strings; they live only in the
+lazily-loaded chunk). The chunk loads only when a product timeline enters the
+pricing view.
+
+Adding a third kind is a new `KINDS[]` entry + a `src/kinds/<name>/` folder — no
+core-file change.
+
+**Accepted first-cut deviations (documented, not blockers):**
+- `pricingFieldDefs()` stays in [`src/customFields.ts`](src/customFields.ts): it's a
+  data-driven check (`file.type === 'product'` + `file.pricing`) that imports **no**
+  pricing module, so it adds no static edge into the pricing chunk.
+- `apiUpdateFeature`/`apiDeleteFeature` stay in [`src/editor.ts`](src/editor.ts):
+  type-only-typed fetch wrappers (zero bundle weight).
+- The **server side** of the kind (the `pricing-api` edge function, the pricing MCP
+  tools, the `pricing_*` tables + `assemblePricing` in `timeline-repo.ts`) stays in
+  place — DoD is about the *client* generic bundle, and the Deno edge import graph
+  (with its explicit `.ts` extensions) must not be disturbed. Co-locating the
+  server pieces under the kind is a possible follow-up.
+
 ## Data extraction
 
 - **Date sources** (default order, configurable per view): `date` → `scheduled` → `created` → filename pattern.
@@ -951,6 +989,11 @@ If the site moves to a new domain, add the new redirect URI in the Google
 Cloud Console — otherwise the callback returns `redirect_uri_mismatch`.
 
 ## Pricing
+
+> Der **Client**-Code des Preismodells (Matrix, Cards, Feature-Formular) lebt als
+> Timeline-Kind unter [`src/kinds/product-roadmap/`](src/kinds/product-roadmap/)
+> und wird lazy geladen (siehe „Timeline kinds"). Der Server-Teil (Tabellen,
+> `assemblePricing`, `pricing-api`, MCP-Tools) bleibt wie unten beschrieben.
 
 Das Preismodell (Tarife + Features, nur `type='product'`) ist die SSOT für
 externe Preisseiten. Es liegt **normalisiert** in eigenen Tabellen (Migration

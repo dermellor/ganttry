@@ -4,7 +4,7 @@
 // document. Pure and deterministic (no Date / IO) so it's unit-testable and the
 // caller stamps the date.
 
-import { statusOrDefault, type StatusKey } from './status';
+import { statusOrDefault, type StatusKey } from '../../status';
 import {
   PRICING_FEATURE_META_KEY,
   PRICING_ITEM_VERSION_META_KEY,
@@ -13,7 +13,7 @@ import {
   type PricingHighlight,
   type PricingTier,
   type TimelineFileItem,
-} from './types';
+} from '../../types';
 
 export type PricingDoc = {
   timelineId: string;

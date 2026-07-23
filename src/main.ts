@@ -42,7 +42,7 @@ import { deleteItem } from './itemForm';
 import { hideDetail, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
 import { setupFilterControl } from './filterControl';
-import { renderPricingView, hasPricing } from './pricingMatrix';
+import { activeKind, ensureKindLoaded } from './kinds/registry';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -119,7 +119,10 @@ function setModeButtons(mode: ViewMode) {
 // after switching views), fall back to 'timeline' so the user isn't stuck on an
 // empty section.
 export function updatePricingAvailability(): void {
-  const available = hasPricing(state.activeSourceFile);
+  // The pricing button belongs to the product-roadmap kind. `activeKind` is a
+  // cheap data check — it pulls in no pricing code (that only loads when the
+  // view is entered), so a generic timeline never downloads the kind's chunk.
+  const available = !!activeKind(state.activeSourceFile)?.viewModes.includes('pricing');
   els.modePricingBtn.hidden = !available;
   if (!available && state.viewMode === 'pricing') {
     applyViewMode('timeline');
@@ -132,8 +135,9 @@ export function updatePricingAvailability(): void {
 // data. `persist` is false during bootstrap/external-URL application where the
 // caller drives localStorage + URL syncing itself.
 function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean } = {}) {
-  // Guard: 'pricing' is only valid for product timelines with a model.
-  if (mode === 'pricing' && !hasPricing(state.activeSourceFile)) mode = 'timeline';
+  // Guard: 'pricing' is only valid for a kind that contributes that view mode.
+  const kind = activeKind(state.activeSourceFile);
+  if (mode === 'pricing' && !kind?.viewModes.includes('pricing')) mode = 'timeline';
   state.viewMode = mode;
   setModeButtons(mode);
   const list = mode === 'list';
@@ -146,8 +150,12 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   els.viewToolbar.hidden = pricing;
   if (list) {
     renderListView();
-  } else if (pricing) {
-    renderPricingView();
+  } else if (pricing && kind) {
+    // Lazy-load the kind's chunk, then render — but only if we're still in
+    // pricing mode by the time it resolves (the user may have switched away).
+    void ensureKindLoaded(kind).then((m) => {
+      if (state.viewMode === 'pricing') m.renderView();
+    });
   } else {
     // The timeline was display:none while the list showed, so vis-timeline
     // couldn't size itself. Redraw + re-pack point lanes now that it's visible.

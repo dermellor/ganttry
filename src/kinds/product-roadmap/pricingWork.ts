@@ -4,10 +4,10 @@
 // it without importing each other. The click wiring lives in pricingMatrix
 // (wireWork), matching on the `.pm-work-item` class this markup emits.
 
-import { escapeHtml } from './buildItems';
+import { escapeHtml } from '../../buildItems';
 import { aggregateWorkState } from './pricing';
-import { statusOrDefault, type StatusKey } from './status';
-import type { TimelineFileItem } from './types';
+import { statusOrDefault, type StatusKey } from '../../status';
+import type { TimelineFileItem } from '../../types';
 
 const WORK_LABEL: Record<'doing' | 'done' | 'open', string> = {
   doing: 'In Arbeit',

@@ -5,9 +5,9 @@
 // "← Alles aus <prev>" row (arrow + pill). Read-only; highlights are the curated
 // layer (pricing.highlights). Class names + SVGs match the rendered original.
 
-import { escapeHtml } from './buildItems';
+import { escapeHtml } from '../../buildItems';
 import { resolveHighlight, resolveHighlightLabel, type ResolvedHighlight } from './pricing';
-import type { PricingHighlight, PricingTier, TimelineFile } from './types';
+import type { PricingHighlight, PricingTier, TimelineFile } from '../../types';
 
 const DEFAULT_SECTION = 'Weitere';
 
