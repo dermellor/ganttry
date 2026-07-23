@@ -1,6 +1,7 @@
 import type { Timeline } from 'vis-timeline/standalone';
 import { phaseCssId, type ResolvedPhase } from './buildItems';
 import { parseLocalDay } from './date';
+import { phaseGapBounds } from './phaseOverlap';
 import { iconSpanHtml } from './icons';
 
 // Pointer travel (px) below which a press-release counts as a click, not a drag.
@@ -48,6 +49,10 @@ type DragState = {
   width: number;
   startMs: number;
   endMs: number;
+  // Bounds the phase may occupy without overlapping a neighbour (from the
+  // phase's original position). Drag/resize is clamped into [minStart, maxEnd].
+  minStart: number;
+  maxEnd: number;
   seg: HTMLElement;
   newStart: number;
   newEnd: number;
@@ -264,6 +269,12 @@ export class PhaseBand {
 
     const startMs = parseLocalDay(phase.start).getTime();
     const endMs = parseLocalDay(phase.end).getTime();
+    // Room this phase can move/resize into without hitting a neighbour.
+    const { minStart, maxEnd } = phaseGapBounds(
+      this.phases.filter((p) => p !== phase),
+      startMs,
+      endMs,
+    );
     this.drag = {
       phase,
       mode,
@@ -272,6 +283,8 @@ export class PhaseBand {
       width,
       startMs,
       endMs,
+      minStart,
+      maxEnd,
       seg,
       newStart: startMs,
       newEnd: endMs,
@@ -308,6 +321,17 @@ export class PhaseBand {
     if (d.mode === 'resize-l') start = Math.min(start, end - DAY_MS);
     else if (d.mode === 'resize-r') end = Math.max(end, start + DAY_MS);
     else if (end - start < DAY_MS) end = start + DAY_MS;
+
+    // Clamp into the neighbour-free gap so a drag/resize can never create an
+    // overlap (the server rejects one anyway; this keeps the UI from trying).
+    if (d.mode === 'move') {
+      if (start < d.minStart) { end += d.minStart - start; start = d.minStart; }
+      if (end > d.maxEnd) { start -= end - d.maxEnd; end = d.maxEnd; }
+    } else if (d.mode === 'resize-l') {
+      start = Math.max(start, d.minStart);
+    } else {
+      end = Math.min(end, d.maxEnd);
+    }
 
     d.newStart = start;
     d.newEnd = end;

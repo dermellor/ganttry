@@ -19,6 +19,7 @@ import type {
   TimelinePhase,
 } from '../../src/types';
 import { statusOrDefault } from '../../src/status.ts';
+import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
 
 export type TimelineGroupDecl = {
   id: string;
@@ -39,6 +40,13 @@ export class NotFoundError extends Error {
   constructor(message = 'not found') {
     super(message);
     this.name = 'NotFoundError';
+  }
+}
+/** A write that violates a data invariant (e.g. overlapping phases). → HTTP 400. */
+export class ValidationError extends Error {
+  constructor(message = 'invalid request') {
+    super(message);
+    this.name = 'ValidationError';
   }
 }
 
@@ -331,6 +339,7 @@ export async function assemblePricing(
 // ---- whole-timeline replace (import, MCP bulk, PUT fallback) ---------------
 
 export async function replaceTimeline(db: SupabaseClient, id: string, file: TimelineFile): Promise<void> {
+  assertPhasesNonOverlapping(file.phases);
   const { error: upErr } = await db.from('timelines').upsert({
     id,
     name: file.name ?? null,
@@ -493,7 +502,15 @@ export async function deleteGroup(db: SupabaseClient, timelineId: string, groupI
 
 // ---- timeline-level meta / phases ------------------------------------------
 
+// Reject overlapping phases before any write persists them, from any path (item
+// API PUT, MCP replace_timeline, import). Single invariant, one gate.
+function assertPhasesNonOverlapping(phases: TimelinePhase[] | undefined): void {
+  const clash = findPhaseOverlap(phases ?? []);
+  if (clash) throw new ValidationError(describePhaseOverlap(clash.a, clash.b));
+}
+
 export async function updatePhases(db: SupabaseClient, id: string, phases: TimelinePhase[]): Promise<void> {
+  assertPhasesNonOverlapping(phases);
   const { error } = await db
     .from('timelines')
     .update({ phases: phases ?? [], updated_at: new Date().toISOString() })

@@ -13,7 +13,9 @@ export class ConflictError extends Error {
 async function apiJson(res: Response): Promise<any> {
   const data = await res.json().catch(() => ({}));
   if (res.status === 409) throw new ConflictError((data as any).message || 'version conflict');
-  if (!res.ok) throw new Error((data as any).error || `HTTP ${res.status}`);
+  // Prefer the server's human message (e.g. the overlapping-phases reason) over
+  // the terse error code.
+  if (!res.ok) throw new Error((data as any).message || (data as any).error || `HTTP ${res.status}`);
   return data;
 }
 

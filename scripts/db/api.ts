@@ -16,6 +16,7 @@ import type {
 import {
   ConflictError,
   NotFoundError,
+  ValidationError,
   addFeature,
   addHighlight,
   addItem,
@@ -274,6 +275,7 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
   } catch (e) {
     if (e instanceof ConflictError) return err(409, 'version_conflict', { message: e.message });
     if (e instanceof NotFoundError) return err(404, 'not found');
+    if (e instanceof ValidationError) return err(400, 'invalid_request', { message: e.message });
     return err(500, 'server_error', { message: e instanceof Error ? e.message : String(e) });
   }
 }

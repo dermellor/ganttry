@@ -5,6 +5,8 @@ import { escapeHtml } from './buildItems';
 import { TIMELINE_ICONS } from './icons';
 import { isoDateOnly } from './editor';
 import type { PhaseEdit } from './phaseBand';
+import { describePhaseOverlap, findPhaseOverlap } from './phaseOverlap';
+import type { TimelinePhase } from './types';
 import { state, els, setStatus, withPreservedZoom } from './state';
 import { rebuildAndApply } from './render';
 import { schedulePersist } from './persistence';
@@ -105,24 +107,40 @@ function savePhaseFromForm(srcIndex: number, form: HTMLFormElement): void {
   const fd = new FormData(form);
   const get = (name: string) => String(fd.get(name) ?? '').trim();
 
-  phase.label = get('label') || phase.label;
-  const startVal = get('start');
-  if (startVal) phase.start = startVal;
-
   const endVal = get('end');
   const durVal = get('duration');
-  // Duration wins over end (same precedence as items); at least one is needed
-  // for the phase to render, so keep whatever the user supplied.
+  // Build the edited phase as a trial first, so we can reject an overlap before
+  // mutating live state. Duration wins over end (same precedence as items).
+  const trial: TimelinePhase = { ...phase };
+  trial.label = get('label') || phase.label;
+  const startVal = get('start');
+  if (startVal) trial.start = startVal;
   if (durVal) {
-    phase.duration = durVal;
-    delete phase.end;
+    trial.duration = durVal;
+    delete trial.end;
   } else if (endVal) {
-    phase.end = endVal;
-    delete phase.duration;
+    trial.end = endVal;
+    delete trial.duration;
   } else {
-    delete phase.duration;
-    delete phase.end;
+    delete trial.duration;
+    delete trial.end;
   }
+
+  // Phases must not overlap (mirrors the server-side reject). Check the whole
+  // set with the edit applied; block the save and keep the form open on a clash.
+  const candidate = (state.activeSourceFile!.phases ?? []).map((p, i) => (i === srcIndex ? trial : p));
+  const clash = findPhaseOverlap(candidate);
+  if (clash) {
+    setStatus(describePhaseOverlap(clash.a, clash.b));
+    return;
+  }
+
+  phase.label = trial.label;
+  phase.start = trial.start;
+  if ('duration' in trial) phase.duration = trial.duration;
+  else delete phase.duration;
+  if ('end' in trial) phase.end = trial.end;
+  else delete phase.end;
 
   const iconVal = get('icon');
   if (iconVal) phase.icon = iconVal;
