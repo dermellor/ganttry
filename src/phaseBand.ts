@@ -8,6 +8,13 @@ const CLICK_SLOP_PX = 3;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Each *visible* phase boundary is pulled in by this many px so adjacent ribbon
+// bars keep a small, zoom-independent gap (like items) instead of touching.
+// Applied only to the bars — never to the tints, which stay flush — and never at
+// a window-clipped edge, where the phase continues off-screen. Two adjacent bars
+// therefore sit `2 * PHASE_SEG_GAP_PX` apart.
+const PHASE_SEG_GAP_PX = 2;
+
 // vis-timeline positions its items (including the phase background tints) with an
 // internal time→pixel conversion, `body.util.toScreen`, applied over
 // `body.domProps.center.width` — the panel's *content* width, which already
@@ -158,6 +165,15 @@ export class PhaseBand {
     return this.vis.body.util.toScreen(parseLocalDay(time));
   }
 
+  // Screen box for a segment: clip [left, right] to the panel [0, width] and pull
+  // each *visible* boundary in by PHASE_SEG_GAP_PX so adjacent bars don't touch.
+  // A clipped edge (the phase runs past the window) stays flush to the panel edge.
+  private segBox(left: number, right: number, width: number): { left: number; width: number } {
+    const l = Math.max(left, 0) + (left >= 0 ? PHASE_SEG_GAP_PX : 0);
+    const r = Math.min(right, width) - (right <= width ? PHASE_SEG_GAP_PX : 0);
+    return { left: l, width: Math.max(0, r - l) };
+  }
+
   private scheduleRedraw(): void {
     if (this.rafToken) return;
     this.rafToken = requestAnimationFrame(() => {
@@ -207,12 +223,11 @@ export class PhaseBand {
       const right = this.toX(p.end);
       if (right <= 0 || left >= width) return; // fully outside the window
 
-      const clippedLeft = Math.max(left, 0);
-      const clippedRight = Math.min(right, width);
+      const box = this.segBox(left, right, width);
       const seg = document.createElement('div');
       seg.className = `phase-seg phase-${i % 6}`;
-      seg.style.left = `${clippedLeft}px`;
-      seg.style.width = `${Math.max(0, clippedRight - clippedLeft)}px`;
+      seg.style.left = `${box.left}px`;
+      seg.style.width = `${box.width}px`;
       seg.title = p.label;
       if (p.color) seg.style.background = p.color;
 
@@ -297,12 +312,9 @@ export class PhaseBand {
     d.newStart = start;
     d.newEnd = end;
 
-    const left = this.toX(start);
-    const right = this.toX(end);
-    const clippedLeft = Math.max(left, 0);
-    const clippedRight = Math.min(right, d.width);
-    d.seg.style.left = `${clippedLeft}px`;
-    d.seg.style.width = `${Math.max(0, clippedRight - clippedLeft)}px`;
+    const box = this.segBox(this.toX(start), this.toX(end), d.width);
+    d.seg.style.left = `${box.left}px`;
+    d.seg.style.width = `${box.width}px`;
   }
 
   private handlePointerUp(_e: PointerEvent): void {
