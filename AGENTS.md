@@ -241,7 +241,21 @@ File shape:
 
 A phase needs a `label`, a `start`, and an extent (`end` or `duration`) to
 render; phases missing any of these are skipped. They show as a labeled ribbon
-pinned to the top plus a faint full-height tint behind the items.
+pinned to the top plus a faint full-height tint behind the items. The ribbon
+segment is positioned through vis-timeline's own time→pixel conversion
+(`body.util.toScreen` over the content width, with day strings parsed as *local*
+midnight — see [`src/phaseBand.ts`](src/phaseBand.ts) / [`src/date.ts`](src/date.ts)),
+so the bar stays pixel-aligned with its tint regardless of zoom or a reserved
+scrollbar. Adjacent bars keep a small fixed gap (the tints stay flush).
+
+**Phases must not overlap in time** — touching boundaries (one phase's `end` ==
+the next's `start`) and gaps are both fine, but real overlaps are forbidden. The
+rule lives once in [`src/phaseOverlap.ts`](src/phaseOverlap.ts) and is enforced on
+both sides: the server write path (`updatePhases` / `replaceTimeline`) rejects an
+overlapping write with `400` from any source (UI, MCP, direct API), and the
+client prevents it proactively (ribbon drag/resize clamps to the neighbour edge,
+the phase form blocks a save that would overlap). Without this, an underlying
+phase used to show through the gap between overlapping bars.
 
 A group with `nestedGroups` is a **parent/container only** — items are assignable
 solely to its leaf children, never to the parent itself. The editor enforces this
