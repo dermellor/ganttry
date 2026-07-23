@@ -276,12 +276,14 @@ export async function renderTimeline(view: View) {
   let sourceId: string | null = null;
 
   let sourceEditable = false;
+  let sourceLive: import('./types').SourceLive = 'none';
 
   if (view.source) {
     try {
       const loaded = await loadSource(view.source);
       sourceFile = loaded.file;
       sourceEditable = loaded.editable;
+      sourceLive = loaded.live;
     } catch (err) {
       setStatus(`Konnte Quelle ${view.source.id} nicht laden: ${err instanceof Error ? err.message : err}`);
       return;
@@ -299,6 +301,7 @@ export async function renderTimeline(view: View) {
   state.activeSourceFile = sourceFile;
   state.activeSourceId = sourceId;
   state.activeSourceEditable = sourceEditable;
+  state.activeSourceLive = sourceLive;
   snapshotSaved();
   setupRealtime();
 

@@ -44,6 +44,26 @@ export type SourceKind = 'db' | 'file';
 
 export type ViewSource = { kind: SourceKind; id: string };
 
+// How a source delivers other people's changes to an open viewer:
+//   'realtime' — pushed over a WebSocket (Supabase Realtime)
+//   'poll'     — the client polls a cheap watermark endpoint on an interval
+//   'none'     — no live updates; changes appear only on reload (file sources)
+// Declared server-side on a SourceAdapter's capabilities and surfaced to the
+// client (via the X-Source-Live response header) so the live-update seam can
+// pick its implementation. Lives here (not in scripts/db/api.ts) so both the
+// client and the Deno-bundled server share one definition.
+export type SourceLive = 'realtime' | 'poll' | 'none';
+
+export type SourceCapabilities = { editable: boolean; live: SourceLive };
+
+// Cheap change-detection signature for polling (GET /api/source/<id>/watermark).
+// Any field differing between two reads means "something changed, reload":
+//   v — max item `version` (also an own-echo hint)
+//   n — item count (catches inserts/deletes, which v/t alone miss)
+//   t — max `updated_at` across the items and the timeline row (ISO string),
+//       so item edits, phase/meta writes and renames all bump it
+export type Watermark = { v: number; n: number; t: string | null };
+
 export type View = {
   id: string;
   name: string;

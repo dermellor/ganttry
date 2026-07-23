@@ -7,6 +7,8 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { PresenceUser } from './presence';
+import type { SourceLive, Watermark } from './types';
+import { nextPollDelay, watermarkChanged } from './poll';
 
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -85,6 +87,99 @@ export function subscribeTimeline(timelineId: string, onChange: (c: RemoteChange
   return () => {
     void db.removeChannel(channel);
   };
+}
+
+export type WatchOptions = {
+  live: SourceLive;
+  // Poll only: withhold a reload while the user is mid-interaction (open edit
+  // form / active drag). The change isn't lost — it fires once `isBusy` clears.
+  isBusy?: () => boolean;
+};
+
+/**
+ * Poll `GET /api/source/<id>/watermark` and fire `onChange` when the signature
+ * moves. The watermark endpoint is server-gated (no anon key needed), so this
+ * works for sources without Supabase Realtime. A change detected while the user
+ * is busy is deferred, not dropped. Returns an unsubscribe function.
+ *
+ * Coarser than the realtime path by design (the issue's "zunächst Full-Reload"):
+ * any detected change triggers one reload via `onChange`, including shortly
+ * after the client's own write (the reload then re-baselines saved versions, so
+ * subsequent polls stay quiet). Delta-fetch is a later optimization.
+ */
+export function pollTimeline(
+  timelineId: string,
+  onChange: (c: RemoteChange) => void,
+  opts?: { isBusy?: () => boolean },
+): () => void {
+  const isBusy = opts?.isBusy ?? (() => false);
+  let prev: Watermark | null = null;
+  let pending = false;
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const hidden = () => typeof document !== 'undefined' && document.hidden;
+
+  async function tick(): Promise<void> {
+    if (stopped) return;
+    try {
+      const res = await fetch(`/api/source/${timelineId}/watermark`);
+      if (res.ok) {
+        const wm = (await res.json()) as Watermark;
+        // First read only establishes the baseline — no reload on initial load.
+        if (prev && watermarkChanged(prev, wm)) pending = true;
+        prev = wm;
+      }
+    } catch {
+      // Network blip: keep the old baseline and try again next tick.
+    }
+    if (pending && !isBusy()) {
+      pending = false;
+      // A coarse "something changed" signal — persistence does a full reload.
+      onChange({ table: 'timelines', event: 'UPDATE', id: timelineId });
+    }
+    if (!stopped) timer = setTimeout(() => void tick(), nextPollDelay(hidden()));
+  }
+
+  void tick();
+
+  // Re-check immediately when the tab becomes visible again (drop the long
+  // hidden backoff so a returning user sees fresh data fast).
+  const onVisible = () => {
+    if (stopped || hidden()) return;
+    if (timer) clearTimeout(timer);
+    void tick();
+  };
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
+
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
+  };
+}
+
+/**
+ * The live-update seam: subscribe to one timeline's changes with the impl its
+ * source declares (`capabilities.live`, surfaced to the client via loadSource).
+ *   'realtime' → Supabase WebSocket channel (needs the anon key; no-op without)
+ *   'poll'     → watermark polling (server-gated, no anon key)
+ *   'none'     → no live updates (file sources)
+ * Returns an unsubscribe function. `onChange` has the same shape for both impls.
+ */
+export function watchTimeline(
+  timelineId: string,
+  onChange: (c: RemoteChange) => void,
+  opts: WatchOptions,
+): () => void {
+  if (opts.live === 'realtime') {
+    if (!isRealtimeEnabled()) return () => {};
+    return subscribeTimeline(timelineId, onChange);
+  }
+  if (opts.live === 'poll') {
+    return pollTimeline(timelineId, onChange, { isBusy: opts.isBusy });
+  }
+  return () => {};
 }
 
 /**

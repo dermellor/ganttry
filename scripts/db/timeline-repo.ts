@@ -17,6 +17,7 @@ import type {
   TimelineFile,
   TimelineFileItem,
   TimelinePhase,
+  Watermark,
 } from '../../src/types';
 import { statusOrDefault } from '../../src/status.ts';
 import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
@@ -186,6 +187,40 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
   if (pricing && (pricing.features.length || pricing.tiers.length)) file.pricing = pricing;
   if (groupRows && groupRows.length) file.groups = groupRows.map(rowToGroup);
   return file;
+}
+
+// ---- watermark (cheap change-detection for polling clients) ----------------
+
+/**
+ * Cheap change signature for a timeline, used by polling clients to decide
+ * whether to reload (see `Watermark` in src/types.ts). Two small queries — one
+ * over the (small) item set, one for the timeline row — no full assemble:
+ *   v — max item `version`   (own-echo hint)
+ *   n — item count           (catches inserts/deletes)
+ *   t — max `updated_at` across the items and the timeline row (an item edit,
+ *       a phase/meta write and a rename all bump this)
+ *
+ * NOTE: this covers items + timeline meta (incl. phases). Pricing-table edits
+ * are NOT reflected here yet — no poll source is a product timeline today, and
+ * Realtime still covers pricing. Folding pricing into the watermark is a
+ * follow-up (see AGENTS.md „Live-Update-Naht").
+ */
+export async function getWatermark(db: SupabaseClient, id: string): Promise<Watermark> {
+  const [itemsRes, tlRes] = await Promise.all([
+    db.from('timeline_items').select('version, updated_at').eq('timeline_id', id),
+    db.from('timelines').select('updated_at').eq('id', id).maybeSingle(),
+  ]);
+  if (itemsRes.error) throw new Error(`getWatermark items: ${itemsRes.error.message}`);
+  if (tlRes.error) throw new Error(`getWatermark timeline: ${tlRes.error.message}`);
+
+  const rows = (itemsRes.data ?? []) as { version: number | null; updated_at: string | null }[];
+  let v = 0;
+  let t: string | null = (tlRes.data as { updated_at?: string | null } | null)?.updated_at ?? null;
+  for (const r of rows) {
+    if (r.version != null && r.version > v) v = r.version;
+    if (r.updated_at != null && (t == null || r.updated_at > t)) t = r.updated_at;
+  }
+  return { v, n: rows.length, t };
 }
 
 // ---- public pricing (marketing sites consume this) -------------------------

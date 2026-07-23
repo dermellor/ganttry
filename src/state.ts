@@ -12,7 +12,7 @@
 // after all modules have finished evaluating), never at module top level.
 
 import type { Timeline } from 'vis-timeline/standalone';
-import type { Config, Note, TimelineFile, View } from './types';
+import type { Config, Note, SourceLive, TimelineFile, View } from './types';
 import type { BuildResult } from './buildItems';
 import type { JiraIssue } from './jira';
 import type { PresenceUser } from './presence';
@@ -90,6 +90,9 @@ export interface AppState {
   activeSourceId: string | null;
   activeSourceFile: TimelineFile | null;
   activeSourceEditable: boolean;
+  // How the active source delivers other people's changes (from loadSource):
+  // drives the live-update seam (realtime channel vs. watermark polling vs. off).
+  activeSourceLive: SourceLive;
   activeBuild: BuildResult | null;
   // Snapshot of the last successfully persisted state, diffed on persist() so we
   // only send the items/phases that actually changed (item-level writes instead
@@ -161,6 +164,7 @@ export const state: AppState = {
   activeSourceId: null,
   activeSourceFile: null,
   activeSourceEditable: false,
+  activeSourceLive: 'none',
   activeBuild: null,
   savedItems: new Map(),
   savedItemVersions: new Map(),

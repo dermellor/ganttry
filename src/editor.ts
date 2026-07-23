@@ -1,6 +1,13 @@
-import type { PricingFeature, TimelineFile, TimelineFileItem, TimelinePhase, ViewSource } from './types';
+import type { PricingFeature, SourceLive, TimelineFile, TimelineFileItem, TimelinePhase, ViewSource } from './types';
 
-export type LoadResult = { file: TimelineFile; editable: boolean };
+export type LoadResult = { file: TimelineFile; editable: boolean; live: SourceLive };
+
+const LIVE_MODES: readonly SourceLive[] = ['realtime', 'poll', 'none'];
+function parseLive(header: string | null): SourceLive {
+  // Default to 'realtime' for a DB source whose server didn't send the header
+  // (older glue) — matches the pre-Phase-2 behaviour.
+  return LIVE_MODES.includes(header as SourceLive) ? (header as SourceLive) : 'realtime';
+}
 
 /** Thrown when an item PATCH is rejected because it changed server-side (409). */
 export class ConflictError extends Error {
@@ -104,7 +111,7 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
     // does not conflict with the "no fallback for DB timelines" principle below.
     const res = await fetch(`/data/sources/${id}.json`).catch(() => null);
     if (res && res.ok) {
-      return { file: await res.json(), editable: false };
+      return { file: await res.json(), editable: false, live: 'none' };
     }
     const reason = res ? `HTTP ${res.status}` : 'keine Verbindung';
     throw new Error(`Datei-Quelle „${id}“ konnte nicht geladen werden (${reason}).`);
@@ -117,7 +124,7 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
   // read from the DB surfaces loudly instead of silently showing old data.
   const apiRes = await fetch(`/api/source/${id}`).catch(() => null);
   if (apiRes && apiRes.ok) {
-    return { file: await apiRes.json(), editable: true };
+    return { file: await apiRes.json(), editable: true, live: parseLive(apiRes.headers.get('X-Source-Live')) };
   }
   const reason = apiRes ? `HTTP ${apiRes.status}` : 'keine Verbindung zur API';
   throw new Error(

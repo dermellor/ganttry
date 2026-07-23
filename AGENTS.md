@@ -545,6 +545,48 @@ Die Edge Function gated per Session-Cookie (bzw. MCP-Token) und attribuiert
 Edits über `updated_by` an die E-Mail des eingeloggten Users. Sind die Vars
 nicht gesetzt, fällt jede Source auf die statische Datei zurück (read-only).
 
+### Live-Update-Naht (Realtime **oder** Polling)
+
+Wie fremde Änderungen in einen offenen Viewer kommen, ist eine **Naht** mit zwei
+Implementierungen hinter einer Signatur — `watchTimeline(id, onChange, { live,
+isBusy })` in [`src/realtime.ts`](src/realtime.ts). Welche Impl greift, sagt die
+Quelle über `capabilities.live` (`SourceLive` in [`src/types.ts`](src/types.ts)):
+
+- **`realtime`** — Supabase Realtime schiebt Zeilenänderungen per WebSocket
+  (`subscribeTimeline`, feingranulare Item-Events mit Echo-Suppression). Braucht
+  den anon-Key (`VITE_SUPABASE_*`); ohne ihn passiert nichts (Reload-only).
+- **`poll`** — der Client pollt einen billigen **Watermark-Endpoint**
+  (`GET /api/source/<id>/watermark` → `{ v, n, t }` = max Item-`version` /
+  Item-Count / max `updated_at` über Items + `timelines`-Row) im Intervall
+  (`src/poll.ts`: ~8 s sichtbar, ~60 s versteckt, `visibilitychange`-Backoff).
+  Ändert sich die Watermark → **Full-Reload** über den bestehenden
+  `loadSource`-Pfad (Timelines sind klein; Delta-Fetch ist eine spätere
+  Optimierung). Braucht **keinen** anon-Key (Endpoint ist server-gated) — so wird
+  ein Postgres **ohne** Realtime live. Der Poll pausiert, solange ein Edit-Form
+  offen ist (`isBusy`); die erkannte Änderung wird nicht verworfen, sondern
+  nachgeholt.
+- **`none`** — keine Live-Updates (Datei-Quellen).
+
+Der Server sagt dem Client den Modus über den **`X-Source-Live`-Response-Header**
+auf `GET /api/source/<id>` (gesetzt von der Runtime-Glue aus
+`adapter.capabilities.live`); `loadSource` liest ihn und legt ihn in
+`state.activeSourceLive` ab. Der DB-Adapter meldet standardmäßig `realtime`; die
+Env-Var **`TIMELINES_DB_LIVE=poll`** (lokal `process.env`, Netlify `Deno.env`)
+schaltet DB-Quellen auf Polling — nützlich für ein Postgres ohne aktiviertes
+Realtime und zum End-to-End-Test des Poll-Pfades.
+
+> **Scope:** Die Watermark deckt Items + Timeline-Meta (inkl. Phasen) ab —
+> **nicht** die Pricing-Tabellen. Kein Poll-Source ist heute eine
+> Produkt-Timeline, und Realtime deckt Pricing weiter ab; Pricing in die
+> Watermark zu falten ist ein Follow-up (`getWatermark` in
+> [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts)).
+
+#### Presence unter Polling
+
+Presence (siehe unten) ist **realtime-only** — sie hängt am Supabase-Presence-
+Channel. Poll-Quellen zeigen kein Presence-Badge (eine Heartbeat-Tabelle wäre ein
+optionales, nicht umgesetztes Sub-Feature).
+
 ### Realtime (Live-Kollaboration)
 
 Fremde Edits erscheinen live ohne Reload — Supabase Realtime schiebt Zeilen-

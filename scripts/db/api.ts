@@ -9,6 +9,8 @@ import type {
   PricingFeature,
   PricingHighlight,
   PricingTier,
+  SourceCapabilities,
+  SourceLive,
   TimelineFile,
   TimelineFileItem,
   TimelinePhase,
@@ -28,6 +30,7 @@ import {
   deleteItem,
   deleteTier,
   getTimeline,
+  getWatermark,
   listTimelines,
   replacePricing,
   replaceTimeline,
@@ -48,6 +51,7 @@ export type SubKind =
   | 'item'
   | 'group'
   | 'phases'
+  | 'watermark'
   | 'pricing'
   | 'feature'
   | 'feature-move'
@@ -152,6 +156,12 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
         await updatePhases(db, id, phases);
         return ok({ ok: true });
       }
+      return err(405, 'method not allowed');
+    }
+
+    // ---- watermark (cheap change-detection for polling clients) -----------
+    if (sub.kind === 'watermark') {
+      if (method === 'GET') return ok(await getWatermark(db, id));
       return err(405, 'method not allowed');
     }
 
@@ -290,8 +300,10 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
 // and never reach the API. New API-served kinds (e.g. a Google Sheet or an
 // external Postgres) register in resolveAdapter without touching the glue.
 
-export type SourceLive = 'realtime' | 'poll' | 'none';
-export type SourceCapabilities = { editable: boolean; live: SourceLive };
+// SourceLive / SourceCapabilities now live in src/types.ts so the client and the
+// Deno-bundled server share one definition (re-exported here for existing call
+// sites that import them from this module).
+export type { SourceLive, SourceCapabilities } from '../../src/types';
 
 export interface SourceAdapter {
   readonly kind: string;
@@ -299,11 +311,17 @@ export interface SourceAdapter {
   handle(req: ApiRequest): Promise<ApiResult>;
 }
 
-/** The DB-backed source: Supabase/Postgres via handleTimelineApi. */
-export function createPostgresSource(db: SupabaseClient): SourceAdapter {
+/**
+ * The DB-backed source: Supabase/Postgres via handleTimelineApi. `live` defaults
+ * to 'realtime' (Supabase Realtime pushes row changes over a WebSocket). Pass
+ * 'poll' for a Postgres without Realtime enabled — clients then poll the
+ * watermark endpoint instead. The value flows to the client via the
+ * X-Source-Live response header (set by the runtime glue).
+ */
+export function createPostgresSource(db: SupabaseClient, live: SourceLive = 'realtime'): SourceAdapter {
   return {
     kind: 'db',
-    capabilities: { editable: true, live: 'realtime' },
+    capabilities: { editable: true, live },
     handle: (req) => handleTimelineApi(db, req),
   };
 }
@@ -312,16 +330,18 @@ export function createPostgresSource(db: SupabaseClient): SourceAdapter {
  * Resolve the adapter that serves a given timeline id through the API. Only the
  * Postgres source is API-served today; the `id` argument is the seam future
  * kinds key off (a registry lookup / prefix match) without changing callers.
+ * `live` is read from the runtime's env by the glue (TIMELINES_DB_LIVE) and
+ * threaded through so both runtimes agree on the source's live mode.
  */
-export function resolveAdapter(db: SupabaseClient, _id: string): SourceAdapter {
-  return createPostgresSource(db);
+export function resolveAdapter(db: SupabaseClient, _id: string, live: SourceLive = 'realtime'): SourceAdapter {
+  return createPostgresSource(db, live);
 }
 
 /** Parse a `/api/source/<id>[/<subkind>[/<childId>]]` path into id + sub. */
 export function parseSourcePath(path: string): { id: string; sub?: ApiRequest['sub'] } | null {
   const clean = path.replace(/^\/+|\/+$/g, '');
   const segs = clean.split('/').filter(Boolean);
-  const subKinds = ['item', 'group', 'phases', 'pricing', 'feature', 'feature-move', 'tier', 'tier-value', 'highlight', 'pversion'] as const;
+  const subKinds = ['item', 'group', 'phases', 'watermark', 'pricing', 'feature', 'feature-move', 'tier', 'tier-value', 'highlight', 'pversion'] as const;
   // find a trailing sub-resource marker
   for (let i = segs.length - 1; i >= 0; i--) {
     if ((subKinds as readonly string[]).includes(segs[i])) {

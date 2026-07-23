@@ -71,10 +71,17 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
 
   const db = createClient(url, key, { auth: { persistSession: false } });
   try {
-    const result = await resolveAdapter(db, apiReq.id).handle(apiReq);
+    // TIMELINES_DB_LIVE=poll makes DB sources advertise polling instead of
+    // Supabase Realtime (for a Postgres without Realtime enabled).
+    const live = Deno.env.get('TIMELINES_DB_LIVE') === 'poll' ? 'poll' : 'realtime';
+    const adapter = resolveAdapter(db, apiReq.id, live);
+    const result = await adapter.handle(apiReq);
+    // Tell the client which live-update impl to use (read by loadSource).
+    const headers = new Headers();
+    headers.set('X-Source-Live', adapter.capabilities.live);
     // A GET 404 (source not in the DB) surfaces as a loud client error —
     // no static content fallback (see AGENTS.md „keine Notfall-Daten").
-    return json(result.json, result.status);
+    return json(result.json, result.status, headers);
   } catch (err) {
     return json({ error: 'server_error', message: String(err) }, 500);
   }

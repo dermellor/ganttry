@@ -10,7 +10,7 @@ import {
   apiPutPhases,
   ConflictError,
 } from './editor';
-import { isRealtimeEnabled, subscribeTimeline, joinPresence } from './realtime';
+import { isRealtimeEnabled, watchTimeline, joinPresence } from './realtime';
 import { renderPresence } from './presence';
 import { state, els, setStatus, PERSIST_THROTTLE_MS } from './state';
 import { renderTimeline } from './render';
@@ -226,42 +226,47 @@ export function scheduleRemoteRefresh(): void {
   }, 400);
 }
 
-// (Re)subscribe to realtime changes for the active editable DB source.
+// (Re)subscribe to live changes for the active editable DB source, using the
+// implementation the source declares (realtime channel vs. watermark polling).
 export function setupRealtime(): void {
   if (state.realtimeUnsub) {
     state.realtimeUnsub();
     state.realtimeUnsub = null;
   }
 
-  const editableSourceId =
-    isRealtimeEnabled() && state.activeSourceId && state.activeSourceEditable
-      ? state.activeSourceId
-      : null;
+  // The source's live mode (only editable DB sources carry one; 'none' otherwise).
+  const live = state.activeSourceEditable ? state.activeSourceLive : 'none';
+  const liveSourceId = state.activeSourceId && live !== 'none' ? state.activeSourceId : null;
+
+  // Presence is realtime-only (Supabase presence channel; there is no polling
+  // heartbeat yet — see AGENTS.md „Presence unter Polling"). A poll source shows
+  // no presence badge.
+  const presenceSourceId = live === 'realtime' && isRealtimeEnabled() ? liveSourceId : null;
 
   // Presence lifecycle: only (re)join when the source actually changes.
   // setupRealtime re-runs on every same-view re-render (live edits, remote
   // refreshes); re-subscribing each time would flap the header badge and
   // broadcast a leave/join churn to the other connected clients.
-  if (editableSourceId !== state.presenceSourceId) {
+  if (presenceSourceId !== state.presenceSourceId) {
     if (state.presenceUnsub) {
       state.presenceUnsub();
       state.presenceUnsub = null;
     }
     renderPresence([], state.currentUser?.email ?? null);
-    state.presenceSourceId = editableSourceId;
-    if (editableSourceId) {
+    state.presenceSourceId = presenceSourceId;
+    if (presenceSourceId) {
       // Fall back to an anonymous identity when /api/me returned nothing.
       const me = state.currentUser ?? { email: 'anon', name: 'Gast' };
-      state.presenceUnsub = joinPresence(editableSourceId, me, (users) => {
-        if (state.presenceSourceId !== editableSourceId) return; // stale
+      state.presenceUnsub = joinPresence(presenceSourceId, me, (users) => {
+        if (state.presenceSourceId !== presenceSourceId) return; // stale
         renderPresence(users, me.email);
       });
     }
   }
 
-  if (!editableSourceId) return;
-  const sourceId = editableSourceId;
-  state.realtimeUnsub = subscribeTimeline(sourceId, (change) => {
+  if (!liveSourceId) return;
+  const sourceId = liveSourceId;
+  state.realtimeUnsub = watchTimeline(sourceId, (change) => {
     if (state.activeSourceId !== sourceId) return; // stale event after a view switch
     // Suppress our own echo: we already hold this exact version.
     if (
@@ -277,8 +282,18 @@ export function setupRealtime(): void {
       return;
     }
     // Pricing child-table changes (features/tiers/values/highlights) re-read the
-    // assembled model; versions arrive via the `timelines` UPDATE above.
+    // assembled model; versions arrive via the `timelines` UPDATE above. The
+    // poll impl only ever emits this coarse `timelines` change → full reload.
     scheduleRemoteRefresh();
+  }, {
+    live,
+    // Poll only: hold the reload while any edit form is open (item / phase /
+    // pricing feature). The realtime path already flags an edited item above;
+    // for polling we defer the whole reload until the user is done.
+    isBusy: () =>
+      state.activeFormItemId != null ||
+      state.activeFormPhaseIndex != null ||
+      state.activeFormFeatureId != null,
   });
 }
 
