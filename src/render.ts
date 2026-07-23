@@ -369,6 +369,10 @@ export async function renderTimeline(view: View) {
     stack: false,
     horizontalScroll: true,
     zoomKey: 'ctrlKey',
+    // Higher = gentler zoom per wheel/trackpad-pinch step (vis default is 5). A
+    // Mac trackpad pinch arrives as a ctrl+wheel event and goes through vis's
+    // mousewheel zoom, so this tames pinch sensitivity too.
+    zoomFriction: 15,
     // Prepend the brand-resolved icon at render time so the stored `content`
     // stays clean (used by the edit form, confirm dialogs, and Sheets).
     template: (item: TimelineItem) =>

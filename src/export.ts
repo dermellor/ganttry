@@ -65,6 +65,9 @@ function clientScript(): string {
     stack: false,
     horizontalScroll: true,
     zoomKey: 'ctrlKey',
+    // Gentler zoom per wheel/trackpad-pinch step (vis default is 5); mirrors the
+    // live viewer (see src/render.ts).
+    zoomFriction: 15,
     template: function (item) {
       return item ? iconSpan(item.icon) + (item.content || '') : '';
     },
