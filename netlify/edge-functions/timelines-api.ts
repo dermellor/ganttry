@@ -1,24 +1,54 @@
-// Netlify Edge Function — timeline API backed by Supabase.
+// Netlify Edge Function — timeline API, dual-adapter (Supabase-JS or Postgres).
 //
 // Handles GET/PUT/PATCH/POST/DELETE on /api/source/<id>[/item|group|phases[/<childId>]]
 // and GET /api/sources. Uses the SAME dispatcher as the local Vite middleware
 // (scripts/db/api.ts) — one implementation of the storage + optimistic-locking
 // semantics across both runtimes.
 //
-// Access uses the Supabase service key (server-side). The request is gated by
-// the signed session cookie (per-user, Acme-domain) or the MCP service token.
-// Edits are attributed to the logged-in user's email via `updated_by`.
-//
-// Required env vars: TIMELINES_SUPABASE_URL, TIMELINES_SUPABASE_SERVICE_KEY.
-// Gating honours AUTH_REQUIRED / MCP_API_TOKEN like the rest of the site.
+// Driver selection (additive, env-driven): a `TIMELINES_DATABASE_URL` selects a
+// direct Postgres connection (postgres.js, opt-in for self-hosters); otherwise
+// `TIMELINES_SUPABASE_URL` + `TIMELINES_SUPABASE_SERVICE_KEY` select supabase-js
+// over HTTP/PostgREST — the DEFAULT the Netlify deploy runs on (no raw TCP
+// needed in the Deno edge). BOTH drivers are imported so the bundle carries
+// each; only the resolved one is used. Requests are gated by the signed session
+// cookie (per-user, Acme-domain) or the MCP service token; edits are
+// attributed to the logged-in user's email via `updated_by`.
 //
 // NOTE: this replaces sheets-api.ts — remove that file before deploying so the
 // two functions don't both claim /api/source/*.
 
 import type { Context, Config } from '@netlify/edge-functions';
+import postgres from 'https://esm.sh/postgres@3.4.9';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { readSession, hasValidMcpToken } from './_shared/session.ts';
-import { resolveAdapter, parseSourcePath, type ApiRequest } from '../../scripts/db/api.ts';
+import { resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
+
+// Module-scoped, reused postgres.js connection. Opened once per isolate and
+// reused across invocations — NEVER call sql.end() in a handler (it throws a
+// benign teardown TypeError in the Deno edge runtime, and tearing the pool down
+// per request would defeat pooling). `prepare: false` for Supavisor
+// transaction-pooler compatibility (harmless on a direct connection).
+let sqlHandle: ReturnType<typeof postgres> | null | undefined;
+function getSql() {
+  if (sqlHandle !== undefined) return sqlHandle;
+  const dbUrl = Deno.env.get('TIMELINES_DATABASE_URL');
+  sqlHandle = dbUrl ? postgres(dbUrl, { prepare: false }) : null;
+  return sqlHandle;
+}
+
+// Module-scoped supabase-js client (the default). Realtime isn't used
+// server-side; the Deno global WebSocket satisfies its ctor without `ws`.
+let sbHandle: ReturnType<typeof createClient> | null | undefined;
+function getSupabase() {
+  if (sbHandle !== undefined) return sbHandle;
+  const url = Deno.env.get('TIMELINES_SUPABASE_URL');
+  const key = Deno.env.get('TIMELINES_SUPABASE_SERVICE_KEY');
+  sbHandle = url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
+  return sbHandle;
+}
+
+// postgres.js wins when present, else supabase-js (see resolveAdapter/resolveRepo).
+const dbConns = (): DbConnections => ({ sql: getSql(), supabase: getSupabase() });
 
 function json(data: unknown, status = 200, headers?: Headers): Response {
   const h = headers ?? new Headers();
@@ -28,11 +58,10 @@ function json(data: unknown, status = 200, headers?: Headers): Response {
 }
 
 export default async function handler(req: Request, _ctx: Context): Promise<Response | void> {
-  const url = Deno.env.get('TIMELINES_SUPABASE_URL');
-  const key = Deno.env.get('TIMELINES_SUPABASE_SERVICE_KEY');
+  const conns = dbConns();
   // No DB configured → nothing to serve; pass through (the request then 404s,
   // and the client surfaces a loud error — no static content fallback).
-  if (!url || !key) return;
+  if (!resolveRepo(conns)) return;
 
   const reqUrl = new URL(req.url);
   const isCollection = reqUrl.pathname === '/api/sources';
@@ -69,12 +98,11 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
     updatedBy: mcp ? 'mcp' : session?.email,
   };
 
-  const db = createClient(url, key, { auth: { persistSession: false } });
   try {
     // TIMELINES_DB_LIVE=poll makes DB sources advertise polling instead of
     // Supabase Realtime (for a Postgres without Realtime enabled).
     const live = Deno.env.get('TIMELINES_DB_LIVE') === 'poll' ? 'poll' : 'realtime';
-    const adapter = resolveAdapter(db, apiReq.id, live);
+    const adapter = resolveAdapter(conns, apiReq.id, live);
     const result = await adapter.handle(apiReq);
     // Tell the client which live-update impl to use (read by loadSource).
     const headers = new Headers();

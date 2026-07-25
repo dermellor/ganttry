@@ -6,8 +6,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { getServiceClient } from './client.ts';
-import { listTimelines, replaceTimeline } from './timeline-repo.ts';
+import { resolveRepoFromEnv, closeRepoFromEnv } from './repo-node.ts';
 import type { TimelineFile } from '../../src/types';
 
 const ROOT = process.cwd();
@@ -26,18 +25,19 @@ function ensureItemIds(file: TimelineFile): void {
 }
 
 async function main() {
-  const db = getServiceClient();
-  if (!db) {
+  const repo = resolveRepoFromEnv();
+  if (!repo) {
     console.error(
-      '[import] Missing Supabase credentials. Set TIMELINES_SUPABASE_URL and\n' +
-        '         TIMELINES_SUPABASE_SERVICE_KEY (in ~/_AGENTS/.env or .env.local).',
+      '[import] Missing DB connection. Set TIMELINES_DATABASE_URL (native postgres.js)\n' +
+        '         or TIMELINES_SUPABASE_URL + TIMELINES_SUPABASE_SERVICE_KEY (supabase-js)\n' +
+        '         (in ~/_AGENTS/.env or .env.local).',
     );
     process.exit(1);
   }
 
   // Default: refresh the timelines already in the DB. Explicit ids seed new ones.
   const explicit = process.argv.slice(2);
-  const ids = explicit.length ? explicit : (await listTimelines(db)).map((t) => t.id);
+  const ids = explicit.length ? explicit : (await repo.listTimelines()).map((t) => t.id);
   if (ids.length === 0) {
     console.warn('[import] DB is empty — pass a timeline id to seed one, e.g. `npm run db:import -- <id>`.');
     return;
@@ -59,7 +59,7 @@ async function main() {
     }
     ensureItemIds(file);
     try {
-      await replaceTimeline(db, id, file);
+      await repo.replaceTimeline(id, file);
       console.log(
         `[import] ${id} → ${file.items.length} items, ${file.groups?.length ?? 0} groups, ${file.phases?.length ?? 0} phases`,
       );
@@ -69,6 +69,10 @@ async function main() {
     }
   }
   console.log(`[import] done — ${count} timeline(s) imported.`);
+  // CLI script: close any pooled postgres.js connection so the process exits
+  // (no-op on the supabase-js path). The "never end() in a handler" rule is
+  // about the edge request path, not one-shot CLIs.
+  await closeRepoFromEnv();
 }
 
 main().catch((err) => {

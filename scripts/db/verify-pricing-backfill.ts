@@ -4,7 +4,7 @@
 // the granular write layer (locking + cell independence) on a throwaway
 // timeline, then cleans up. Run: tsx scripts/db/verify-pricing-backfill.ts <oldBlobJson>
 import { readFileSync } from 'node:fs';
-import { getServiceClient } from './client.ts';
+import { getSql } from './sql.ts';
 import {
   getPublicPricing,
   addFeature,
@@ -51,11 +51,11 @@ const canon = (v: unknown) => JSON.stringify(sortDeep(v));
 
 async function main() {
   const oldBlobPath = process.argv[2];
-  const db = getServiceClient();
-  if (!db) throw new Error('No service client — check TIMELINES_SUPABASE_* env.');
+  const sql = getSql();
+  if (!sql) throw new Error('No DB connection — check TIMELINES_DATABASE_URL env.');
 
   // 1) Backfill correctness: new assembled == old blob (normalized).
-  const nu = await getPublicPricing(db, SONA);
+  const nu = await getPublicPricing(sql, SONA);
   if (!nu) throw new Error('getPublicPricing(sona) returned null after migration!');
   console.log(
     `[assemble] sona: ${nu.pricing.features.length} features, ${nu.pricing.tiers.length} tiers, ` +
@@ -84,8 +84,10 @@ async function main() {
   }
 
   // 2) Granular write layer on a throwaway timeline: locking + cell independence.
-  await db.from('timelines').upsert({ id: TEST, name: 'verify', type: 'product' });
-  await replacePricing(db, TEST, {
+  await sql`
+    insert into timelines ${sql({ id: TEST, name: 'verify', type: 'product' }, 'id', 'name', 'type')}
+    on conflict (id) do update set ${sql({ name: 'verify', type: 'product' }, 'name', 'type')}`;
+  await replacePricing(sql, TEST, {
     versions: ['1.0'],
     features: [
       { id: 'f1', name: 'F1' },
@@ -95,12 +97,12 @@ async function main() {
   });
 
   // Locking: two updates with the same expectedVersion → second must 409.
-  const f = (await assemblePricing(db, TEST, ['1.0'])).features.find((x) => x.id === 'f1')!;
+  const f = (await assemblePricing(sql, TEST, ['1.0'])).features.find((x) => x.id === 'f1')!;
   const v0 = f.rowVersion!;
-  await updateFeature(db, TEST, 'f1', { name: 'F1-a' }, v0, 'verify');
+  await updateFeature(sql, TEST, 'f1', { name: 'F1-a' }, v0, 'verify');
   let conflicted = false;
   try {
-    await updateFeature(db, TEST, 'f1', { name: 'F1-b' }, v0, 'verify'); // stale
+    await updateFeature(sql, TEST, 'f1', { name: 'F1-b' }, v0, 'verify'); // stale
   } catch (e) {
     conflicted = e instanceof ConflictError;
   }
@@ -108,23 +110,24 @@ async function main() {
   if (!conflicted) process.exitCode = 1;
 
   // Cell independence: set two different cells; both persist.
-  await setTierValue(db, TEST, 't1', 'f1', '100', 'verify');
-  await setTierValue(db, TEST, 't1', 'f2', true, 'verify');
-  const t = (await assemblePricing(db, TEST, ['1.0'])).tiers.find((x) => x.id === 't1')!;
+  await setTierValue(sql, TEST, 't1', 'f1', '100', 'verify');
+  await setTierValue(sql, TEST, 't1', 'f2', true, 'verify');
+  const t = (await assemblePricing(sql, TEST, ['1.0'])).tiers.find((x) => x.id === 't1')!;
   const bothCells = t.values.f1 === '100' && t.values.f2 === true;
   console.log(`[cells] two independent cells both persisted: ${bothCells ? 'YES ✅' : 'NO ❌'}`);
   if (!bothCells) process.exitCode = 1;
 
   // Clearing a cell removes it.
-  await setTierValue(db, TEST, 't1', 'f1', false, 'verify');
-  const t2 = (await assemblePricing(db, TEST, ['1.0'])).tiers.find((x) => x.id === 't1')!;
+  await setTierValue(sql, TEST, 't1', 'f1', false, 'verify');
+  const t2 = (await assemblePricing(sql, TEST, ['1.0'])).tiers.find((x) => x.id === 't1')!;
   console.log(`[cells] clear (value=false) removes cell: ${!('f1' in t2.values) ? 'YES ✅' : 'NO ❌'}`);
   if ('f1' in t2.values) process.exitCode = 1;
 
   // Cleanup (cascade removes children).
-  await db.from('timelines').delete().eq('id', TEST);
+  await sql`delete from timelines where id = ${TEST}`;
   console.log('[cleanup] throwaway timeline removed.');
   console.log(process.exitCode ? '\nRESULT: FAILURES ❌' : '\nRESULT: all checks passed ✅');
+  await sql.end();
 }
 
 main().catch((e) => {

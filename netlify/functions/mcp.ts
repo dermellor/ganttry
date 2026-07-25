@@ -5,15 +5,16 @@
 // Stage 1 auth: Bearer MCP_API_TOKEN (proves the transport). OAuth (per-user
 // Google login) is layered on in a later stage — see mcp-oauth.
 //
-// Tools reuse the shared dispatcher (scripts/db/api.ts) against Supabase.
+// Tools reuse the shared dispatcher (scripts/db/api.ts) against Postgres.
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
 import crypto from 'node:crypto';
 import type { Config } from '@netlify/functions';
+import { getSql } from '../../scripts/db/sql.ts';
 import { getServiceClient } from '../../scripts/db/client.ts';
-import { resolveAdapter, type ApiRequest } from '../../scripts/db/api.ts';
+import { resolveAdapter, resolveRepo, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
 
 const ACCESS_TTL = 12 * 3600; // must match mcp-oauth.ts
 
@@ -66,12 +67,17 @@ function authenticate(req: Request): string | null {
 // side-effect free across invocations.
 function buildServer(updatedBy: string): McpServer {
   const server = new McpServer({ name: 'timelines', version: '1.0.0' });
-  const db = getServiceClient();
+  // Dual-adapter: postgres.js when TIMELINES_DATABASE_URL is set, else supabase-js.
+  const conns: DbConnections = { sql: getSql(), supabase: getServiceClient() };
 
   const run = async (req: Omit<ApiRequest, 'updatedBy'>) => {
-    if (!db) throw new Error('Supabase not configured on the server.');
+    if (!resolveRepo(conns)) {
+      throw new Error(
+        'Database not configured on the server (TIMELINES_DATABASE_URL, or TIMELINES_SUPABASE_URL + TIMELINES_SUPABASE_SERVICE_KEY).',
+      );
+    }
     const fullReq = { ...req, updatedBy } as ApiRequest;
-    const result = await resolveAdapter(db, fullReq.id).handle(fullReq);
+    const result = await resolveAdapter(conns, fullReq.id).handle(fullReq);
     if (result.status >= 400) {
       const msg = (result.json as { error?: string; message?: string });
       throw new Error(msg.message || msg.error || `error ${result.status}`);

@@ -3,9 +3,15 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
+import { getSql } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
-import { resolveAdapter, parseSourcePath, type ApiRequest } from './scripts/db/api';
-import { getPublicPricing } from './scripts/db/timeline-repo';
+import { resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
+
+// Additive dual-adapter: prefer native postgres.js (TIMELINES_DATABASE_URL),
+// else supabase-js (TIMELINES_SUPABASE_URL + SERVICE_KEY). Both factories cache,
+// so calling them per request is cheap. Neither configured → the "no DB" path.
+const dbConns = (): DbConnections => ({ sql: getSql(), supabase: getServiceClient() });
+const hasDb = (c: DbConnections): boolean => Boolean(c.sql || c.supabase);
 
 const ID_SEGMENT = /^[a-zA-Z0-9_-]+$/;
 
@@ -124,10 +130,10 @@ function timelinesApi(): Plugin {
       // GET /api/sources — list timelines
       server.middlewares.use('/api/sources', async (req, res, next) => {
         if (req.method !== 'GET') return next();
-        const db = getServiceClient();
-        if (!db) return send(res, 200, { sources: [] });
+        const conns = dbConns();
+        if (!hasDb(conns)) return send(res, 200, { sources: [] });
         try {
-          const result = await handleTimelineApi(db, { method: 'GET', id: '' });
+          const result = await resolveAdapter(conns, '').handle({ method: 'GET', id: '' });
           send(res, result.status, result.json);
         } catch (err) {
           send(res, 500, { error: 'server_error', message: String(err) });
@@ -137,12 +143,12 @@ function timelinesApi(): Plugin {
       // GET /api/pricing/<id> — PUBLIC pricing model (mirror of the edge fn).
       server.middlewares.use('/api/pricing', async (req, res, next) => {
         if (req.method !== 'GET') return next();
-        const db = getServiceClient();
-        if (!db) return send(res, 503, { error: 'db_not_configured' });
+        const repo = resolveRepo(dbConns());
+        if (!repo) return send(res, 503, { error: 'db_not_configured' });
         const id = (req.url ?? '').replace(/\?.*$/, '').replace(/^\/+|\/+$/g, '');
         if (!id) return send(res, 400, { error: 'id required' });
         try {
-          const pricing = await getPublicPricing(db, decodeURIComponent(id));
+          const pricing = await repo.getPublicPricing(decodeURIComponent(id));
           if (pricing) send(res, 200, pricing);
           else send(res, 404, { error: 'not found' });
         } catch (err) {
@@ -163,14 +169,14 @@ function timelinesApi(): Plugin {
           return send(res, 400, { error: `invalid id "${parsed.id}"` });
         }
 
-        const db = getServiceClient();
-        if (!db) {
+        const conns = dbConns();
+        if (!hasDb(conns)) {
           // No DB configured: 404 on GET (nothing to read). The client surfaces
           // the error loudly — there is no static content fallback. Writes 503.
           if (method === 'GET') return send(res, 404, { error: 'db_not_configured' });
           return send(res, 503, {
             error: 'db_not_configured',
-            detail: 'Set TIMELINES_SUPABASE_URL and TIMELINES_SUPABASE_SERVICE_KEY.',
+            detail: 'Set TIMELINES_DATABASE_URL, or TIMELINES_SUPABASE_URL + TIMELINES_SUPABASE_SERVICE_KEY.',
           });
         }
 
@@ -202,7 +208,7 @@ function timelinesApi(): Plugin {
           // TIMELINES_DB_LIVE=poll makes DB sources advertise polling instead of
           // Supabase Realtime (for a Postgres without Realtime enabled).
           const live = process.env.TIMELINES_DB_LIVE === 'poll' ? 'poll' : 'realtime';
-          const adapter = resolveAdapter(db, apiReq.id, live);
+          const adapter = resolveAdapter(conns, apiReq.id, live);
           // Tell the client which live-update impl to use (read by loadSource).
           res.setHeader('X-Source-Live', adapter.capabilities.live);
           const result = await adapter.handle(apiReq);

@@ -3,6 +3,7 @@
 // call handleTimelineApi(), and write the ApiResult back. All storage logic and
 // the item-level optimistic-locking semantics live here — one implementation.
 
+import type { Sql } from 'postgres';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   Pricing,
@@ -19,32 +20,17 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
-  addFeature,
-  addHighlight,
-  addItem,
-  addTier,
-  deleteFeature,
-  moveFeature,
-  deleteGroup,
-  deleteHighlight,
-  deleteItem,
-  deleteTier,
-  getTimeline,
-  getWatermark,
-  listTimelines,
-  replacePricing,
-  replaceTimeline,
-  setTierValue,
-  updateFeature,
-  updateHighlight,
-  updateItem,
-  updateMeta,
-  updatePhases,
-  updateTier,
-  updateVersions,
-  upsertGroup,
   type TimelineGroupDecl,
-} from './timeline-repo.ts';
+  type TimelineRepo,
+} from './repo.ts';
+// Both driver factories are imported for their runtime value, but each impl
+// module imports ITS client only as a type (`import type { Sql }` /
+// `import type { SupabaseClient }`), so pulling them in here drags NO concrete
+// driver into a bundle — the drivers arrive through the glue that constructs a
+// real handle (Node factories / edge esm.sh imports). This keeps both adapters
+// resolvable from one `resolveAdapter` while the Deno edge bundle stays clean.
+import { makePostgresRepo } from './timeline-repo.ts';
+import { makeSupabaseRepo } from './timeline-repo-supabase.ts';
 
 /** Sub-resource kinds addressable under /api/source/<id>/. */
 export type SubKind =
@@ -81,11 +67,11 @@ const err = (status: number, error: string, extra?: Record<string, unknown>): Ap
   json: { error, ...extra },
 });
 
-export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Promise<ApiResult> {
+export async function handleTimelineApi(repo: TimelineRepo, req: ApiRequest): Promise<ApiResult> {
   // Collection: GET /api/sources
   if (req.id === '') {
     if (req.method !== 'GET') return err(405, 'method not allowed');
-    return ok({ sources: await listTimelines(db) });
+    return ok({ sources: await repo.listTimelines() });
   }
 
   const { method, id, sub } = req;
@@ -94,17 +80,17 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
     // ---- whole timeline ---------------------------------------------------
     if (!sub) {
       if (method === 'GET') {
-        const file = await getTimeline(db, id);
+        const file = await repo.getTimeline(id);
         return file ? ok(file) : err(404, 'not found');
       }
       if (method === 'PUT') {
         const body = req.body as TimelineFile;
         if (!body || !Array.isArray(body.items)) return err(400, 'expected object with "items" array');
-        await replaceTimeline(db, id, body);
+        await repo.replaceTimeline(id, body);
         return ok({ ok: true });
       }
       if (method === 'PATCH') {
-        await updateMeta(db, id, (req.body ?? {}) as any);
+        await repo.updateMeta(id, (req.body ?? {}) as any);
         return ok({ ok: true });
       }
       return err(405, 'method not allowed');
@@ -117,17 +103,17 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
         // `start` is optional (a list-created item may have no date yet); only
         // `content` is required.
         if (!item || !item.content) return err(400, 'item needs content');
-        return ok(await addItem(db, id, item, req.updatedBy), 201);
+        return ok(await repo.addItem(id, item, req.updatedBy), 201);
       }
       if (!sub.childId) return err(400, 'item id required');
       if (method === 'PATCH') {
         const body = (req.body ?? {}) as Partial<TimelineFileItem> & { version?: number };
         const version = req.ifMatch ?? body.version;
         const { version: _v, ...patch } = body;
-        return ok(await updateItem(db, id, sub.childId, patch, version, req.updatedBy));
+        return ok(await repo.updateItem(id, sub.childId, patch, version, req.updatedBy));
       }
       if (method === 'DELETE') {
-        await deleteItem(db, id, sub.childId);
+        await repo.deleteItem(id, sub.childId);
         return ok({ ok: true });
       }
       return err(405, 'method not allowed');
@@ -138,11 +124,11 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
       if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
         const g = req.body as TimelineGroupDecl;
         if (!g || !g.id) return err(400, 'group needs id');
-        return ok(await upsertGroup(db, id, g));
+        return ok(await repo.upsertGroup(id, g));
       }
       if (method === 'DELETE') {
         if (!sub.childId) return err(400, 'group id required');
-        await deleteGroup(db, id, sub.childId);
+        await repo.deleteGroup(id, sub.childId);
         return ok({ ok: true });
       }
       return err(405, 'method not allowed');
@@ -153,7 +139,7 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
       if (method === 'PUT') {
         const body = req.body as { phases?: TimelinePhase[] } | TimelinePhase[];
         const phases = Array.isArray(body) ? body : (body?.phases ?? []);
-        await updatePhases(db, id, phases);
+        await repo.updatePhases(id, phases);
         return ok({ ok: true });
       }
       return err(405, 'method not allowed');
@@ -161,7 +147,7 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
 
     // ---- watermark (cheap change-detection for polling clients) -----------
     if (sub.kind === 'watermark') {
-      if (method === 'GET') return ok(await getWatermark(db, id));
+      if (method === 'GET') return ok(await repo.getWatermark(id));
       return err(405, 'method not allowed');
     }
 
@@ -174,7 +160,7 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
         if (!pricing || !Array.isArray(pricing.tiers) || !Array.isArray(pricing.features)) {
           return err(400, 'pricing needs features[] and tiers[]');
         }
-        await replacePricing(db, id, pricing);
+        await repo.replacePricing(id, pricing);
         return ok({ ok: true });
       }
       return err(405, 'method not allowed');
@@ -189,14 +175,14 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
       if (method === 'POST') {
         const f = req.body as PricingFeature;
         if (!f || !f.id) return err(400, 'feature needs id');
-        return ok(await addFeature(db, id, f, req.updatedBy), 201);
+        return ok(await repo.addFeature(id, f, req.updatedBy), 201);
       }
       if (!sub.childId) return err(400, 'feature id required');
       if (method === 'PATCH') {
-        return ok(await updateFeature(db, id, sub.childId, (req.body ?? {}) as Partial<PricingFeature>, req.ifMatch, req.updatedBy));
+        return ok(await repo.updateFeature(id, sub.childId, (req.body ?? {}) as Partial<PricingFeature>, req.ifMatch, req.updatedBy));
       }
       if (method === 'DELETE') {
-        await deleteFeature(db, id, sub.childId);
+        await repo.deleteFeature(id, sub.childId);
         return ok({ ok: true });
       }
       return err(405, 'method not allowed');
@@ -210,7 +196,7 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
         const b = (req.body ?? {}) as { featureId?: string; after?: string; before?: string };
         if (!b.featureId) return err(400, 'feature-move needs featureId');
         if (!b.after && !b.before) return err(400, 'feature-move needs after or before');
-        const order = await moveFeature(db, id, b.featureId, { after: b.after, before: b.before }, req.updatedBy);
+        const order = await repo.moveFeature(id, b.featureId, { after: b.after, before: b.before }, req.updatedBy);
         return ok({ ok: true, order });
       }
       return err(405, 'method not allowed');
@@ -221,14 +207,14 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
       if (method === 'POST') {
         const t = req.body as PricingTier;
         if (!t || !t.id) return err(400, 'tier needs id');
-        return ok(await addTier(db, id, t, req.updatedBy), 201);
+        return ok(await repo.addTier(id, t, req.updatedBy), 201);
       }
       if (!sub.childId) return err(400, 'tier id required');
       if (method === 'PATCH') {
-        return ok(await updateTier(db, id, sub.childId, (req.body ?? {}) as Partial<PricingTier>, req.ifMatch, req.updatedBy));
+        return ok(await repo.updateTier(id, sub.childId, (req.body ?? {}) as Partial<PricingTier>, req.ifMatch, req.updatedBy));
       }
       if (method === 'DELETE') {
-        await deleteTier(db, id, sub.childId);
+        await repo.deleteTier(id, sub.childId);
         return ok({ ok: true });
       }
       return err(405, 'method not allowed');
@@ -246,7 +232,7 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
           availableFrom?: string | null;
         };
         if (!b.tierId || !b.featureId) return err(400, 'tier-value needs tierId and featureId');
-        await setTierValue(db, id, b.tierId, b.featureId, b.value ?? null, req.updatedBy, b.availableFrom ?? null);
+        await repo.setTierValue(id, b.tierId, b.featureId, b.value ?? null, req.updatedBy, b.availableFrom ?? null);
         return ok({ ok: true });
       }
       return err(405, 'method not allowed');
@@ -257,14 +243,14 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
       if (method === 'POST') {
         const h = req.body as PricingHighlight;
         if (!h || !h.id) return err(400, 'highlight needs id');
-        return ok(await addHighlight(db, id, h, req.updatedBy), 201);
+        return ok(await repo.addHighlight(id, h, req.updatedBy), 201);
       }
       if (!sub.childId) return err(400, 'highlight id required');
       if (method === 'PATCH') {
-        return ok(await updateHighlight(db, id, sub.childId, (req.body ?? {}) as Partial<PricingHighlight>, req.ifMatch, req.updatedBy));
+        return ok(await repo.updateHighlight(id, sub.childId, (req.body ?? {}) as Partial<PricingHighlight>, req.ifMatch, req.updatedBy));
       }
       if (method === 'DELETE') {
-        await deleteHighlight(db, id, sub.childId);
+        await repo.deleteHighlight(id, sub.childId);
         return ok({ ok: true });
       }
       return err(405, 'method not allowed');
@@ -275,7 +261,7 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
       if (method === 'PUT') {
         const body = req.body as { versions?: string[] } | string[];
         const versions = Array.isArray(body) ? body : (body?.versions ?? []);
-        await updateVersions(db, id, versions);
+        await repo.updateVersions(id, versions);
         return ok({ ok: true });
       }
       return err(405, 'method not allowed');
@@ -295,10 +281,10 @@ export async function handleTimelineApi(db: SupabaseClient, req: ApiRequest): Pr
 // ---------------------------------------------------------------------------
 // The runtime glue (Vite middleware / edge function) no longer calls
 // handleTimelineApi directly — it resolves a SourceAdapter for the requested id
-// and dispatches through it. Today the only API-served adapter is Postgres
-// (handleTimelineApi is its implementation); genuine file sources are static
-// and never reach the API. New API-served kinds (e.g. a Google Sheet or an
-// external Postgres) register in resolveAdapter without touching the glue.
+// and dispatches through it. The DB-backed source has two interchangeable
+// drivers behind the same adapter: native postgres.js (opt-in) and supabase-js
+// (the Netlify default). Genuine file sources are static and never reach the
+// API. New API-served kinds register in resolveAdapter without touching the glue.
 
 // SourceLive / SourceCapabilities now live in src/types.ts so the client and the
 // Deno-bundled server share one definition (re-exported here for existing call
@@ -311,30 +297,55 @@ export interface SourceAdapter {
   handle(req: ApiRequest): Promise<ApiResult>;
 }
 
+/** Connections a runtime may have available; the glue supplies whichever it built. */
+export type DbConnections = { sql?: Sql | null; supabase?: SupabaseClient | null };
+
 /**
- * The DB-backed source: Supabase/Postgres via handleTimelineApi. `live` defaults
- * to 'realtime' (Supabase Realtime pushes row changes over a WebSocket). Pass
- * 'poll' for a Postgres without Realtime enabled — clients then poll the
- * watermark endpoint instead. The value flows to the client via the
- * X-Source-Live response header (set by the runtime glue).
+ * Pick the storage repo from the available connection(s): native postgres.js
+ * when a `sql` handle is present, else supabase-js. Null when neither is
+ * configured (the glue then surfaces the "no DB" path — 404/503, no fallback).
  */
-export function createPostgresSource(db: SupabaseClient, live: SourceLive = 'realtime'): SourceAdapter {
+export function resolveRepo(conns: DbConnections): TimelineRepo | null {
+  if (conns.sql) return makePostgresRepo(conns.sql);
+  if (conns.supabase) return makeSupabaseRepo(conns.supabase);
+  return null;
+}
+
+function dbAdapter(repo: TimelineRepo, live: SourceLive): SourceAdapter {
   return {
     kind: 'db',
     capabilities: { editable: true, live },
-    handle: (req) => handleTimelineApi(db, req),
+    handle: (req) => handleTimelineApi(repo, req),
   };
 }
 
 /**
- * Resolve the adapter that serves a given timeline id through the API. Only the
- * Postgres source is API-served today; the `id` argument is the seam future
- * kinds key off (a registry lookup / prefix match) without changing callers.
- * `live` is read from the runtime's env by the glue (TIMELINES_DB_LIVE) and
- * threaded through so both runtimes agree on the source's live mode.
+ * The DB-backed source via native postgres.js. `live` defaults to 'realtime'
+ * (Supabase Realtime pushes row changes over a WebSocket). Pass 'poll' for a
+ * Postgres without Realtime enabled — clients then poll the watermark endpoint
+ * instead. The value flows to the client via the X-Source-Live response header.
  */
-export function resolveAdapter(db: SupabaseClient, _id: string, live: SourceLive = 'realtime'): SourceAdapter {
-  return createPostgresSource(db, live);
+export function createPostgresSource(sql: Sql, live: SourceLive = 'realtime'): SourceAdapter {
+  return dbAdapter(makePostgresRepo(sql), live);
+}
+
+/** The DB-backed source via supabase-js / PostgREST (the Netlify default). */
+export function createSupabaseSource(db: SupabaseClient, live: SourceLive = 'realtime'): SourceAdapter {
+  return dbAdapter(makeSupabaseRepo(db), live);
+}
+
+/**
+ * Resolve the adapter that serves a given timeline id through the API. It picks
+ * the driver from the available connection(s) — postgres.js when a `sql` handle
+ * is present, else supabase-js — so both runtimes select the same way. The `id`
+ * argument is the seam future kinds key off (a registry lookup / prefix match)
+ * without changing callers. `live` is read from the runtime's env by the glue
+ * (TIMELINES_DB_LIVE) and threaded through so both runtimes agree on the mode.
+ */
+export function resolveAdapter(conns: DbConnections, _id: string, live: SourceLive = 'realtime'): SourceAdapter {
+  const repo = resolveRepo(conns);
+  if (!repo) throw new Error('resolveAdapter: no DB connection (set TIMELINES_DATABASE_URL, or TIMELINES_SUPABASE_URL + TIMELINES_SUPABASE_SERVICE_KEY)');
+  return dbAdapter(repo, live);
 }
 
 /** Parse a `/api/source/<id>[/<subkind>[/<childId>]]` path into id + sub. */

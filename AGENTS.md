@@ -175,13 +175,17 @@ new `SourceKind` value plus its loader — the routing seam already exists.
 
 **Server-side adapter seam:** the runtime glue (Vite middleware +
 `timelines-api` edge function) no longer calls the DB dispatcher directly. It
-resolves a `SourceAdapter` via `resolveAdapter(db, id)`
+resolves a `SourceAdapter` via `resolveAdapter(conns, id, live)`
 ([`scripts/db/api.ts`](scripts/db/api.ts)) and dispatches through
-`adapter.handle(req)`. Today the only API-served adapter is `PostgresSource`
-(wrapping `handleTimelineApi`); its `capabilities` declare `editable` and a
-`live` mode (`realtime` for Postgres). Future API-served kinds register in
-`resolveAdapter` without touching the middleware/edge glue. File sources are
-static and never reach this seam.
+`adapter.handle(req)`. The DB-backed source has **two interchangeable drivers**
+behind that one adapter, selected by env (see „Supabase als Datenquelle →
+Treiber"): supabase-js (the Netlify default) and native postgres.js (opt-in).
+Both satisfy the same `TimelineRepo` seam ([`scripts/db/repo.ts`](scripts/db/repo.ts));
+`handleTimelineApi(repo, req)` dispatches through the bound repo and never sees
+the driver. The adapter's `capabilities` declare `editable` and a `live` mode
+(`realtime` by default). Future API-served kinds register in `resolveAdapter`
+without touching the middleware/edge glue. File sources are static and never
+reach this seam.
 
 ### Timeline kinds (`src/kinds/`)
 
@@ -452,8 +456,43 @@ statische Quellen** — sie sind *nicht* in der DB. Nur DB-Timelines sind editie
 
 Lokale Middleware (`vite.config.ts`) und Netlify-Edge-Function
 (`netlify/edge-functions/timelines-api.ts`) teilen sich denselben Dispatcher
-(`scripts/db/api.ts`) und Data-Access-Layer (`scripts/db/timeline-repo.ts`) —
-eine Implementierung der Storage- und Locking-Semantik für beide Runtimes.
+(`scripts/db/api.ts`, `handleTimelineApi(repo, req)`) und den `TimelineRepo`-Seam
+(`scripts/db/repo.ts`) — eine Implementierung der Storage- und Locking-Semantik
+für beide Runtimes, unabhängig vom gewählten Treiber (siehe „Treiber").
+
+> **Treiber (seit Phase 3, #28): additiver Dual-Adapter — `supabase-js` (Default)
+> ODER `postgres.js` (opt-in).** Beide Treiber implementieren denselben
+> `TimelineRepo`-Seam ([`scripts/db/repo.ts`](scripts/db/repo.ts), jede
+> Storage-Methode mit gebundenem Client, ohne führenden Client-Parameter):
+> - **`supabase-js`** ([`scripts/db/timeline-repo-supabase.ts`](scripts/db/timeline-repo-supabase.ts),
+>   Factory `makeSupabaseRepo(db)`) — spricht HTTP/PostgREST, läuft ohne rohes TCP
+>   im Deno-Edge und ist **der Default, auf dem der Netlify-Deploy läuft**.
+>   Node-Client `getServiceClient()` ([`scripts/db/client.ts`](scripts/db/client.ts)).
+> - **`postgres.js`** ([`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts),
+>   Factory `makePostgresRepo(sql)`) — **opt-in** für Self-Hoster mit eigenem
+>   Postgres über einen Connection-String (`TIMELINES_DATABASE_URL`). Node-Factory
+>   `getSql()` ([`scripts/db/sql.ts`](scripts/db/sql.ts), `prepare:false` für den
+>   Supavisor-Transaction-Pooler); die Edge-Functions öffnen einen **modul-scoped,
+>   über Invocations wiederverwendeten** Handle (nie `sql.end()` im Handler —
+>   Deno-Teardown-Quirk).
+>
+> **Auswahl per Env** (identisch in jeder Runtime): ist `TIMELINES_DATABASE_URL`
+> gesetzt → postgres.js, sonst `TIMELINES_SUPABASE_URL` + `TIMELINES_SUPABASE_SERVICE_KEY`
+> → supabase-js. Die Glue baut beide möglichen Handles und übergibt sie als
+> `{ sql, supabase }` an `resolveAdapter`/`resolveRepo`; postgres.js gewinnt, wenn
+> ein `sql`-Handle da ist. **Netlify setzt nur die Supabase-Vars → dort läuft
+> unverändert supabase-js**, null Verhaltens-/Risiko-Änderung. Optimistisches
+> Locking (`update … where version=$` + 0-Rows→`ConflictError`), jsonb-Handling
+> und der DB-Trigger-`version`-Bump sind in beiden Treibern identisch;
+> **Schema/Trigger/Migrationen unverändert**. `@supabase/supabase-js` lebt zusätzlich
+> client-seitig in [`src/realtime.ts`](src/realtime.ts) (Browser-Realtime) —
+> davon unberührt.
+>
+> **Prod-Deploy (Netlify):** unverändert die Supabase-Vars setzen (`TIMELINES_SUPABASE_URL`
+> + `TIMELINES_SUPABASE_SERVICE_KEY`) — kein `TIMELINES_DATABASE_URL` nötig. Nur wer
+> bewusst nativen Postgres statt PostgREST fahren will, setzt `TIMELINES_DATABASE_URL`;
+> der Deno-Deploy-Outbound-TCP zum Pooler ist dann der einzige erst live
+> verifizierbare Punkt (lokal Node + Docker-Postgres bewiesen).
 
 ### Prinzip: keine Notfall-/Fallback-Daten — niemals
 
@@ -527,13 +566,24 @@ supabase db query --linked -f supabase/migrations/<datei>.sql
 
 ### Setup (einmalig)
 
-Credentials in `~/_AGENTS/.env` (oder `.env.local`), gelesen via
-`scripts/db/client.ts`:
+Credentials in `~/_AGENTS/.env` (oder `.env.local`), gelesen über die Kaskade in
+[`scripts/db/env.ts`](scripts/db/env.ts) (`process.env` → `~/_AGENTS/.env` →
+`.env.local`). Je nach gewähltem Treiber (siehe „Treiber"): supabase-js über
+`getServiceClient()` ([`scripts/db/client.ts`](scripts/db/client.ts)), postgres.js
+über `getSql()` ([`scripts/db/sql.ts`](scripts/db/sql.ts)):
 
-| Var                             | Bedeutung                                              |
-| ------------------------------- | ------------------------------------------------------ |
-| `TIMELINES_SUPABASE_URL`        | `https://<ref>.supabase.co`                            |
-| `TIMELINES_SUPABASE_SERVICE_KEY`| Service-Role-Key (Server-seitig, nie in den Client)    |
+| Var                              | Treiber      | Bedeutung                                                                 |
+| -------------------------------- | ------------ | ------------------------------------------------------------------------- |
+| `TIMELINES_SUPABASE_URL`         | supabase-js  | `https://<ref>.supabase.co` (Default-Pfad)                                |
+| `TIMELINES_SUPABASE_SERVICE_KEY` | supabase-js  | Service-Role-Key (Server-seitig, nie in den Client)                       |
+| `TIMELINES_DATABASE_URL`         | postgres.js  | Postgres-Connection-String (`postgresql://…`); gesetzt → gewinnt vor supabase-js. Supabase: Supavisor-Transaction-Pooler (Port 6543). Beliebiges Postgres möglich. |
+
+Ist `TIMELINES_DATABASE_URL` gesetzt, läuft alles über postgres.js; sonst über
+supabase-js. Lokales Test-Postgres (kein Supabase nötig, für den postgres.js-Pfad):
+ein Docker-`postgres:16` + die Migrationen `0001–0011` (nach Anlage der Prereq-Rolle
+`anon` + Publication `supabase_realtime`) ergeben ein schema-komplettes Postgres;
+`TIMELINES_DATABASE_URL` auf `postgresql://postgres:postgres@127.0.0.1:5432/postgres`
+zeigen lassen.
 
 ### Import / Migration
 
@@ -574,14 +624,25 @@ Zusätzlich zu den Auth-Env-Vars:
 
 | Var                              | Where              | Notes                                          |
 | -------------------------------- | ------------------ | ---------------------------------------------- |
-| `TIMELINES_SUPABASE_URL`         | dashboard          | aktiviert die `timelines-api` Edge Function     |
+| `TIMELINES_SUPABASE_URL`         | dashboard          | **Default-Pfad (supabase-js).** Aktiviert die `timelines-api`/`pricing-api` Edge Functions über HTTP/PostgREST. |
 | `TIMELINES_SUPABASE_SERVICE_KEY` | dashboard (secret) | Service-Role-Key für den serverseitigen Zugriff |
-| `VITE_SUPABASE_URL`              | dashboard          | build-time; ohne beide erscheinen fremde Edits erst beim Reload (siehe „Realtime") |
+| `TIMELINES_DATABASE_URL`         | dashboard (secret) | **Optional/opt-in.** Nur setzen, um bewusst nativen Postgres (postgres.js/TCP, Supavisor-Transaction-Pooler Port 6543) statt supabase-js zu fahren — gewinnt dann vor den Supabase-Vars. |
+| `VITE_SUPABASE_URL`              | dashboard          | build-time; **nur** für client-seitiges Realtime (siehe „Realtime"). Ohne beide erscheinen fremde Edits erst beim Reload |
 | `VITE_SUPABASE_ANON_KEY`         | dashboard          | build-time, public im Bundle; **Redeploy nötig** (Vite backt sie beim Build ein) |
 
 Die Edge Function gated per Session-Cookie (bzw. MCP-Token) und attribuiert
-Edits über `updated_by` an die E-Mail des eingeloggten Users. Sind die Vars
-nicht gesetzt, fällt jede Source auf die statische Datei zurück (read-only).
+Edits über `updated_by` an die E-Mail des eingeloggten Users. Ist **weder** der
+Supabase- **noch** der `TIMELINES_DATABASE_URL`-Zugriff konfiguriert, kann die
+Edge Function nicht auf die DB zugreifen und die Source failt laut (kein
+statischer Fallback).
+
+> **Deploy-Hinweis (Phase 3, additiver Dual-Adapter):** Der Netlify-Deploy läuft
+> **unverändert auf supabase-js** — es genügen `TIMELINES_SUPABASE_URL` +
+> `TIMELINES_SUPABASE_SERVICE_KEY` (exakt wie vor Phase 3), null Verhaltens-/
+> Risiko-Änderung. `TIMELINES_DATABASE_URL` ist ein **opt-in** für Self-Hoster mit
+> eigenem Postgres; setzt man es, gewinnt der postgres.js-Pfad und der
+> Deno-Deploy-Outbound-TCP zum Pooler ist der einzige erst live verifizierbare
+> Punkt.
 
 ### Live-Update-Naht (Realtime **oder** Polling)
 

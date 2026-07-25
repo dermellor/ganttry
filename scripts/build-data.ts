@@ -171,21 +171,24 @@ const STATIC_ONLY = /^(1|true|yes)$/i.test(process.env.TIMELINES_STATIC_ONLY ?? 
 // committed stubs then simply stand as-is.
 async function syncTimelinesOnce(): Promise<void> {
   if (STATIC_ONLY) return; // deploy discovery relies on the committed stubs
-  let getServiceClient: () => any;
+  let resolveRepoFromEnv: () => { listTimelines(): Promise<{ id: string; name?: string; description?: string; groupBy?: string }[]> } | null;
   try {
-    ({ getServiceClient } = (await import('./db/client.ts')) as any);
+    ({ resolveRepoFromEnv } = (await import('./db/repo-node.ts')) as any);
   } catch (err) {
     console.warn('[build-data] db stub sync skipped (module load failed):', err);
     return;
   }
-  const db = getServiceClient();
-  if (!db) return; // no credentials — leave the committed stubs untouched
+  // Same driver selection as the runtime glue: postgres.js when
+  // TIMELINES_DATABASE_URL is set, else supabase-js. No DB → leave stubs as-is.
+  const repo = resolveRepoFromEnv();
+  if (!repo) return;
 
-  let rows: { id: string; name: string | null; description: string | null; group_by: string | null }[];
+  let rows: { id: string; name?: string; description?: string; groupBy?: string }[];
   try {
-    const { data, error } = await db.from('timelines').select('id, name, description, group_by').order('id');
-    if (error) throw new Error(error.message);
-    rows = data ?? [];
+    // On the postgres.js path the module-scoped handle is left open here (reused
+    // across watch-mode rebuilds); main() closes it for the one-shot build so
+    // the process exits.
+    rows = await repo.listTimelines();
   } catch (err) {
     console.warn(`[build-data] db stub sync failed: ${err instanceof Error ? err.message : String(err)}`);
     return;
@@ -200,7 +203,7 @@ async function syncTimelinesOnce(): Promise<void> {
     // skip the DB query) still classify the source correctly.
     const stub: Record<string, unknown> = { kind: 'db', name: row.name ?? row.id };
     if (row.description != null) stub.description = row.description;
-    if (row.group_by != null) stub.groupBy = row.group_by;
+    if (row.groupBy != null) stub.groupBy = row.groupBy;
     stub.items = [];
     const outPath = join(SOURCES_DIR_IN, `${row.id}.json`);
     await mkdir(dirname(outPath), { recursive: true });
@@ -451,7 +454,16 @@ async function main() {
         ? `[build-data] watching ${notesDir}/**/*.md + ${relative(ROOT, SOURCES_DIR_IN)}/**/*.json + config`
         : `[build-data] watching ${relative(ROOT, SOURCES_DIR_IN)}/**/*.json + config (notes excluded — use 'npm run dev:notes' to include)`,
     );
+    return; // stay alive; the watcher keeps the event loop (and DB handle) open
   }
+
+  // One-shot build: close any open DB handle (syncTimelinesOnce may have opened
+  // a module-scoped postgres.js connection) so the process exits cleanly.
+  try {
+    const { getSql } = (await import('./db/sql.ts')) as { getSql: () => { end: () => Promise<void> } | null };
+    const sql = getSql();
+    if (sql) await sql.end();
+  } catch { /* module load / teardown errors are non-fatal for the build */ }
 }
 
 main().catch((err) => {
