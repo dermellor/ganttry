@@ -557,7 +557,34 @@ Drei Tabellen (Migrationen in `supabase/migrations/`):
 RLS ist an; Server-Zugriff läuft über den Service-Key (bypassed RLS). Anon-
 SELECT-Policies existieren nur für die Realtime-Subscription (siehe unten).
 
-Migrationen anwenden (nutzt den gespeicherten `supabase login`, kein DB-Passwort):
+**Migrationen anwenden — portabler Runner (`npm run db:migrate`).** Gegen
+*beliebiges* Postgres über `TIMELINES_DATABASE_URL`, kein Supabase-CLI nötig.
+[`scripts/db/migrate.ts`](scripts/db/migrate.ts) (postgres.js) legt eine
+`schema_migrations`-Tracking-Tabelle an und wendet die `supabase/migrations/*.sql`
+in Dateinamen-Reihenfolge an, jede in **einer Transaktion**, mit Checksumme
+(Drift-Warnung). Re-runs wenden nur Ausstehendes an.
+
+```bash
+npm run db:migrate               # ausstehende Migrationen anwenden
+npm run db:migrate -- --status   # applied/pending auflisten
+npm run db:migrate -- --baseline # ALLE aktuellen Files als "angewandt" eintragen,
+                                 # OHNE sie auszuführen — für eine DB, die schon
+                                 # von Hand migriert wurde (siehe unten)
+```
+
+`0000_prereq_roles.sql` legt die `anon`-Rolle + `supabase_realtime`-Publication
+idempotent an, damit `0003`/`0009` auch auf einem **Vanilla-Postgres** laufen
+(auf Supabase existieren sie schon → no-op). Ein frisches Postgres ist damit
+ohne manuelle Vorbereitung schema-komplett.
+
+> **Bestehende Supabase-DB adoptieren (einmalig):** die Live-DB wurde früher
+> **manuell** migriert (kein Tracking). Der Runner würde dort sonst alles
+> re-applyen und an `0001` scheitern. Deshalb dort **einmal**
+> `npm run db:migrate -- --baseline` (mit den Supabase-Env-Vars bzw. dem
+> Pooler-`TIMELINES_DATABASE_URL`) — trägt `0000–0011` als angewandt ein, ohne
+> sie auszuführen. Danach laufen neue Migrationen normal über `db:migrate`.
+
+Alternativ (nur Supabase, altes Verfahren) über die CLI:
 
 ```bash
 supabase link --project-ref <ref>
@@ -579,11 +606,20 @@ Credentials in `~/_AGENTS/.env` (oder `.env.local`), gelesen über die Kaskade i
 | `TIMELINES_DATABASE_URL`         | postgres.js  | Postgres-Connection-String (`postgresql://…`); gesetzt → gewinnt vor supabase-js. Supabase: Supavisor-Transaction-Pooler (Port 6543). Beliebiges Postgres möglich. |
 
 Ist `TIMELINES_DATABASE_URL` gesetzt, läuft alles über postgres.js; sonst über
-supabase-js. Lokales Test-Postgres (kein Supabase nötig, für den postgres.js-Pfad):
-ein Docker-`postgres:16` + die Migrationen `0001–0011` (nach Anlage der Prereq-Rolle
-`anon` + Publication `supabase_realtime`) ergeben ein schema-komplettes Postgres;
-`TIMELINES_DATABASE_URL` auf `postgresql://postgres:postgres@127.0.0.1:5432/postgres`
-zeigen lassen.
+supabase-js.
+
+**Eigenes Postgres in 3 Schritten** (kein Supabase nötig):
+
+```bash
+docker run -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16   # 1. Postgres
+export TIMELINES_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/postgres  # 2. Ziel
+npm run db:migrate                                                     # 3. Schema
+```
+
+Danach den Server mit `TIMELINES_DATABASE_URL` fahren (Live-Updates via
+`TIMELINES_DB_LIVE=poll`, ohne anon-Key/Realtime — siehe „Live-Update-Naht").
+`0000_prereq_roles.sql` erledigt die früher manuelle `anon`/Publication-Anlage,
+also ist kein Handanlegen mehr nötig.
 
 ### Import / Migration
 
