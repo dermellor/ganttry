@@ -298,15 +298,26 @@ export interface SourceAdapter {
 }
 
 /** Connections a runtime may have available; the glue supplies whichever it built. */
-export type DbConnections = { sql?: Sql | null; supabase?: SupabaseClient | null };
+export type DbConnections = {
+  sql?: Sql | null;
+  supabase?: SupabaseClient | null;
+  // Optional per-source postgres.js resolver (Phase 4): maps a timeline id to
+  // its namespace's dedicated pool, falling back to the default. Set by the
+  // Node glue; the edge functions leave it unset (single global connection).
+  sqlFor?: (id: string) => Sql | null;
+};
 
 /**
- * Pick the storage repo from the available connection(s): native postgres.js
- * when a `sql` handle is present, else supabase-js. Null when neither is
- * configured (the glue then surfaces the "no DB" path — 404/503, no fallback).
+ * Pick the storage repo for a timeline id from the available connection(s):
+ * native postgres.js when a `sql` handle is present, else supabase-js. Null when
+ * neither is configured (the glue then surfaces the "no DB" path — 404/503, no
+ * fallback). When `sqlFor` is set (per-source routing), it chooses the pool for
+ * `id` (namespace → dedicated connection, else default); without an `id` or
+ * `sqlFor` it uses the default `sql` handle.
  */
-export function resolveRepo(conns: DbConnections): TimelineRepo | null {
-  if (conns.sql) return makePostgresRepo(conns.sql);
+export function resolveRepo(conns: DbConnections, id?: string): TimelineRepo | null {
+  const sql = conns.sqlFor && id != null ? conns.sqlFor(id) : conns.sql;
+  if (sql) return makePostgresRepo(sql);
   if (conns.supabase) return makeSupabaseRepo(conns.supabase);
   return null;
 }
@@ -342,8 +353,8 @@ export function createSupabaseSource(db: SupabaseClient, live: SourceLive = 'rea
  * without changing callers. `live` is read from the runtime's env by the glue
  * (TIMELINES_DB_LIVE) and threaded through so both runtimes agree on the mode.
  */
-export function resolveAdapter(conns: DbConnections, _id: string, live: SourceLive = 'realtime'): SourceAdapter {
-  const repo = resolveRepo(conns);
+export function resolveAdapter(conns: DbConnections, id: string, live: SourceLive = 'realtime'): SourceAdapter {
+  const repo = resolveRepo(conns, id);
   if (!repo) throw new Error('resolveAdapter: no DB connection (set TIMELINES_DATABASE_URL, or TIMELINES_SUPABASE_URL + TIMELINES_SUPABASE_SERVICE_KEY)');
   return dbAdapter(repo, live);
 }

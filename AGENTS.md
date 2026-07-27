@@ -621,6 +621,27 @@ Danach den Server mit `TIMELINES_DATABASE_URL` fahren (Live-Updates via
 `0000_prereq_roles.sql` erledigt die früher manuelle `anon`/Publication-Anlage,
 also ist kein Handanlegen mehr nötig.
 
+#### Per-Source-Connections (Phase 4, #30)
+
+Verschiedene Timelines können in **verschiedenen Postgres-Instanzen** liegen —
+gewählt über den **Namespace** der Source-id (erstes Pfadsegment). Zusätzlich zur
+Default-`TIMELINES_DATABASE_URL` benannte Connections setzen:
+
+```bash
+export TIMELINES_DATABASE_URL=postgresql://…/default        # Default für alles
+export TIMELINES_DATABASE_URL_WAREHOUSE=postgresql://…/warehouse  # nur warehouse/*
+```
+
+`warehouse/plan` → `TIMELINES_DATABASE_URL_WAREHOUSE`; alles ohne passende
+benannte Var → Default. Ableitung: Namespace uppercased, Nicht-Alphanumerisches
+zu `_` (`getSqlForSource`/`connectionEnvKey` in [`scripts/db/sql.ts`](scripts/db/sql.ts)).
+**Opt-in & backward-kompatibel:** ohne eine `TIMELINES_DATABASE_URL_<NS>` nutzt
+jede Source den Default wie bisher. Connection-Strings bleiben in Env, nie in
+committeter Config. Nur der **Node-Pfad** routet per Source (die Glue setzt
+`DbConnections.sqlFor`); die Edge-Function (Supabase) bleibt Single-Connection.
+Ein Default muss gesetzt sein (der `/api/sources`-Collection-Endpoint listet aus
+der Default-Connection).
+
 ### Import / Migration
 
 `scripts/db/import.ts` lädt die konfigurierten Timelines aus ihren

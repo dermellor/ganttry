@@ -3,14 +3,17 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
-import { getSql } from './scripts/db/sql';
+import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
 import { resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
 
 // Additive dual-adapter: prefer native postgres.js (TIMELINES_DATABASE_URL),
 // else supabase-js (TIMELINES_SUPABASE_URL + SERVICE_KEY). Both factories cache,
 // so calling them per request is cheap. Neither configured → the "no DB" path.
-const dbConns = (): DbConnections => ({ sql: getSql(), supabase: getServiceClient() });
+// `sqlFor` adds per-source routing on the postgres.js path (a source's namespace
+// picks its own TIMELINES_DATABASE_URL_<NS>, else the default); no-op unless
+// such a named var is set, so single-DB setups are unaffected.
+const dbConns = (): DbConnections => ({ sql: getSql(), supabase: getServiceClient(), sqlFor: getSqlForSource });
 const hasDb = (c: DbConnections): boolean => Boolean(c.sql || c.supabase);
 
 const ID_SEGMENT = /^[a-zA-Z0-9_-]+$/;
