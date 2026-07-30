@@ -11,7 +11,7 @@
 //
 // Config (env, with fallback to ~/_AGENTS/.env then <repo>/.env.local):
 //   MCP_API_TOKEN      — required; must match the Netlify env var of the same name
-//   TIMELINES_LIVE_URL — optional; default https://example-timelines.netlify.app
+//   TIMELINES_LIVE_URL — required; the deploy to target (e.g. https://<site>.netlify.app)
 //
 // Only DB-backed timelines are exposed. File-based sources are read-only on the
 // live site and therefore not manipulable here.
@@ -60,10 +60,7 @@ const fromFiles = {
 };
 const pick = (k: string): string => process.env[k] ?? fromFiles[k] ?? '';
 
-const BASE_URL = (pick('TIMELINES_LIVE_URL') || 'https://example-timelines.netlify.app').replace(
-  /\/+$/,
-  '',
-);
+const BASE_URL = pick('TIMELINES_LIVE_URL').replace(/\/+$/, '');
 const API_TOKEN = pick('MCP_API_TOKEN');
 
 // ---------- live-site client ----------
@@ -714,6 +711,14 @@ server.registerTool(
 // ---------- boot ----------
 
 async function main(): Promise<void> {
+  if (!BASE_URL) {
+    console.error(
+      '[timelines-mcp] TIMELINES_LIVE_URL is not set. Point it at your deploy ' +
+        '(e.g. https://<site>.netlify.app) via env, ~/_AGENTS/.env, .env.local, ' +
+        'or the MCP server config.',
+    );
+    process.exit(1);
+  }
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // stderr is safe for logs (stdout is the MCP channel).

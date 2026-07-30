@@ -5,7 +5,7 @@
  * per brand via these `--icon-<key>` custom properties. The base set below is
  * Acme neo-icons and is inherited by every brand. To give a brand its own
  * look, override any key inside its `[data-brand='…']` block, e.g.
- *   [data-brand='marcel-mellor'] { --icon-milestone: url("…"); }
+ *   [data-brand='default'] { --icon-milestone: url("…"); }
  * Rendering (CSS mask) lives in timeline.css `.item-icon`.
  * ======================================================== */
 
@@ -31,25 +31,10 @@
 }
 
 /* ========================================================
- * Brand: marcel-mellor (Default)
+ * Brand: default (neutral)
  * ======================================================== */
 
-@font-face {
-  font-family: 'ABCFavorit';
-  src: url('https://www.marcelmellor.com/fonts/ABCFavorit-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'ABCFavorit';
-  src: url('https://www.marcelmellor.com/fonts/ABCFavorit-Medium.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-
-[data-brand='marcel-mellor'] {
+[data-brand='default'] {
   --bg: #fbfbfb;
   --surface: #ffffff;
   --fg: #2c3333;
@@ -64,8 +49,8 @@
   --success: #94d825;
   --magenta: #f32ed4;
 
-  --font-body: 'ABCFavorit', system-ui, -apple-system, sans-serif;
-  --font-headline: 'ABCFavorit', Georgia, serif;
+  --font-body: system-ui, -apple-system, sans-serif;
+  --font-headline: Georgia, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --headline-weight: 500;
   --mark-radius: 50%;

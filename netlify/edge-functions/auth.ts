@@ -1,8 +1,9 @@
 // Netlify Edge Function — Google OAuth gate.
 //
-// Mirrors the sales-cockpit pattern: only addresses on the configured email
-// domains (default Acme.de, Acme.com) get past the gate. Sessions are
-// signed JWT-style cookies (HMAC-SHA256), no external auth service required.
+// Only addresses on the configured email domains (ALLOWED_EMAIL_DOMAINS) get
+// past the gate. The code default is empty — fail-closed: gate on with no
+// domains set lets nobody in. Sessions are signed JWT-style cookies
+// (HMAC-SHA256), no external auth service required.
 //
 // When SHEETS_ENABLED=true (Netlify env), the OAuth flow also requests the
 // Google Sheets scope and stores the user's access/refresh tokens in the
@@ -13,7 +14,7 @@
 //   GOOGLE_CLIENT_ID       — OAuth client (web application type)
 //   GOOGLE_CLIENT_SECRET   — OAuth client secret
 //   AUTH_SECRET            — random 32+ byte string, used to sign cookies
-//   ALLOWED_EMAIL_DOMAINS  — comma-separated, default "Acme.de,Acme.com"
+//   ALLOWED_EMAIL_DOMAINS  — comma-separated allowed sign-in domains (default empty = nobody)
 //
 // Optional:
 //   SHEETS_ENABLED         — "true" to include Sheets scope in OAuth
@@ -117,9 +118,11 @@ async function handleLogin(url: URL): Promise<Response> {
     scope: scopes.join(' '),
     state,
     prompt: sheetsEnabled() ? 'consent' : 'select_account',
-    hd: firstAllowedDomain(),
     access_type: sheetsEnabled() ? 'offline' : 'online',
   });
+  // Domain hint only when a single allowed domain is configured.
+  const hint = firstAllowedDomain();
+  if (hint) params.set('hd', hint);
 
   const headers = new Headers({
     Location: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,

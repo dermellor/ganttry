@@ -71,7 +71,7 @@ export const TAG_TEXT_MIN_PX_PER_DAY = 12;
 export const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 export const BRAND_MODE = (import.meta.env.VITE_BRAND_MODE ?? 'select') as 'select' | 'fixed';
-export const DEFAULT_BRAND = (import.meta.env.VITE_DEFAULT_BRAND ?? 'marcel-mellor') as string;
+export const DEFAULT_BRAND = (import.meta.env.VITE_DEFAULT_BRAND ?? 'default') as string;
 
 // While an item form is open we persist at most once per this interval — enough
 // for live collaboration without a DB round-trip per keystroke. Leaving a field

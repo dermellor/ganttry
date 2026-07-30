@@ -15,3 +15,6 @@ public/data/sources/
 
 # Supabase CLI link state (contains connection secrets)
 supabase/.temp/
+
+# Netlify/Deno edge bundling artifact
+deno.lock

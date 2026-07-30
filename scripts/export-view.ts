@@ -16,7 +16,7 @@ const UNGROUPED = '_ungrouped';
 type Args = { viewId: string; brand: string; outPath: string | null };
 
 function parseArgs(argv: string[]): Args {
-  let brand = 'marcel-mellor';
+  let brand = 'default';
   let outPath: string | null = null;
   let viewId: string | null = null;
   for (let i = 0; i < argv.length; i++) {
@@ -26,7 +26,7 @@ function parseArgs(argv: string[]): Args {
     else if (!a.startsWith('--')) viewId = a;
   }
   if (!viewId) {
-    console.error('Usage: tsx scripts/export-view.ts <viewId> [--brand marcel-mellor|Acme] [--out path.html]');
+    console.error('Usage: tsx scripts/export-view.ts <viewId> [--brand default|Acme] [--out path.html]');
     console.error('       npm run export -- <viewId> [--brand …] [--out …]');
     process.exit(1);
   }

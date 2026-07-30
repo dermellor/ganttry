@@ -38,6 +38,15 @@ function expandHome(p: string): string {
   return p;
 }
 
+/**
+ * Directory to scan for Markdown notes. `TIMELINES_NOTES_DIR` (env) overrides the
+ * committed `notesDir` in the config, so a checkout can point at its own notes
+ * without editing the tracked file.
+ */
+function resolveNotesDir(config: Config): string {
+  return expandHome(process.env.TIMELINES_NOTES_DIR ?? config.notesDir);
+}
+
 async function loadConfig(): Promise<Config> {
   const raw = await readFile(CONFIG_PATH, 'utf8');
   return JSON.parse(raw);
@@ -216,16 +225,19 @@ async function syncTimelinesOnce(): Promise<void> {
 
 async function buildOnce(): Promise<void> {
   const config = await loadConfig();
-  const notesDir = expandHome(config.notesDir);
+  const notesDir = resolveNotesDir(config);
 
   await syncTimelinesOnce();
 
-  if (!STATIC_ONLY && !existsSync(notesDir)) {
-    console.error(`[build-data] notesDir not found: ${notesDir}`);
-    return;
+  // Missing notes dir is non-fatal: proceed with zero notes so a fresh clone
+  // (or a deploy with no notes) still builds standalone/DB sources. Set
+  // TIMELINES_NOTES_DIR (or config.notesDir) to scan Markdown notes.
+  const notesDirMissing = !STATIC_ONLY && !existsSync(notesDir);
+  if (notesDirMissing) {
+    console.warn(`[build-data] notesDir not found, skipping notes scan: ${notesDir}`);
   }
 
-  const files = STATIC_ONLY ? [] : await walk(notesDir);
+  const files = STATIC_ONLY || notesDirMissing ? [] : await walk(notesDir);
   const notes: Note[] = [];
   let skipped = 0;
 
@@ -407,7 +419,7 @@ async function main() {
 
   if (process.argv.includes('--watch')) {
     const config = await loadConfig();
-    const notesDir = expandHome(config.notesDir);
+    const notesDir = resolveNotesDir(config);
     await mkdir(SOURCES_DIR_IN, { recursive: true });
     const watchNotes = process.argv.includes('--watch-notes');
     const { default: chokidar } = await import('chokidar');

@@ -122,16 +122,21 @@ export async function readSession(req: Request): Promise<SessionPayload | null> 
 
 // ---------- domain checks ----------
 
+// Allowed sign-in domains come from ALLOWED_EMAIL_DOMAINS (comma-separated). The
+// code default is empty — fail-closed: with AUTH_REQUIRED=true and no domains
+// configured, nobody passes the gate. Set the env var to your own domain(s).
 export function allowedDomains(): string[] {
-  const raw = Deno.env.get('ALLOWED_EMAIL_DOMAINS') ?? 'Acme.de,Acme.com';
+  const raw = Deno.env.get('ALLOWED_EMAIL_DOMAINS') ?? '';
   return raw
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
 }
 
+// First allowed domain — used as the Google `hd` login hint. Empty when no
+// domains are configured (the hint is then omitted).
 export function firstAllowedDomain(): string {
-  return allowedDomains()[0] ?? 'Acme.de';
+  return allowedDomains()[0] ?? '';
 }
 
 export function isAllowedDomain(email: string): boolean {

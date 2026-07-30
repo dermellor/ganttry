@@ -1,6 +1,6 @@
 # Timelines
 
-Generic timeline viewer for `~/_NOTIZEN`. Reads frontmatter dates from Markdown notes, builds timelines via [vis-timeline](https://visjs.github.io/vis-timeline/), and ships with a brand switcher (marcel-mellor / Acme).
+Generic timeline viewer. Reads frontmatter dates from a notes directory of Markdown files (configurable via `notesDir` / `TIMELINES_NOTES_DIR`), builds timelines via [vis-timeline](https://visjs.github.io/vis-timeline/), and ships with a brand switcher (default / Acme).
 
 ## Branching, Commits & Session Isolation
 
@@ -351,7 +351,7 @@ Acme neo-icons, defined in the `:root` block of
   [`src/styles/timeline.css`](src/styles/timeline.css)), coloured with
   `currentColor` — it adapts to the item/brand text colour automatically.
 - **Give a brand its own look:** override any key inside that brand's block,
-  e.g. `[data-brand='marcel-mellor'] { --icon-milestone: url("…"); }`.
+  e.g. `[data-brand='default'] { --icon-milestone: url("…"); }`.
 - **Add a new semantic key:** add it to `IconKey` + `TIMELINE_ICONS` in
   `src/icons.ts` (label shown in the editor dropdown) and add a matching
   `--icon-<key>` to the `:root` set in `brands.css`. It then appears in the edit
@@ -787,10 +787,11 @@ Client anonym als „Gast".
 
 Ein stdio-MCP-Server (`scripts/mcp/server.ts`) erlaubt Claude Code, die
 DB-basierten Timelines auszulesen und zu manipulieren. Er arbeitet **immer
-gegen die Live-Site** (`TIMELINES_LIVE_URL`, Default
-`https://example-timelines.netlify.app`): jeder Read/Write geht durch
-`/api/source(s)` → `timelines-api` Edge Function → Supabase. Damit bleibt die
-DB Single Source of Truth und Änderungen sind sofort live.
+gegen die Live-Site** (`TIMELINES_LIVE_URL`, **erforderlich** — kein Default;
+der Server bricht mit klarer Fehlermeldung ab, wenn die Var fehlt): jeder
+Read/Write geht durch `/api/source(s)` → `timelines-api` Edge Function →
+Supabase. Damit bleibt die DB Single Source of Truth und Änderungen sind sofort
+live.
 
 **Nur DB-basierte Timelines** sind exponiert. Datei-basierte Sources sind
 auf der Live-Site read-only und daher nicht manipulierbar.
@@ -838,7 +839,7 @@ Server-seitig (lokal, gelesen aus `process.env` → `~/_AGENTS/.env` →
 | Var                  | Bedeutung                                                    |
 | -------------------- | ----------------------------------------------------------- |
 | `MCP_API_TOKEN`      | Bypass-Token, muss der Netlify-Env-Var entsprechen          |
-| `TIMELINES_LIVE_URL` | Ziel-Site (Default `https://example-timelines.netlify.app`) |
+| `TIMELINES_LIVE_URL` | Ziel-Site (**erforderlich**, z.B. `https://<site>.netlify.app`; kein Default) |
 
 Registrierung als user-global MCP (aus jedem Verzeichnis nutzbar):
 
@@ -993,7 +994,7 @@ app (paste, back/forward) re-apply state without reload.
 
 ```jsonc
 {
-  "notesDir": "~/_NOTIZEN",
+  "notesDir": "~/notes",
   "defaultView": "all",
   "dateFields": ["date", "scheduled", "created"],
   "filenameDatePatterns": ["^(\\d{4})-(\\d{2})-(\\d{2})", "^(\\d{4})(\\d{2})(\\d{2})"],
@@ -1008,6 +1009,14 @@ app (paste, back/forward) re-apply state without reload.
   ]
 }
 ```
+
+`notesDir` is the directory scanned for Markdown notes. The env var
+**`TIMELINES_NOTES_DIR`** overrides the committed `notesDir` (same `~` expansion),
+so a checkout can point at its own notes without editing the tracked config —
+e.g. set `TIMELINES_NOTES_DIR=~/_NOTIZEN` in `~/_AGENTS/.env` / `.env.local`. If
+the resolved directory does not exist, the build **warns and proceeds with zero
+notes** (standalone/DB sources still build); it does not fail. In
+`TIMELINES_STATIC_ONLY` mode the notes scan is skipped entirely.
 
 ### Filter clauses
 
@@ -1039,7 +1048,7 @@ npm run build   # static dist
 
 ## Brand switching
 
-CSS custom properties in `src/styles/brands.css`. Body attribute `data-brand="marcel-mellor"` or `data-brand="Acme"` swaps:
+CSS custom properties in `src/styles/brands.css`. Body attribute `data-brand="default"` or `data-brand="Acme"` swaps:
 
 - color tokens (bg, fg, accent, item-bg, item-border, …)
 - typography (`ABCFavorit` vs. `PX Grotesk` + `Tiempos Headline`)
@@ -1052,7 +1061,7 @@ Two build-time env vars control how the brand selector behaves:
 | Var                  | Values                          | Effect                                              |
 | -------------------- | ------------------------------- | --------------------------------------------------- |
 | `VITE_BRAND_MODE`    | `select` (default) \| `fixed`   | `fixed` hides the dropdown and disables persistence |
-| `VITE_DEFAULT_BRAND` | `marcel-mellor` \| `Acme`    | brand applied on first load (and locked in `fixed`) |
+| `VITE_DEFAULT_BRAND` | `default` \| `Acme`          | brand applied on first load (and locked in `fixed`) |
 
 ## Deploy: Netlify (Acme-internal instance)
 
@@ -1094,7 +1103,7 @@ unset/`false` for local previews. Required runtime env vars:
 | `GOOGLE_CLIENT_ID`      | dashboard              | OAuth web client                                 |
 | `GOOGLE_CLIENT_SECRET`  | dashboard (secret)     | OAuth client secret                              |
 | `AUTH_SECRET`           | dashboard (secret)     | `openssl rand -base64 32`                        |
-| `ALLOWED_EMAIL_DOMAINS` | dashboard              | comma-separated, default `Acme.de,Acme.com` |
+| `ALLOWED_EMAIL_DOMAINS` | dashboard              | comma-separated allowed sign-in domains; code default empty (fail-closed). The Acme instance sets its own; the value in `netlify.toml` is build-time only, so this must also be a runtime env var here |
 
 ### Google OAuth setup (one-time)
 

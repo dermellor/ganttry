@@ -170,7 +170,7 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
 
 async function handleExport() {
   if (!state.activeView || !state.activeBuild) return;
-  const brand = document.body.dataset.brand || 'marcel-mellor';
+  const brand = document.body.dataset.brand || 'default';
   const original = els.exportBtn.textContent;
   els.exportBtn.disabled = true;
   els.exportBtn.textContent = 'Exportiere…';

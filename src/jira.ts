@@ -13,8 +13,9 @@ export type JiraIssue = {
 };
 
 // Base URL for `…/browse/<KEY>` links. Public, build-time — set
-// VITE_JIRA_BASE_URL to your Atlassian Cloud origin.
-const RAW_BASE = (import.meta.env.VITE_JIRA_BASE_URL ?? 'https://your-org.atlassian.net') as string;
+// VITE_JIRA_BASE_URL to your Atlassian Cloud origin. When empty, linked issues
+// render as plain text keys (jiraBrowseUrl returns '' and callers degrade).
+const RAW_BASE = (import.meta.env.VITE_JIRA_BASE_URL ?? '') as string;
 export const JIRA_BASE_URL = RAW_BASE.replace(/\/+$/, '');
 
 // Match a JIRA issue key like "ABC-123" (project key is 2+ uppercase

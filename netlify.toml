@@ -12,6 +12,11 @@
   VITE_DEFAULT_BRAND = "Acme"
   # Public base URL for JIRA browse links (not a secret).
   VITE_JIRA_BASE_URL = "https://your-org.atlassian.net"
+  # Allowed sign-in domains for the auth gate. The code default is empty
+  # (fail-closed), so the Acme instance sets its domains explicitly here.
+  # NOTE: netlify.toml env is build-time; the auth *edge function* reads this at
+  # runtime, so it must also be set as a runtime env var in the Netlify UI.
+  ALLOWED_EMAIL_DOMAINS = "Acme.de,Acme.com"
   # Tell Netlify's secret scanner that these aren't secrets — their values
   # legitimately appear in code defaults and docs.
   # (Real secrets — GOOGLE_CLIENT_*, AUTH_SECRET — live as runtime-only env vars

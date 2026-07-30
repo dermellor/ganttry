@@ -1,6 +1,6 @@
 {
   "$schema": "./schema/config.schema.json",
-  "notesDir": "~/_NOTIZEN",
+  "notesDir": "~/notes",
   "defaultView": "all",
   "dateFields": ["date", "scheduled", "created"],
   "filenameDatePatterns": [
