@@ -13,9 +13,6 @@
 // each; only the resolved one is used. Requests are gated by the signed session
 // cookie (per-user, Acme-domain) or the MCP service token; edits are
 // attributed to the logged-in user's email via `updated_by`.
-//
-// NOTE: this replaces sheets-api.ts — remove that file before deploying so the
-// two functions don't both claim /api/source/*.
 
 import type { Context, Config } from '@netlify/edge-functions';
 import postgres from 'https://esm.sh/postgres@3.4.9';

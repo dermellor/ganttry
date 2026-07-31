@@ -8,10 +8,6 @@ export type SessionPayload = {
   sub: string;
   name?: string;
   exp: number;
-  // Google tokens for Sheets API (added when SHEETS_ENABLED)
-  google_access_token?: string;
-  google_refresh_token?: string;
-  google_token_expiry?: number; // epoch seconds
 };
 
 export type StatePayload = {
@@ -196,63 +192,3 @@ export function hasValidMcpToken(req: Request): boolean {
   return constantTimeEqual(presented, configured);
 }
 
-/**
- * Mint a Google access token for the MCP service identity from the stored
- * refresh token (SHEETS_SERVICE_REFRESH_TOKEN). Returns null if not configured
- * or the refresh fails.
- */
-export async function getServiceAccessToken(): Promise<string | null> {
-  const refreshToken = Deno.env.get('SHEETS_SERVICE_REFRESH_TOKEN');
-  if (!refreshToken) return null;
-  const result = await refreshGoogleToken(refreshToken);
-  return result?.access_token ?? null;
-}
-
-// ---------- Google token refresh ----------
-
-export async function refreshGoogleToken(
-  refreshToken: string,
-): Promise<{ access_token: string; expires_in: number } | null> {
-  const clientId = mustEnv('GOOGLE_CLIENT_ID');
-  const clientSecret = mustEnv('GOOGLE_CLIENT_SECRET');
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: refreshToken,
-      grant_type: 'refresh_token',
-    }),
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
-
-export async function getValidAccessToken(
-  session: SessionPayload,
-): Promise<{
-  accessToken: string;
-  updatedSession: SessionPayload | null;
-}> {
-  if (!session.google_access_token || !session.google_refresh_token) {
-    throw new Error('Session has no Google tokens — re-login required');
-  }
-
-  const buffer = 60; // refresh 60s before expiry
-  if (session.google_token_expiry && session.google_token_expiry > nowSec() + buffer) {
-    return { accessToken: session.google_access_token, updatedSession: null };
-  }
-
-  const result = await refreshGoogleToken(session.google_refresh_token);
-  if (!result) {
-    throw new Error('Google token refresh failed — re-login required');
-  }
-
-  const updatedSession: SessionPayload = {
-    ...session,
-    google_access_token: result.access_token,
-    google_token_expiry: nowSec() + result.expires_in,
-  };
-  return { accessToken: result.access_token, updatedSession };
-}

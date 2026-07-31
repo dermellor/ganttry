@@ -5,19 +5,12 @@
 // domains set lets nobody in. Sessions are signed JWT-style cookies
 // (HMAC-SHA256), no external auth service required.
 //
-// When SHEETS_ENABLED=true (Netlify env), the OAuth flow also requests the
-// Google Sheets scope and stores the user's access/refresh tokens in the
-// session cookie, enabling per-user read/write to configured sheets.
-//
 // Required runtime env vars (set in Netlify dashboard):
 //   AUTH_REQUIRED          — "true" to enable the gate (any other value = pass through)
 //   GOOGLE_CLIENT_ID       — OAuth client (web application type)
 //   GOOGLE_CLIENT_SECRET   — OAuth client secret
 //   AUTH_SECRET            — random 32+ byte string, used to sign cookies
 //   ALLOWED_EMAIL_DOMAINS  — comma-separated allowed sign-in domains (default empty = nobody)
-//
-// Optional:
-//   SHEETS_ENABLED         — "true" to include Sheets scope in OAuth
 
 import type { Context, Config } from '@netlify/edge-functions';
 import {
@@ -41,12 +34,6 @@ import {
   hasValidMcpToken,
 } from './_shared/session.ts';
 
-const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
-
-function sheetsEnabled(): boolean {
-  return Deno.env.get('SHEETS_ENABLED') === 'true';
-}
-
 export default async function handler(req: Request, _ctx: Context): Promise<Response | void> {
   if (Deno.env.get('AUTH_REQUIRED') !== 'true') {
     return; // gate disabled — pass through
@@ -61,7 +48,7 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
   if (path === '/auth/error') return errorPage(url.searchParams.get('reason') ?? 'unknown');
 
   // Headless MCP client: a valid X-MCP-Token passes the gate without a Google
-  // login. Downstream functions (sheets-api) use the service identity for data.
+  // login. Downstream functions (timelines-api) use the service identity for data.
   if (hasValidMcpToken(req)) return;
 
   const session = await readSession(req);
@@ -108,17 +95,14 @@ async function handleLogin(url: URL): Promise<Response> {
     exp: nowSec() + STATE_MAX_AGE,
   } satisfies StatePayload);
 
-  const scopes = ['openid', 'email', 'profile'];
-  if (sheetsEnabled()) scopes.push(SHEETS_SCOPE);
-
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: `${url.origin}/auth/callback`,
     response_type: 'code',
-    scope: scopes.join(' '),
+    scope: 'openid email profile',
     state,
-    prompt: sheetsEnabled() ? 'consent' : 'select_account',
-    access_type: sheetsEnabled() ? 'offline' : 'online',
+    prompt: 'select_account',
+    access_type: 'online',
   });
   // Domain hint only when a single allowed domain is configured.
   const hint = firstAllowedDomain();
@@ -199,16 +183,6 @@ async function handleCallback(req: Request, url: URL): Promise<Response> {
     name: user.name,
     exp: nowSec() + SESSION_MAX_AGE,
   };
-
-  if (sheetsEnabled() && tokens.access_token) {
-    sessionPayload.google_access_token = tokens.access_token;
-    if (tokens.refresh_token) {
-      sessionPayload.google_refresh_token = tokens.refresh_token;
-    }
-    if (tokens.expires_in) {
-      sessionPayload.google_token_expiry = nowSec() + tokens.expires_in;
-    }
-  }
 
   const session = await sign(sessionPayload);
 
