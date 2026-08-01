@@ -616,6 +616,45 @@ supabase link --project-ref <ref>
 supabase db query --linked -f supabase/migrations/<datei>.sql
 ```
 
+### Plugin-Registry
+
+Ein **Plugin** (a.k.a. Timeline-Kind) ist auf einer Timeline aktiviert, sobald in
+`timeline_plugins` eine `(timeline_id, plugin_id, config)`-Zeile existiert — reine
+Daten, kein `ALTER TABLE`. Die einzige Stelle, die Plugin-ids kennt, ist
+[`src/plugins.ts`](src/plugins.ts) (`PRODUCT_ROADMAP_PLUGIN`, `hasPlugin`,
+`pluginConfig`, `versionsFromConfig`, `resolveWritePlugins`).
+
+**Was heute generisch ist:**
+
+- **Speichern + Lesen.** `timeline_plugins` nimmt jede `plugin_id`/`config`;
+  `getTimeline` liest **alle** Zeilen in `file.plugins` (`PluginRef[]`), unabhängig
+  vom Plugin. Round-trippt durch beide Treiber.
+- **Aktivieren (Bulk).** Über MCP `replace_timeline` mit `plugins: [{ id, config }]`
+  oder direktes SQL/PATCH. Lokal identisch zu Prod (gleicher `api.ts`-Dispatcher,
+  gleiche DB).
+
+**Was (noch) NICHT generisch ist:**
+
+- **Kein granularer Enable-Weg.** Die API-SubKinds enthalten kein `plugin`, MCP hat
+  kein `enable_plugin`. Ein einzelnes Plugin an-/abschalten ohne den Rest der
+  Timeline geht nur per SQL oder Bulk-`replace_timeline`. (Offener Follow-up:
+  `PUT/DELETE /api/source/<id>/plugin/<pluginId>` + MCP `enable_/disable_plugin`.)
+- **Verhalten ist code-gekoppelt.** `resolveWritePlugins` / `updateVersions` /
+  `getPublicPricing` sind hart auf `product-roadmap` verdrahtet, und client-seitig
+  listet `KINDS[]` ([`src/kinds/registry.ts`](src/kinds/registry.ts)) nur
+  `product-roadmap`. Eine Zeile mit unbekanntem `plugin_id` wird gespeichert und
+  ausgeliefert, aber **nichts konsumiert sie**, bis Code sie interpretiert.
+
+**Ein neues Plugin hinzufügen:**
+
+1. **Aktivieren = Datenzeile** (`replace_timeline`/SQL). Braucht kein Schema.
+2. **Eigene Ansicht?** → neuer `KINDS[]`-Eintrag + `src/kinds/<name>/`-Ordner
+   (lazy-geladen, siehe „Timeline kinds"). Kein Core-Datei-Change.
+3. **Eigene persistierte Daten?** → eigene Tabellen + Write-Pfad (Vorbild:
+   `pricing_*` + `assemblePricing`). Nie eine Spalte am Core.
+4. Reads über `file.plugins` stehen schon; das product-spezifische
+   Auto-Enable-Verhalten (`resolveWritePlugins`) ist Vorbild, kein Zwang.
+
 ### Setup (einmalig)
 
 Credentials in `~/_AGENTS/.env` (oder `.env.local`), gelesen über die Kaskade in
