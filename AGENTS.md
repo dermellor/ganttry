@@ -213,10 +213,25 @@ pricing view.
 Adding a third kind is a new `KINDS[]` entry + a `src/kinds/<name>/` folder — no
 core-file change.
 
+**Enablement is pure data (the plugin registry).** Which kind a timeline carries
+is **not** a column on a core table. It lives in the generic `timeline_plugins`
+table (one row per `(timeline_id, plugin_id)` + a `config` jsonb bag; see „Schema"
+→ `timeline_plugins`), surfaced to the client as `TimelineFile.plugins`
+(`PluginRef[]`). So enabling a plugin on a timeline is an INSERT, never an
+`ALTER TABLE`. The single place that knows plugin ids and reads/writes this off a
+file is [`src/plugins.ts`](src/plugins.ts) (`PRODUCT_ROADMAP_PLUGIN`, `hasPlugin`,
+`pluginConfig`, `versionsFromConfig`, `resolveWritePlugins`); client gates
+(`kinds/registry.ts` `matches`, `customFields.ts`) and both DB drivers import from
+there instead of testing a `type === 'product'` literal. A populated `file.pricing`
+auto-enables `product-roadmap` on write (`resolveWritePlugins`), and its ordered
+version list lives in that plugin's `config.versions` (was the dropped
+`timelines.pricing_versions` column). Adding a further plugin needs (at most) its
+own data/tables — never a new core column or discriminator value.
+
 **Accepted first-cut deviations (documented, not blockers):**
 - `pricingFieldDefs()` stays in [`src/customFields.ts`](src/customFields.ts): it's a
-  data-driven check (`file.type === 'product'` + `file.pricing`) that imports **no**
-  pricing module, so it adds no static edge into the pricing chunk.
+  data-driven check (`hasPlugin(file, 'product-roadmap')` + `file.pricing`) that
+  imports **no** pricing module, so it adds no static edge into the pricing chunk.
 - `apiUpdateFeature`/`apiDeleteFeature` stay in [`src/editor.ts`](src/editor.ts):
   type-only-typed fetch wrappers (zero bundle weight).
 - The **server side** of the kind (the `pricing-api` edge function, the pricing MCP
@@ -521,11 +536,21 @@ Abzug von etwas anderem.)
 
 Drei Tabellen (Migrationen in `supabase/migrations/`):
 
-- `timelines` — id, name, description, group_by, `type`, `phases` (jsonb),
-  `custom_fields` (jsonb), `pricing_versions` (jsonb; geordnete Versions-Labels
-  für `type='product'`, siehe „Pricing"). Das Preismodell selbst liegt seit
-  Migration `0009` **nicht** mehr als jsonb-Blob hier, sondern normalisiert in
-  eigenen Tabellen (siehe unten).
+- `timelines` — id, name, description, group_by, `phases` (jsonb),
+  `custom_fields` (jsonb). **Keine plugin-spezifischen Spalten mehr:** die frühere
+  `type`-Spalte (Gate `'product'`) und `pricing_versions` (geordnete Versions-
+  Labels) sind seit Migration `0012`/`0013` in die generische
+  `timeline_plugins`-Registry gewandert (siehe unten + „Plugin-Registry"). Das
+  Preismodell selbst liegt seit Migration `0009` normalisiert in eigenen Tabellen.
+- `timeline_plugins` — die **generische Plugin-Registry** (Migration `0012`):
+  eine Zeile pro (timeline_id, plugin_id) plus `config` (jsonb). Ein Plugin (a.k.a.
+  Timeline-Kind, z.B. `'product-roadmap'`) ist auf einer Timeline **aktiviert,
+  sobald hier eine Zeile existiert** — reine Daten, kein `ALTER TABLE`, keine
+  Core-Spalte. Für `product-roadmap` trägt `config` die Versionsliste
+  (`{ versions: [...] }`, früher die `pricing_versions`-Spalte). FK-Cascade auf
+  `timelines`, anon-SELECT + Realtime wie die pricing_*-Tabellen. Ein neues Plugin
+  braucht (nur) seine eigenen Daten-/Tabellen, nie eine Spalte am Core. Siehe
+  „Plugin-Registry".
 - `timeline_items` — Spalten für start/end/duration/content/group/type/title/
   body/icon/status/class_name (`status` `NOT NULL DEFAULT 'Open'` + CHECK
   `Open|Doing|Done`, siehe „Item status"), `metadata` (jsonb: `dependsOn`, `owner`, `jira`, freie
@@ -538,7 +563,7 @@ Drei Tabellen (Migrationen in `supabase/migrations/`):
   patch-bewusstes Gegenstück-Löschen in [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts),
   MCP `add_item`/`update_item`, Client-Form).
 - `timeline_groups` — id, content, nested_groups, show_nested, sort.
-- **Pricing-Tabellen** (Migration `0009`, nur relevant für `type='product'`):
+- **Pricing-Tabellen** (Migration `0009`, nur relevant für product-roadmap-Timelines):
   `pricing_features`, `pricing_tiers`, `pricing_highlights` — je Zeile pro
   Entität mit eigener `version`-Spalte (Trigger-Bump, optimistisches Locking wie
   `timeline_items`; der Client sieht sie als `rowVersion`). Das Feature-Domänen-
@@ -809,7 +834,7 @@ auf der Live-Site read-only und daher nicht manipulierbar.
 | `update_group`      | Group patchen                                                 |
 | `delete_group`      | Group entfernen                                               |
 | `replace_timeline`  | ganze Timeline ersetzen (Bulk)                               |
-| `set_pricing`       | Preismodell komplett ersetzen (Bulk-Seed, `type='product'`)  |
+| `set_pricing`       | Preismodell komplett ersetzen (Bulk-Seed; aktiviert automatisch das `product-roadmap`-Plugin) |
 | `add_/update_/delete_feature` | einzelnes Pricing-Feature (granular)               |
 | `move_feature`      | Feature umsortieren (nach/vor einem anderen Feature)         |
 | `add_/update_/delete_tier`    | einzelnen Tarif (granular)                         |
@@ -1122,12 +1147,14 @@ Cloud Console — otherwise the callback returns `redirect_uri_mismatch`.
 > und wird lazy geladen (siehe „Timeline kinds"). Der Server-Teil (Tabellen,
 > `assemblePricing`, `pricing-api`, MCP-Tools) bleibt wie unten beschrieben.
 
-Das Preismodell (Tarife + Features, nur `type='product'`) ist die SSOT für
-externe Preisseiten. Es liegt **normalisiert** in eigenen Tabellen (Migration
+Das Preismodell (Tarife + Features, nur product-roadmap-Timelines) ist die SSOT
+für externe Preisseiten. Es liegt **normalisiert** in eigenen Tabellen (Migration
 `0009`, siehe „Schema"): `pricing_features`, `pricing_tiers`,
 `pricing_tier_values` (die Matrix, zell-granular), `pricing_highlights`, plus die
-geordnete Versionsliste als `timelines.pricing_versions` (jsonb-Array). Der
-Server assembliert daraus die unten beschriebene `Pricing`-Shape
+geordnete Versionsliste in `timeline_plugins.config.versions` des
+`product-roadmap`-Eintrags (früher die `timelines.pricing_versions`-Spalte, seit
+Migration `0012`/`0013`, siehe „Plugin-Registry"). Der Server assembliert daraus
+die unten beschriebene `Pricing`-Shape
 (`assemblePricing` in [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts)) —
 der Viewer und der Markdown-Export sehen sie unverändert.
 

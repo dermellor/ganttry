@@ -15,6 +15,7 @@
 // change to the generic core.
 
 import type { TimelineFile } from '../types';
+import { PRODUCT_ROADMAP_PLUGIN, hasPlugin } from '../plugins';
 
 // Extra header view modes a kind adds beyond the generic 'timeline' / 'list'.
 export type ExtraViewMode = 'pricing';
@@ -38,10 +39,13 @@ export interface KindDescriptor {
 const KINDS: KindDescriptor[] = [
   {
     id: 'product-roadmap',
-    // Same predicate as the old hasPricing() — inlined so the eager check pulls
-    // in no pricing code.
+    // Enabled by the product-roadmap plugin registration (a data row), plus a
+    // populated pricing model. Still a cheap sync check that pulls in no pricing
+    // code, so the generic bundle never reaches the kind's chunk.
     matches: (f) =>
-      !!f && f.type === 'product' && !!f.pricing && (f.pricing.tiers.length > 0 || f.pricing.features.length > 0),
+      hasPlugin(f, PRODUCT_ROADMAP_PLUGIN) &&
+      !!f?.pricing &&
+      (f.pricing.tiers.length > 0 || f.pricing.features.length > 0),
     viewModes: ['pricing'],
     load: () => import('./product-roadmap/index'),
   },

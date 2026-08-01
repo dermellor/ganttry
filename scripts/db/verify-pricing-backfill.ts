@@ -84,9 +84,11 @@ async function main() {
   }
 
   // 2) Granular write layer on a throwaway timeline: locking + cell independence.
+  // replacePricing below enables the product-roadmap plugin (via updateVersions),
+  // so no `type`/plugin insert is needed here.
   await sql`
-    insert into timelines ${sql({ id: TEST, name: 'verify', type: 'product' }, 'id', 'name', 'type')}
-    on conflict (id) do update set ${sql({ name: 'verify', type: 'product' }, 'name', 'type')}`;
+    insert into timelines ${sql({ id: TEST, name: 'verify' }, 'id', 'name')}
+    on conflict (id) do update set ${sql({ name: 'verify' }, 'name')}`;
   await replacePricing(sql, TEST, {
     versions: ['1.0'],
     features: [

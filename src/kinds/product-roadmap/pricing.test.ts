@@ -24,7 +24,6 @@ import type { TimelineFileItem } from '../../types';
 const doc: PricingDoc = {
   timelineId: 'acme/example-roadmap',
   name: 'Example Timeline',
-  type: 'product',
   pricing: {
     features: [
       { id: 'minutes', name: 'Inkludierte Minuten', group: 'Nutzung & Volumen' },

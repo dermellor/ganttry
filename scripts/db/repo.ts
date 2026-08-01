@@ -103,7 +103,6 @@ export interface TimelineRepo {
       name?: string;
       description?: string;
       groupBy?: string;
-      type?: string;
       customFields?: CustomFieldDef[];
     },
   ): Promise<void>;

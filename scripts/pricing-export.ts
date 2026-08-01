@@ -19,6 +19,7 @@ import { homedir } from 'node:os';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TimelineFile } from '../src/types.ts';
+import { PRODUCT_ROADMAP_PLUGIN, hasPlugin } from '../src/plugins.ts';
 import { pricingToMarkdown } from '../src/kinds/product-roadmap/pricing.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -92,8 +93,8 @@ async function main(): Promise<void> {
 
   const file = await getTimeline(timelineId);
 
-  if (file.type !== 'product') {
-    console.error(`[pricing-export] "${timelineId}" is type "${file.type ?? '(none)'}", not "product" — nothing to export.`);
+  if (!hasPlugin(file, PRODUCT_ROADMAP_PLUGIN)) {
+    console.error(`[pricing-export] "${timelineId}" is not a product-roadmap timeline — nothing to export.`);
     process.exit(1);
   }
   if (!file.pricing || (!file.pricing.tiers?.length && !file.pricing.features?.length)) {
@@ -102,7 +103,7 @@ async function main(): Promise<void> {
   }
 
   const md = pricingToMarkdown(
-    { timelineId, name: file.name, type: file.type, pricing: file.pricing },
+    { timelineId, name: file.name, pricing: file.pricing },
     { updated: todayIso() },
   );
 

@@ -27,6 +27,7 @@ import { showFeatureForm } from './featureForm';
 import { renderCardsHtml } from './pricingCards';
 import { workDotHtml } from './pricingWork';
 import { type TimelineFile, type PricingFeature } from '../../types';
+import { PRODUCT_ROADMAP_PLUGIN, hasPlugin } from '../../plugins';
 
 const PRICING_VERSION_KEY = 'timelines.pricingVersion';
 const PRICING_SUBVIEW_KEY = 'timelines.pricingSubview';
@@ -42,10 +43,9 @@ let subView: SubView = localStorage.getItem(PRICING_SUBVIEW_KEY) === 'cards' ? '
 /** True when the active timeline is a product timeline with a populated pricing model. */
 export function hasPricing(file: TimelineFile | null | undefined): file is TimelineFile {
   return (
-    !!file &&
-    file.type === 'product' &&
-    !!file.pricing &&
-    (file.pricing.tiers.length > 0 || file.pricing.features.length > 0)
+    hasPlugin(file, PRODUCT_ROADMAP_PLUGIN) &&
+    !!file!.pricing &&
+    (file!.pricing.tiers.length > 0 || file!.pricing.features.length > 0)
   );
 }
 

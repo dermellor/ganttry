@@ -15,6 +15,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   CustomFieldDef,
+  PluginRef,
   Pricing,
   PricingFeature,
   PricingHighlight,
@@ -26,6 +27,7 @@ import type {
 } from '../../src/types';
 import { statusOrDefault } from '../../src/status.ts';
 import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
+import { PRODUCT_ROADMAP_PLUGIN, resolveWritePlugins, versionsFromConfig } from '../../src/plugins.ts';
 import {
   ConflictError,
   NotFoundError,
@@ -146,11 +148,18 @@ export async function listTimelines(db: SupabaseClient): Promise<TimelineMeta[]>
 export async function getTimeline(db: SupabaseClient, id: string): Promise<TimelineFile | null> {
   const { data: tl, error: tlErr } = await db
     .from('timelines')
-    .select('id, name, description, group_by, type, phases, custom_fields, pricing_versions')
+    .select('id, name, description, group_by, phases, custom_fields')
     .eq('id', id)
     .maybeSingle();
   if (tlErr) throw new Error(`getTimeline: ${tlErr.message}`);
   if (!tl) return null;
+
+  const { data: pluginRows, error: plgErr } = await db
+    .from('timeline_plugins')
+    .select('plugin_id, config')
+    .eq('timeline_id', id)
+    .order('plugin_id', { ascending: true });
+  if (plgErr) throw new Error(`getTimeline plugins: ${plgErr.message}`);
 
   const { data: itemRows, error: itemErr } = await db
     .from('timeline_items')
@@ -170,15 +179,20 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
   if (tl.name != null) file.name = tl.name;
   if (tl.description != null) file.description = tl.description;
   if (tl.group_by != null) file.groupBy = tl.group_by;
-  if (tl.type != null) file.type = tl.type;
+  const plugins: PluginRef[] = (pluginRows ?? []).map((r) => ({
+    id: r.plugin_id,
+    config: (r.config ?? {}) as Record<string, unknown>,
+  }));
+  if (plugins.length) file.plugins = plugins;
   if (Array.isArray(tl.phases) && tl.phases.length) file.phases = tl.phases as TimelinePhase[];
   if (Array.isArray(tl.custom_fields) && tl.custom_fields.length)
     file.customFields = tl.custom_fields as CustomFieldDef[];
-  // Assemble the pricing model from the normalized tables (+ the versions
-  // array column). Only surface a populated model — matches the old behaviour
-  // of surfacing pricing only when it carried tiers/features. rowVersion is
-  // included here (editable path) so the client can send If-Match on edits.
-  const pricing = await assemblePricing(db, id, Array.isArray(tl.pricing_versions) ? (tl.pricing_versions as string[]) : []);
+  // Assemble the pricing model from the normalized tables. The ordered version
+  // list now lives in the product-roadmap plugin's config (was the dropped
+  // pricing_versions column). Only surface a populated model — matches the old
+  // behaviour of surfacing pricing only when it carried tiers/features.
+  const versions = versionsFromConfig(plugins.find((p) => p.id === PRODUCT_ROADMAP_PLUGIN)?.config);
+  const pricing = await assemblePricing(db, id, versions);
   if (pricing && (pricing.features.length || pricing.tiers.length)) file.pricing = pricing;
   if (groupRows && groupRows.length) file.groups = groupRows.map(rowToGroup);
   return file;
@@ -229,12 +243,20 @@ export async function getWatermark(db: SupabaseClient, id: string): Promise<Wate
 export async function getPublicPricing(db: SupabaseClient, id: string): Promise<PublicPricing | null> {
   const { data, error } = await db
     .from('timelines')
-    .select('name, type, pricing_versions')
+    .select('name')
     .eq('id', id)
     .maybeSingle();
   if (error) throw new Error(`getPublicPricing: ${error.message}`);
-  if (!data || data.type !== 'product') return null;
-  const versions = Array.isArray(data.pricing_versions) ? (data.pricing_versions as string[]) : [];
+  if (!data) return null;
+  const { data: plugin, error: plgErr } = await db
+    .from('timeline_plugins')
+    .select('config')
+    .eq('timeline_id', id)
+    .eq('plugin_id', PRODUCT_ROADMAP_PLUGIN)
+    .maybeSingle();
+  if (plgErr) throw new Error(`getPublicPricing plugin: ${plgErr.message}`);
+  if (!plugin) return null;
+  const versions = versionsFromConfig(plugin.config as Record<string, unknown>);
   const pricing = await assemblePricing(db, id, versions);
   if (!pricing || !pricing.tiers.length) return null;
   // Public consumers don't need the internal lock counters.
@@ -373,12 +395,8 @@ export async function replaceTimeline(db: SupabaseClient, id: string, file: Time
     name: file.name ?? null,
     description: file.description ?? null,
     group_by: file.groupBy ?? null,
-    type: file.type ?? null,
     phases: file.phases ?? [],
     custom_fields: file.customFields ?? [],
-    // Pricing lives in its own tables now (see replacePricing below); the
-    // versions array stays as a column on the timeline row.
-    pricing_versions: file.pricing?.versions ?? [],
     updated_at: new Date().toISOString(),
   });
   if (upErr) throw new Error(`replaceTimeline meta: ${upErr.message}`);
@@ -389,7 +407,12 @@ export async function replaceTimeline(db: SupabaseClient, id: string, file: Time
   const del2 = await db.from('timeline_groups').delete().eq('timeline_id', id);
   if (del2.error) throw new Error(`replaceTimeline clear groups: ${del2.error.message}`);
 
-  // Pricing tables (wipe + re-insert). Skips the versions column, already set.
+  // Plugin registrations (enablement + config incl. the version list). Replaces
+  // the former type/pricing_versions columns; resolveWritePlugins folds a
+  // populated pricing model into a product-roadmap row.
+  await replacePluginRows(db, id, resolveWritePlugins(file));
+
+  // Pricing tables (wipe + re-insert).
   await replacePricingRows(db, id, file.pricing);
 
   const itemRows = file.items
@@ -553,7 +576,6 @@ export async function updateMeta(
     name?: string;
     description?: string;
     groupBy?: string;
-    type?: string;
     customFields?: CustomFieldDef[];
   },
 ): Promise<void> {
@@ -561,7 +583,6 @@ export async function updateMeta(
   if ('name' in meta) set.name = meta.name ?? null;
   if ('description' in meta) set.description = meta.description ?? null;
   if ('groupBy' in meta) set.group_by = meta.groupBy ?? null;
-  if ('type' in meta) set.type = meta.type ?? null;
   // Custom-field definitions are patched as a unit (like phases). Absent key =
   // leave untouched, so a plain name/description edit never clears them. The
   // pricing model is no longer patched here — it has its own granular tables
@@ -942,11 +963,33 @@ export async function deleteHighlight(db: SupabaseClient, timelineId: string, hi
 // -- versions (ordered label list, whole-replaced like phases) --
 
 export async function updateVersions(db: SupabaseClient, id: string, versions: string[]): Promise<void> {
+  // The version list lives in the product-roadmap plugin's config now (was the
+  // dropped pricing_versions column). Merge it into any existing config and
+  // upsert, so setting versions on a timeline without a plugin row enables the
+  // plugin (seeding pricing reaches here via replacePricing).
+  const { data: existing, error: readErr } = await db
+    .from('timeline_plugins')
+    .select('config')
+    .eq('timeline_id', id)
+    .eq('plugin_id', PRODUCT_ROADMAP_PLUGIN)
+    .maybeSingle();
+  if (readErr) throw new Error(`updateVersions read: ${readErr.message}`);
+  const config = { ...((existing?.config as Record<string, unknown>) ?? {}), versions: versions ?? [] };
   const { error } = await db
-    .from('timelines')
-    .update({ pricing_versions: versions ?? [], updated_at: new Date().toISOString() })
-    .eq('id', id);
+    .from('timeline_plugins')
+    .upsert({ timeline_id: id, plugin_id: PRODUCT_ROADMAP_PLUGIN, config, updated_at: new Date().toISOString() });
   if (error) throw new Error(`updateVersions: ${error.message}`);
+}
+
+/** Replace all plugin registrations for a timeline (wipe + insert). */
+export async function replacePluginRows(db: SupabaseClient, id: string, plugins: PluginRef[]): Promise<void> {
+  const del = await db.from('timeline_plugins').delete().eq('timeline_id', id);
+  if (del.error) throw new Error(`replacePluginRows clear: ${del.error.message}`);
+  if (!plugins.length) return;
+  const now = new Date().toISOString();
+  const rows = plugins.map((p) => ({ timeline_id: id, plugin_id: p.id, config: p.config ?? {}, updated_at: now }));
+  const ins = await db.from('timeline_plugins').insert(rows);
+  if (ins.error) throw new Error(`replacePluginRows insert: ${ins.error.message}`);
 }
 
 // -- bulk replace (import, MCP set_pricing seed, PUT) --

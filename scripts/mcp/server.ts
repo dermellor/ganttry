@@ -217,6 +217,11 @@ const customFieldOption = z.object({
   color: z.string().optional().describe('Pill colour, hex e.g. "#315DFF".'),
 });
 
+const pluginRef = z.object({
+  id: z.string().describe('Plugin id, e.g. "product-roadmap" (unlocks the pricing matrix).'),
+  config: z.record(z.any()).optional().describe('Plugin-owned config bag, e.g. { versions: [...] }.'),
+});
+
 const customFieldDef = z.object({
   key: z.string().describe('metadata key the value is stored under, e.g. "tier".'),
   label: z.string().describe('Field label shown in the editor, e.g. "Tier".'),
@@ -343,7 +348,10 @@ server.registerTool(
       id: z.string(),
       name: z.string().optional(),
       description: z.string().optional(),
-      type: z.string().optional().describe("Timeline kind. 'product' unlocks the pricing model."),
+      plugins: z
+        .array(pluginRef)
+        .optional()
+        .describe('Plugins enabled on the timeline (replaces the old `type`). A populated `pricing` auto-enables "product-roadmap", so this is only needed to enable a plugin without pricing.'),
       items: z.array(z.object(itemFields)),
       groups: z.array(z.object(groupFields)).optional(),
       customFields: z.array(customFieldDef).optional().describe('Per-timeline custom-field definitions.'),
@@ -362,24 +370,21 @@ server.registerTool(
     title: 'Set pricing model (bulk)',
     description:
       "BULK replace of a timeline's whole pricing model (features + tiers + highlights + versions) in " +
-      'one call, plus optionally its type. Prefer the granular tools (add_/update_/delete_feature, ' +
+      'one call. Seeding pricing automatically enables the "product-roadmap" plugin (which surfaces the ' +
+      'matrix) — no separate type/plugin call needed. Prefer the granular tools (add_/update_/delete_feature, ' +
       '…_tier, set_tier_value, …_highlight, set_versions) for single edits — each touches one row and ' +
       "won't clobber concurrent browser/MCP edits. Use this only to seed a new model or fully rewrite " +
-      'one. Set type to "product" to surface the matrix. Item→feature links live per item in ' +
-      'metadata.featureIds (set via add_item / update_item).',
+      'one. Item→feature links live per item in metadata.featureIds (set via add_item / update_item).',
     inputSchema: {
       id: z.string().describe('Timeline id.'),
-      type: z.string().optional().describe("Timeline kind, usually 'product'."),
       pricing: pricing.describe('The full new pricing model.'),
     },
   },
-  async ({ id, type, pricing: pricingModel }) => {
-    if (type !== undefined) await patchMeta(id, { type });
+  async ({ id, pricing: pricingModel }) => {
     await apiSub(id, 'pricing', 'PUT', { pricing: pricingModel });
     return ok({
       ok: true,
       id,
-      type,
       features: pricingModel.features.length,
       tiers: pricingModel.tiers.length,
       highlights: pricingModel.highlights?.length ?? 0,

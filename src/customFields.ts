@@ -9,6 +9,7 @@
 import { escapeHtml } from './buildItems';
 import { state } from './state';
 import { scheduleLiveEdit } from './persistence';
+import { PRODUCT_ROADMAP_PLUGIN, hasPlugin } from './plugins';
 import {
   PRICING_FEATURE_META_KEY,
   PRICING_ITEM_VERSION_META_KEY,
@@ -31,7 +32,7 @@ const FALLBACK_COLOR = '#64748B';
 // (it's derived from `pricing`), so it never gets persisted back as a definition.
 function pricingFieldDefs(): CustomFieldDef[] {
   const file = state.activeSourceFile;
-  if (!file || file.type !== 'product') return [];
+  if (!file || !hasPlugin(file, PRODUCT_ROADMAP_PLUGIN)) return [];
   const defs: CustomFieldDef[] = [];
   const features = file.pricing?.features ?? [];
   if (features.length) {

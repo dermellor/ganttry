@@ -18,7 +18,6 @@ import {
 export type PricingDoc = {
   timelineId: string;
   name?: string;
-  type?: string;
   pricing: Pricing;
 };
 

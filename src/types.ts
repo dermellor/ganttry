@@ -132,7 +132,7 @@ export type CustomFieldDef = {
   options?: CustomFieldOption[];
 };
 
-// Pricing model, only meaningful for `type: 'product'` timelines. Two entities:
+// Pricing model, only meaningful for product-roadmap timelines. Two entities:
 // features (the capabilities a product ships) and tiers (named, priced plans
 // that each bundle a subset of features). A timeline *item* links to features
 // via metadata[PRICING_FEATURE_META_KEY] (string[]). The whole model is a
@@ -247,12 +247,20 @@ export const PRICING_FEATURE_META_KEY = 'featureIds';
 // matrix (an item is "work for version X on feature Y").
 export const PRICING_ITEM_VERSION_META_KEY = 'featureVersion';
 
+// A plugin (a.k.a. timeline kind) enabled on a timeline. Enablement is pure data
+// — a row in `timeline_plugins`, no core-schema change — so this array replaces
+// the old plugin-specific `type` column/field. `config` is the plugin's opaque
+// bag; for 'product-roadmap' it carries `{ versions: string[] }`. Helpers +
+// stable ids live in ./plugins.
+export type PluginRef = { id: string; config?: Record<string, unknown> };
+
 export type TimelineFile = {
   name?: string;
   description?: string;
   groupBy?: string;
-  // Timeline kind. 'product' unlocks the `pricing` model + matrix view.
-  type?: string;
+  // Plugins enabled on this timeline (e.g. 'product-roadmap' → pricing matrix).
+  // Replaces the former `type: 'product'` gate; see ./plugins.
+  plugins?: PluginRef[];
   phases?: TimelinePhase[];
   customFields?: CustomFieldDef[];
   pricing?: Pricing;
