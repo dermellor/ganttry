@@ -1116,8 +1116,23 @@ Acme-domain whitelist), but adapted to a static Vite site:
 
 1. `/auth/login` → redirect to Google with `hd=Acme.de`, signed state cookie.
 2. `/auth/callback` → token exchange → `userinfo` → domain check → signed
-   session cookie (HMAC-SHA256, 24 h, `HttpOnly; Secure; SameSite=Lax`).
-3. Any other path without a valid session → 302 to `/auth/login?redirect=…`.
+   session cookie (HMAC-SHA256, `HttpOnly; Secure; SameSite=Lax`).
+3. Any other page navigation without a valid session → 302 to
+   `/auth/login?redirect=…`; an `/api/*` call without a valid session → `401`
+   JSON (`{ "error": "session_expired" }`) so the SPA fails loud instead of the
+   fetch chasing a cross-origin login redirect and the edit silently vanishing.
+   The client (`apiJson` / `loadSource` in [`src/editor.ts`](src/editor.ts))
+   catches the `401` and sends the top window to the login, preserving the view.
+
+**Sliding session (no silent expiry).** The session cookie is **not** a fixed
+one-shot token. Its base lifetime is 30 days (`SESSION_MAX_AGE` in
+[`_shared/session.ts`](netlify/edge-functions/_shared/session.ts)), but the gate
+re-issues the cookie with a fresh expiry whenever an authenticated request lands
+in the **second half** of its life (`SESSION_RENEW_THRESHOLD`, via `ctx.next()`
+on the way out). An actively used session is therefore continually topped up and
+never expires from under the user; the 30-day base only bites after a genuine
+stretch of inactivity. This replaced the old fixed 24 h token, which logged
+active users out mid-edit exactly 24 h after login.
 
 Set `AUTH_REQUIRED=true` in the Netlify dashboard to activate the gate; leave
 unset/`false` for local previews. Required runtime env vars:

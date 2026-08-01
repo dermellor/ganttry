@@ -17,6 +17,7 @@ import {
   COOKIE_NAME,
   STATE_COOKIE,
   SESSION_MAX_AGE,
+  SESSION_RENEW_THRESHOLD,
   STATE_MAX_AGE,
   type SessionPayload,
   type StatePayload,
@@ -34,7 +35,7 @@ import {
   hasValidMcpToken,
 } from './_shared/session.ts';
 
-export default async function handler(req: Request, _ctx: Context): Promise<Response | void> {
+export default async function handler(req: Request, ctx: Context): Promise<Response | void> {
   if (Deno.env.get('AUTH_REQUIRED') !== 'true') {
     return; // gate disabled — pass through
   }
@@ -53,12 +54,48 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
 
   const session = await readSession(req);
   if (!session) {
+    // A fetch() from the loaded SPA (an /api/* call) can't follow a 302 to
+    // Google's login across origins — the redirect just produces a diffuse
+    // failure and the edit silently vanishes. Answer those with a machine-
+    // readable 401 so the client can surface "session expired" and send the
+    // top window to the login. Full-page navigations still get the redirect.
+    if (isApiPath(path)) {
+      return new Response(JSON.stringify({ error: 'session_expired' }), {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+          // Let the client find the login without hardcoding the path.
+          'WWW-Authenticate': 'Session',
+        },
+      });
+    }
     const target = `${url.pathname}${url.search}`;
     const loginUrl = new URL('/auth/login', url.origin);
     loginUrl.searchParams.set('redirect', target);
     return Response.redirect(loginUrl.toString(), 302);
   }
+
+  // Sliding renewal: once the session is in the second half of its life,
+  // re-issue the cookie with a fresh expiry on the way out. An actively used
+  // session is therefore continually topped up and never expires from under
+  // the user. Off the hot path — most requests skip straight to pass-through.
+  if (session.exp - nowSec() < SESSION_RENEW_THRESHOLD) {
+    const res = await ctx.next();
+    const renewed = await sign({
+      ...session,
+      exp: nowSec() + SESSION_MAX_AGE,
+    } satisfies SessionPayload);
+    res.headers.append('Set-Cookie', cookieString(COOKIE_NAME, renewed, SESSION_MAX_AGE));
+    return res;
+  }
+
   return; // pass through to the static asset / function
+}
+
+/** Paths the SPA calls via fetch() — must fail loud (401), never redirect. */
+function isApiPath(path: string): boolean {
+  return path.startsWith('/api/');
 }
 
 export const config: Config = {

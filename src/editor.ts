@@ -17,7 +17,26 @@ export class ConflictError extends Error {
   }
 }
 
+/**
+ * Session expired mid-use: the auth gate answers an /api/* call with 401 once
+ * the cookie is gone (rather than a cross-origin redirect the fetch can't
+ * follow). Send the top window to the login, preserving the current view so
+ * the user lands back where they were — beats the edit silently vanishing.
+ */
+function handleSessionExpired(): never {
+  const here = `${location.pathname}${location.search}${location.hash}`;
+  const login = `/auth/login?redirect=${encodeURIComponent(here)}`;
+  // Guard against a redirect loop if several queued calls all 401 at once.
+  if (!sessionRedirectStarted) {
+    sessionRedirectStarted = true;
+    location.assign(login);
+  }
+  throw new Error('Session abgelaufen — bitte neu einloggen.');
+}
+let sessionRedirectStarted = false;
+
 async function apiJson(res: Response): Promise<any> {
+  if (res.status === 401) handleSessionExpired();
   const data = await res.json().catch(() => ({}));
   if (res.status === 409) throw new ConflictError((data as any).message || 'version conflict');
   // Prefer the server's human message (e.g. the overlapping-phases reason) over
@@ -126,6 +145,9 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
   if (apiRes && apiRes.ok) {
     return { file: await apiRes.json(), editable: true, live: parseLive(apiRes.headers.get('X-Source-Live')) };
   }
+  // Session lapsed while the tab was open (a live-reload re-fetch) — send the
+  // user to the login instead of surfacing a bare "HTTP 401".
+  if (apiRes && apiRes.status === 401) handleSessionExpired();
   const reason = apiRes ? `HTTP ${apiRes.status}` : 'keine Verbindung zur API';
   throw new Error(
     `Timeline „${id}“ konnte nicht aus der DB geladen werden (${reason}).`,

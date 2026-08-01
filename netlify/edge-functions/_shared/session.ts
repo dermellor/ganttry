@@ -1,6 +1,15 @@
 export const COOKIE_NAME = 'tl_session';
 export const STATE_COOKIE = 'tl_oauth_state';
-export const SESSION_MAX_AGE = 24 * 60 * 60; // 24h
+// Base session lifetime. The session is not a fixed one-shot token: the auth
+// gate re-issues the cookie with a fresh expiry once a request lands in the
+// second half of this window (see auth.ts → sliding renewal), so an actively
+// used session effectively never expires. The 30-day base only bites after a
+// genuine stretch of inactivity.
+export const SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30d
+// Renew the cookie once less than this much life remains (half the lifetime) —
+// keeps re-signing off the hot path while guaranteeing an active user is always
+// topped up well before expiry.
+export const SESSION_RENEW_THRESHOLD = SESSION_MAX_AGE / 2;
 export const STATE_MAX_AGE = 10 * 60; // 10m
 
 export type SessionPayload = {
