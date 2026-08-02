@@ -160,9 +160,10 @@ snapshot (see „Prinzip: keine Notfall-/Fallback-Daten"). The kind is set at bu
 time and flows through the built config to the client:
 
 - **`db`** — live from the DB via `GET /api/source/<id>`, editable, **no** static
-  fallback (a DB failure surfaces loudly). `build-data.ts` marks these: every DB
-  registration stub is written with a `"kind": "db"` marker, which survives into
-  the committed stub so even STATIC_ONLY deploy builds classify it correctly.
+  fallback (a DB failure surfaces loudly). `build-data.ts` discovers these by
+  querying the DB at build time (`collectDbSources`) and marks each view's source
+  `kind: "db"`; the registration stub it writes (metadata only) goes to the
+  gitignored build output, never to the committed tree.
 - **`file`** — read-only from the static `/data/sources/<id>.json` (`editable:
   false`). The file genuinely *is* the source here (not a snapshot of something
   live), so loading it is correct. Any `data/**/*.json` without the `db` marker
@@ -521,11 +522,15 @@ Deshalb gilt hart:
   (`GET /api/source/<id>`). Schlägt das fehl (`404`, kein Netz), **failt er laut**
   mit einer Fehlermeldung — es wird *kein* statischer Inhalt angezeigt
   ([`src/editor.ts`](src/editor.ts), `loadSource`).
-- Die committeten `data/<db-id>.json` sind **reine Registrierungs-Stubs**
-  (`name`, optional `description`/`groupBy`, `items: []`) — nur damit die Timeline
-  in der View-Liste auftaucht (build-data scannt diese Dateien für das Dropdown).
-  Sie enthalten **nie** items/groups/phases. `syncTimelinesOnce`
-  ([`scripts/build-data.ts`](scripts/build-data.ts)) schreibt genau diesen Stub.
+- DB-Timelines werden **nicht** über committete Dateien registriert. `build-data`
+  fragt beim Bauen die DB ab (`collectDbSources` in
+  [`scripts/build-data.ts`](scripts/build-data.ts)) und erzeugt pro Timeline einen
+  **Registrierungs-Stub** (`name`, optional `description`/`groupBy`, `items: []`)
+  ausschließlich im **gitignorierten Build-Output** (`public/data/sources/`), damit
+  sie in der View-Liste auftaucht. Der Stub enthält **nie** items/groups/phases;
+  Inhalte lädt der Viewer live. So trägt das Repo **keine** Mandanten-Dateien, und
+  der Deploy listet seine DB-Timelines trotzdem (er hat DB-Zugriff und fragt sie
+  beim Bauen ab). Scope über `TIMELINES_SOURCES_SUBDIR` als id-Namespace-Präfix.
 
 Neue Sync-/Cache-/Fallback-Mechanismen für DB-Timelines, die Inhalte in Dateien,
 CDN oder sonstwo spiegeln, sind **nicht** einzuführen. (Datei-basierte Quellen —
@@ -733,10 +738,11 @@ npm run db:import -- acme/my-plan          # gezielt
   Reload wieder auf. Der Client baut den Patch deshalb über `buildItemPatch`
   ([`src/persistence.ts`](src/persistence.ts)), das jedes fehlende clearable Feld
   auf `null` setzt.
-- **Registrierungs-Stubs:** `npm run build:data` (Teil von `dev`/`build`) schreibt
-  für jede DB-Timeline nur einen Stub nach `data/<id>.json` (`name` + `items: []`,
-  kein Inhalt). Diese Stubs committen — sie halten die Timeline nur in der
-  View-Liste sichtbar, sind aber **kein** Daten-Fallback.
+- **Registrierungs-Stubs:** `npm run build:data` (Teil von `dev`/`build`) fragt die
+  DB ab und schreibt pro DB-Timeline einen Stub (`name` + `items: []`, kein Inhalt)
+  in den **gitignorierten Build-Output** `public/data/sources/<id>.json` — nur um
+  die Timeline in der View-Liste zu halten, **kein** Daten-Fallback und **nichts
+  Committetes**. Nichts landet im getrackten `data/`.
 - **Live-Kollaboration:** siehe „Realtime" — ersetzt das frühere 60-s-Polling.
 
 ### Production-Setup (Netlify)
@@ -936,7 +942,7 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
 - **Tags** is a chip editor with autosuggest: type to match tags already used in the timeline, or type a new label and press Enter to create one. Each chip carries its resolved colour and a remove button. Stored as `metadata.tags` (string[]); saving migrates any legacy singular `metadata.tag` into the array.
 - **Phases** render as a ribbon along the top. Drag a segment to move it, drag either edge to resize (snaps to whole days, min. 1 day), and click it (without dragging) to open the phase form in the side panel: title, start/end, duration, icon, colour. Persists on drop / Save; Delete removes the phase.
 
-Persistence path: viewer → item-level calls (`POST/PATCH/DELETE /api/source/<id>/item`, `PUT …/phases`) → middleware (`vite.config.ts`) → Supabase via `scripts/db/api.ts`. `PATCH` carries the item `version` in `If-Match`; a stale version returns `409` and the client reloads that item. Only DB-backed sources are editable; genuine file-based sources (the examples) load read-only from their static `/data/sources/<id>.json`. Builds (`npm run build`) and exported HTML have no edit endpoint. For DB-backed timelines, `npm run build:data` writes only a registration **stub** to `data/<id>.json` (`name` + `items: []`, no content) — there is deliberately no committed content cache (see „Prinzip: keine Notfall-/Fallback-Daten").
+Persistence path: viewer → item-level calls (`POST/PATCH/DELETE /api/source/<id>/item`, `PUT …/phases`) → middleware (`vite.config.ts`) → Supabase via `scripts/db/api.ts`. `PATCH` carries the item `version` in `If-Match`; a stale version returns `409` and the client reloads that item. Only DB-backed sources are editable; genuine file-based sources (the examples) load read-only from their static `/data/sources/<id>.json`. Builds (`npm run build`) and exported HTML have no edit endpoint. DB-backed timelines are discovered from the DB at build time (`collectDbSources`); the registration **stub** (`name` + `items: []`, no content) is written only to the gitignored build output `public/data/sources/<id>.json` — nothing DB-backed is committed, and there is deliberately no committed content cache (see „Prinzip: keine Notfall-/Fallback-Daten").
 
 ## JIRA linking
 
@@ -1131,8 +1137,12 @@ Netlify dashboard (Site settings → Environment variables).
 
 ### What gets deployed
 
-- Sources: scoped to `data/<subdir>/*.json` when `TIMELINES_SOURCES_SUBDIR` is
-  set (dashboard), otherwise all of `data/*.json`.
+- **File sources:** committed `data/*.json`, scoped to `data/<subdir>/` when
+  `TIMELINES_SOURCES_SUBDIR` is set (dashboard).
+- **DB timelines:** discovered from the DB at build time (`collectDbSources`),
+  scoped by the same `TIMELINES_SOURCES_SUBDIR` used as an **id namespace prefix**
+  (e.g. subdir `acme` → all `acme/…` timelines). No committed stubs; if the build
+  can reach the DB but the list query fails, the build fails loudly.
 - Notes scan disabled (`TIMELINES_STATIC_ONLY=true`); no Markdown-driven views.
 - **Editing** is live when the Supabase env vars are set (see „Supabase als
   Datenquelle → Production-Setup"): the `timelines-api` edge function serves
@@ -1140,8 +1150,9 @@ Netlify dashboard (Site settings → Environment variables).
   viewer surfaces an error — there is no static content fallback (see „Prinzip:
   keine Notfall-/Fallback-Daten").
 
-To add a deploy-visible timeline: drop the JSON into the scanned `data/` folder,
-commit, push.
+To add a deploy-visible file source: drop the JSON into the scanned `data/`
+folder, commit, push. DB timelines appear automatically once they exist in the DB
+under the deploy's namespace.
 
 ### Auth gate (Netlify Edge Function)
 

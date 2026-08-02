@@ -35,6 +35,18 @@ export function sourceNamespace(id: string): string | null {
   return i > 0 ? id.slice(0, i) : null;
 }
 
+/**
+ * Whether a DB timeline id is in scope for a build scoped by
+ * `TIMELINES_SOURCES_SUBDIR`. An empty subdir scopes to everything; otherwise the
+ * id must sit under that subdir namespace (`<subdir>/…`), mirroring the old
+ * `data/<subdir>/` folder scoping. `subdir` is normalised (surrounding slashes
+ * stripped) by the caller.
+ */
+export function timelineInScope(id: string, subdir: string): boolean {
+  if (!subdir) return true;
+  return id === subdir || id.startsWith(`${subdir}/`);
+}
+
 /** The env var a namespace maps to, e.g. `my-warehouse` → `TIMELINES_DATABASE_URL_MY_WAREHOUSE`. */
 export function connectionEnvKey(namespace: string): string {
   const suffix = namespace.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');

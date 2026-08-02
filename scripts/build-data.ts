@@ -167,67 +167,69 @@ function unitToMs(unit: string): number {
 
 const STATIC_ONLY = /^(1|true|yes)$/i.test(process.env.TIMELINES_STATIC_ONLY ?? '');
 
-// Keep a *registration stub* for every DB-backed timeline in data/<id>.json so
-// it stays discoverable in the view list (build-data scans these files to build
-// the dropdown). The stub carries ONLY name/description/groupBy — deliberately
-// never the item/group/phase content.
+// Discover DB-backed timelines from the DB at build time and register them as
+// views. The registration stub (name/description/groupBy + empty items —
+// deliberately never the item/group/phase content) is written to the BUILD
+// OUTPUT (public/data/sources), NOT to the committed data/ dir: the repo carries
+// no tenant timeline files, yet the deploy still lists its DB timelines because
+// it has DB credentials and queries them here.
 //
-// Principle: no committed snapshot of live data, ever. A stale copy is visually
-// indistinguishable from real data and gets mistaken for it, so we keep nothing
-// to fall back to — the viewer loads content live from the DB (or fails loudly).
+// Principle upheld: no committed snapshot of live data, ever. The stub is
+// metadata only; the viewer loads item/group/phase content live from
+// /api/source (or fails loudly). `kind: 'db'` routes the client to the API.
 //
-// Skipped on static-only builds and when no DB credentials are present; the
-// committed stubs then simply stand as-is.
-async function syncTimelinesOnce(): Promise<void> {
-  if (STATIC_ONLY) return; // deploy discovery relies on the committed stubs
+// Scope: TIMELINES_SOURCES_SUBDIR filters by id namespace prefix (mirrors the
+// old data/<subdir>/ folder scoping). No DB configured → no DB views (file-only
+// deploys are unaffected). If a DB IS configured but the list query fails, the
+// build fails loudly rather than shipping a deploy with an empty dropdown.
+async function collectDbSources(): Promise<unknown[]> {
   let resolveRepoFromEnv: () => { listTimelines(): Promise<{ id: string; name?: string; description?: string; groupBy?: string }[]> } | null;
+  let timelineInScope: (id: string, subdir: string) => boolean;
   try {
     ({ resolveRepoFromEnv } = (await import('./db/repo-node.ts')) as any);
+    ({ timelineInScope } = (await import('./db/sql.ts')) as any);
   } catch (err) {
-    console.warn('[build-data] db stub sync skipped (module load failed):', err);
-    return;
+    console.warn('[build-data] db discovery skipped (module load failed):', err);
+    return [];
   }
   // Same driver selection as the runtime glue: postgres.js when
-  // TIMELINES_DATABASE_URL is set, else supabase-js. No DB → leave stubs as-is.
+  // TIMELINES_DATABASE_URL is set, else supabase-js. No DB → no DB views.
   const repo = resolveRepoFromEnv();
-  if (!repo) return;
+  if (!repo) return [];
 
-  let rows: { id: string; name?: string; description?: string; groupBy?: string }[];
-  try {
-    // On the postgres.js path the module-scoped handle is left open here (reused
-    // across watch-mode rebuilds); main() closes it for the one-shot build so
-    // the process exits.
-    rows = await repo.listTimelines();
-  } catch (err) {
-    console.warn(`[build-data] db stub sync failed: ${err instanceof Error ? err.message : String(err)}`);
-    return;
-  }
+  // A failed list query on a DB-configured build is fatal (propagated): better a
+  // red build than a deploy that silently drops every DB timeline. On the
+  // postgres.js path the module-scoped handle is left open (reused across
+  // watch-mode rebuilds); main() closes it for the one-shot build so it exits.
+  const rows = await repo.listTimelines();
 
+  await mkdir(SOURCES_DIR_OUT, { recursive: true });
+  const views: unknown[] = [];
   for (const row of rows) {
+    if (!timelineInScope(row.id, SOURCES_SUBDIR)) continue;
     // Registration stub only — no items/groups/phases (that's the whole point).
-    // `kind: 'db'` marks this as a DB-backed source so the view generator (and,
-    // via the built config, the client loader) route it to /api/source instead
-    // of the static file. Genuine file sources carry no such marker. The marker
-    // survives into the committed stub, so even STATIC_ONLY deploy builds (which
-    // skip the DB query) still classify the source correctly.
     const stub: Record<string, unknown> = { kind: 'db', name: row.name ?? row.id };
     if (row.description != null) stub.description = row.description;
     if (row.groupBy != null) stub.groupBy = row.groupBy;
     stub.items = [];
-    const outPath = join(SOURCES_DIR_IN, `${row.id}.json`);
+    const outPath = join(SOURCES_DIR_OUT, `${row.id}.json`);
     await mkdir(dirname(outPath), { recursive: true });
-    const changed = await writeIfChanged(outPath, `${JSON.stringify(stub, null, 2)}\n`);
-    if (changed) {
-      console.log(`[build-data] timeline "${row.id}" stub written → ${relative(ROOT, outPath)}`);
-    }
+    await writeIfChanged(outPath, `${JSON.stringify(stub, null, 2)}\n`);
+    views.push({
+      id: `src:${row.id}`,
+      name: row.name || row.id,
+      description: row.description ?? '',
+      filter: {},
+      groupBy: row.groupBy,
+      source: { kind: 'db', id: row.id },
+    });
   }
+  return views;
 }
 
 async function buildOnce(): Promise<void> {
   const config = await loadConfig();
   const notesDir = resolveNotesDir(config);
-
-  await syncTimelinesOnce();
 
   // Missing notes dir is non-fatal: proceed with zero notes so a fresh clone
   // (or a deploy with no notes) still builds standalone/DB sources. Set
@@ -308,7 +310,13 @@ async function buildOnce(): Promise<void> {
   const notesPayload = JSON.stringify({ count: notes.length, notes }, null, 2);
   const notesChanged = await writeIfChanged(OUT_FILE, notesPayload);
 
-  const autoViews = await collectStandaloneSources();
+  // File sources (committed data/*.json) plus DB timelines discovered live from
+  // the DB. On an id collision the DB timeline wins (it is the live source of
+  // truth); file sources are listed first for a stable dropdown order.
+  const fileViews = await collectStandaloneSources();
+  const dbViews = await collectDbSources();
+  const dbIds = new Set(dbViews.map((v: any) => v.id));
+  const autoViews = [...fileViews.filter((v: any) => !dbIds.has(v.id)), ...dbViews];
   const baseViews = STATIC_ONLY
     ? [] // hide markdown-driven views in static mode
     : (config as any).views ?? [];
@@ -394,11 +402,14 @@ async function collectStandaloneSources(): Promise<unknown[]> {
       console.warn(`[build-data] skipping ${rel}: missing "items" array`);
       continue;
     }
-    // A `kind: 'db'` marker (written by syncTimelinesOnce) means this file is a
-    // registration stub for a DB-backed timeline → the client loads it live from
-    // /api/source. Everything else is a genuine file source, loaded read-only
-    // from the static copy.
-    const kind: 'db' | 'file' = parsed.kind === 'db' ? 'db' : 'file';
+    // DB-backed timelines are discovered live from the DB (collectDbSources), not
+    // from committed files. A `kind: 'db'` file here is a leftover registration
+    // stub — skip it so it neither shadows the live discovery nor resurrects a
+    // committed snapshot. Everything else is a genuine file source (read-only).
+    if (parsed.kind === 'db') {
+      console.warn(`[build-data] ignoring committed db stub ${rel} (discovered from the DB instead)`);
+      continue;
+    }
     const outPath = join(SOURCES_DIR_OUT, `${id}.json`);
     await mkdir(dirname(outPath), { recursive: true });
     await writeIfChanged(outPath, raw);
@@ -408,7 +419,7 @@ async function collectStandaloneSources(): Promise<unknown[]> {
       description: parsed.description ?? '',
       filter: {},
       groupBy: parsed.groupBy,
-      source: { kind, id },
+      source: { kind: 'file', id },
     });
   }
   return views;
@@ -459,8 +470,9 @@ async function main() {
       .on('change', trigger)
       .on('unlink', trigger);
 
-    // No sheet polling anymore — realtime handles live updates in the browser,
-    // and the static cache refreshes on each build via syncTimelinesOnce().
+    // No sheet polling anymore — realtime handles live content updates in the
+    // browser, and the DB timeline list refreshes on each build via
+    // collectDbSources().
     console.log(
       watchNotes
         ? `[build-data] watching ${notesDir}/**/*.md + ${relative(ROOT, SOURCES_DIR_IN)}/**/*.json + config`
@@ -469,7 +481,7 @@ async function main() {
     return; // stay alive; the watcher keeps the event loop (and DB handle) open
   }
 
-  // One-shot build: close any open DB handle (syncTimelinesOnce may have opened
+  // One-shot build: close any open DB handle (collectDbSources may have opened
   // a module-scoped postgres.js connection) so the process exits cleanly.
   try {
     const { getSql } = (await import('./db/sql.ts')) as { getSql: () => { end: () => Promise<void> } | null };
