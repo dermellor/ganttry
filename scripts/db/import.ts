@@ -2,7 +2,7 @@
 // Default set = the timelines already present in the DB (so file-based examples
 // stay out). Pass explicit ids to seed a new timeline. Run: npm run db:import
 //   npm run db:import                         # refresh all DB timelines
-//   npm run db:import -- acme/mein-plan     # seed/refresh one by id
+//   npm run db:import -- acme/my-plan          # seed/refresh one by id
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

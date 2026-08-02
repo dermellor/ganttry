@@ -1,11 +1,10 @@
 /* ========================================================
- * Item icon set (brand-agnostic keys → glyphs)
+ * Item icon set (semantic keys → glyphs)
  *
  * Items store a semantic key (e.g. `icon: "milestone"`); the glyph is resolved
- * per brand via these `--icon-<key>` custom properties. The base set below is
- * Acme neo-icons and is inherited by every brand. To give a brand its own
- * look, override any key inside its `[data-brand='…']` block, e.g.
- *   [data-brand='default'] { --icon-milestone: url("…"); }
+ * via these `--icon-<key>` custom properties. To give the viewer a different
+ * icon look, override any key in your own stylesheet, e.g.
+ *   :root { --icon-milestone: url("…"); }
  * Rendering (CSS mask) lives in timeline.css `.item-icon`.
  * ======================================================== */
 
@@ -31,10 +30,13 @@
 }
 
 /* ========================================================
- * Brand: default (neutral)
+ * Theme tokens (neutral)
+ *
+ * The viewer's single built-in theme. Recolour or re-type the viewer by
+ * overriding any of these custom properties in your own stylesheet.
  * ======================================================== */
 
-[data-brand='default'] {
+:root {
   --bg: #fbfbfb;
   --surface: #ffffff;
   --fg: #2c3333;
@@ -75,83 +77,4 @@
   --lane-4-bg: #f5e3cf;
   --lane-5-border: #c1b6ce;
   --lane-5-bg: #efeaf3;
-}
-
-/* ========================================================
- * Brand: Acme
- * ======================================================== */
-
-@font-face {
-  font-family: 'PX Grotesk';
-  src: url('/fonts/acme/Px-Grotesk-Light.woff2') format('woff2');
-  font-weight: 300;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'PX Grotesk';
-  src: url('/fonts/acme/Px-Grotesk-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'PX Grotesk';
-  src: url('/fonts/acme/Px-Grotesk-Bold.woff2') format('woff2');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Tiempos Headline';
-  src: url('/fonts/acme/tiempos-headline-light.woff2') format('woff2');
-  font-weight: 300;
-  font-style: normal;
-  font-display: swap;
-}
-
-[data-brand='Acme'] {
-  --bg: #fcfcfc;
-  --surface: #ffffff;
-  --fg: #202020;
-  --fg-muted: #646464;
-  --border: rgba(32, 32, 32, 0.1);
-  --hover: rgba(32, 32, 32, 0.04);
-  --accent: #315dff;
-  --accent-soft: #ebf2ff;
-  --accent-strong: #0046d2;
-  --warning: #ffbd00;
-  --highlight: #deff00;
-  --success: #00bd82;
-  --magenta: #8642fe;
-
-  --font-body: 'PX Grotesk', system-ui, -apple-system, sans-serif;
-  --font-headline: 'Tiempos Headline', Georgia, serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --headline-weight: 300;
-  --mark-radius: 0;
-
-  /* neo-icons "trash-alt" (Acme icon set), used as a mask for the item delete button */
-  --icon-trash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath fill='%23000' fill-rule='evenodd' clip-rule='evenodd' d='M21 5h-5v-.25A2.755 2.755 0 0 0 13.25 2h-2.5A2.755 2.755 0 0 0 8 4.75V5H3v1.5h1v12.75A2.755 2.755 0 0 0 6.75 22h10.5A2.755 2.755 0 0 0 20 19.25V6.5h1V5ZM9.5 4.75c0-.69.56-1.25 1.25-1.25h2.5c.69 0 1.25.56 1.25 1.25V5h-5v-.25Zm9 14.5c0 .69-.56 1.25-1.25 1.25H6.75c-.69 0-1.25-.56-1.25-1.25V6.5h13v12.75Zm-8-9.75H9v8h1.5v-8Zm3 0H15v8h-1.5v-8Z'/%3E%3C/svg%3E");
-
-  --item-bg: #f9fdec;
-  --item-fg: #202020;
-  --item-border: #202020;
-  --item-bg-active: #deff00;
-  --grid-line: rgba(32, 32, 32, 0.06);
-  --grid-line-major: rgba(32, 32, 32, 0.16);
-  --axis-text: #202020;
-
-  --lane-0-border: #315dff;
-  --lane-0-bg: #ebf2ff;
-  --lane-1-border: #00bd82;
-  --lane-1-bg: #e1f8ec;
-  --lane-2-border: #8642fe;
-  --lane-2-bg: #f3efff;
-  --lane-3-border: #ff7200;
-  --lane-3-bg: #ffeadc;
-  --lane-4-border: #006660;
-  --lane-4-bg: #dff7f4;
-  --lane-5-border: #a5bb42;
-  --lane-5-bg: #effdc1;
 }

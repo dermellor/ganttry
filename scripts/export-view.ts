@@ -13,24 +13,22 @@ const OUT_DIR = join(ROOT, 'export');
 
 const UNGROUPED = '_ungrouped';
 
-type Args = { viewId: string; brand: string; outPath: string | null };
+type Args = { viewId: string; outPath: string | null };
 
 function parseArgs(argv: string[]): Args {
-  let brand = 'default';
   let outPath: string | null = null;
   let viewId: string | null = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--brand') brand = argv[++i];
-    else if (a === '--out') outPath = argv[++i];
+    if (a === '--out') outPath = argv[++i];
     else if (!a.startsWith('--')) viewId = a;
   }
   if (!viewId) {
-    console.error('Usage: tsx scripts/export-view.ts <viewId> [--brand default|Acme] [--out path.html]');
-    console.error('       npm run export -- <viewId> [--brand …] [--out …]');
+    console.error('Usage: tsx scripts/export-view.ts <viewId> [--out path.html]');
+    console.error('       npm run export -- <viewId> [--out …]');
     process.exit(1);
   }
-  return { viewId, brand, outPath };
+  return { viewId, outPath };
 }
 
 function escapeHtml(s: string): string {
@@ -365,9 +363,9 @@ async function main() {
     built = buildFromNotes(view, notesData.notes, config);
   }
 
-  const [baseCss, brandsCss, timelineCss, visCss, visJs, markedJs] = await Promise.all([
+  const [baseCss, themeCss, timelineCss, visCss, visJs, markedJs] = await Promise.all([
     readTextFile(join(STYLES_DIR, 'base.css')),
-    readTextFile(join(STYLES_DIR, 'brands.css')),
+    readTextFile(join(STYLES_DIR, 'theme.css')),
     readTextFile(join(STYLES_DIR, 'timeline.css')),
     readTextFile(join(NM, 'vis-timeline', 'styles', 'vis-timeline-graph2d.min.css')),
     readTextFile(join(NM, 'vis-timeline', 'standalone', 'umd', 'vis-timeline-graph2d.min.js')),
@@ -389,10 +387,10 @@ async function main() {
 <title>${escapeHtml(title)}</title>
 <style>${visCss}</style>
 <style>${baseCss}</style>
-<style>${brandsCss}</style>
+<style>${themeCss}</style>
 <style>${timelineCss}</style>
 </head>
-<body data-brand="${escapeHtml(args.brand)}">
+<body>
 <header class="app-header">
   <div class="app-title">
     <span class="app-title-mark"></span>

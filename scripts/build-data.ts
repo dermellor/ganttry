@@ -368,9 +368,9 @@ async function collectStandaloneSources(): Promise<unknown[]> {
   if (!existsSync(SOURCES_DIR_IN)) return [];
   await mkdir(SOURCES_DIR_OUT, { recursive: true });
   const views: unknown[] = [];
-  // Scanning is limited to SOURCES_DIR_IN (e.g. data/Acme on the deploy),
-  // but the id is always derived relative to data/ so it is identical across
-  // environments and matches the DB timeline id (e.g. "acme/<name>").
+  // Scanning is limited to SOURCES_DIR_IN (e.g. data/<subdir> on a scoped
+  // deploy), but the id is always derived relative to data/ so it is identical
+  // across environments and matches the DB timeline id (e.g. "<subdir>/<name>").
   // Otherwise TIMELINES_SOURCES_SUBDIR would strip the prefix on the deploy and
   // the client would request /api/source/<name> which the DB doesn't have.
   const DATA_ROOT = join(ROOT, 'data');

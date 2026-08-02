@@ -6,13 +6,13 @@
 // authoritative; the .md is a generated artifact ("do not edit by hand").
 //
 // Usage:
-//   npm run export:pricing               # default timeline id
-//   npm run export:pricing -- <id>       # explicit timeline id
+//   npm run export:pricing -- <id>       # timeline id (or set PRICING_TIMELINE_ID)
 //
 // Config (env, with fallback to ~/_AGENTS/.env then <repo>/.env.local):
-//   MCP_API_TOKEN      — required; matches the Netlify env var of the same name
-//   TIMELINES_LIVE_URL — optional; default https://example-timelines.netlify.app
-//   PRICING_MD_OUT     — optional; output path (default: AI-Agents Preismodell.md)
+//   MCP_API_TOKEN       — required; matches the Netlify env var of the same name
+//   TIMELINES_LIVE_URL  — required; base URL of the deployed site
+//   PRICING_TIMELINE_ID — optional; used when no <id> arg is given
+//   PRICING_MD_OUT      — optional; output path (default: <repo>/export/pricing.md)
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -25,11 +25,7 @@ import { pricingToMarkdown } from '../src/kinds/product-roadmap/pricing.ts';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
 
-const DEFAULT_TIMELINE_ID = 'acme/example-roadmap';
-const DEFAULT_OUT = resolve(
-  homedir(),
-  'Library/Mobile Documents/iCloud~md~obsidian/Documents/_NOTIZEN/Strategie/Acme AI Agents/Preismodell.md',
-);
+const DEFAULT_OUT = resolve(REPO_ROOT, 'export', 'pricing.md');
 
 /** Minimal .env parser — mirrors scripts/mcp/server.ts. process.env always wins. */
 function parseEnvFile(path: string): Record<string, string> {
@@ -60,7 +56,7 @@ const fromFiles = {
 };
 const pick = (k: string): string => process.env[k] ?? fromFiles[k] ?? '';
 
-const BASE_URL = (pick('TIMELINES_LIVE_URL') || 'https://example-timelines.netlify.app').replace(/\/+$/, '');
+const BASE_URL = pick('TIMELINES_LIVE_URL').replace(/\/+$/, '');
 const API_TOKEN = pick('MCP_API_TOKEN');
 
 function encodeId(id: string): string {
@@ -88,7 +84,13 @@ function todayIso(): string {
 }
 
 async function main(): Promise<void> {
-  const timelineId = process.argv[2] || DEFAULT_TIMELINE_ID;
+  if (!BASE_URL) {
+    throw new Error('TIMELINES_LIVE_URL is not set — point it at the deployed site.');
+  }
+  const timelineId = process.argv[2] || pick('PRICING_TIMELINE_ID');
+  if (!timelineId) {
+    throw new Error('No timeline id. Pass one as an argument or set PRICING_TIMELINE_ID.');
+  }
   const outPath = pick('PRICING_MD_OUT') || DEFAULT_OUT;
 
   const file = await getTimeline(timelineId);

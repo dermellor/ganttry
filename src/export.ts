@@ -10,12 +10,11 @@ import detailCssRaw from './styles/detail.css?raw';
 import formsCssRaw from './styles/forms.css?raw';
 import wysiwygCssRaw from './styles/wysiwyg.css?raw';
 import chipsCssRaw from './styles/chips.css?raw';
-import brandsCssRaw from './styles/brands.css?raw';
+import themeCssRaw from './styles/theme.css?raw';
 import timelineCssRaw from './styles/timeline.css?raw';
 
 type ExportArgs = {
   view: View;
-  brand: string;
   build: { items: TimelineItem[]; groups: TimelineGroup[]; details: Map<string, DetailNote> };
 };
 
@@ -167,7 +166,7 @@ function clientScript(): string {
 }
 
 function buildHtml(args: ExportArgs): string {
-  const { view, brand, build } = args;
+  const { view, build } = args;
   const detailsObj: Record<string, DetailNote> = {};
   build.details.forEach((v, k) => {
     detailsObj[k] = v;
@@ -191,10 +190,10 @@ function buildHtml(args: ExportArgs): string {
 <style>${formsCssRaw}</style>
 <style>${wysiwygCssRaw}</style>
 <style>${chipsCssRaw}</style>
-<style>${brandsCssRaw}</style>
+<style>${themeCssRaw}</style>
 <style>${timelineCssRaw}</style>
 </head>
-<body data-brand="${escapeHtml(brand)}">
+<body>
 <header class="app-header">
   <div class="app-title">
     <span class="app-title-mark"></span>

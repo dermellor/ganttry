@@ -1,6 +1,43 @@
 # Timelines
 
-A generic timeline and roadmap viewer built on [vis-timeline](https://visjs.github.io/vis-timeline/). It renders items, groups, phases and dependency arrows from either static JSON files or a live Postgres database, and offers a Timeline view and a grouped List view over the same data. Two orthogonal extension axes keep it flexible: **source adapters** decide where a timeline's data comes from (a static JSON file, or Postgres via either supabase-js or native postgres.js, with optional per-source connections), and **timeline kinds** decide what extra rendering a timeline carries (the default `generic` kind is just timeline + list; the `product-roadmap` kind adds a pricing matrix and cards, loaded lazily).
+A generic, self-hostable timeline and roadmap viewer built on
+[vis-timeline](https://visjs.github.io/vis-timeline/). It renders items, groups,
+phases and dependency arrows from either static JSON files or a live Postgres
+database, and shows the same data as an interactive Timeline or a grouped List.
+
+Two orthogonal extension axes keep it flexible:
+
+- **Source adapters** decide *where* a timeline's data comes from: a static JSON
+  file, or Postgres (via either supabase-js or native postgres.js, with optional
+  per-source connections).
+- **Timeline kinds** decide *what* extra rendering a timeline carries: the
+  default `generic` kind is just timeline + list; the `product-roadmap` kind adds
+  a pricing matrix and cards, loaded lazily so a generic build ships no pricing
+  code.
+
+## Features
+
+- **Timeline + List views** over one build, toggled in the header, sharing all
+  state (selection, grouping, filter, edits).
+- **Rich items:** phases as a labeled ribbon, right-angle dependency arrows,
+  semantic icons, a built-in status field, colour-coded tags, and per-timeline
+  custom fields.
+- **Editable when DB-backed:** drag to move/resize, double-click to add, edit in
+  a side form. Writes are item-level with optimistic locking, so concurrent edits
+  do not clobber each other.
+- **File sources need no database:** drop a `*.json` into `data/`, it registers
+  itself as a read-only view.
+- **Two DB drivers, one seam:** supabase-js (HTTP/PostgREST, the Netlify default)
+  or native postgres.js (any Postgres via a connection string), selected by env.
+- **Live collaboration:** other people's edits appear without reload, via
+  Supabase Realtime or a cheap watermark-polling fallback, plus presence avatars.
+- **Markdown notes views (optional):** build timelines from frontmatter dates in
+  a notes directory.
+- **Static HTML export** of any view, and an **MCP server** so Claude Code can
+  read and edit DB-backed timelines.
+- **Deployable behind auth:** a Netlify edge auth gate (Google OAuth + an
+  allowed-domain whitelist), JIRA issue linking, and public pricing endpoints.
+- **Single neutral theme,** themeable through CSS custom properties.
 
 ## Quickstart
 
@@ -64,6 +101,15 @@ static Vite + TypeScript viewer (`src/`) renders it. The extension seams:
 For the full data model, schema, MCP server, pricing model, auth gate and deploy
 details, see [`AGENTS.md`](AGENTS.md).
 
+## Theming
+
+The viewer ships a single neutral theme defined as CSS custom properties in the
+`:root` block of [`src/styles/theme.css`](src/styles/theme.css): colour tokens,
+typography (`--font-body` / `--font-headline`), lane colours and mark radius. To
+recolour or re-type the viewer, override any of these variables in your own
+stylesheet loaded after `theme.css`. There is no runtime brand selector: the
+tokens in `theme.css` are the single styling seam.
+
 ## Configuration
 
 Environment variables (build-time `VITE_*` are baked into the bundle; server vars
@@ -77,16 +123,27 @@ are read from `process.env`, then `~/_AGENTS/.env`, then `.env.local`):
 | `TIMELINES_NOTES_DIR` | Overrides `notesDir` for the Markdown notes scan. Missing directory is non-fatal. |
 | `TIMELINES_STATIC_ONLY` | `true` skips the notes scan and drops notes-driven views. |
 | `TIMELINES_SOURCES_SUBDIR` | Scope the file-source scan to `data/<subdir>/`. |
-| `VITE_BRAND_MODE` / `VITE_DEFAULT_BRAND` | `select` (default, dropdown) or `fixed`; the brand applied on load (`default` or `Acme`). |
 | `VITE_JIRA_BASE_URL` | Public base URL for JIRA browse links. Empty renders keys as plain text. |
 | `AUTH_REQUIRED` / `ALLOWED_EMAIL_DOMAINS` | Netlify edge auth gate: `true` enables it; comma-separated allowed sign-in domains (empty = nobody passes). |
 
 ## Deploy (Netlify)
 
-Config-as-code lives in [`netlify.toml`](netlify.toml); secrets go in the Netlify
-dashboard. `netlify build` produces the static site plus the edge functions (auth
-gate, timelines API, pricing API). See [`AGENTS.md`](AGENTS.md) for the auth gate,
-Supabase/Postgres setup, and the MCP server.
+Config-as-code lives in [`netlify.toml`](netlify.toml); instance-specific values
+and secrets go in the Netlify dashboard. `netlify build` produces the static site
+plus the edge functions (auth gate, timelines API, pricing API). See
+[`AGENTS.md`](AGENTS.md) for the auth gate, Supabase/Postgres setup, and the MCP
+server.
+
+## Contributing
+
+Issues and pull requests are welcome at
+<https://github.com/dermellor/timelines/issues>.
+
+- Run the test suite with `npm test` (Node's built-in test runner over
+  `{src,scripts}/**/*.test.ts`).
+- [`AGENTS.md`](AGENTS.md) is the single source of truth for the data model,
+  schema, extension seams and conventions. Read it before larger changes and keep
+  it in sync when behaviour changes.
 
 ## License
 

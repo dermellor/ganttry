@@ -22,7 +22,7 @@ import type { PricingFeature, PricingTier } from '../../types';
 import type { TimelineFileItem } from '../../types';
 
 const doc: PricingDoc = {
-  timelineId: 'acme/example-roadmap',
+  timelineId: 'demo/roadmap',
   name: 'Example Timeline',
   pricing: {
     features: [
@@ -45,7 +45,7 @@ const doc: PricingDoc = {
 
 test('renders frontmatter with generated marker + timeline id', () => {
   const md = pricingToMarkdown(doc, { updated: '2026-07-15' });
-  assert.match(md, /^---\ngenerated: true\nsource: timelines\ntimeline: Acme\/example-roadmap\nupdated: 2026-07-15\n---/);
+  assert.match(md, /^---\ngenerated: true\nsource: timelines\ntimeline: demo\/roadmap\nupdated: 2026-07-15\n---/);
   assert.match(md, /Automatisch generiert/);
 });
 

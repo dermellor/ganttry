@@ -1,5 +1,5 @@
-/* Read-only pricing matrix (product timelines). Brand-aware via the shared CSS
-   variables defined in brands.css. */
+/* Read-only pricing matrix (product timelines). Themed via the shared CSS
+   variables defined in theme.css. */
 
 .pricing-view {
   flex: 1;

@@ -1,6 +1,6 @@
 # Timelines
 
-Generic timeline viewer. Reads frontmatter dates from a notes directory of Markdown files (configurable via `notesDir` / `TIMELINES_NOTES_DIR`), builds timelines via [vis-timeline](https://visjs.github.io/vis-timeline/), and ships with a brand switcher (default / Acme).
+Generic timeline viewer. Reads frontmatter dates from a notes directory of Markdown files (configurable via `notesDir` / `TIMELINES_NOTES_DIR`), builds timelines via [vis-timeline](https://visjs.github.io/vis-timeline/), and ships a single neutral theme themeable through CSS custom properties.
 
 ## Branching, Commits & Session Isolation
 
@@ -145,8 +145,8 @@ laufen lassen — nie umgekehrt.**
 
 Two-step:
 
-1. **Build script** (`scripts/build-data.ts`) walks `~/_NOTIZEN`, parses YAML frontmatter (`gray-matter`), extracts dates, writes `public/data/notes.json` + a copy of the config.
-2. **Static viewer** (Vite + TypeScript, `src/`) loads the JSON, applies the active view's filter, renders a vis-timeline, swaps brand tokens via CSS custom properties.
+1. **Build script** (`scripts/build-data.ts`) walks the notes directory, parses YAML frontmatter (`gray-matter`), extracts dates, writes `public/data/notes.json` + a copy of the config.
+2. **Static viewer** (Vite + TypeScript, `src/`) loads the JSON, applies the active view's filter, renders a vis-timeline, styled through the CSS custom properties in `src/styles/theme.css`.
 
 Electron wrapper can later embed the same `dist/` build.
 
@@ -345,10 +345,10 @@ When generating a roadmap (whether for this project or invoked from elsewhere �
 
 Items can carry an optional `icon` — a small glyph rendered before the content on
 the bar. The value is a **semantic key** (what the icon means, not a concrete
-SVG), so the same data works across every brand: each brand resolves the key to
-its own icon set via a `--icon-<key>` CSS custom property. The stored `content`
-stays clean (the glyph is prepended at render time via the vis-timeline
-`template`), so it round-trips through the editor, the DB, and exports unchanged.
+SVG): the key resolves to a glyph via a `--icon-<key>` CSS custom property. The
+stored `content` stays clean (the glyph is prepended at render time via the
+vis-timeline `template`), so it round-trips through the editor, the DB, and
+exports unchanged.
 
 Curated key set (defined once in [`src/icons.ts`](src/icons.ts)):
 
@@ -357,19 +357,19 @@ Curated key set (defined once in [`src/icons.ts`](src/icons.ts)):
 `release` · `decision` · `goal` · `info` · `note`
 
 Unknown values are dropped (validated by `normalizeIcon`). The base glyphs are
-Acme neo-icons, defined in the `:root` block of
-[`src/styles/brands.css`](src/styles/brands.css) and inherited by every brand.
+defined in the `:root` block of
+[`src/styles/theme.css`](src/styles/theme.css).
 
 **How to render / extend:**
 
 - **Render:** the glyph is a CSS `mask` on `.item-icon` (see
   [`src/styles/timeline.css`](src/styles/timeline.css)), coloured with
-  `currentColor` — it adapts to the item/brand text colour automatically.
-- **Give a brand its own look:** override any key inside that brand's block,
-  e.g. `[data-brand='default'] { --icon-milestone: url("…"); }`.
+  `currentColor` — it adapts to the item text colour automatically.
+- **Change the icon look:** override any key in your own stylesheet, e.g.
+  `:root { --icon-milestone: url("…"); }`.
 - **Add a new semantic key:** add it to `IconKey` + `TIMELINE_ICONS` in
   `src/icons.ts` (label shown in the editor dropdown) and add a matching
-  `--icon-<key>` to the `:root` set in `brands.css`. It then appears in the edit
+  `--icon-<key>` to the `:root` set in `theme.css`. It then appears in the edit
   form, the `timeline_items.icon` column, and the MCP `add_item`/`update_item` tools.
 
 Icons render on the live viewer, exported HTML, and the read-only Netlify deploy.
@@ -713,7 +713,7 @@ der Default-Connection).
 
 ```bash
 npm run db:import                         # alle
-npm run db:import -- acme/mein-plan     # gezielt
+npm run db:import -- acme/my-plan          # gezielt
 ```
 
 ### Sync-Verhalten
@@ -966,7 +966,7 @@ JIRA call. Because it lives in `metadata`, it round-trips through the
 
 The picker-response parsing is shared by both runtimes in
 `scripts/jira/picker.ts`. Browse-link rendering uses the public, build-time
-`VITE_JIRA_BASE_URL` (default `https://your-org.atlassian.net`).
+`VITE_JIRA_BASE_URL` (empty by default → keys render as plain text).
 
 ## View modes: Timeline / Liste
 
@@ -1042,12 +1042,12 @@ deep-linked and survive reload.
 
 ## URL state
 
-Selected view, opened item, visible time window, milestones-only filter, the
-view mode, and (in `select` brand mode) the brand are encoded in the location
-hash so links can be shared and back/forward navigation works. Format:
+Selected view, opened item, visible time window, milestones-only filter, and the
+view mode are encoded in the location hash so links can be shared and
+back/forward navigation works. Format:
 
 ```
-#view=<id>&item=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&m=1&brand=<name>&mode=list
+#view=<id>&item=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&m=1&mode=list
 ```
 
 Only non-default values are written (`mode` only when `list`). Switching views
@@ -1110,50 +1110,46 @@ npm run build   # static dist
 
 `npm run dev` rebuilds `notes.json` whenever a Markdown file changes.
 
-## Brand switching
+## Theming
 
-CSS custom properties in `src/styles/brands.css`. Body attribute `data-brand="default"` or `data-brand="Acme"` swaps:
+The viewer ships a single neutral theme defined as CSS custom properties in the
+`:root` block of [`src/styles/theme.css`](src/styles/theme.css):
 
-- color tokens (bg, fg, accent, item-bg, item-border, …)
-- typography (`ABCFavorit` vs. `PX Grotesk` + `Tiempos Headline`)
-- mark radius (round vs. square)
+- colour tokens (bg, fg, accent, item-bg, item-border, lane colours, …)
+- typography (`--font-body` / `--font-headline` / `--font-mono`)
+- mark radius (`--mark-radius`)
 
-Brand persists in `localStorage`. Acme fonts must be present at `public/fonts/acme/` (copy from `~/.claude/skills/graphics/fonts/acme/`).
+To recolour or re-type the viewer, override any of these variables in your own
+stylesheet loaded after `theme.css`. There is no runtime brand selector and no
+build flag: the tokens in `theme.css` are the single styling seam.
 
-Two build-time env vars control how the brand selector behaves:
+## Deploy: Netlify
 
-| Var                  | Values                          | Effect                                              |
-| -------------------- | ------------------------------- | --------------------------------------------------- |
-| `VITE_BRAND_MODE`    | `select` (default) \| `fixed`   | `fixed` hides the dropdown and disables persistence |
-| `VITE_DEFAULT_BRAND` | `default` \| `Acme`          | brand applied on first load (and locked in `fixed`) |
-
-## Deploy: Netlify (Acme-internal instance)
-
-A stripped-down deploy lives on Netlify for Acme colleagues. All
-config-as-code lives in [`netlify.toml`](netlify.toml); secrets go into the
-Netlify dashboard.
+A stripped-down static deploy runs on Netlify. Config-as-code lives in
+[`netlify.toml`](netlify.toml); instance-specific values and secrets go in the
+Netlify dashboard (Site settings → Environment variables).
 
 ### What gets deployed
 
-- Sources: `data/acme/*.json` only (`TIMELINES_SOURCES_SUBDIR=Acme`).
+- Sources: scoped to `data/<subdir>/*.json` when `TIMELINES_SOURCES_SUBDIR` is
+  set (dashboard), otherwise all of `data/*.json`.
 - Notes scan disabled (`TIMELINES_STATIC_ONLY=true`); no Markdown-driven views.
-- Brand locked to Acme (`VITE_BRAND_MODE=fixed`, `VITE_DEFAULT_BRAND=Acme`).
 - **Editing** is live when the Supabase env vars are set (see „Supabase als
   Datenquelle → Production-Setup"): the `timelines-api` edge function serves
-  DB-backed Acme timelines editable. Without those vars, the DB read fails and
-  the viewer surfaces an error — there is no static content fallback (see
-  „Prinzip: keine Notfall-/Fallback-Daten").
+  DB-backed timelines editable. Without those vars, the DB read fails and the
+  viewer surfaces an error — there is no static content fallback (see „Prinzip:
+  keine Notfall-/Fallback-Daten").
 
-To add a Acme-visible timeline locally: drop the JSON into `data/acme/`,
+To add a deploy-visible timeline: drop the JSON into the scanned `data/` folder,
 commit, push.
 
 ### Auth gate (Netlify Edge Function)
 
 [`netlify/edge-functions/auth.ts`](netlify/edge-functions/auth.ts) gates every
-request. Pattern mirrors `~/Development/sales-cockpit` (Google OAuth +
-Acme-domain whitelist), but adapted to a static Vite site:
+request with Google OAuth restricted to an allowed-domain whitelist, adapted to a
+static Vite site:
 
-1. `/auth/login` → redirect to Google with `hd=Acme.de`, signed state cookie.
+1. `/auth/login` → redirect to Google with `hd=<allowed domain>`, signed state cookie.
 2. `/auth/callback` → token exchange → `userinfo` → domain check → signed
    session cookie (HMAC-SHA256, `HttpOnly; Secure; SameSite=Lax`).
 3. Any other page navigation without a valid session → 302 to
@@ -1182,7 +1178,7 @@ unset/`false` for local previews. Required runtime env vars:
 | `GOOGLE_CLIENT_ID`      | dashboard              | OAuth web client                                 |
 | `GOOGLE_CLIENT_SECRET`  | dashboard (secret)     | OAuth client secret                              |
 | `AUTH_SECRET`           | dashboard (secret)     | `openssl rand -base64 32`                        |
-| `ALLOWED_EMAIL_DOMAINS` | dashboard              | comma-separated allowed sign-in domains; code default empty (fail-closed). The Acme instance sets its own; the value in `netlify.toml` is build-time only, so this must also be a runtime env var here |
+| `ALLOWED_EMAIL_DOMAINS` | dashboard              | comma-separated allowed sign-in domains; code default empty (fail-closed). Set your own; the auth edge function reads it at runtime, so it must be a runtime env var (not just build-time in `netlify.toml`) |
 
 ### Google OAuth setup (one-time)
 

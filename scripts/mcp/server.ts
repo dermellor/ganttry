@@ -1,7 +1,7 @@
 // Timelines MCP server (stdio).
 //
 // Lets Claude Code read and manipulate DB-backed timelines by talking to the
-// live Acme Timelines deploy. Every read/write goes through the site's
+// live Timelines deploy. Every read/write goes through the site's
 // /api/source(s) endpoints, which hit the timelines-api edge function backed by
 // Supabase (Postgres) — so the DB stays the single source of truth and edits are
 // immediately live.
@@ -110,7 +110,7 @@ async function listSources(): Promise<Array<{ id: string; name?: string; descrip
 }
 
 // Encode each path segment but keep the "/" separators — timeline ids like
-// "acme/<name>" must stay real path segments (encodeURIComponent would turn
+// "<namespace>/<name>" must stay real path segments (encodeURIComponent would turn
 // the slash into %2F, which the /api/source/* route doesn't match → 404).
 function encodeId(id: string): string {
   return id.split('/').map(encodeURIComponent).join('/');

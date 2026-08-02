@@ -34,8 +34,6 @@ export const els = {
   modeTimelineBtn: document.getElementById('mode-timeline') as HTMLButtonElement,
   modeListBtn: document.getElementById('mode-list') as HTMLButtonElement,
   modePricingBtn: document.getElementById('mode-pricing') as HTMLButtonElement,
-  brandControl: document.getElementById('brand-control') as HTMLLabelElement,
-  brandSelect: document.getElementById('brand-select') as HTMLSelectElement,
   milestonesOnly: document.getElementById('milestones-only') as HTMLInputElement,
   presence: document.getElementById('presence') as HTMLDivElement,
   addBtn: document.getElementById('add-btn') as HTMLButtonElement,
@@ -69,9 +67,6 @@ export type ViewMode = 'timeline' | 'list' | 'pricing';
 // past the threshold and the full text comes back. Tunable single knob.
 export const TAG_TEXT_MIN_PX_PER_DAY = 12;
 export const MS_PER_DAY = 1000 * 60 * 60 * 24;
-
-export const BRAND_MODE = (import.meta.env.VITE_BRAND_MODE ?? 'select') as 'select' | 'fixed';
-export const DEFAULT_BRAND = (import.meta.env.VITE_DEFAULT_BRAND ?? 'default') as string;
 
 // While an item form is open we persist at most once per this interval — enough
 // for live collaboration without a DB round-trip per keystroke. Leaving a field
@@ -136,7 +131,6 @@ export interface AppState {
   // Debounce for reactive form edits: coalesces rapid keystrokes into one
   // model update + live rebuild (see scheduleLiveEdit).
   liveEditTimer: ReturnType<typeof setTimeout> | null;
-  currentBrand: string;
   selectedItemId: string | null;
   userWindow: { start: Date; end: Date } | null;
   pendingItem: string | null;
@@ -184,7 +178,6 @@ export const state: AppState = {
   currentUser: null,
   realtimeRefreshTimer: null,
   liveEditTimer: null,
-  currentBrand: DEFAULT_BRAND,
   selectedItemId: null,
   userWindow: null,
   pendingItem: null,
@@ -303,8 +296,5 @@ export function syncUrl(): void {
   }
   if (state.milestonesOnly) urlState.milestones = true;
   if (state.viewMode === 'list') urlState.mode = 'list';
-  if (BRAND_MODE === 'select' && state.currentBrand && state.currentBrand !== DEFAULT_BRAND) {
-    urlState.brand = state.currentBrand;
-  }
   writeUrlState(urlState);
 }

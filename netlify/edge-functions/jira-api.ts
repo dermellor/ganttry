@@ -10,7 +10,7 @@
 //
 // Required env vars (Netlify dashboard):
 //   JIRA_ENABLED     — "true" to activate this proxy
-//   JIRA_BASE_URL    — e.g. https://Acme.atlassian.net
+//   JIRA_BASE_URL    — e.g. https://your-org.atlassian.net
 //   JIRA_EMAIL       — service-account email
 //   JIRA_API_TOKEN   — service-account API token (secret)
 

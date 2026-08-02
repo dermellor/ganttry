@@ -5,20 +5,17 @@
 [build.environment]
   # 22+ so the MCP Function's supabase-js has a native WebSocket (realtime-js).
   NODE_VERSION = "22"
-  # Acme-instance defaults — override per branch in the Netlify UI.
-  TIMELINES_SOURCES_SUBDIR = "Acme"
+  # Skip the Markdown notes scan on the deploy (serve only JSON + DB sources).
   TIMELINES_STATIC_ONLY = "true"
-  VITE_BRAND_MODE = "fixed"
-  VITE_DEFAULT_BRAND = "Acme"
-  # Public base URL for JIRA browse links (not a secret).
-  VITE_JIRA_BASE_URL = "https://your-org.atlassian.net"
-  # Allowed sign-in domains for the auth gate. The code default is empty
-  # (fail-closed), so the Acme instance sets its domains explicitly here.
-  # NOTE: netlify.toml env is build-time; the auth *edge function* reads this at
-  # runtime, so it must also be set as a runtime env var in the Netlify UI.
-  ALLOWED_EMAIL_DOMAINS = "Acme.de,Acme.com"
-  # Tell Netlify's secret scanner that these aren't secrets — their values
-  # legitimately appear in code defaults and docs.
+  # Instance-specific values are NOT committed here — set them per site in the
+  # Netlify dashboard (Site settings → Environment variables):
+  #   TIMELINES_SOURCES_SUBDIR — scope the file-source scan to data/<subdir>/
+  #   VITE_JIRA_BASE_URL       — public base URL for JIRA browse links (not a secret)
+  #   ALLOWED_EMAIL_DOMAINS    — comma-separated allowed sign-in domains for the
+  #                              auth gate (code default is empty → fail-closed).
+  #                              The auth edge function reads this at runtime, so
+  #                              it must be a runtime env var, not just build-time.
+  # Tell Netlify's secret scanner these keys aren't secrets.
   # (Real secrets — GOOGLE_CLIENT_*, AUTH_SECRET — live as runtime-only env vars
   # in the Netlify dashboard, not in this file.)
   SECRETS_SCAN_OMIT_KEYS = "ALLOWED_EMAIL_DOMAINS,AUTH_REQUIRED"

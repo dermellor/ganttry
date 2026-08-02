@@ -19,7 +19,7 @@ import {
 } from '../../../scripts/db/timeline-repo.ts';
 import type { Pricing } from '../../types';
 
-const ID = 'acme/test';
+const ID = 'demo/test';
 
 // Build the normalized rows exactly as replacePricingRows / the backfill do,
 // then reassemble. Returns the round-tripped Pricing.

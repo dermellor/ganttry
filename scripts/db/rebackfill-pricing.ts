@@ -7,7 +7,8 @@ import { replacePricing } from './timeline-repo.ts';
 import type { Pricing } from '../../src/types.ts';
 
 async function main() {
-  const id = process.argv[2] ?? 'acme/example-roadmap';
+  const id = process.argv[2];
+  if (!id) throw new Error('Usage: tsx rebackfill-pricing.ts <timelineId>');
   const sql = getSql();
   if (!sql) throw new Error('No DB connection (set TIMELINES_DATABASE_URL).');
   // Reads the legacy raw `timelines.pricing` jsonb blob (pre-0009 column). Kept

@@ -11,7 +11,7 @@
 // over HTTP/PostgREST — the DEFAULT the Netlify deploy runs on (no raw TCP
 // needed in the Deno edge). BOTH drivers are imported so the bundle carries
 // each; only the resolved one is used. Requests are gated by the signed session
-// cookie (per-user, Acme-domain) or the MCP service token; edits are
+// cookie (per-user, allowed-domain) or the MCP service token; edits are
 // attributed to the logged-in user's email via `updated_by`.
 
 import type { Context, Config } from '@netlify/edge-functions';

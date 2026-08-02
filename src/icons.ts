@@ -1,12 +1,12 @@
-// Curated, brand-agnostic icon set.
+// Curated, semantic icon set.
 //
 // An item stores only a *semantic* key (what the icon means, not how it looks).
-// Each brand resolves that key to its own icon set's glyph via a `--icon-<key>`
-// CSS custom property (see src/styles/icons.css). This keeps the data portable
-// across brands and round-trips cleanly through the DB, editor and exports.
+// Each key resolves to a glyph via a `--icon-<key>` CSS custom property (see
+// src/styles/theme.css). This keeps the data portable and round-trips cleanly
+// through the DB, editor and exports.
 //
-// The base glyphs (in icons.css `:root`) are Acme neo-icons; a brand can
-// override any key with `[data-brand='…'] { --icon-<key>: url(…) }`.
+// The base glyphs live in theme.css `:root`; override any key in your own
+// stylesheet with `:root { --icon-<key>: url(…) }`.
 
 export type IconKey =
   | 'milestone'

@@ -17,8 +17,6 @@ import {
   setStatus,
   syncUrl,
   isEditableView,
-  BRAND_MODE,
-  DEFAULT_BRAND,
   MILESTONES_ONLY_KEY,
   VIEW_MODE_KEY,
   GROUP_BY_KEY,
@@ -80,16 +78,6 @@ async function loadCurrentUser(): Promise<PresenceUser | null> {
   } catch {
     return null;
   }
-}
-
-function applyBrand(brand: string) {
-  document.body.dataset.brand = brand;
-  state.currentBrand = brand;
-  if (BRAND_MODE === 'select') {
-    localStorage.setItem('timelines.brand', brand);
-  }
-  els.brandSelect.value = brand;
-  syncUrl();
 }
 
 async function applyView(viewId: string) {
@@ -170,7 +158,6 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
 
 async function handleExport() {
   if (!state.activeView || !state.activeBuild) return;
-  const brand = document.body.dataset.brand || 'default';
   const original = els.exportBtn.textContent;
   els.exportBtn.disabled = true;
   els.exportBtn.textContent = 'Exportiere…';
@@ -182,7 +169,6 @@ async function handleExport() {
     await exportTimelineHtml({
       view: state.activeView,
       build: { ...state.activeBuild, items: timelineItems(filtered.items), groups: filtered.groups },
-      brand,
     });
   } catch (err) {
     console.error(err);
@@ -218,17 +204,6 @@ async function bootstrap() {
       ? savedView
       : cfg.defaultView;
 
-  let brand: string;
-  if (BRAND_MODE === 'fixed') {
-    brand = DEFAULT_BRAND;
-  } else {
-    brand = urlState.brand ?? localStorage.getItem('timelines.brand') ?? DEFAULT_BRAND;
-  }
-
-  if (BRAND_MODE === 'fixed') {
-    els.brandControl.remove();
-  }
-
   if (urlState.milestones != null) {
     state.milestonesOnly = !!urlState.milestones;
     localStorage.setItem(MILESTONES_ONLY_KEY, String(state.milestonesOnly));
@@ -252,7 +227,6 @@ async function bootstrap() {
   }
 
   state.suppressUrlSync = true;
-  applyBrand(brand);
   await applyView(initialView);
   applyViewMode(state.viewMode, { persist: false });
   state.suppressUrlSync = false;
@@ -292,7 +266,6 @@ async function bootstrap() {
     if (state.viewMode === 'list') renderListView();
     else applyGrouping();
   });
-  els.brandSelect.addEventListener('change', () => applyBrand(els.brandSelect.value));
   els.detailClose.addEventListener('click', () => {
     commitItemForm();
     state.selectedItemId = null;
@@ -322,11 +295,6 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
   if (!state.config) return;
   state.suppressUrlSync = true;
   try {
-    if (BRAND_MODE === 'select') {
-      const brand = incoming.brand ?? DEFAULT_BRAND;
-      if (brand !== state.currentBrand) applyBrand(brand);
-    }
-
     const wantMilestones = !!incoming.milestones;
     if (wantMilestones !== state.milestonesOnly) {
       state.milestonesOnly = wantMilestones;

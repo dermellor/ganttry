@@ -16,7 +16,7 @@ import {
   ConflictError,
 } from './timeline-repo.ts';
 
-const SONA = 'acme/example-roadmap';
+const LIVE_ID = process.env.PRICING_VERIFY_ID ?? '';
 const TEST = '__pricing_verify_tmp';
 
 function sortDeep(v: unknown): unknown {
@@ -51,14 +51,15 @@ const canon = (v: unknown) => JSON.stringify(sortDeep(v));
 
 async function main() {
   const oldBlobPath = process.argv[2];
+  if (!LIVE_ID) throw new Error('Set PRICING_VERIFY_ID to the timeline id to verify.');
   const sql = getSql();
   if (!sql) throw new Error('No DB connection — check TIMELINES_DATABASE_URL env.');
 
   // 1) Backfill correctness: new assembled == old blob (normalized).
-  const nu = await getPublicPricing(sql, SONA);
-  if (!nu) throw new Error('getPublicPricing(sona) returned null after migration!');
+  const nu = await getPublicPricing(sql, LIVE_ID);
+  if (!nu) throw new Error(`getPublicPricing(${LIVE_ID}) returned null after migration!`);
   console.log(
-    `[assemble] sona: ${nu.pricing.features.length} features, ${nu.pricing.tiers.length} tiers, ` +
+    `[assemble] ${LIVE_ID}: ${nu.pricing.features.length} features, ${nu.pricing.tiers.length} tiers, ` +
       `${nu.pricing.highlights?.length ?? 0} highlights, ${nu.pricing.versions?.length ?? 0} versions`,
   );
   if (oldBlobPath) {

@@ -1,13 +1,13 @@
 // MCP OAuth 2.1 authorization server for the remote MCP (/mcp), federating
-// identity to Google (Acme domain). Lets Claude Code authenticate each
-// colleague individually via browser login — no shared token.
+// identity to Google (restricted to the allowed sign-in domains). Lets Claude
+// Code authenticate each user individually via browser login — no shared token.
 //
 // Flow (per the MCP Authorization spec):
 //   /mcp 401 → WWW-Authenticate points here
 //   GET /.well-known/oauth-protected-resource   → resource + authorization_servers
 //   GET /.well-known/oauth-authorization-server  → endpoint metadata
 //   POST /mcp-oauth/register                     → dynamic client registration (PKCE, public)
-//   GET  /mcp-oauth/authorize                    → validate + redirect to Google (hd=Acme.de)
+//   GET  /mcp-oauth/authorize                    → validate + redirect to Google (hd=<allowed domain>)
 //   GET  /mcp-oauth/google-callback              → verify Google identity → our auth code
 //   POST /mcp-oauth/token                        → verify PKCE → issue access token (opaque, HMAC-signed)
 //
