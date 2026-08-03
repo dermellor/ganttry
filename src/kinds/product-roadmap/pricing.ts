@@ -108,18 +108,22 @@ export function isModifiedFeature(
   return hasVersionDescription || itemsForFeature(feature.id, items, selected).length > 0;
 }
 
-// A feature needs a work warning when it was just introduced at the pinned
-// version (isNewFeature) but no roadmap item targets it there yet — i.e. it
-// shipped on the price list without any tracked work behind it. Like New /
-// Modified, this needs a pinned, non-baseline version ("Alle" → none, since
-// isNewFeature itself never fires there).
+// A feature needs a work warning when the pinned version marks it as New OR
+// Modified but no roadmap item targets it there — i.e. it shipped on the price
+// list (freshly introduced, or documented as changed via a version description)
+// without any tracked work behind it. A Modified feature that is modified BY a
+// work item never warns (it has one by definition); only a description-only
+// change trips the warning. Like New/Modified, this needs a pinned version
+// ("Alle" → none, since neither badge fires there).
 export function needsWorkWarning(
   feature: PricingFeature,
   items: TimelineFileItem[],
   versions: string[],
   selected: string | null,
 ): boolean {
-  if (!isNewFeature(feature, versions, selected)) return false;
+  const flagged =
+    isNewFeature(feature, versions, selected) || isModifiedFeature(feature, items, versions, selected);
+  if (!flagged) return false;
   return itemsForFeature(feature.id, items, selected).length === 0;
 }
 

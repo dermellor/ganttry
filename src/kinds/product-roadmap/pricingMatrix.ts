@@ -112,7 +112,7 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
             workItems.length
               ? workDotHtml(workItems)
               : needsWorkWarning(f, items, versions, selectedVersion)
-                ? '<span class="pm-work-warn" title="Neu in dieser Version, aber noch keine Roadmap-Arbeit verknüpft" aria-label="Warnung: keine Roadmap-Arbeit verknüpft">⚠</span>'
+                ? '<span class="pm-work-warn" title="Neu bzw. geändert in dieser Version, aber noch keine Roadmap-Arbeit verknüpft" aria-label="Warnung: keine Roadmap-Arbeit verknüpft">⚠</span>'
                 : ''
           }</td>`
         : '';

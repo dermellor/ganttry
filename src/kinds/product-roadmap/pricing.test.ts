@@ -431,6 +431,24 @@ test('needsWorkWarning: New feature at the pinned version with no linked work', 
   assert.equal(needsWorkWarning(pre, [], V, '2.0'), false, 'pre-existing feature is never New, so never warns');
 });
 
+test('needsWorkWarning: Modified feature (description-only) with no linked work warns', () => {
+  const V = ['1.0', '2.0'];
+  // Pre-existing feature documented as changed in 2.0 via a version description,
+  // but no roadmap item targets it there → Modified without work → warn.
+  const noteOnly: PricingFeature = { id: 'crm', name: 'CRM', descriptionByVersion: { '2.0': 'Überarbeitet.' } };
+  assert.equal(needsWorkWarning(noteOnly, [], V, '2.0'), true, 'modified via description, no work → warn');
+  assert.equal(needsWorkWarning(noteOnly, [], V, '1.0'), false, 'no change at 1.0 → no warning');
+  assert.equal(needsWorkWarning(noteOnly, [], V, null), false, '"Alle" never warns');
+  // A feature introduced earlier whose change at 2.0 IS a work item → not a
+  // warning (it has tracked work by definition).
+  const worked: PricingFeature = { id: 'sms', name: 'SMS', version: '1.0' };
+  const work2: TimelineFileItem[] = [
+    { id: 'y', content: 'Y', status: 'Doing', metadata: { featureIds: ['sms'], featureVersion: '2.0' } },
+  ];
+  assert.equal(isModifiedFeature(worked, work2, V, '2.0'), true, 'modified by a work item at 2.0');
+  assert.equal(needsWorkWarning(worked, work2, V, '2.0'), false, 'modified by work → has work → no warning');
+});
+
 test('resolveVersionedText: no overrides → base text unchanged', () => {
   const V = ['1.0', '2.0', '3.0'];
   assert.equal(resolveVersionedText('Termine vereinbaren', undefined, V, '1.0'), 'Termine vereinbaren');
