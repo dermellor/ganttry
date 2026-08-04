@@ -13,7 +13,7 @@ import {
 import { isRealtimeEnabled, watchTimeline, joinPresence } from './realtime';
 import { renderPresence } from './presence';
 import { state, els, setStatus, PERSIST_THROTTLE_MS } from './state';
-import { renderTimeline } from './render';
+import { refreshActiveSourceInPlace, renderTimeline } from './render';
 import { applyItemForm, refreshItemAudit } from './itemForm';
 
 export function schedulePersist(): void {
@@ -219,10 +219,22 @@ export function scheduleRemoteRefresh(): void {
       // the next realtime event or user action will retry.
       if (hasUnsavedChanges()) return;
     }
-    if (!state.activeView) return;
+    const view = state.activeView;
+    if (!view) return;
+    // Patch the live timeline where we can: the full render path destroys and
+    // re-creates the vis-timeline, which flashes the whole view — once per remote
+    // edit, so a collaborator typing makes it flicker continuously.
+    try {
+      if (await refreshActiveSourceInPlace(view)) return;
+    } catch (err) {
+      // Reload failed (offline, 409/500). Fall through to the full rebuild,
+      // which surfaces the error in the status line.
+      console.error(err);
+    }
+    if (state.activeView?.id !== view.id) return;
     const win = state.timeline?.getWindow();
     if (win) state.pendingWindow = { start: new Date(win.start), end: new Date(win.end) };
-    void renderTimeline(state.activeView);
+    void renderTimeline(view);
   }, 400);
 }
 

@@ -831,6 +831,17 @@ hat. Daher bewusst opt-in — auf der gated Netlify-Site nur setzen, wenn das
 akzeptabel ist. Writes bleiben serverseitig (Service-Key). Ohne diese Vars
 funktioniert alles weiter, fremde Änderungen erscheinen dann erst beim Reload.
 
+**Fremde Änderungen werden in-place angewendet, nie über den Vollaufbau.**
+`scheduleRemoteRefresh` lädt die Quelle neu und gibt sie über
+`refreshActiveSourceInPlace` ([`src/render.ts`](src/render.ts)) in die lebende
+vis-Instanz (`rebuildAndApply` → DataSet-Diff). Der Weg über `renderTimeline`
+zerstört Timeline plus Pfeil- und Phasen-Overlay und baut sie neu — der Container
+ist dabei kurz leer, die Ansicht flackert also bei *jedem* Fremd-Edit; da ein
+tippender Kollege alle `PERSIST_THROTTLE_MS` schreibt, ergab das ein
+Dauerflackern. `renderTimeline` bleibt Fallback für das, was in-place nicht
+darstellbar ist (View gewechselt, erstes/letztes Phase- oder Dependency-Overlay
+kommt hinzu bzw. fällt weg).
+
 #### Presence (wer ist online)
 
 Der Header zeigt oben rechts Avatare aller, die dieselbe **editierbare

@@ -200,9 +200,9 @@ export function filterBuildForDisplay(build: BuildResult): {
   return { items, groups };
 }
 
-export function rebuildAndApply(): void {
+export function rebuildAndApply(prebuilt?: BuildResult): void {
   if (!state.activeView || !state.activeSourceFile || !timeline) return;
-  const built = buildFromJson(state.activeView, state.activeSourceFile);
+  const built = prebuilt ?? buildFromJson(state.activeView, state.activeSourceFile);
   state.activeBuild = built;
   applyBuildToDataSets();
   // buildFromJson packs lanes with zero-width points; restore the label-width
@@ -211,6 +211,46 @@ export function rebuildAndApply(): void {
   if (arrows) arrows.setDependencies(built.dependencies);
   if (phaseBand) phaseBand.setPhases(built.phases);
   setStatus(statusFor(state.activeView, built));
+}
+
+/**
+ * Reload the active source from the server and apply it to the *live* timeline,
+ * instead of rebuilding the view from scratch. Used for remote changes.
+ *
+ * `renderTimeline` destroys the vis-timeline plus the arrows/phase-band overlays
+ * and re-creates them (including their 100/500 ms retry redraws), so the
+ * container is briefly empty and the whole view flashes. A collaborator editing
+ * a form writes every `PERSIST_THROTTLE_MS`, which turned that into a continuous
+ * flicker for everyone else watching the same timeline.
+ *
+ * Returns `false` when the in-place path can't represent the change — the caller
+ * then falls back to the full rebuild.
+ */
+export async function refreshActiveSourceInPlace(view: View): Promise<boolean> {
+  if (!view.source || !timeline) return false;
+  if (state.activeView?.id !== view.id || state.activeSourceId !== view.source.id) return false;
+
+  const loaded = await loadSource(view.source);
+  // The await gave the user time to switch away; the reload is stale then.
+  if (state.activeView?.id !== view.id || !timeline) return false;
+
+  const file = loaded.file;
+  ensureItemIds(file); // assigned in memory only — saved on first edit
+  const built = buildFromJson(view, file);
+
+  // The overlays are created once per timeline instance, and the ribbon also
+  // needs the container's phase-band padding. Making one appear or disappear is
+  // the full render path's job — rare, since it takes a remote edit that adds
+  // the first or removes the last phase / dependency.
+  if (built.phases.length > 0 !== Boolean(phaseBand)) return false;
+  if (built.dependencies.size > 0 !== Boolean(arrows)) return false;
+
+  state.activeSourceFile = file;
+  state.activeSourceEditable = loaded.editable;
+  state.activeSourceLive = loaded.live;
+  snapshotSaved();
+  rebuildAndApply(built);
+  return true;
 }
 
 // Client-side timeline validation: vis-timeline needs a start to position an
