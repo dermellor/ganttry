@@ -41,6 +41,9 @@
 }
 
 .item-form .form-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font: inherit;
   font-size: 12px;
   color: var(--fg-muted, #646464);
@@ -62,6 +65,18 @@
   color: var(--accent, #2f0d5b);
   border-bottom-color: var(--accent, #2f0d5b);
   font-weight: 500;
+}
+
+/* Glyph stays a touch lighter than the label so the icon reads as support,
+   not as a second focal point. The active tab shows it at full strength. */
+.item-form .form-tab svg {
+  display: block;
+  flex: none;
+  opacity: 0.7;
+}
+
+.item-form .form-tab[aria-selected='true'] svg {
+  opacity: 1;
 }
 
 .item-form .form-tab:focus-visible {

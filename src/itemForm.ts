@@ -68,12 +68,38 @@ function buildGroupOptions(
 // keeps seeing every field and applyItemForm needs no knowledge of the tabs.
 // The pinned Title sits above the tabstrip; the delete action + audit footer
 // below it, so both stay reachable from any tab.
+// Tab glyphs: inline SVG in the same style as the header's mode toggle
+// (24-unit viewBox, currentColor stroke), so they inherit the tab's active /
+// muted colour. Decorative — the label carries the meaning, hence aria-hidden.
+const TAB_ICONS = {
+  // calendar
+  time:
+    '<rect x="3" y="5" width="18" height="16" rx="2" /><line x1="3" y1="10" x2="21" y2="10" />' +
+    '<line x1="8" y1="3" x2="8" y2="7" /><line x1="16" y1="3" x2="16" y2="7" />',
+  // sliders
+  props:
+    '<line x1="3" y1="8" x2="21" y2="8" /><line x1="3" y1="16" x2="21" y2="16" />' +
+    '<circle cx="9" cy="8" r="2.4" /><circle cx="15" cy="16" r="2.4" />',
+  // chain link
+  rel:
+    '<path d="M15 7h2a5 5 0 0 1 0 10h-2" /><path d="M9 17H7A5 5 0 0 1 7 7h2" />' +
+    '<line x1="8.5" y1="12" x2="15.5" y2="12" />',
+} as const;
+
 const FORM_TABS = [
   { id: 'time', label: 'Date & Time' },
   { id: 'props', label: 'Properties' },
   { id: 'rel', label: 'Relationships' },
 ] as const;
 type FormTabId = (typeof FORM_TABS)[number]['id'];
+
+function tabIconHtml(id: FormTabId): string {
+  return (
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"' +
+    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    `${TAB_ICONS[id]}</svg>`
+  );
+}
 
 // Remembered across form rebuilds so clicking through items keeps the tab the
 // user is working in.
@@ -85,7 +111,7 @@ function tabStripHtml(): string {
       `<button type="button" role="tab" class="form-tab" data-tab="${id}"` +
       ` id="f-tab-${id}" aria-controls="f-panel-${id}"` +
       ` aria-selected="${id === activeFormTab}"${id === activeFormTab ? '' : ' tabindex="-1"'}>` +
-      `${escapeHtml(label)}</button>`,
+      `${tabIconHtml(id)}<span>${escapeHtml(label)}</span></button>`,
   ).join('');
   return `<div class="form-tabs" role="tablist" aria-label="Felder">${tabs}</div>`;
 }
