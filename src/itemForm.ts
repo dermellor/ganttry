@@ -62,6 +62,69 @@ function buildGroupOptions(
   return out.join('');
 }
 
+// ---- form tabs -------------------------------------------------------------
+// The item form grew past what one flat column reads well as, so its fields are
+// split into three tabs. All panels stay in the DOM (just `hidden`), so FormData
+// keeps seeing every field and applyItemForm needs no knowledge of the tabs.
+// The pinned Title sits above the tabstrip; the delete action + audit footer
+// below it, so both stay reachable from any tab.
+const FORM_TABS = [
+  { id: 'time', label: 'Date & Time' },
+  { id: 'props', label: 'Properties' },
+  { id: 'rel', label: 'Relationships' },
+] as const;
+type FormTabId = (typeof FORM_TABS)[number]['id'];
+
+// Remembered across form rebuilds so clicking through items keeps the tab the
+// user is working in.
+let activeFormTab: FormTabId = 'time';
+
+function tabStripHtml(): string {
+  const tabs = FORM_TABS.map(
+    ({ id, label }) =>
+      `<button type="button" role="tab" class="form-tab" data-tab="${id}"` +
+      ` id="f-tab-${id}" aria-controls="f-panel-${id}"` +
+      ` aria-selected="${id === activeFormTab}"${id === activeFormTab ? '' : ' tabindex="-1"'}>` +
+      `${escapeHtml(label)}</button>`,
+  ).join('');
+  return `<div class="form-tabs" role="tablist" aria-label="Felder">${tabs}</div>`;
+}
+
+function panelHtml(id: FormTabId, fields: string): string {
+  return (
+    `<div class="form-panel" role="tabpanel" id="f-panel-${id}" data-tab="${id}"` +
+    ` aria-labelledby="f-tab-${id}"${id === activeFormTab ? '' : ' hidden'}>${fields}</div>`
+  );
+}
+
+function wireFormTabs(form: HTMLFormElement): void {
+  const tabs = [...form.querySelectorAll<HTMLButtonElement>('.form-tab')];
+  const select = (id: FormTabId) => {
+    activeFormTab = id;
+    for (const tab of tabs) {
+      const on = tab.dataset.tab === id;
+      tab.setAttribute('aria-selected', String(on));
+      if (on) tab.removeAttribute('tabindex');
+      else tab.tabIndex = -1;
+    }
+    for (const panel of form.querySelectorAll<HTMLElement>('.form-panel')) {
+      panel.hidden = panel.dataset.tab !== id;
+    }
+  };
+  for (const tab of tabs) {
+    tab.addEventListener('click', () => select(tab.dataset.tab as FormTabId));
+    tab.addEventListener('keydown', (e) => {
+      const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (!step) return;
+      e.preventDefault();
+      const i = tabs.indexOf(tab);
+      const next = tabs[(i + step + tabs.length) % tabs.length];
+      select(next.dataset.tab as FormTabId);
+      next.focus();
+    });
+  }
+}
+
 export function showItemForm(
   item: TimelineFileItem & { id?: string },
   opts?: { focusTitle?: boolean },
@@ -105,6 +168,10 @@ export function showItemForm(
         <label for="f-content">Title</label>
         <input id="f-content" name="content" value="${escapeHtml(item.content ?? '')}" />
       </div>
+      ${tabStripHtml()}
+      ${panelHtml(
+        'time',
+        `
       <div class="field">
         <label for="f-start">Start</label>
         <input id="f-start" name="start" type="date" value="${isoDateOnly(item.start)}" />
@@ -118,10 +185,6 @@ export function showItemForm(
         <input id="f-duration" name="duration" value="${escapeHtml(typeof item.duration === 'string' ? item.duration : item.duration != null ? String(item.duration) : '')}" placeholder="nur ohne End-Datum" />
       </div>
       <div class="field">
-        <label for="f-group">Group</label>
-        <select id="f-group" name="group">${groupOptions}</select>
-      </div>
-      <div class="field">
         <label for="f-type">Type</label>
         <select id="f-type" name="type">
           ${[
@@ -132,6 +195,20 @@ export function showItemForm(
             ['box', 'Markierung'],
           ].map(([t, label]) => `<option value="${t}"${(item.type ?? '') === t ? ' selected' : ''}>${label}</option>`).join('')}
         </select>
+      </div>`,
+      )}
+      ${panelHtml(
+        'props',
+        `
+      <div class="field">
+        <label for="f-group">Group</label>
+        <select id="f-group" name="group">${groupOptions}</select>
+      </div>
+      <div class="field">
+        <label for="f-status">Status</label>
+        <select id="f-status" name="status">
+          ${ITEM_STATUSES.map(({ key, label }) => `<option value="${key}"${statusOrDefault(item.status) === key ? ' selected' : ''}>${label}</option>`).join('')}
+        </select>
       </div>
       <div class="field">
         <label for="f-icon">Icon</label>
@@ -141,23 +218,13 @@ export function showItemForm(
         </select>
       </div>
       <div class="field">
-        <label for="f-status">Status</label>
-        <select id="f-status" name="status">
-          ${ITEM_STATUSES.map(({ key, label }) => `<option value="${key}"${statusOrDefault(item.status) === key ? ' selected' : ''}>${label}</option>`).join('')}
-        </select>
+        <label for="f-owner">Owner</label>
+        <input id="f-owner" name="owner" value="${escapeHtml(owner)}" />
       </div>
       <div class="field full">
         <label>Body</label>
         <div data-role="body-editor"></div>
         <textarea id="f-body" name="body" hidden>${escapeHtml(item.body ?? '')}</textarea>
-      </div>
-      <div class="field full deps-field">
-        <label for="f-deps">Depends on <small>(Einträge verknüpfen)</small></label>
-        <div class="deps-chips" data-role="deps-chips"></div>
-        <div class="deps-suggest">
-          <input id="f-deps" type="text" autocomplete="off" placeholder="Eintrag suchen…" />
-          <ul class="deps-suggest-list" data-role="deps-list" hidden></ul>
-        </div>
       </div>
       <div class="field full tags-field">
         <label for="f-tags">Tags <small>(farbige Marker)</small></label>
@@ -168,18 +235,6 @@ export function showItemForm(
         </div>
       </div>
       ${renderCustomFieldsHtml(metadata)}
-      <div class="field full jira-field">
-        <label for="f-jira">JIRA <small>(Tickets verlinken)</small></label>
-        <div class="jira-chips" data-role="jira-chips"></div>
-        <div class="jira-suggest">
-          <input id="f-jira" type="text" autocomplete="off" placeholder="Ticket suchen oder Key eingeben (z. B. PROJ-123)…" />
-          <ul class="jira-suggest-list" data-role="jira-list" hidden></ul>
-        </div>
-      </div>
-      <div class="field">
-        <label for="f-owner">Owner</label>
-        <input id="f-owner" name="owner" value="${escapeHtml(owner)}" />
-      </div>
       <div class="field">
         <label for="f-id">ID <small>(read-only)</small></label>
         <input id="f-id" name="id" value="${escapeHtml(id)}" readonly />
@@ -187,7 +242,28 @@ export function showItemForm(
       <div class="field full meta-json">
         <label for="f-meta">Other metadata (JSON)</label>
         <textarea id="f-meta" name="metadata" rows="3" placeholder='{"key": "value"}'>${escapeHtml(metaJson)}</textarea>
+      </div>`,
+      )}
+      ${panelHtml(
+        'rel',
+        `
+      <div class="field full deps-field">
+        <label for="f-deps">Depends on <small>(Einträge verknüpfen)</small></label>
+        <div class="deps-chips" data-role="deps-chips"></div>
+        <div class="deps-suggest">
+          <input id="f-deps" type="text" autocomplete="off" placeholder="Eintrag suchen…" />
+          <ul class="deps-suggest-list" data-role="deps-list" hidden></ul>
+        </div>
       </div>
+      <div class="field full jira-field">
+        <label for="f-jira">JIRA <small>(Tickets verlinken)</small></label>
+        <div class="jira-chips" data-role="jira-chips"></div>
+        <div class="jira-suggest">
+          <input id="f-jira" type="text" autocomplete="off" placeholder="Ticket suchen oder Key eingeben (z. B. PROJ-123)…" />
+          <ul class="jira-suggest-list" data-role="jira-list" hidden></ul>
+        </div>
+      </div>`,
+      )}
       <div class="form-actions">
         <button type="button" class="btn-danger" data-action="delete">Löschen</button>
       </div>
@@ -223,6 +299,7 @@ export function showItemForm(
     deleteItem(id);
   });
 
+  wireFormTabs(form);
   wireBodyEditor(form);
   wireJiraAutosuggest(form);
   wireDepsAutosuggest(form, id);

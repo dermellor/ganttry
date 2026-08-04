@@ -28,6 +28,58 @@
   display: none;
 }
 
+/* Tabbed field groups (item form): an underline tabstrip plus one panel per
+   tab. Inactive panels stay in the DOM (hidden) so FormData still sees every
+   field — the tabs are purely a layout concern. Each panel repeats the form's
+   two-column grid so `.field.full` keeps spanning. */
+.item-form .form-tabs {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+  border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+}
+
+.item-form .form-tab {
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg-muted, #646464);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 7px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.1s ease, border-color 0.1s ease;
+}
+
+.item-form .form-tab:hover:not([aria-selected='true']) {
+  color: var(--fg, #2c3333);
+}
+
+.item-form .form-tab[aria-selected='true'] {
+  color: var(--accent, #2f0d5b);
+  border-bottom-color: var(--accent, #2f0d5b);
+  font-weight: 500;
+}
+
+.item-form .form-tab:focus-visible {
+  outline: 2px solid var(--accent, #2f0d5b);
+  outline-offset: -2px;
+}
+
+.item-form .form-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.item-form .form-panel[hidden] {
+  display: none;
+}
+
 /* Point selected: end/duration still editable, just visually de-emphasised. */
 .item-form .field.is-muted {
   opacity: 0.6;

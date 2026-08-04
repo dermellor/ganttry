@@ -937,7 +937,22 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
 
 - **Drag** an item left/right to move start, drag the right edge to resize, drag vertically to switch group. Persists on drop.
 - **Double-click** on empty timeline space to add a new item (defaults: 1-week duration, current group, content "Neuer Eintrag"). Form opens for further edits. The **+ Eintrag** toolbar button (editable views only) does the same, placing the item at the centre of the visible window. In **list mode** a new item (toolbar or per-section button) is created **date-less** — empty start/end/duration — so it starts as a clean row to fill in via the form; it stays list-only until a start is set.
-- **Click** an item to open the edit form in the side panel: title, start/end, duration, group, type, body (Markdown), dependencies, tags, owner, plus a free-form metadata JSON box. Save writes back; Delete removes the item.
+- **Click** an item to open the edit form in the side panel. The fields are split
+  across three tabs ([`src/itemForm.ts`](src/itemForm.ts), `FORM_TABS`), with the
+  Title input pinned above the tabstrip and the Delete button + audit footer below
+  it, so both stay reachable from any tab:
+  - **Date & Time** — start, end, duration, type (type governs the temporal shape
+    and mutes end/duration for a Meilenstein, so it sits with the dates).
+  - **Properties** — group, status, icon, owner, body (Markdown), tags, the
+    per-timeline custom fields, the read-only ID, and the free-form metadata JSON
+    box.
+  - **Relationships** — dependencies (`dependsOn`) and JIRA links.
+
+  All panels stay in the DOM (inactive ones just `hidden`), so `FormData` keeps
+  seeing every field and `applyItemForm` / the persist diff need no knowledge of
+  the tabs. The chosen tab is remembered across item switches (module-level
+  `activeFormTab`, not persisted across reloads). Save writes back; Delete removes
+  the item.
 - **Depends on** is a title-autosuggest field: type to search the current timeline's items by title (or id), pick to link a dependency (rendered as a removable chip). Stored as `metadata.dependsOn` IDs — the chips just show the target's title.
 - **Tags** is a chip editor with autosuggest: type to match tags already used in the timeline, or type a new label and press Enter to create one. Each chip carries its resolved colour and a remove button. Stored as `metadata.tags` (string[]); saving migrates any legacy singular `metadata.tag` into the array.
 - **Phases** render as a ribbon along the top. Drag a segment to move it, drag either edge to resize (snaps to whole days, min. 1 day), and click it (without dragging) to open the phase form in the side panel: title, start/end, duration, icon, colour. Persists on drop / Save; Delete removes the phase.
