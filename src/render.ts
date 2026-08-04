@@ -462,9 +462,10 @@ export async function renderTimeline(view: View) {
       lastH = h;
       timeline?.setOptions({ height: `${h}px` });
     }
-    // Panel open/close keeps px/day constant synchronously via withPreservedZoom;
-    // here we only re-evaluate tag-density after any width change. A width change
-    // also shifts px/day, so re-pack point-label lanes too.
+    // The detail/edit panel is an overlay now, so opening it no longer changes
+    // the timeline width and this observer stays quiet for it. It still fires on
+    // real width changes (window resize), which shift px/day — so re-evaluate
+    // tag-density and re-pack point-label lanes.
     updateTagDensity();
     scheduleRepack();
   });

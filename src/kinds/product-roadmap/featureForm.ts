@@ -8,7 +8,7 @@
 import { escapeHtml } from '../../buildItems';
 import { createMarkdownEditor } from '../../wysiwyg';
 import type { PricingFeature } from '../../types';
-import { state, els, setStatus, withPreservedZoom } from '../../state';
+import { state, els, setStatus } from '../../state';
 import { apiUpdateFeature, apiDeleteFeature, ConflictError } from '../../editor';
 import { hideDetail } from '../../detailPanel';
 import { renderPricingView } from './pricingMatrix';
@@ -183,9 +183,8 @@ export function showFeatureForm(featureId: string): void {
     });
   }
 
-  withPreservedZoom(() => {
-    els.detail.hidden = false;
-  });
+  // Pricing view has no timeline behind the overlay, so just show the panel.
+  els.detail.hidden = false;
 }
 
 async function saveFeatureFromForm(featureId: string, form: HTMLFormElement): Promise<void> {

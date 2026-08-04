@@ -7,7 +7,8 @@ import { isoDateOnly } from './editor';
 import type { PhaseEdit } from './phaseBand';
 import { describePhaseOverlap, findPhaseOverlap } from './phaseOverlap';
 import type { TimelinePhase } from './types';
-import { state, els, setStatus, withPreservedZoom } from './state';
+import { state, els, setStatus, revealBesidePanel } from './state';
+import { parseLocalDay, durationToMs } from './date';
 import { rebuildAndApply } from './render';
 import { schedulePersist } from './persistence';
 import { hideDetail } from './detailPanel';
@@ -95,10 +96,19 @@ export function showPhaseForm(srcIndex: number): void {
     deletePhase(srcIndex);
   });
 
-  withPreservedZoom(() => {
-    els.detail.hidden = false;
-  });
-  setTimeout(() => state.timeline?.redraw(), 0);
+  els.detail.hidden = false;
+  // The overlay panel can cover a phase pinned to the right; pan it clear if the
+  // whole phase would sit behind the panel.
+  if (phase.start) {
+    const startMs = parseLocalDay(phase.start).getTime();
+    let endMs: number | undefined;
+    if (phase.end) endMs = parseLocalDay(phase.end).getTime();
+    else if (phase.duration != null) {
+      const d = durationToMs(phase.duration);
+      if (d) endMs = startMs + d;
+    }
+    revealBesidePanel(startMs, endMs);
+  }
 }
 
 function savePhaseFromForm(srcIndex: number, form: HTMLFormElement): void {

@@ -24,7 +24,8 @@ import {
 } from './jira';
 import type { TimelineFileItem } from './types';
 import { assignableLeaves, parentGroupIds } from './groupHierarchy';
-import { state, els, setStatus, withPreservedZoom } from './state';
+import { state, els, setStatus, revealBesidePanel } from './state';
+import { parseLocalDay, durationToMs } from './date';
 import { commitItemForm, scheduleLiveEdit, schedulePersist } from './persistence';
 import { rebuildAndApply } from './render';
 import { hideDetail } from './detailPanel';
@@ -332,9 +333,7 @@ export function showItemForm(
   wireTagsAutosuggest(form);
   wireCustomFields(form);
 
-  withPreservedZoom(() => {
-    els.detail.hidden = false;
-  });
+  els.detail.hidden = false;
   // Switching items commits the previous form, whose rebuildAndApply reloads the
   // DataSet (dropping the selection) and re-selects the *old* item. Re-assert the
   // selection on the item we're actually showing so the mark follows the sidebar.
@@ -343,7 +342,17 @@ export function showItemForm(
   } catch {
     /* item may be filtered out of the current view */
   }
-  setTimeout(() => state.timeline?.redraw(), 0);
+  // The overlay panel can cover a right-edge item; pan it clear if needed.
+  if (item.start) {
+    const startMs = parseLocalDay(item.start).getTime();
+    let endMs: number | undefined;
+    if (item.end) endMs = parseLocalDay(item.end).getTime();
+    else if (item.duration != null) {
+      const d = durationToMs(item.duration);
+      if (d) endMs = startMs + d;
+    }
+    revealBesidePanel(startMs, endMs);
+  }
 
   // Freshly-created items open with the placeholder title pre-selected, so the
   // user can just start typing to replace "Neuer Eintrag".

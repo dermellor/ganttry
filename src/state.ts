@@ -208,78 +208,49 @@ export function setStatus(text: string): void {
   els.status.textContent = text;
 }
 
-// Run a layout change that resizes the timeline horizontally (opening/closing
-// the detail panel shrinks/grows it) while keeping the zoom factor (px/day)
-// constant. Without this, vis-timeline keeps the same time window in the new
-// width, squeezing every item into a narrower/wider box — the view visibly
-// "jumps". We anchor the left edge and recompute the visible range so px/day is
-// unchanged: every date keeps its exact horizontal pixel position, only the
-// revealed span at the right edge changes.
+// The detail/edit panel is an overlay (see detail.css): opening it no longer
+// resizes the timeline, so vis-timeline never re-fits and nothing on the bars
+// moves — the zoom-preserving compensation this used to need is gone.
 //
-// It runs synchronously — reading clientWidth after the toggle forces a layout,
-// so the corrected window is set before the browser paints. Doing it here rather
-// than reacting in a ResizeObserver avoids the one-frame flash where vis would
-// otherwise paint the old window at the new width first.
-export function withPreservedZoom(toggle: () => void): void {
+// The one thing the overlay *does* cost is that an item near the right edge can
+// end up behind the panel. When we open the panel for a specific item, pan the
+// window horizontally so that item stays in the visible area to the left of the
+// overlay. This keeps the zoom (the span is unchanged, only shifted) and is a
+// no-op whenever the item is already clear of the panel.
+export function revealBesidePanel(startMs: number, endMs?: number): void {
   const tl = state.timeline;
-  if (!tl) {
-    toggle();
-    return;
-  }
-  // Time→pixel mapping is driven by the *center* panel — the container minus the
-  // fixed left group-label column (and scrollbar/borders). We must preserve
-  // px/day against that center width, not the whole container, or a few px of
-  // drift remain (the label column doesn't shrink with the panel).
-  //
-  // But the center panel is sized by vis-timeline's own JS during its redraw, so
-  // reading its clientWidth right after the toggle still reports the *old* width
-  // (the redraw hasn't run yet) — a no-op that lets the later redraw rescale and
-  // jump. The container, by contrast, is CSS-grid-driven and updates synchronously
-  // on a forced reflow. So we read the container synchronously and derive the
-  // center width from it by subtracting the label column `L`, measured before the
-  // toggle where both widths are consistent (L stays constant when the side panel
-  // opens/closes — only the center width absorbs the change).
+  if (!tl || state.viewMode === 'list') return;
   const center = els.timeline.querySelector<HTMLElement>('.vis-panel.vis-center');
-  const oldContainer = els.timeline.clientWidth;
-  const oldCenter = center?.clientWidth || oldContainer;
-  const chrome = oldContainer - oldCenter; // label column + scrollbar/borders
+  const width = center?.clientWidth || els.timeline.clientWidth;
+  if (width <= 0) return;
+  // Measure the overlay's actual footprint; bail if it isn't showing.
+  const panelW = els.detail && !els.detail.hidden ? els.detail.getBoundingClientRect().width : 0;
+  if (panelW <= 0) return;
+  const usable = width - panelW; // width to the left of the overlay
+  if (usable <= 0) return;
+
   const win = tl.getWindow();
-  // Snapshot the vertical scroll too. Shrinking/growing the center width makes
-  // vis-timeline re-stack items on its redraw, which changes the content height
-  // and lets the browser clamp the scroll container back toward the top — so on
-  // the *first* click (panel goes hidden→visible) the view visibly jumps up.
-  // We re-apply this offset after the redraw below, the same way renderTimeline
-  // restores it on a re-render.
-  const prevVScroll = els.timeline.querySelector<HTMLElement>('.vis-panel.vis-left')?.scrollTop ?? 0;
-  toggle();
-  const newContainer = els.timeline.clientWidth; // forces synchronous layout
-  const oldWidth = oldCenter;
-  const newWidth = newContainer - chrome;
-  if (oldWidth > 0 && newWidth > 0 && newWidth !== oldWidth) {
-    const startMs = win.start.getTime();
-    const rangeMs = win.end.getTime() - startMs;
-    const newEnd = new Date(startMs + (rangeMs * newWidth) / oldWidth);
-    tl.setWindow(win.start, newEnd, { animation: false });
-    // Keep the tracked window in sync so persistence snapshots and URL syncing
-    // reflect what's actually shown (silent — no URL write here).
-    if (state.userWindow) state.userWindow = { start: new Date(win.start), end: newEnd };
-  }
-  // Restore the vertical scroll through vis-timeline's own authoritative path
-  // (`_setScrollTop` clamps to the new content range, a redraw syncs both the
-  // content transform and the scrollbar container). Repeated across frames so a
-  // pass that ran before layout settled gets corrected.
-  if (prevVScroll > 0) {
-    const restore = () => {
-      const anyTl = tl as unknown as { _setScrollTop?: (v: number) => void };
-      if (typeof anyTl._setScrollTop === 'function') {
-        anyTl._setScrollTop(-prevVScroll);
-        tl.redraw();
-      }
-    };
-    restore();
-    requestAnimationFrame(restore);
-    setTimeout(restore, 0);
-  }
+  const winStart = win.start.getTime();
+  const range = win.end.getTime() - winStart;
+  if (range <= 0) return;
+
+  const start = startMs;
+  const end = endMs != null && endMs > startMs ? endMs : startMs;
+  const xStart = ((start - winStart) / range) * width;
+  const xEnd = ((end - winStart) / range) * width;
+  // Only act when the item's start sits at or past the panel edge — i.e. the
+  // whole item is hidden behind (or off to the right of) the overlay. If any
+  // part of it still shows in the usable area (including an item that runs off
+  // the left edge, like a wide phase), it's visible enough; leave the view put.
+  if (xStart < usable) return;
+
+  // Place the item's start ~40% into the usable area, keeping the span; for an
+  // item wider than the usable area, anchor its start at the left edge instead.
+  const targetX = Math.min(usable * 0.4, Math.max(0, usable - (xEnd - xStart)));
+  const newStart = start - (targetX / width) * range;
+  tl.setWindow(new Date(newStart), new Date(newStart + range), {
+    animation: { duration: 220, easingFunction: 'easeOutCubic' },
+  });
 }
 
 export function isEditableView(): boolean {

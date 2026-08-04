@@ -1,13 +1,27 @@
 /* Detail side panel: reading view (metadata + rendered Markdown body).
    The editable form variant lives in forms.css. */
 
+/* Overlay, not a layout column: pinned to the right edge of .app-main (which is
+   position:relative) so it floats over the timeline without changing its width.
+   Being absolutely positioned takes it out of the grid flow, so the content
+   column stays full-width and vis-timeline never re-fits (see base.css). */
 .detail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--detail-width, 420px);
+  z-index: 20;
   border-left: 1px solid var(--border, rgba(0, 0, 0, 0.08));
   background: var(--surface, #fff);
   padding: 0 28px 32px;
   overflow-y: auto;
   overscroll-behavior: none;
-  position: relative;
+  box-shadow: -12px 0 28px -18px rgba(0, 0, 0, 0.35);
+}
+
+.detail[hidden] {
+  display: none;
 }
 
 /* Sticky headline block: stays pinned while the body scrolls, casts a light

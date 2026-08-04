@@ -240,15 +240,17 @@ body {
   grid-template-columns: 1fr;
   position: relative;
   min-height: 0;
+  --detail-width: 420px;
 }
 
-.app-main:has(.detail:not([hidden])) {
-  grid-template-columns: 1fr 420px;
-}
+/* The detail/edit panel is an *overlay* (see detail.css), not a second grid
+   column: opening it must not shrink the timeline. A narrower timeline would
+   make vis-timeline re-fit the same time window into less width, dropping the
+   right-edge items and visibly jumping the layout. Keeping the content column
+   full-width leaves the timeline untouched while the panel floats over it. */
 
-/* Column 1 of app-main: the shared grouping toolbar stacked above whichever
-   content section (timeline / list / pricing) is active. The detail panel is
-   the separate second grid column. */
+/* Column 1 (and only column) of app-main: the shared grouping toolbar stacked
+   above whichever content section (timeline / list / pricing) is active. */
 .content-area {
   min-width: 0;
   min-height: 0;
