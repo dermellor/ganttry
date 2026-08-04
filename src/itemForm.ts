@@ -298,7 +298,7 @@ export function showItemForm(
         </div>
       </div>`,
       )}
-      <div class="form-actions">
+      <div class="form-actions centered">
         <button type="button" class="btn-danger" data-action="delete">Löschen</button>
       </div>
       ${auditBlockHtml(item)}

@@ -215,6 +215,18 @@
   margin-top: 4px;
 }
 
+/* The item form persists reactively, so Delete is its only action: it sits
+   centered below a divider that closes off the field area. The divider lives
+   here rather than on the audit footer because that footer is DEV-only — hung
+   off it, the deployed form had no separation before the destructive action.
+   The phase/feature forms keep the plain left-aligned Save + Delete row. */
+.item-form .form-actions.centered {
+  justify-content: center;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+
 .item-form .btn-primary,
 .item-form .btn-danger {
   font: inherit;
@@ -245,12 +257,12 @@
   color: #d3333a;
 }
 
-/* Read-only creation/update audit footer (localhost only). */
+/* Read-only creation/update audit footer (localhost only). Sits below the
+   centered delete action; the divider above it is the one on .form-actions, so
+   this block carries no rule of its own. */
 .item-form .item-audit {
   grid-column: 1 / -1;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  margin-top: 16px;
 }
 
 .item-form .item-audit dl {
