@@ -76,6 +76,25 @@
   color: var(--item-fg) !important;
   border-radius: 6px;
   font-family: var(--font-body) !important;
+
+  /* Gutter a range bar reserves on its right so back-to-back bars don't touch
+     (see the .vis-item.vis-range block below). Named because the rail geometry
+     has to offset by it too — a mark sits inside the *visible* bar, not inside
+     the gutter-inclusive slot. Zero for every other item type. */
+  --bar-gutter: 0px;
+
+  /* Item rail geometry — see the rail block further down. */
+  --rail-mark: 18px;
+  --rail-gap: 2px;
+  --rail-inset: 4px;
+  --rail-fade: 14px;
+  --rail-slot: calc(var(--rail-mark) + var(--rail-gap));
+  /* Occupied slots: the delete affordance (present only while selected on an
+     editable view) plus any data marks. */
+  --rail-delete: 0;
+  --rail-marks: 0;
+  --rail-slots: calc(var(--rail-delete) + var(--rail-marks));
+  --rail-w: calc(var(--rail-slots) * var(--rail-slot) + var(--rail-inset));
 }
 
 .vis-item.lane-0 { background-color: var(--lane-0-bg) !important; border-color: var(--lane-0-border) !important; }
@@ -111,7 +130,8 @@
 .vis-item.vis-range {
   background: transparent !important;
   border: 0 !important;
-  padding-right: 2px !important;
+  --bar-gutter: 2px;
+  padding-right: var(--bar-gutter) !important;
   box-sizing: border-box !important;
 }
 
@@ -169,6 +189,145 @@
   background-color: currentColor;
   -webkit-mask: var(--item-icon) center / contain no-repeat;
   mask: var(--item-icon) center / contain no-repeat;
+}
+
+/* ── Item rail: trailing marks inside the bar's right edge ─────────────────
+ *
+ * A range bar reserves a strip at its inner right edge for small marks. Today
+ * the only mark is the delete affordance (vis-timeline's `.vis-delete`, which
+ * by default hangs 24px *outside* the bar as a red Arial "×"); the strip is
+ * built as a general mechanism so a data mark — a status glyph, say — can join
+ * it later.
+ *
+ * Slots are counted right-to-left from the bar's inner edge, so a mark's
+ * position is arithmetic on `--rail-slot` and every mark lines up without
+ * measuring anything. Marks fill the strip from the edge inward, with the
+ * delete always outermost: a data mark therefore sits at slot `--rail-delete`
+ * (0 normally, 1 while the delete is showing) and so keeps a stable place at
+ * the edge instead of leaving a hole there when the item is deselected.
+ *
+ * Adding a data mark = render it as an absolutely positioned child of the
+ * `.vis-item`, position it with
+ *   right: calc(var(--bar-gutter) + var(--rail-inset)
+ *               + var(--rail-delete) * var(--rail-slot))
+ * set `--rail-marks: 1` on the item so the fade widens with the rail, and add
+ * it to the `:has()` selectors below. All geometry stays in the vars above.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* The mark: a round 18px button carrying a mask glyph in the item's own text
+   colour, so it adapts to every lane and theme like `.item-icon` does. The
+   `.timeline` prefix on every rule here outranks vis-timeline's own
+   `.vis-item .vis-delete{...}` regardless of stylesheet order — the plain
+   `<link>`s in index.html and the JS-imported vis CSS land in head in an order
+   Vite decides differently in dev and in a build. */
+.timeline .vis-item .vis-delete {
+  top: 50%;
+  transform: translateY(-50%);
+  /* Non-range items (milestones, boxes) hug their content, so there is no room
+     inside for a rail; they keep vis's placement just outside the right edge,
+     re-centred for the smaller mark. */
+  right: calc(0px - var(--rail-mark) - var(--rail-inset));
+  width: var(--rail-mark);
+  height: var(--rail-mark);
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  opacity: 0.5;
+  transition: opacity 0.12s linear, background-color 0.12s linear;
+  /* Above `.vis-drag-center` and `.vis-drag-right`, which vis appends to the
+     same item box and which would otherwise swallow the click. */
+  z-index: 3;
+}
+
+.timeline .vis-item .vis-delete::after {
+  /* Replaces vis's `content: "\00D7"` text glyph. */
+  content: '';
+  position: absolute;
+  inset: 3px;
+  background-color: currentColor;
+  -webkit-mask: var(--ui-icon-delete) center / contain no-repeat;
+  mask: var(--ui-icon-delete) center / contain no-repeat;
+}
+
+.timeline .vis-item .vis-delete:hover {
+  background: transparent;
+  opacity: 1;
+  color: var(--danger);
+}
+
+/* Inside the bar, in the rail's outermost slot. */
+.timeline .vis-item.vis-range .vis-delete {
+  right: calc(var(--bar-gutter) + var(--rail-inset));
+}
+
+/* Occupancy is read off the DOM rather than off the selection state: the delete
+   button only exists on an editable view, so a read-only timeline neither
+   reserves the slot nor fades its labels. */
+.timeline .vis-item.vis-range:has(> .vis-delete) {
+  --rail-delete: 1;
+}
+
+/* The label fades into the bar's own fill under the rail instead of being hard
+   clipped by it. `background-color: inherit` picks up whatever lane colour the
+   wrapper is painted in, and the mask turns that flat colour into the ramp —
+   masking the wrapper itself would fade its border and fill along with the
+   text. Sits inside the border box, so the border stays crisp. */
+.timeline .vis-item.vis-range:has(> .vis-delete) > .vis-item-overflow::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: calc(var(--rail-w) + var(--rail-fade));
+  background-color: inherit;
+  -webkit-mask: linear-gradient(to right, transparent, #000 var(--rail-fade));
+  mask: linear-gradient(to right, transparent, #000 var(--rail-fade));
+  pointer-events: none;
+}
+
+/* Move the right-edge resize handle inward by the rail width. vis pins it to
+   the bar edge (`right: -4px`, 24px wide), which is exactly where the rail now
+   is — and vis appends it after the delete button, so without this the handle
+   covers the mark and "drag the right edge to resize" and "click × to delete"
+   fight over the same pixels. */
+.timeline .vis-item.vis-range:has(> .vis-delete) .vis-drag-right {
+  right: calc(var(--rail-w) - 4px);
+}
+
+/* A bar only carries the rail if it is wide enough to give the label room next
+   to it. Zoomed out, most bars are a few dozen pixels wide — narrower than the
+   rail itself — and an in-bar mark there would sit on top of a label the fade
+   had already swallowed whole. Those bars fall back to vis's placement just
+   outside the right edge (no fade, resize handle back at the edge), which keeps
+   the delete reachable at every zoom level instead of hiding it.
+
+   Each bar is asked about its own width, so the fallback is per bar, not per
+   zoom level: a container query is the only way to reach that in CSS. `.vis-item`
+   is safe to make a query container — vis sets a range bar's width inline from
+   its dates, so inline-size containment has nothing to break. Scoped to ranges:
+   milestones and boxes size to their content, which containment would cut off.
+
+   The threshold covers the rail (--rail-w, 24px) plus the fade ramp
+   (--rail-fade, 14px) plus a few characters of label. Container queries can't
+   read custom properties, so it is a literal — keep it in step with those vars.
+   The rules repeat the selectors above verbatim so they match on specificity
+   and win on order. */
+.timeline .vis-item.vis-range {
+  container-type: inline-size;
+}
+
+@container (max-width: 72px) {
+  .timeline .vis-item.vis-range .vis-delete {
+    right: calc(0px - var(--rail-mark) - var(--rail-inset));
+  }
+
+  .timeline .vis-item.vis-range:has(> .vis-delete) > .vis-item-overflow::after {
+    content: none;
+  }
+
+  .timeline .vis-item.vis-range:has(> .vis-delete) .vis-drag-right {
+    right: -4px;
+  }
 }
 
 .vis-item.vis-point {
