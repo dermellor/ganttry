@@ -12,6 +12,7 @@ import {
 } from './editor';
 import { isRealtimeEnabled, watchTimeline, joinPresence } from './realtime';
 import { renderPresence } from './presence';
+import { clearItemPresence, setItemPresence } from './itemPresence';
 import { state, els, setStatus, PERSIST_THROTTLE_MS } from './state';
 import { refreshActiveSourceInPlace, renderTimeline } from './render';
 import { applyItemForm, refreshItemAudit } from './itemForm';
@@ -260,19 +261,24 @@ export function setupRealtime(): void {
   // refreshes); re-subscribing each time would flap the header badge and
   // broadcast a leave/join churn to the other connected clients.
   if (presenceSourceId !== state.presenceSourceId) {
-    if (state.presenceUnsub) {
-      state.presenceUnsub();
-      state.presenceUnsub = null;
+    if (state.presenceHandle) {
+      state.presenceHandle.leave();
+      state.presenceHandle = null;
     }
     renderPresence([], state.currentUser?.email ?? null);
+    clearItemPresence();
     state.presenceSourceId = presenceSourceId;
     if (presenceSourceId) {
       // Fall back to an anonymous identity when /api/me returned nothing.
       const me = state.currentUser ?? { email: 'anon', name: 'Gast' };
-      state.presenceUnsub = joinPresence(presenceSourceId, me, (users) => {
+      state.presenceHandle = joinPresence(presenceSourceId, me, (users) => {
         if (state.presenceSourceId !== presenceSourceId) return; // stale
         renderPresence(users, me.email);
+        setItemPresence(users, me.email);
       });
+      // Announce what we already have open (a view switch can land with an item
+      // selected, e.g. from a deep link).
+      publishSelfPresence();
     }
   }
 
@@ -307,6 +313,49 @@ export function setupRealtime(): void {
       state.activeFormPhaseIndex != null ||
       state.activeFormFeatureId != null,
   });
+}
+
+// How long a change keeps us flagged as "editing" for the others. Long enough
+// to survive thinking pauses between keystrokes, short enough that a form left
+// open decays back to the calmer "has it selected" mark.
+const EDITING_LINGER_MS = 6_000;
+// The item our current editing flag belongs to (null = not editing). Scoped to
+// the item so opening a different one doesn't inherit the flag.
+let editingItemId: string | null = null;
+let editingDecayTimer: ReturnType<typeof setTimeout> | null = null;
+
+// The item we currently occupy from the others' point of view: the one open in
+// the form, else the plain timeline selection.
+function selfPresenceItemId(): string | null {
+  return state.activeFormItemId ?? state.selectedItemId;
+}
+
+/**
+ * Announce which item we occupy (and whether we're actively changing it) on the
+ * presence channel, so the others get a mark on that item. Cheap to call often —
+ * an unchanged activity doesn't hit the channel.
+ */
+export function publishSelfPresence(): void {
+  const itemId = selfPresenceItemId();
+  state.presenceHandle?.setActivity({
+    itemId,
+    editing: !!itemId && editingItemId === itemId,
+  });
+}
+
+/**
+ * Flag us as actively editing the occupied item (a form keystroke, a drag).
+ * Decays back to plain "has it selected" after EDITING_LINGER_MS of quiet.
+ */
+export function markSelfEditing(): void {
+  editingItemId = selfPresenceItemId();
+  publishSelfPresence();
+  if (editingDecayTimer) clearTimeout(editingDecayTimer);
+  editingDecayTimer = setTimeout(() => {
+    editingDecayTimer = null;
+    editingItemId = null;
+    publishSelfPresence();
+  }, EDITING_LINGER_MS);
 }
 
 // Applies the open item form to the in-memory model (no DB write) and clears
@@ -350,6 +399,8 @@ export function cancelThrottledPersist(): void {
 }
 
 export function scheduleLiveEdit(): void {
+  // A keystroke in the form is the clearest "I'm editing this" signal there is.
+  markSelfEditing();
   if (state.liveEditTimer) clearTimeout(state.liveEditTimer);
   state.liveEditTimer = setTimeout(() => {
     flushLiveEditToModel();

@@ -5,7 +5,7 @@ import { marked } from 'marked';
 import { escapeHtml, type DetailNote } from './buildItems';
 import { jiraLinksHtml, readJiraIssues } from './jira';
 import { state, els, isEditableView, revealBesidePanel } from './state';
-import { cancelThrottledPersist } from './persistence';
+import { cancelThrottledPersist, publishSelfPresence } from './persistence';
 import { showItemForm } from './itemForm';
 
 export function showDetailForId(id: string): void {
@@ -66,4 +66,6 @@ export function hideDetail() {
   state.activeFormItemId = null;
   state.activeFormPhaseIndex = null;
   state.activeFormFeatureId = null;
+  // Panel closed → release the item mark we held for the others.
+  publishSelfPresence();
 }

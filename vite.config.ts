@@ -125,9 +125,19 @@ function timelinesApi(): Plugin {
       // GET /api/me — current user for the header presence badge. Local dev has
       // no auth session, so everyone is the single "local" identity (matches the
       // updatedBy attribution the write path uses in dev).
+      //
+      // A `dev_user` cookie overrides that identity. Presence — and especially
+      // the per-item marks, which hide our own activity — is otherwise
+      // untestable on one machine: every tab would be the same "local" user and
+      // therefore invisible to itself. Set it per tab and reload:
+      //   document.cookie = 'dev_user=alice'; location.reload()
+      // Dev-server only; the deployed site derives the identity from the signed
+      // session cookie (netlify/edge-functions/me.ts).
       server.middlewares.use('/api/me', (req, res, next) => {
         if (req.method !== 'GET') return next();
-        send(res, 200, { email: 'local', name: 'local' });
+        const cookie = /(?:^|;\s*)dev_user=([^;]*)/.exec(req.headers.cookie ?? '')?.[1];
+        const email = cookie ? decodeURIComponent(cookie) : 'local';
+        send(res, 200, { email, name: email });
       });
 
       // GET /api/sources — list timelines

@@ -6,7 +6,12 @@
 // (the app still works — remote changes appear on the next reload).
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { PresenceUser } from './presence';
+import {
+  dedupeRoster,
+  type PresenceActivity,
+  type PresenceEntry,
+  type PresenceUser,
+} from './presenceModel';
 import type { SourceLive, Watermark } from './types';
 import { nextPollDelay, watermarkChanged } from './poll';
 
@@ -183,41 +188,71 @@ export function watchTimeline(
 }
 
 /**
+ * Handle on the joined presence channel: keeps the identity announced and lets
+ * the client amend what it is doing (which item is open / being edited) without
+ * a leave-rejoin cycle.
+ */
+export type PresenceHandle = {
+  /** Re-announce this client with a new activity. Cheap no-op if unchanged. */
+  setActivity(activity: PresenceActivity): void;
+  leave(): void;
+};
+
+/**
  * Join the presence channel for one timeline and announce `me` as online.
  * `onSync` fires whenever the roster changes with the de-duplicated list of
- * users currently connected (one entry per email, even across multiple tabs).
- * Returns an unsubscribe function. No-op when realtime is disabled.
+ * users currently connected (one entry per email, even across multiple tabs —
+ * the tab with the most specific activity wins). Returns a handle for amending
+ * our own activity and for leaving. Inert when realtime is disabled.
  */
 export function joinPresence(
   timelineId: string,
   me: PresenceUser,
-  onSync: (users: PresenceUser[]) => void,
-): () => void {
+  onSync: (users: PresenceEntry[]) => void,
+): PresenceHandle {
   const db = getClient();
-  if (!db) return () => {};
+  if (!db) return { setActivity: () => {}, leave: () => {} };
 
   const channel = db.channel(`presence:${timelineId}`, {
     config: { presence: { key: me.email } },
   });
 
   const emit = () => {
-    const roster = channel.presenceState<PresenceUser>();
-    const byEmail = new Map<string, PresenceUser>();
-    for (const entries of Object.values(roster)) {
-      for (const entry of entries) {
-        if (entry?.email) byEmail.set(entry.email, { email: entry.email, name: entry.name });
-      }
-    }
-    onSync([...byEmail.values()]);
+    const roster = channel.presenceState<PresenceEntry>();
+    onSync(dedupeRoster(Object.values(roster).flat()));
   };
 
-  channel
-    .on('presence', { event: 'sync' }, emit)
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') void channel.track({ email: me.email, name: me.name });
-    });
+  // The activity we last announced (or want to announce as soon as the channel
+  // is up — `track` before SUBSCRIBED is dropped by supabase-js).
+  let activity: PresenceActivity = {};
+  let tracked: string | null = null;
+  let subscribed = false;
 
-  return () => {
-    void db.removeChannel(channel);
+  const push = () => {
+    if (!subscribed) return;
+    const identity = { email: me.email, name: me.name, ...activity };
+    const key = JSON.stringify(identity);
+    if (key === tracked) return; // nothing new to say — don't churn the channel
+    tracked = key;
+    // `at` stamps *when* we said this, so receivers can tell a re-announcement
+    // from the meta it supersedes (dedupeRoster). Deliberately outside the
+    // compare key above — otherwise every push would look like news.
+    void channel.track({ ...identity, at: Date.now() });
+  };
+
+  channel.on('presence', { event: 'sync' }, emit).subscribe((status) => {
+    if (status !== 'SUBSCRIBED') return;
+    subscribed = true;
+    push();
+  });
+
+  return {
+    setActivity(next: PresenceActivity) {
+      activity = { itemId: next.itemId ?? null, editing: !!next.editing };
+      push();
+    },
+    leave() {
+      void db.removeChannel(channel);
+    },
   };
 }

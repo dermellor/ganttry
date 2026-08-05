@@ -345,3 +345,77 @@
 body.phase-dragging {
   user-select: none;
 }
+
+/* ── Per-item presence (who else is on this item) ─────────────────────────────
+   Marks written onto vis-timeline's own item elements by src/itemPresence.ts:
+   a ring around the bar plus the avatars of the other users who have this item
+   open. `--presence-hue` is set per element from the user's e-mail, the same
+   hue the header badge uses.
+
+   Range bars paint their visible box on the inner `.vis-item-overflow` wrapper
+   (see the comment above), so the ring has to go there for them — on the outer
+   `.vis-item` it would sit 2px off and around an invisible, transparent box. */
+.vis-item.has-remote-presence.vis-range > .vis-item-overflow,
+.vis-item.has-remote-presence:not(.vis-range) {
+  box-shadow: 0 0 0 2px hsl(var(--presence-hue, 260), 55%, 50%, 0.45);
+}
+
+/* Actively being edited right now: full-strength ring, gently pulsing so it
+   reads as "in Bewegung" next to the calmer has-it-open state. */
+.vis-item.has-remote-presence.is-remote-editing.vis-range > .vis-item-overflow,
+.vis-item.has-remote-presence.is-remote-editing:not(.vis-range) {
+  box-shadow: 0 0 0 2px hsl(var(--presence-hue, 260), 60%, 48%),
+    0 0 8px 1px hsl(var(--presence-hue, 260), 60%, 48%, 0.4);
+  animation: presence-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes presence-pulse {
+  50% {
+    box-shadow: 0 0 0 3px hsl(var(--presence-hue, 260), 60%, 48%),
+      0 0 12px 2px hsl(var(--presence-hue, 260), 60%, 48%, 0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vis-item.has-remote-presence.is-remote-editing.vis-range > .vis-item-overflow,
+  .vis-item.has-remote-presence.is-remote-editing:not(.vis-range) {
+    animation: none;
+  }
+}
+
+/* Avatar cluster, straddling the item's left edge. Left rather than right,
+   because a range bar frequently runs off the right of the window (its end can
+   be months away) — the start edge is the one you are looking at, and a chip
+   pinned to the far end would be permanently off-canvas. Vertically centred:
+   anything reaching above the bar gets clipped by the centre panel on the top
+   row. */
+.item-presence {
+  position: absolute;
+  top: 50%;
+  left: -9px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+/* A milestone carries its dot just left of the box, exactly where the cluster
+   would land — shift it clear so the dot stays readable. */
+.vis-item.vis-point .item-presence {
+  left: -26px;
+}
+
+/* Smaller variant of the header avatar (base.css `.presence-avatar`). */
+.presence-avatar.presence-mark {
+  width: 18px;
+  height: 18px;
+  font-size: 9px;
+  border-width: 1.5px;
+  margin-left: -6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.presence-avatar.presence-mark.is-editing {
+  box-shadow: 0 0 0 1.5px hsl(var(--presence-hue, 260), 60%, 48%), 0 1px 2px rgba(0, 0, 0, 0.18);
+}

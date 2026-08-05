@@ -3,37 +3,15 @@
 // which is opt-in per environment (VITE_SUPABASE_*). No realtime → no badge.
 
 import { els } from './state';
+import { hueFor, initials, labelFor as label, type PresenceUser } from './presenceModel';
 
-export type PresenceUser = { email: string; name?: string };
+// Re-exported so the existing `import type { PresenceUser } from './presence'`
+// call sites keep working; the model itself is DOM-free (presenceModel.ts).
+export type { PresenceUser } from './presenceModel';
 
 // Beyond this many concurrent viewers the rest collapse into a "+N" chip so the
 // header never overflows.
 const MAX_AVATARS = 5;
-
-/** Two-letter monogram from a name ("Robin Fischer" → RF) or email local part. */
-function initials(u: PresenceUser): string {
-  const name = u.name?.trim();
-  if (name) {
-    const parts = name.split(/\s+/).filter(Boolean);
-    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-    return name.slice(0, 2).toUpperCase();
-  }
-  const local = (u.email.split('@')[0] || u.email).trim();
-  const parts = local.split(/[._-]+/).filter(Boolean);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return local.slice(0, 2).toUpperCase();
-}
-
-/** Deterministic hue (0–359) so a given user keeps the same avatar colour. */
-function hueFor(email: string): number {
-  let h = 0;
-  for (let i = 0; i < email.length; i++) h = (h * 31 + email.charCodeAt(i)) % 360;
-  return h;
-}
-
-function label(u: PresenceUser): string {
-  return u.name ? `${u.name} (${u.email})` : u.email;
-}
 
 /**
  * Render the presence avatars. `selfEmail` (if known) is placed first and gets

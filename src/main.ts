@@ -249,6 +249,8 @@ async function bootstrap() {
   });
 
   els.viewSelect.addEventListener('change', () => {
+    // Cleared before the switch so the presence re-join announces no item (the
+    // old selection belongs to the view we're leaving).
     state.selectedItemId = null;
     state.userWindow = null;
     state.pendingItem = null;

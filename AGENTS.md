@@ -810,8 +810,8 @@ Realtime und zum End-to-End-Test des Poll-Pfades.
 #### Presence unter Polling
 
 Presence (siehe unten) ist **realtime-only** — sie hängt am Supabase-Presence-
-Channel. Poll-Quellen zeigen kein Presence-Badge (eine Heartbeat-Tabelle wäre ein
-optionales, nicht umgesetztes Sub-Feature).
+Channel. Poll-Quellen zeigen kein Presence-Badge und keine Item-Marker (eine
+Heartbeat-Tabelle wäre ein optionales, nicht umgesetztes Sub-Feature).
 
 ### Realtime (Live-Kollaboration)
 
@@ -863,6 +863,62 @@ HttpOnly, der Client kennt sich sonst nicht): Netlify-Edge-Function
 (`{ email, name }`) hinter dem Auth-Gate; die Vite-Middleware liefert lokal
 `{ email: 'local' }`. Ist keine Identität bekannt (ungegatete Site), trackt der
 Client anonym als „Gast".
+
+**Lokal testen:** ein `dev_user`-Cookie überschreibt die Dev-Identität
+(`/api/me` in [`vite.config.ts`](vite.config.ts)) — sonst ist jeder Tab derselbe
+„local"-User und damit für sich selbst unsichtbar. Pro Tab in der Konsole:
+`document.cookie = 'dev_user=alice'; location.reload()`. Cookies gelten pro
+Origin, nicht pro Tab, also zwei Browser-Profile/Fenster oder ein zweiter Client
+(z.B. ein Node-Skript, das dem Presence-Channel beitritt) für zwei Identitäten
+gleichzeitig. Nur Dev-Server; der Deploy leitet die Identität aus dem Session-
+Cookie ab.
+
+#### Presence pro Item (wer ist woran)
+
+Zusätzlich zum Header-Badge markiert die **Timeline** das Item, das ein anderer
+Nutzer gerade ausgewählt hat oder editiert — damit ein Doppel-Edit auffällt,
+*bevor* der `409`/„extern geändert"-Hinweis kommt. Getragen wird das vom
+**gleichen** Presence-Channel (kein zweiter Kanal, keine Tabelle, keine
+Migration): der Payload trägt neben der Identität eine `PresenceActivity`
+(`itemId` + `editing`, [`src/presenceModel.ts`](src/presenceModel.ts)).
+
+- **Senden:** `joinPresence` gibt ein `PresenceHandle` zurück; `publishSelfPresence`
+  ([`src/persistence.ts`](src/persistence.ts)) trägt über `setActivity` nach, welches
+  Item wir belegen (offenes Formular, sonst die Timeline-Auswahl). Unveränderte
+  Aktivität geht nicht auf den Kanal.
+- **`editing` vs. ausgewählt:** auf einer editierbaren Quelle öffnet ein Klick
+  sofort das Formular, „angeklickt" und „editiert" wären also dasselbe. Deshalb
+  meldet `markSelfEditing` `editing` erst bei einer echten Änderung (Formular-
+  Keystroke via `scheduleLiveEdit`, Drag/Resize via `handleMove`) und lässt es
+  nach `EDITING_LINGER_MS` Ruhe wieder auf „ausgewählt" zurückfallen.
+- **Rendern:** [`src/itemPresence.ts`](src/itemPresence.ts) schreibt Ring
+  (`.has-remote-presence` / `.is-remote-editing`, gepulst) plus Avatar-Cluster
+  direkt auf das vis-Item-Element — ein Kind von `.vis-item` wandert, scrollt und
+  zoomt mit seinem Item mit, anders als ein absolut positioniertes Overlay
+  (arrows.ts / phaseBand.ts) braucht es also kein Nachrechnen pro Frame. Was es
+  braucht, ist ein Re-Apply, wenn vis Item-DOM neu mountet → `'changed'`-Hook in
+  `attachItemPresence`. Clone-Ids einer umgruppierten Ansicht laufen über
+  `realIdOf`. Der Cluster hängt an der **linken** Kante: die rechte liegt bei
+  langen Balken oft außerhalb des Fensters.
+- **Eigene Aktivität** wird nie markiert (die eigene Auswahl ist schon die
+  vis-Selektion). Mehrere Einträge pro E-Mail kollabieren in `dedupeRoster` auf
+  den **jüngsten** (`at`-Stempel im Payload), nicht auf den „spezifischsten".
+  Das ist kein Detail, sondern die Korrektheitsbedingung: ein Presence-Channel
+  hält pro Key mehrere Metas — eine pro Tab, aber auch die *überholten* Metas
+  desselben Tabs, weil ein erneutes `track()` eine Meta hinzufügt statt sie zu
+  ersetzen. Nach Spezifität sortiert gewinnt dann die veraltete (`editing`
+  schlägt das frische `ausgewählt`, das sie ersetzt hat) und der Marker klebt für
+  immer auf „editiert gerade".
+- **Repaints laufen über einen Timer, nicht über `requestAnimationFrame`.** Ein
+  Tab im Hintergrund feuert kein rAF mehr; eine noch offene Frame-Callback lässt
+  das „ist schon geplant"-Flag stehen, und danach verwirft jeder weitere Sync
+  seinen Repaint — der Tab friert auf dem letzten Stand ein, den er im
+  Vordergrund gesehen hat. Timer laufen im Hintergrund weiter (nur gedrosselt).
+- **Scope:** nur der Timeline-View (die Listenansicht hat keine Marker) und
+  gleiche Opt-in-Bedingung wie Presence generell — realtime-only, `VITE_SUPABASE_*`.
+  Die reine Logik (Rang, Dedupe, Bucketing pro Item) liegt DOM-frei in
+  `presenceModel.ts` und ist in
+  [`src/presenceModel.test.ts`](src/presenceModel.test.ts) getestet.
 
 ## MCP server (Claude Code)
 

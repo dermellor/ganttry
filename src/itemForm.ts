@@ -26,7 +26,12 @@ import type { TimelineFileItem } from './types';
 import { assignableLeaves, parentGroupIds } from './groupHierarchy';
 import { state, els, setStatus, revealBesidePanel } from './state';
 import { parseLocalDay, durationToMs } from './date';
-import { commitItemForm, scheduleLiveEdit, schedulePersist } from './persistence';
+import {
+  commitItemForm,
+  publishSelfPresence,
+  scheduleLiveEdit,
+  schedulePersist,
+} from './persistence';
 import { rebuildAndApply } from './render';
 import { hideDetail } from './detailPanel';
 
@@ -163,6 +168,8 @@ export function showItemForm(
   state.activeFormItemId = id;
   state.activeFormPhaseIndex = null;
   state.activeFormFeatureId = null;
+  // Tell the others which item we now occupy (see publishSelfPresence).
+  publishSelfPresence();
   els.detailTitle.textContent = item.content || '(unbenannt)';
   els.detailMeta.innerHTML = '';
 

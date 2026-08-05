@@ -10,7 +10,7 @@ import type { TimelinePhase } from './types';
 import { state, els, setStatus, revealBesidePanel } from './state';
 import { parseLocalDay, durationToMs } from './date';
 import { rebuildAndApply } from './render';
-import { schedulePersist } from './persistence';
+import { publishSelfPresence, schedulePersist } from './persistence';
 import { hideDetail } from './detailPanel';
 
 export function handlePhaseEdit(edit: PhaseEdit): void {
@@ -39,6 +39,8 @@ export function showPhaseForm(srcIndex: number): void {
   state.activeFormPhaseIndex = srcIndex;
   state.timeline?.setSelection([]);
   state.selectedItemId = null;
+  // We just gave up the item we occupied — release its presence mark.
+  publishSelfPresence();
 
   els.detailTitle.textContent = phase.label || '(unbenannte Phase)';
   els.detailMeta.innerHTML = '';

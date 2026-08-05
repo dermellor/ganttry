@@ -16,6 +16,7 @@ import type { Config, Note, SourceLive, TimelineFile, View } from './types';
 import type { BuildResult } from './buildItems';
 import type { JiraIssue } from './jira';
 import type { PresenceUser } from './presence';
+import type { PresenceHandle } from './realtime';
 import { isoDateOnly } from './editor';
 import { writeUrlState, type UrlState } from './urlState';
 
@@ -119,7 +120,9 @@ export interface AppState {
   formCustomMulti: Record<string, string[]>;
   saveTimer: ReturnType<typeof setTimeout> | null;
   realtimeUnsub: (() => void) | null;
-  presenceUnsub: (() => void) | null;
+  // Handle on the joined presence channel: used to leave it and to amend our own
+  // activity (which item we have open / are editing) — see publishSelfPresence.
+  presenceHandle: PresenceHandle | null;
   // Source id the presence channel is currently joined to (null = none). Lets
   // setupRealtime skip a re-join on same-view re-renders (avoids badge flicker
   // and leave/join churn broadcast to other clients).
@@ -173,7 +176,7 @@ export const state: AppState = {
   formCustomMulti: {},
   saveTimer: null,
   realtimeUnsub: null,
-  presenceUnsub: null,
+  presenceHandle: null,
   presenceSourceId: null,
   currentUser: null,
   realtimeRefreshTimer: null,

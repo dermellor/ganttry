@@ -46,7 +46,14 @@ import {
   MS_PER_DAY,
   TAG_TEXT_MIN_PX_PER_DAY,
 } from './state';
-import { schedulePersist, setupRealtime, snapshotSaved } from './persistence';
+import {
+  markSelfEditing,
+  publishSelfPresence,
+  schedulePersist,
+  setupRealtime,
+  snapshotSaved,
+} from './persistence';
+import { attachItemPresence } from './itemPresence';
 import { showItemForm } from './itemForm';
 import { showDetailForId, hideDetail } from './detailPanel';
 import { renderListView } from './listView';
@@ -454,6 +461,8 @@ export async function renderTimeline(view: View) {
     },
   } as any);
   state.timeline = timeline;
+  // Re-apply other users' item marks whenever vis (re)mounts item DOM.
+  attachItemPresence(timeline);
 
   let lastH = containerHeight;
   const ro = new ResizeObserver(() => {
@@ -554,6 +563,7 @@ export async function renderTimeline(view: View) {
     if (!clicked) {
       state.selectedItemId = null;
       syncUrl();
+      publishSelfPresence();
       return;
     }
     // The clicked id may be a clone; track/select by the real item id. When the
@@ -569,6 +579,7 @@ export async function renderTimeline(view: View) {
       }
     }
     syncUrl();
+    publishSelfPresence();
     showDetailForId(id);
   });
 
@@ -762,6 +773,9 @@ function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) =>
   callback(item);
   rebuildAndApply();
   schedulePersist();
+  // A drag/resize is an edit — flag it for the others (dragging an item selects
+  // it, so the presence activity already points at this item).
+  markSelfEditing();
   if (state.activeFormItemId === realId) {
     showItemForm(src);
   }
