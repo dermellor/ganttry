@@ -478,22 +478,34 @@ measuring anything.
   masked into a ramp. Masking the wrapper itself would fade its border and fill
   along with the text. It stays in the DOM at `opacity: 0` so it fades in with
   the mark rather than snapping on.
-- **Narrow bars fall back** to a placement just outside the right edge (no
-  fade). Zoomed out most bars are a few dozen pixels wide — narrower than the
-  rail itself — and an in-bar mark there would sit on a label the fade had
-  already swallowed whole. Each bar is asked about its own width, which in CSS
-  means a **container query**: `.vis-item.vis-range` is a `container-type:
-  inline-size` query container (safe — vis sets a range bar's width inline from
-  its dates; milestones and boxes are deliberately excluded because they size to
-  their content). The `72px` threshold is a literal, since container queries
-  can't read custom properties — keep it in step with `--rail-w` + `--rail-fade`.
+- **A range bar takes the in-bar slot at every width**, however narrow. Zoomed
+  out most bars are a few dozen pixels wide — narrower than the rail itself — so
+  on those the mark covers the bar and the fade swallows the whole label while
+  the pointer is on it. That is the accepted trade: a mark hanging *outside* the
+  bar is what the rail exists to get rid of, and a two-character label on a 29px
+  bar carries little to lose. Only **milestones and boxes** keep vis's placement
+  just outside their right edge — they size to their content, so there is no
+  interior to put a mark in and no `.vis-item-overflow` to fade. Reserving room
+  with `padding-right` would widen every milestone permanently for an affordance
+  that only shows on hover.
 
 Two vis-timeline collisions the rail has to defeat, both worth knowing before
-touching it: the mark needs `z-index` above `.vis-drag-center` /
+touching it. The mark needs `z-index` above `.vis-drag-center` /
 `.vis-drag-right` (vis appends those to the same item box *after* it, so they
-would swallow the click), and the right-edge **resize handle** is moved inward by
+would swallow the click). And the right-edge **resize handle** is moved inward by
 `--rail-w` so „drag the right edge to resize" and „click × to delete" don't fight
-over the same pixels.
+over the same pixels — but **only on a bar wide enough for them to collide**. vis
+caps that handle at `max-width: 20%`, so on a narrow bar it is a sliver sitting
+*past* the bar's right edge and it clears the mark by itself; the two start to
+overlap once the handle grows beyond 10px, i.e. above a 50px bar. Below that the
+shift would be actively wrong (24px inward on a 29px bar lands the grab zone in
+the bar's left third). Asking each bar about its own width is what a **container
+query** is for: `.vis-item.vis-range` is a `container-type: inline-size` query
+container — safe, because vis sets a range bar's width inline from its dates, so
+inline-size containment has nothing to break (verified: it moves no bar by a
+pixel). Milestones and boxes are deliberately excluded, since containment would
+cut off content-sized items. The `56px` threshold is a literal (container queries
+can't read custom properties) — keep it in step with the rail vars.
 
 **Adding a data mark:** render it as an absolutely positioned child of the
 `.vis-item`, position it with `right: calc(var(--bar-gutter) + var(--rail-inset)

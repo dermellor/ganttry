@@ -226,7 +226,9 @@
   transform: translateY(-50%);
   /* Non-range items (milestones, boxes) hug their content, so there is no room
      inside for a rail; they keep vis's placement just outside the right edge,
-     re-centred for the smaller mark. */
+     re-centred for the smaller mark. Range bars always take the in-bar slot
+     below, however narrow they are — a mark hanging outside the bar is what this
+     whole block exists to get rid of. */
   right: calc(0px - var(--rail-mark) - var(--rail-inset));
   width: var(--rail-mark);
   height: var(--rail-mark);
@@ -314,47 +316,32 @@
 }
 
 /* Move the right-edge resize handle inward by the rail width. vis pins it to
-   the bar edge (`right: -4px`, 24px wide), which is exactly where the rail now
-   is — and vis appends it after the mark, so without this the handle covers it
-   and "drag the right edge to resize" and "click × to delete" fight over the
-   same pixels. The handle only exists on a selected item. */
-.timeline .vis-item.vis-range:has(> .rail-delete).vis-selected .vis-drag-right {
-  right: calc(var(--rail-w) - 4px);
-}
+   the bar edge (`right: -4px`, 24px wide), which is exactly where the rail is —
+   and vis appends it after the mark, so without this the handle covers it and
+   "drag the right edge to resize" and "click × to delete" fight over the same
+   pixels. The handle only exists on a selected item.
 
-/* A bar only carries the rail if it is wide enough to give the label room next
-   to it. Zoomed out, most bars are a few dozen pixels wide — narrower than the
-   rail itself — and an in-bar mark there would sit on top of a label the fade
-   had already swallowed whole. Those bars fall back to a placement just outside
-   the right edge (no fade, resize handle back at the edge), which keeps the
-   delete reachable at every zoom level instead of hiding it.
+   Only on a bar wide enough for the two to actually collide. vis caps the handle
+   at `max-width: 20%`, so on a narrow bar it is a sliver sitting *past* the bar's
+   right edge (`right: -4px` puts its right edge 4px beyond) and it clears the
+   mark on its own: they start to overlap once the handle grows past 10px, i.e.
+   above a 50px bar. Below that the shift would be actively wrong — 24px inward
+   on a 29px bar lands the grab zone in the bar's left third. The 56px literal is
+   that 50px plus a little margin; container queries can't read custom
+   properties, so keep it in step with the rail vars if those change.
 
-   Each bar is asked about its own width, so the fallback is per bar, not per
-   zoom level: a container query is the only way to reach that in CSS. `.vis-item`
-   is safe to make a query container — vis sets a range bar's width inline from
-   its dates, so inline-size containment has nothing to break. Scoped to ranges:
-   milestones and boxes size to their content, which containment would cut off.
-
-   The threshold covers the rail (--rail-w, 24px) plus the fade ramp
-   (--rail-fade, 14px) plus a few characters of label. Container queries can't
-   read custom properties, so it is a literal — keep it in step with those vars.
-   The rules repeat the selectors above verbatim so they match on specificity
-   and win on order. */
+   Asking each bar about its own width is what a container query is for.
+   `.vis-item` is safe to make a query container — vis sets a range bar's width
+   inline from its dates, so inline-size containment has nothing to break (and
+   measurably moves nothing). Scoped to ranges: milestones and boxes size to
+   their content, which containment would cut off. */
 .timeline .vis-item.vis-range {
   container-type: inline-size;
 }
 
-@container (max-width: 72px) {
-  .timeline .vis-item.vis-range .rail-delete {
-    right: calc(0px - var(--rail-mark) - var(--rail-inset));
-  }
-
-  .timeline .vis-item.vis-range:has(> .rail-delete) > .vis-item-overflow::after {
-    display: none;
-  }
-
+@container (min-width: 56px) {
   .timeline .vis-item.vis-range:has(> .rail-delete).vis-selected .vis-drag-right {
-    right: -4px;
+    right: calc(var(--rail-w) - 4px);
   }
 }
 
