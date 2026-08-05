@@ -814,13 +814,21 @@ export function createItem(start: Date | string | null | undefined, group?: stri
   return newItem;
 }
 
+// vis-timeline's add path (double-click on empty space, ctrl-drag). `createItem`
+// already inserted the item into the live DataSet via rebuildAndApply, so vis
+// must NOT add it a second time: `itemsData.add()` throws on the duplicate id.
+//
+// That throw is why the mouse used to stay "pressed" after a double-click-add:
+// hammer emits `doubletap` synchronously from inside its `pointerup` handler,
+// and that handler only removes the pointer from its store *after* the callback
+// returns (PointerEventInput.handler → `store.splice`). An exception escaping
+// through it leaves the pointer in the store, so every later `pointermove` looks
+// like an active drag and the timeline pans along with the mouse until the next
+// click. Passing `null` cancels vis's own insert — our rebuild owns it.
 function handleAdd(item: TimelineItem, callback: (item: TimelineItem | null) => void): void {
   const newItem = createItem(item.start, item.group);
-  if (!newItem) {
-    callback(null);
-    return;
-  }
-  callback({ ...item, id: newItem.id, content: newItem.content });
+  callback(null);
+  if (!newItem) return;
   setTimeout(() => showItemForm(newItem, { focusTitle: true }), 50);
 }
 
