@@ -423,16 +423,40 @@ items without a status (file-based sources) show „—".
 
 A range bar reserves a strip at its inner right edge for small marks, and the
 label fades into the bar's own fill under it instead of being hard clipped. The
-only mark today is the **delete affordance** — vis-timeline's `.vis-delete`,
-which by default hangs 24px *outside* the bar as a red Arial „×". The strip is
-built as a general mechanism so a data mark (a status glyph, say) can join it.
+only mark today is the **delete affordance**, which appears on **hover as well as
+on selection**. The strip is built as a general mechanism so a data mark (a
+status glyph, say) can join it.
 
-It is **pure CSS**, defined in [`src/styles/timeline.css`](src/styles/timeline.css)
-(rail block) with the glyph in [`src/styles/theme.css`](src/styles/theme.css)
+**The mark is ours, not vis-timeline's** (`editable.remove` is off, and vis's
+`onRemove` handler is gone with it). vis creates its `.vis-delete` button only
+while an item is *selected* — hovering a bar showed nothing, so the only way to
+find out a bar was deletable was to click it, which also opens its edit form.
+Owning the mark ([`src/itemRail.ts`](src/itemRail.ts)) keeps hover and selection
+one affordance with one implementation instead of vis's button for the one state
+and a copy of it for the other. Clicking it runs `deleteItem`
+([`src/itemForm.ts`](src/itemForm.ts)) — the same path the form's Löschen button
+takes, so there is one delete flow, not two.
+
+Geometry and states are **CSS**, in [`src/styles/timeline.css`](src/styles/timeline.css)
+(rail block), with the glyph in [`src/styles/theme.css`](src/styles/theme.css)
 (`--ui-icon-delete`, kept apart from the `--icon-<key>` item set because chrome
 glyphs have no key). Slots are counted right-to-left from the bar's inner edge,
 so a mark's position is arithmetic on `--rail-slot` and marks line up without
 measuring anything.
+
+- **JS renders, CSS decides when.** `attachItemRail` puts a `.rail-delete` button
+  on every mounted editable item (phase-background items excluded) and re-applies
+  after vis mounts item DOM — the `'changed'` hook and repaint-via-timer notes
+  from [`src/itemPresence.ts`](src/itemPresence.ts) apply verbatim. Visibility is
+  left to `:hover` / `.vis-selected` in CSS; tracking hover in JS would duplicate
+  what the selector already knows, and the mark is in the DOM either way.
+- **The mark swallows the events vis builds gestures from** (`mousedown`,
+  `pointerdown`, `touchstart`), or else deleting would also select the item and
+  open its form. They are caught in the **capture** phase on the timeline
+  container: vis binds its listeners further down the tree, so a bubbling
+  listener would run after them, too late to stop anything. Those delegated
+  listeners are wired once per container, not per render — the container outlives
+  the timeline instances rendered into it.
 
 - **Geometry** lives entirely in the vars on `.vis-item`: `--rail-mark` (mark
   box), `--rail-gap`, `--rail-inset`, `--rail-fade` (the gradient ramp),
@@ -440,9 +464,11 @@ measuring anything.
   claims). `--bar-gutter` names the 2px gutter a range bar reserves so
   back-to-back bars don't touch — a mark sits inside the *visible* bar, so the
   rail has to offset by it.
-- **Occupancy** is read off the DOM (`:has(> .vis-delete)`), not off the
-  selection state, so a read-only timeline neither reserves the slot nor fades
-  its labels. `--rail-delete` + `--rail-marks` add up to `--rail-slots`.
+- **Occupancy** is read off the DOM (`:has(> .rail-delete)`), not off a state
+  class, so a read-only timeline neither reserves the slot nor fades its labels.
+  The slot is claimed only while the mark is actually visible, so an unhovered,
+  unselected bar keeps its full width for the label. `--rail-delete` +
+  `--rail-marks` add up to `--rail-slots`.
 - **Marks fill the strip from the edge inward, delete outermost.** A data mark
   therefore sits at slot `--rail-delete` (0 normally, 1 while the delete shows)
   and keeps a stable place at the edge instead of leaving a hole there when the
@@ -450,8 +476,9 @@ measuring anything.
 - **The fade** is an `::after` on `.vis-item-overflow` painted in
   `background-color: inherit` (whatever lane colour the wrapper carries) and
   masked into a ramp. Masking the wrapper itself would fade its border and fill
-  along with the text.
-- **Narrow bars fall back** to vis's placement just outside the right edge (no
+  along with the text. It stays in the DOM at `opacity: 0` so it fades in with
+  the mark rather than snapping on.
+- **Narrow bars fall back** to a placement just outside the right edge (no
   fade). Zoomed out most bars are a few dozen pixels wide — narrower than the
   rail itself — and an in-bar mark there would sit on a label the fade had
   already swallowed whole. Each bar is asked about its own width, which in CSS
@@ -462,14 +489,11 @@ measuring anything.
   can't read custom properties — keep it in step with `--rail-w` + `--rail-fade`.
 
 Two vis-timeline collisions the rail has to defeat, both worth knowing before
-touching it: the delete button needs `z-index` above `.vis-drag-center` /
+touching it: the mark needs `z-index` above `.vis-drag-center` /
 `.vis-drag-right` (vis appends those to the same item box *after* it, so they
 would swallow the click), and the right-edge **resize handle** is moved inward by
 `--rail-w` so „drag the right edge to resize" and „click × to delete" don't fight
-over the same pixels. Every rule is prefixed `.timeline` to outrank vis's own
-`.vis-item .vis-delete{…}` regardless of stylesheet order — the plain `<link>`s
-in `index.html` and the JS-imported vis CSS land in `<head>` in an order Vite
-resolves differently in dev and in a build.
+over the same pixels.
 
 **Adding a data mark:** render it as an absolutely positioned child of the
 `.vis-item`, position it with `right: calc(var(--bar-gutter) + var(--rail-inset)
@@ -1139,7 +1163,7 @@ Menschen per Google-Login gated.
 When the active view points to a **DB-backed** source (the timeline exists in Supabase, so `GET /api/source/<id>` returns it), the viewer is editable. File-only sources load read-only.
 
 - **Drag** an item left/right to move start, drag the right edge to resize, drag vertically to switch group. Persists on drop. On a selected bar the resize handle sits just inside the rail (see „Item rail"), not right at the edge.
-- **Delete** a selected item via the „×" mark at the bar's right edge — inside the bar on a bar wide enough for it, just outside on a narrow one. See „Item rail".
+- **Delete** an item via the „×" mark at the bar's right edge, which appears on hover and while the item is selected — inside the bar on a bar wide enough for it, just outside on a narrow one. Clicking it neither selects the item nor opens its form. See „Item rail".
 - **Double-click** on empty timeline space to add a new item (defaults: 1-week duration, current group, content "Neuer Eintrag"). Form opens for further edits. The **+ Eintrag** toolbar button (editable views only) does the same, placing the item at the centre of the visible window. In **list mode** a new item (toolbar or per-section button) is created **date-less** — empty start/end/duration — so it starts as a clean row to fill in via the form; it stays list-only until a start is set.
 - **Click** an item to open the edit form in the side panel. The title is edited
   in the panel headline and the icon/type/status trio sits in the header row above

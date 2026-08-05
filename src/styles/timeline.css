@@ -194,10 +194,8 @@
 /* ── Item rail: trailing marks inside the bar's right edge ─────────────────
  *
  * A range bar reserves a strip at its inner right edge for small marks. Today
- * the only mark is the delete affordance (vis-timeline's `.vis-delete`, which
- * by default hangs 24px *outside* the bar as a red Arial "×"); the strip is
- * built as a general mechanism so a data mark — a status glyph, say — can join
- * it later.
+ * the only mark is the delete affordance; the strip is built as a general
+ * mechanism so a data mark — a status glyph, say — can join it later.
  *
  * Slots are counted right-to-left from the bar's inner edge, so a mark's
  * position is arithmetic on `--rail-slot` and every mark lines up without
@@ -211,16 +209,19 @@
  *   right: calc(var(--bar-gutter) + var(--rail-inset)
  *               + var(--rail-delete) * var(--rail-slot))
  * set `--rail-marks: 1` on the item so the fade widens with the rail, and add
- * it to the `:has()` selectors below. All geometry stays in the vars above.
- * ───────────────────────────────────────────────────────────────────────── */
+ * it to the selectors below. All geometry stays in the vars above.
+ *
+ * The delete mark is `.rail-delete`, ours rather than vis-timeline's own
+ * `.vis-delete` (`editable.remove` is off) — vis only creates its button on a
+ * *selected* item, so hovering a bar showed nothing at all. See itemRail.ts.
+ * ────────────────────────────────────────────────────────────────────── */
 
 /* The mark: a round 18px button carrying a mask glyph in the item's own text
-   colour, so it adapts to every lane and theme like `.item-icon` does. The
-   `.timeline` prefix on every rule here outranks vis-timeline's own
-   `.vis-item .vis-delete{...}` regardless of stylesheet order — the plain
-   `<link>`s in index.html and the JS-imported vis CSS land in head in an order
-   Vite decides differently in dev and in a build. */
-.timeline .vis-item .vis-delete {
+   colour, so it adapts to every lane and theme like `.item-icon` does. It is in
+   the DOM for every editable item and hidden until the bar is hovered or
+   selected — letting the selector decide keeps hover-tracking out of the JS. */
+.timeline .vis-item .rail-delete {
+  position: absolute;
   top: 50%;
   transform: translateY(-50%);
   /* Non-range items (milestones, boxes) hug their content, so there is no room
@@ -230,17 +231,20 @@
   width: var(--rail-mark);
   height: var(--rail-mark);
   padding: 0;
+  border: 0;
   border-radius: 50%;
   background: transparent;
-  opacity: 0.5;
-  transition: opacity 0.12s linear, background-color 0.12s linear;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s linear, color 0.12s linear;
   /* Above `.vis-drag-center` and `.vis-drag-right`, which vis appends to the
      same item box and which would otherwise swallow the click. */
   z-index: 3;
 }
 
-.timeline .vis-item .vis-delete::after {
-  /* Replaces vis's `content: "\00D7"` text glyph. */
+.timeline .vis-item .rail-delete::after {
   content: '';
   position: absolute;
   inset: 3px;
@@ -249,21 +253,35 @@
   mask: var(--ui-icon-delete) center / contain no-repeat;
 }
 
-.timeline .vis-item .vis-delete:hover {
-  background: transparent;
+.timeline .vis-item:hover > .rail-delete,
+.timeline .vis-item.vis-selected > .rail-delete {
+  opacity: 0.5;
+  pointer-events: auto;
+}
+
+.timeline .vis-item > .rail-delete:hover {
   opacity: 1;
   color: var(--danger);
 }
 
+.timeline .vis-item > .rail-delete:focus-visible {
+  opacity: 1;
+  color: var(--danger);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* Inside the bar, in the rail's outermost slot. */
-.timeline .vis-item.vis-range .vis-delete {
+.timeline .vis-item.vis-range .rail-delete {
   right: calc(var(--bar-gutter) + var(--rail-inset));
 }
 
-/* Occupancy is read off the DOM rather than off the selection state: the delete
-   button only exists on an editable view, so a read-only timeline neither
-   reserves the slot nor fades its labels. */
-.timeline .vis-item.vis-range:has(> .vis-delete) {
+/* Occupancy is read off the DOM rather than off a state class: the mark only
+   exists on an editable view, so a read-only timeline neither reserves the slot
+   nor fades its labels. It is claimed only while the mark is actually visible —
+   an unhovered, unselected bar keeps its full width for the label. */
+.timeline .vis-item.vis-range:has(> .rail-delete):hover,
+.timeline .vis-item.vis-range:has(> .rail-delete).vis-selected {
   --rail-delete: 1;
 }
 
@@ -271,8 +289,9 @@
    clipped by it. `background-color: inherit` picks up whatever lane colour the
    wrapper is painted in, and the mask turns that flat colour into the ramp —
    masking the wrapper itself would fade its border and fill along with the
-   text. Sits inside the border box, so the border stays crisp. */
-.timeline .vis-item.vis-range:has(> .vis-delete) > .vis-item-overflow::after {
+   text. Sits inside the border box, so the border stays crisp. Kept in the DOM
+   at `opacity: 0` so it can fade in with the mark rather than snapping on. */
+.timeline .vis-item.vis-range:has(> .rail-delete) > .vis-item-overflow::after {
   content: '';
   position: absolute;
   top: 0;
@@ -282,24 +301,33 @@
   background-color: inherit;
   -webkit-mask: linear-gradient(to right, transparent, #000 var(--rail-fade));
   mask: linear-gradient(to right, transparent, #000 var(--rail-fade));
+  opacity: 0;
+  transition: opacity 0.12s linear;
   pointer-events: none;
+}
+
+.timeline .vis-item.vis-range:has(> .rail-delete):hover > .vis-item-overflow::after,
+.timeline
+  .vis-item.vis-range:has(> .rail-delete).vis-selected
+  > .vis-item-overflow::after {
+  opacity: 1;
 }
 
 /* Move the right-edge resize handle inward by the rail width. vis pins it to
    the bar edge (`right: -4px`, 24px wide), which is exactly where the rail now
-   is — and vis appends it after the delete button, so without this the handle
-   covers the mark and "drag the right edge to resize" and "click × to delete"
-   fight over the same pixels. */
-.timeline .vis-item.vis-range:has(> .vis-delete) .vis-drag-right {
+   is — and vis appends it after the mark, so without this the handle covers it
+   and "drag the right edge to resize" and "click × to delete" fight over the
+   same pixels. The handle only exists on a selected item. */
+.timeline .vis-item.vis-range:has(> .rail-delete).vis-selected .vis-drag-right {
   right: calc(var(--rail-w) - 4px);
 }
 
 /* A bar only carries the rail if it is wide enough to give the label room next
    to it. Zoomed out, most bars are a few dozen pixels wide — narrower than the
    rail itself — and an in-bar mark there would sit on top of a label the fade
-   had already swallowed whole. Those bars fall back to vis's placement just
-   outside the right edge (no fade, resize handle back at the edge), which keeps
-   the delete reachable at every zoom level instead of hiding it.
+   had already swallowed whole. Those bars fall back to a placement just outside
+   the right edge (no fade, resize handle back at the edge), which keeps the
+   delete reachable at every zoom level instead of hiding it.
 
    Each bar is asked about its own width, so the fallback is per bar, not per
    zoom level: a container query is the only way to reach that in CSS. `.vis-item`
@@ -317,15 +345,15 @@
 }
 
 @container (max-width: 72px) {
-  .timeline .vis-item.vis-range .vis-delete {
+  .timeline .vis-item.vis-range .rail-delete {
     right: calc(0px - var(--rail-mark) - var(--rail-inset));
   }
 
-  .timeline .vis-item.vis-range:has(> .vis-delete) > .vis-item-overflow::after {
-    content: none;
+  .timeline .vis-item.vis-range:has(> .rail-delete) > .vis-item-overflow::after {
+    display: none;
   }
 
-  .timeline .vis-item.vis-range:has(> .vis-delete) .vis-drag-right {
+  .timeline .vis-item.vis-range:has(> .rail-delete).vis-selected .vis-drag-right {
     right: -4px;
   }
 }

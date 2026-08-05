@@ -1,6 +1,7 @@
 // Timeline rendering and direct-manipulation handlers: builds the vis-timeline
 // from the active view/source, keeps its DataSets in sync on live edits, and
-// handles drag-move, add and remove.
+// handles drag-move and add. Deleting hangs off the rail's own mark (itemRail.ts)
+// and runs through itemForm's deleteItem, the same path the form's button takes.
 
 import { Timeline, DataSet } from 'vis-timeline/standalone';
 import {
@@ -54,7 +55,8 @@ import {
   snapshotSaved,
 } from './persistence';
 import { attachItemPresence } from './itemPresence';
-import { showItemForm } from './itemForm';
+import { attachItemRail } from './itemRail';
+import { deleteItem, showItemForm } from './itemForm';
 import { showDetailForId, hideDetail } from './detailPanel';
 import { renderListView } from './listView';
 import { loadedKindView } from './kinds/registry';
@@ -106,7 +108,7 @@ function editableOptions(): false | Record<string, boolean> {
         updateTime: true,
         updateGroup: !regroupedMode,
         add: !regroupedMode,
-        remove: true,
+        remove: false,
         overrideItems: false,
       }
     : false;
@@ -454,7 +456,6 @@ export async function renderTimeline(view: View) {
     editable,
     onMove: handleMove,
     onAdd: handleAdd,
-    onRemove: handleRemove,
     onUpdate: (_item: TimelineItem, callback: (item: TimelineItem | null) => void) => {
       // suppress vis-timeline's built-in inline editor; we use our own form on select
       callback(null);
@@ -463,6 +464,9 @@ export async function renderTimeline(view: View) {
   state.timeline = timeline;
   // Re-apply other users' item marks whenever vis (re)mounts item DOM.
   attachItemPresence(timeline);
+  // Same for the rail's delete mark — ours rather than vis's `editable.remove`
+  // button, which only ever appears on a *selected* item (see itemRail.ts).
+  attachItemRail(timeline, els.timeline, deleteItem);
 
   let lastH = containerHeight;
   const ro = new ResizeObserver(() => {
@@ -892,24 +896,3 @@ export function applyFilter(): void {
   refreshDisplay();
 }
 
-function handleRemove(item: TimelineItem, callback: (item: TimelineItem | null) => void): void {
-  if (!state.activeSourceFile) {
-    callback(item);
-    return;
-  }
-  const idx = findItemIndex(state.activeSourceFile, item.id);
-  if (idx === -1) {
-    callback(item);
-    return;
-  }
-  const src = state.activeSourceFile.items[idx];
-  if (!confirm(`„${src.content}" wirklich löschen?`)) {
-    callback(null);
-    return;
-  }
-  state.activeSourceFile.items.splice(idx, 1);
-  callback(item);
-  rebuildAndApply();
-  schedulePersist();
-  hideDetail();
-}
