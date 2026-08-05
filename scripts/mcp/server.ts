@@ -187,7 +187,6 @@ const itemFields = {
     ),
   content: z.string().describe('Item title shown on the bar.'),
   group: z.string().optional().describe('Group id this item belongs to.'),
-  title: z.string().optional().describe('Tooltip text.'),
   type: z.enum(['point', 'range', 'background', 'box']).optional(),
   className: z.string().optional(),
   icon: z

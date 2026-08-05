@@ -73,7 +73,8 @@ type ExportItem = {
   start: string;
   end?: string;
   content: string;
-  title: string;
+  // Only the notes path derives a tooltip (title + date); JSON items carry none.
+  title?: string;
   type: 'point' | 'range' | 'background' | 'box';
 };
 
@@ -139,7 +140,6 @@ function buildFromJson(view: View, file: TimelineFile): { items: ExportItem[]; g
       start: raw.start,
       end: endIso,
       content: escapeHtml(raw.content),
-      title: raw.title ? escapeHtml(raw.title) : escapeHtml(raw.content),
       type: raw.type ?? (endIso ? 'range' : 'point'),
     });
     details[id] = detailFromJsonItem(view, { ...raw, id });

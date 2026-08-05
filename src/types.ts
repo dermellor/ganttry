@@ -85,7 +85,6 @@ export type TimelineFileItem = {
   duration?: string | number;
   content: string;
   group?: string;
-  title?: string;
   type?: 'point' | 'range' | 'background' | 'box';
   className?: string;
   icon?: string;

@@ -49,7 +49,7 @@ export { ConflictError, NotFoundError, ValidationError };
 export type { PublicPricing, TimelineGroupDecl, TimelineMeta };
 
 const ITEM_SELECT =
-  'id, start, "end", duration, content, "group", type, title, body, icon, status, class_name, metadata, version, sort, created_at, created_by, updated_at, updated_by';
+  'id, start, "end", duration, content, "group", type, body, icon, status, class_name, metadata, version, sort, created_at, created_by, updated_at, updated_by';
 
 // timestamptz columns come back from postgres.js as JS Date objects; the shape
 // the client/tests expect is an ISO string (what supabase-js used to return).
@@ -71,7 +71,6 @@ function rowToItem(row: Record<string, any>): TimelineFileItem {
   if (row.duration != null) item.duration = row.duration;
   if (row.group != null) item.group = row.group;
   if (row.type != null) item.type = row.type;
-  if (row.title != null) item.title = row.title;
   if (row.body != null) item.body = row.body;
   if (row.icon != null) item.icon = row.icon;
   if (row.status != null) item.status = statusOrDefault(row.status);
@@ -111,7 +110,6 @@ function itemToRow(timelineId: string, item: TimelineFileItem, sort?: number): R
     content: item.content,
     group: item.group ?? null,
     type: item.type ?? null,
-    title: item.title ?? null,
     body: item.body ?? null,
     icon: item.icon ?? null,
     // status is NOT NULL in the DB: always write a canonical value, never null
@@ -415,7 +413,7 @@ export async function replaceTimeline(sql: Sql, id: string, file: TimelineFile):
   if (itemRows.length) {
     await sql`insert into timeline_items ${sql(
       itemRows,
-      'timeline_id', 'id', 'start', 'end', 'duration', 'content', 'group', 'type', 'title', 'body', 'icon', 'status', 'class_name', 'metadata', 'sort',
+      'timeline_id', 'id', 'start', 'end', 'duration', 'content', 'group', 'type', 'body', 'icon', 'status', 'class_name', 'metadata', 'sort',
     )}`;
   }
 
@@ -474,7 +472,7 @@ export async function updateItem(
   const set: Record<string, any> = {};
   const map: Record<keyof TimelineFileItem | string, string> = {
     start: 'start', end: 'end', duration: 'duration', content: 'content', group: 'group',
-    type: 'type', title: 'title', body: 'body', icon: 'icon', status: 'status', className: 'class_name', metadata: 'metadata',
+    type: 'type', body: 'body', icon: 'icon', status: 'status', className: 'class_name', metadata: 'metadata',
   };
   for (const [k, col] of Object.entries(map)) {
     if (k in patch) set[col] = full[col];

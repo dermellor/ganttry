@@ -61,7 +61,6 @@ const CLEARABLE_ITEM_FIELDS: (keyof TimelineFileItem)[] = [
   'end',
   'duration',
   'group',
-  'title',
   'type',
   'className',
   'icon',

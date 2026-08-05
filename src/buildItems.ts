@@ -19,7 +19,9 @@ export type TimelineItem = {
   start?: string;
   end?: string;
   content: string;
-  title: string;
+  // Vis-timeline hover tooltip. Only the notes path derives one (title + date);
+  // JSON/DB items carry none, so the tooltip is absent for them.
+  title?: string;
   type: 'point' | 'range' | 'background' | 'box';
   className?: string;
   style?: string;
@@ -486,7 +488,6 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
       start: raw.start,
       end: endIso,
       content: escapeHtml(raw.content),
-      title: raw.title ? escapeHtml(raw.title) : escapeHtml(raw.content),
       type: raw.type ?? (endIso ? 'range' : 'point'),
       icon: normalizeIcon(raw.icon),
       status: normalizeStatus(raw.status),
