@@ -51,6 +51,12 @@
   --success: #94d825;
   --magenta: #f32ed4;
 
+  /* Item status (Open/Doing/Done, see src/status.ts). Used by the status dots
+     in the item form's segmented control. */
+  --status-open: #94a3b8;
+  --status-doing: #315dff;
+  --status-done: #1d9e75;
+
   --font-body: system-ui, -apple-system, sans-serif;
   --font-headline: Georgia, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;

@@ -41,6 +41,67 @@
   display: none;
 }
 
+/* Token input: chips and the search field share ONE bordered box that looks
+   like a single control, instead of a chip row stacked above a full-width
+   input. That reclaims a whole row per chip field and lets these fields sit at
+   half width next to each other. The chips/suggest wrappers become
+   `display: contents` so their children flow as direct flex items of the box —
+   the JS keeps re-rendering into the same wrappers, untouched. */
+.item-form .chip-box {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 3px 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.item-form .chip-box:focus-within {
+  border-color: var(--accent);
+}
+
+.item-form .chip-box > .jira-chips,
+.item-form .chip-box > .tags-chips,
+.item-form .chip-box > .deps-chips,
+.item-form .chip-box > .cf-chips,
+.item-form .chip-box > .jira-suggest,
+.item-form .chip-box > .tags-suggest,
+.item-form .chip-box > .deps-suggest,
+.item-form .chip-box > .cf-suggest {
+  display: contents;
+}
+
+/* The box carries the border and focus ring, so the inner field is bare. It
+   flexes into whatever width the chips leave, down to a still-typeable floor. */
+.item-form .chip-box input {
+  flex: 1 1 70px;
+  min-width: 70px;
+  width: auto;
+  padding: 2px 4px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.item-form .chip-box input:focus {
+  outline: none;
+  border-color: transparent;
+}
+
+/* Dropdown hangs off the box (position: relative above) and spans its width,
+   regardless of how narrow the input itself has become. */
+.item-form .chip-box .jira-suggest-list,
+.item-form .chip-box .tags-suggest-list,
+.item-form .chip-box .deps-suggest-list,
+.item-form .chip-box .cf-suggest-list {
+  top: calc(100% + 4px);
+  margin: 0;
+}
+
 .jira-chip,
 .tag-chip,
 .deps-chip,

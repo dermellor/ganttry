@@ -146,16 +146,10 @@
 }
 
 /* Reuse the timeline's semantic icon + tag pill markup inside table rows. The
-   base rules in timeline.css are scoped to `.vis-item`, so mirror them here. */
+   glyph itself comes from the unscoped `.item-icon` rule in timeline.css; only
+   the slightly wider gap to the row text is list-specific. */
 .list-view .item-icon {
-  display: inline-block;
-  width: 1em;
-  height: 1em;
   margin-right: 0.4em;
-  vertical-align: -0.15em;
-  background-color: currentColor;
-  -webkit-mask: var(--item-icon) center / contain no-repeat;
-  mask: var(--item-icon) center / contain no-repeat;
 }
 
 .list-view .item-tag {

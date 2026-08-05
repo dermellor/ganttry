@@ -114,12 +114,14 @@ export function renderCustomFieldsHtml(meta: Record<string, unknown>): string {
       const label = escapeHtml(def.label || def.key);
       if (def.type === 'multi-select') {
         return `
-      <div class="field full cf-field" data-cf-key="${key}">
+      <div class="field cf-field" data-cf-key="${key}">
         <label>${label}</label>
-        <div class="cf-chips" data-cf-chips="${key}"></div>
-        <div class="cf-suggest">
-          <input class="cf-input" data-cf-input="${key}" type="text" autocomplete="off" placeholder="Auswählen…" />
-          <ul class="cf-suggest-list" data-cf-list="${key}" hidden></ul>
+        <div class="chip-box">
+          <div class="cf-chips" data-cf-chips="${key}"></div>
+          <div class="cf-suggest">
+            <input class="cf-input" data-cf-input="${key}" type="text" autocomplete="off" placeholder="Auswählen…" />
+            <ul class="cf-suggest-list" data-cf-list="${key}" hidden></ul>
+          </div>
         </div>
       </div>`;
       }
@@ -141,7 +143,7 @@ export function renderCustomFieldsHtml(meta: Record<string, unknown>): string {
       // text
       const cur = escapeHtml(readValues(meta, def.key)[0] ?? '');
       return `
-      <div class="field full cf-field" data-cf-key="${key}">
+      <div class="field cf-field" data-cf-key="${key}">
         <label>${label}</label>
         <input data-cf-control="${key}" type="text" value="${cur}" />
       </div>`;

@@ -24,10 +24,9 @@
   display: none;
 }
 
-/* Sticky headline block: stays pinned while the body scrolls, casts a light
+/* Sticky headline block: stays pinned while the body scrolls and casts a light
    shadow (only once scrolled, via a scroll-driven animation) instead of a
-   divider line, and reserves two lines of title height so the content below
-   always starts at the same offset. */
+   divider line. */
 .detail-header {
   position: sticky;
   top: 0;
@@ -67,14 +66,79 @@
   color: var(--fg, #2c3333);
 }
 
+/* Tools row above the headline: for an editable item it holds the icon / type /
+   status pickers (styled in forms.css). It shares the close button's line, hence
+   the height matching the 32px button and the right padding that keeps the last
+   picker clear of it. Empty and hidden for read-only notes and the phase /
+   feature forms. */
+.detail-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding-right: 40px;
+  /* Air between the picker row and the headline, so the heading reads as its own
+     block rather than as a caption stuck under the buttons. The editable
+     headline pulls itself up by 4px (its hover/focus surface needs padding), so
+     the visible gap is this minus 4. */
+  margin-bottom: 20px;
+}
+
+.detail-tools[hidden] {
+  display: none;
+}
+
+/* With a tools row present the close button belongs to *that* line, not to the
+   headline: it drops to the row's vertical centre, and the heading below gets
+   the full width. */
+.detail-header.has-tools .detail-close {
+  top: 24px;
+}
+
+.detail-header.has-tools h2 {
+  padding-right: 0;
+}
+
+/* No reserved second line. The heading used to hold 2.5em so the content below
+   started at the same offset no matter how long the title was; with the picker
+   row and the tabstrip now sitting above the fields, that stability is not worth
+   ~28px of empty space under every one-line title. */
 .detail h2 {
   margin: 0;
   padding-right: 36px;
-  min-height: 2.5em;
   font-family: var(--font-headline, var(--font-body, serif));
   font-weight: var(--headline-weight, 400);
   font-size: 22px;
   line-height: 1.25;
+}
+
+/* For an editable item the headline IS the title input (contenteditable, see
+   setDetailTitle in detailPanel.ts) — the form no longer repeats it in a field
+   below. Only that mode gets the affordances; a read-only note's heading stays
+   plain text. The negative margin keeps the text on the same optical line as
+   before despite the padding the hover/focus surface needs. */
+.detail h2[contenteditable] {
+  margin: -4px -6px;
+  padding: 4px 6px;
+  padding-right: 42px;
+  border-radius: 6px;
+  cursor: text;
+}
+
+.detail h2[contenteditable]:hover {
+  background: var(--hover, rgba(0, 0, 0, 0.04));
+}
+
+/* No ring: the headline is a 22px serif line, and a frame around it looked like
+   a misplaced input. The tint alone marks it as the surface being edited. */
+.detail h2[contenteditable]:focus {
+  outline: none;
+  background: var(--hover, rgba(0, 0, 0, 0.04));
+}
+
+.detail h2[contenteditable]:empty::before {
+  content: 'Titel…';
+  color: var(--fg-muted);
 }
 
 .detail-meta {
@@ -84,6 +148,13 @@
   margin: 16px 0 20px;
   padding: 0;
   font-size: 12px;
+}
+
+/* The item / phase / feature forms clear this list. An empty <dl> still keeps
+   its 36px of vertical margins, which showed up as a mysterious gap under the
+   headline of every form. */
+.detail-meta:empty {
+  display: none;
 }
 
 .detail-meta dt {

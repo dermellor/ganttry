@@ -42,6 +42,8 @@ export const els = {
   status: document.getElementById('status') as HTMLSpanElement,
   detail: document.getElementById('detail') as HTMLElement,
   detailTitle: document.getElementById('detail-title') as HTMLHeadingElement,
+  // Header row above the headline (item form: the icon/type/status pickers).
+  detailTools: document.getElementById('detail-tools') as HTMLDivElement,
   detailMeta: document.getElementById('detail-meta') as HTMLDListElement,
   detailBody: document.getElementById('detail-body') as HTMLElement,
   detailClose: document.getElementById('detail-close') as HTMLButtonElement,

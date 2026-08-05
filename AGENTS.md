@@ -369,7 +369,7 @@ defined in the `:root` block of
 - **Change the icon look:** override any key in your own stylesheet, e.g.
   `:root { --icon-milestone: url("…"); }`.
 - **Add a new semantic key:** add it to `IconKey` + `TIMELINE_ICONS` in
-  `src/icons.ts` (label shown in the editor dropdown) and add a matching
+  `src/icons.ts` (label shown in the icon picker) and add a matching
   `--icon-<key>` to the `:root` set in `theme.css`. It then appears in the edit
   form, the `timeline_items.icon` column, and the MCP `add_item`/`update_item` tools.
 
@@ -1004,15 +1004,17 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
 
 - **Drag** an item left/right to move start, drag the right edge to resize, drag vertically to switch group. Persists on drop.
 - **Double-click** on empty timeline space to add a new item (defaults: 1-week duration, current group, content "Neuer Eintrag"). Form opens for further edits. The **+ Eintrag** toolbar button (editable views only) does the same, placing the item at the centre of the visible window. In **list mode** a new item (toolbar or per-section button) is created **date-less** — empty start/end/duration — so it starts as a clean row to fill in via the form; it stays list-only until a start is set.
-- **Click** an item to open the edit form in the side panel. The fields are split
-  across three tabs ([`src/itemForm.ts`](src/itemForm.ts), `FORM_TABS`), with the
-  Title input pinned above the tabstrip and the Delete button + audit footer below
-  it, so both stay reachable from any tab:
-  - **Date & Time** — start, end, duration, type (type governs the temporal shape
-    and mutes end/duration for a Meilenstein, so it sits with the dates).
-  - **Properties** — group, status, icon, owner, body (Markdown), tags, the
-    per-timeline custom fields, the read-only ID, and the free-form metadata JSON
-    box.
+- **Click** an item to open the edit form in the side panel. The title is edited
+  in the panel headline and the icon/type/status trio sits in the header row above
+  it (both outside the tabs, see below); the remaining fields are split across
+  three tabs ([`src/itemForm.ts`](src/itemForm.ts), `FORM_TABS`), with the Delete
+  button + audit footer below the tabstrip so they stay reachable from any tab:
+  - **Date & Time** — start, end, duration (a Meilenstein has no extent, so
+    picking that type mutes end/duration).
+  - **Properties** — group, owner, body (Markdown), tags, and the per-timeline
+    custom fields. The free-form metadata JSON box sits behind an „Erweitert"
+    `<details>` disclosure, collapsed unless the item actually carries extra
+    metadata.
   - **Relationships** — dependencies (`dependsOn`) and JIRA links.
 
   All panels stay in the DOM (inactive ones just `hidden`), so `FormData` keeps
@@ -1020,6 +1022,72 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
   the tabs. The chosen tab is remembered across item switches (module-level
   `activeFormTab`, not persisted across reloads). Save writes back; Delete removes
   the item.
+
+  **The panel headline IS the title editor.** The form used to repeat the title
+  in a labelled input directly under the heading — the same string twice, one of
+  them costing a row. The `<h2>` is now `contenteditable` for an editable item
+  (`setDetailTitle` / `focusDetailTitle` in
+  [`src/detailPanel.ts`](src/detailPanel.ts), the single entry point every panel
+  uses for the headline, so a read-only note or a phase form resets the editable
+  state). The form keeps a hidden `content` input, so `applyItemForm` and the
+  persist diff read the title out of `FormData` unchanged; typing writes into it
+  and dispatches a bubbling `input`. Enter and Escape blur (a title is one line),
+  and because the headline sits outside the form its `blur` commits explicitly —
+  the form's own `focusout` never fires for it.
+
+  Two headline entry points, and the distinction matters: `setDetailTitle` is for
+  **switching what the panel shows** (it also resets the editable state and
+  clears the header tools row), `setDetailTitleText` is for **syncing the caption
+  during an edit** (text only, and a no-op while the headline has focus — setting
+  `textContent` under the caret would throw it back to the start of the line).
+  Routing the in-edit sync through `setDetailTitle` wiped the picker row on every
+  keystroke, and since the pickers own form-associated hidden inputs, `FormData`
+  then lost `icon` / `type` / `status` and the next edit reset the status to its
+  default. `applyItemForm` therefore also only touches those three when
+  `fd.has(...)` — a missing key means "control not in the DOM", not "user cleared
+  the field".
+
+  **Icon, type and status share one control** (`PickerSpec` / `pickerHtml` /
+  `wirePicker` in [`src/itemForm.ts`](src/itemForm.ts)): all three are "pick one
+  value from a small fixed set", and as labelled `<select>`s they cost a full
+  field row each while showing German words for something visual. Each is now a
+  30px trigger button displaying the current value's **mark** — the icon glyph,
+  the temporal shape (diamond = Meilenstein, bar = Zeitraum, dashed band =
+  Phase), the status colour dot — that opens a popover with the choices (a
+  mark-only grid for the 19 icons, mark + label rows for type and status).
+  Adding a fourth such field is a new `PickerSpec` plus a `wirePicker` call.
+
+  The trio lives in the **panel header** (`#detail-tools`, filled by
+  `renderPickerTools`, laid out in [`src/styles/detail.css`](src/styles/detail.css)),
+  on the close button's line and above the headline: it costs the form no row,
+  sits outside the tabs, and the sticky header keeps it in place while the body
+  scrolls. That puts it *outside* the `<form>`, which makes two details load-
+  bearing: each hidden input carries `form="item-form"` (a form-attribute-
+  associated control is still part of `FormData`, so `applyItemForm` keeps
+  reading `status` / `icon` / `type` exactly as it did with the selects), and
+  picking calls `scheduleLiveEdit()` directly — an event dispatched in the header
+  bubbles up the header, never reaching the form's listener.
+
+  **Panel height is the scarce resource** in this form, so it is spent on fewer
+  rows rather than on tighter ones: the rows that remain are deliberately airy
+  (16px between fields, 4px between a label and its own control — the air goes
+  *between* fields, not inside them), and the height comes back by removing
+  fields instead. Every chip field (tags, custom multi-selects,
+  dependencies, JIRA) renders its chips and its search input inside **one**
+  bordered `.chip-box` that reads as a single control
+  ([`src/styles/chips.css`](src/styles/chips.css)) — that frees a row per field
+  and lets those fields sit at half width beside each other. The Markdown body
+  grows from a low floor instead of reserving a screenful
+  ([`src/styles/wysiwyg.css`](src/styles/wysiwyg.css)), and the read-only item
+  **id** lives in the audit footer (`auditBlockHtml`) instead of a labelled
+  input, being metadata of the same category as the created/updated rows. Unlike
+  those rows the id renders in every environment, not only on localhost.
+
+  **Focus tints, it does not frame.** Focusing a field, a chip box, the body
+  editor or the headline recolours its border (the headline: a background tint)
+  instead of drawing the former 2px accent ring, which read as a heavy frame
+  around everything you touched. Buttons — tabs, pickers — keep a real ring, but
+  only on `:focus-visible`, where there is no border to recolour.
 - **Depends on** is a title-autosuggest field: type to search the current timeline's items by title (or id), pick to link a dependency (rendered as a removable chip). Stored as `metadata.dependsOn` IDs — the chips just show the target's title.
 - **Tags** is a chip editor with autosuggest: type to match tags already used in the timeline, or type a new label and press Enter to create one. Each chip carries its resolved colour and a remove button. Stored as `metadata.tags` (string[]); saving migrates any legacy singular `metadata.tag` into the array.
 - **Phases** render as a ribbon along the top. Drag a segment to move it, drag either edge to resize (snaps to whole days, min. 1 day), and click it (without dragging) to open the phase form in the side panel: title, start/end, duration, icon, colour. Persists on drop / Save; Delete removes the phase.

@@ -8,15 +8,17 @@
   overflow: hidden;
 }
 
+/* Border tint instead of a ring — see the focus note in forms.css. */
 .wysiwyg:focus-within {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
   border-color: var(--accent);
 }
 
+/* Grows with its content between these bounds. The floor is deliberately low:
+   the body is the single biggest consumer of panel height, and an empty or
+   two-line note has no business reserving a screenful. */
 .wysiwyg-surface {
-  padding: 9px 11px;
-  min-height: 120px;
+  padding: 8px 10px;
+  min-height: 72px;
   max-height: 340px;
   overflow-y: auto;
   font-size: 13px;

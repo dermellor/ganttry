@@ -33,7 +33,7 @@ import {
   schedulePersist,
 } from './persistence';
 import { rebuildAndApply } from './render';
-import { hideDetail } from './detailPanel';
+import { focusDetailTitle, hideDetail, setDetailTitle, setDetailTitleText } from './detailPanel';
 
 // Build the group <select> options. Parent groups (those with nestedGroups) are
 // containers only, so they render as a non-selectable <optgroup> heading and
@@ -111,6 +111,259 @@ function tabIconHtml(id: FormTabId): string {
 // user is working in.
 let activeFormTab: FormTabId = 'time';
 
+// The item form's id. Needed as a real id because the header pickers live
+// outside the form and associate with it via their `form` attribute.
+const FORM_ID = 'item-form';
+
+// Extent a range/background item gets when it has none: vis-timeline drops a
+// range without an end, so the item would silently vanish from the timeline.
+// Shared by applyItemForm (the model) and the type picker (the form field), so
+// the two cannot drift apart. Matches the double-click "new item" default.
+const DEFAULT_EXTENT = '1w';
+
+// ---- title = the panel headline --------------------------------------------
+// The item title is edited directly in the panel's <h2> (contenteditable, see
+// setDetailTitle). The form keeps a hidden input under the field's own name, so
+// `applyItemForm` and the persist diff still read `content` out of FormData;
+// typing in the headline writes into that input and dispatches a bubbling
+// `input`, which the form's live-edit listener picks up.
+//
+// The listeners are attached once for the app's lifetime and resolve the open
+// form on each event — the headline outlives any single form, so re-binding per
+// item would stack a listener per opened item.
+let titleWired = false;
+
+function contentInput(): HTMLInputElement | null {
+  return els.detailBody.querySelector<HTMLInputElement>('.item-form input[name="content"]');
+}
+
+function wireTitleHeadline(): void {
+  if (titleWired) return;
+  titleWired = true;
+  const h = els.detailTitle;
+  h.addEventListener('input', () => {
+    const input = contentInput();
+    if (!input || state.formRebuilding) return;
+    input.value = h.textContent ?? '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  h.addEventListener('keydown', (e) => {
+    // A title is one line: Enter commits instead of inserting a break.
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault();
+      h.blur();
+    }
+  });
+  // The headline sits outside the form, so leaving it never triggers the form's
+  // own focusout → commit. Do it here.
+  h.addEventListener('blur', () => {
+    if (state.activeFormItemId) commitItemForm();
+  });
+}
+
+// ---- mark pickers (icon / type / status) -----------------------------------
+// Icon, type and status are all "pick one value from a small fixed set", and all
+// three used to be a labelled <select> costing a full field row each. They share
+// ONE control here: a 30px trigger button showing the current value's *mark* —
+// the icon glyph, the temporal shape, the status colour dot — that opens a
+// popover with the choices. No labels; the tooltip and the popover rows name
+// them.
+//
+// The trio lives in the panel header (`els.detailTools`), on the same line as
+// the close button and above the headline, so it costs the form no row at all,
+// sits outside the tabs, and stays put while the body scrolls (sticky header).
+//
+// That places it OUTSIDE the <form>, so two things are deliberate: each hidden
+// input carries `form="item-form"` (a form-attribute-associated control is still
+// part of FormData, so `applyItemForm` keeps reading these fields as before),
+// and picking calls `scheduleLiveEdit()` directly — a change event dispatched
+// here bubbles up the header, never reaching the form's own listener.
+
+type PickOption = {
+  value: string;
+  label: string; // full name: tooltip, accessible name, and popover row text
+  mark: string; // HTML for the visual shown in the trigger and the popover
+};
+
+type PickerSpec = {
+  name: string; // form field name (also the hidden input's name)
+  title: string; // field name shown in the tooltip, e.g. "Icon"
+  options: PickOption[];
+  // `grid` for a mark-only matrix (the 19 icons), `list` for mark + label rows.
+  layout: 'grid' | 'list';
+};
+
+// A mark rendered as an inline SVG, in the same style as the tab glyphs.
+function svgMark(body: string): string {
+  return (
+    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"' +
+    ` stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`
+  );
+}
+
+const ICON_SPEC: PickerSpec = {
+  name: 'icon',
+  title: 'Icon',
+  layout: 'grid',
+  options: [
+    { value: '', label: 'kein Icon', mark: '<span class="pick-none">—</span>' },
+    ...TIMELINE_ICONS.map(({ key, label }) => ({
+      value: key,
+      label,
+      mark: `<span class="item-icon" style="--item-icon:var(--icon-${key})"></span>`,
+    })),
+  ],
+};
+
+// The mark *is* the temporal shape the option produces: a diamond for a
+// milestone, a bar for a range, a dashed band for a background phase.
+const TYPE_SPEC: PickerSpec = {
+  name: 'type',
+  title: 'Type',
+  layout: 'list',
+  options: [
+    { value: '', label: 'Automatisch', mark: svgMark('<path d="M6 3.5v5M3.5 6h5M16 13v7M12.5 16.5h7" />') },
+    { value: 'point', label: 'Meilenstein', mark: svgMark('<path d="M12 4l8 8-8 8-8-8z" />') },
+    { value: 'range', label: 'Zeitraum', mark: svgMark('<rect x="3" y="9" width="18" height="6" rx="2" />') },
+    {
+      value: 'background',
+      label: 'Phase (Hintergrund)',
+      mark: svgMark('<rect x="2.5" y="5" width="19" height="14" rx="1.5" stroke-dasharray="3 2.5" />'),
+    },
+    { value: 'box', label: 'Markierung', mark: svgMark('<rect x="7" y="7" width="10" height="10" rx="1.5" />') },
+  ],
+};
+
+// Derived from ITEM_STATUSES so src/status.ts stays the single source of truth;
+// the dot takes its colour per value from CSS (`--status-<key>`).
+const STATUS_SPEC: PickerSpec = {
+  name: 'status',
+  title: 'Status',
+  layout: 'list',
+  options: ITEM_STATUSES.map(({ key, label }) => ({
+    value: key,
+    label,
+    mark: `<span class="status-dot" data-status="${key}"></span>`,
+  })),
+};
+
+const PICKERS: PickerSpec[] = [ICON_SPEC, TYPE_SPEC, STATUS_SPEC];
+
+function pickOption(spec: PickerSpec, value: string): PickOption {
+  return spec.options.find((o) => o.value === value) ?? spec.options[0];
+}
+
+function pickerTitle(spec: PickerSpec, value: string): string {
+  return `${spec.title}: ${pickOption(spec, value).label}`;
+}
+
+function pickerHtml(spec: PickerSpec, current: string): string {
+  const cells = spec.options
+    .map(
+      (o) =>
+        `<button type="button" class="pick-cell" role="option" data-value="${escapeHtml(o.value)}"` +
+        ` aria-selected="${o.value === current}" title="${escapeHtml(o.label)}"` +
+        ` aria-label="${escapeHtml(o.label)}">${o.mark}` +
+        (spec.layout === 'list' ? `<span class="pick-cell-label">${escapeHtml(o.label)}</span>` : '') +
+        `</button>`,
+    )
+    .join('');
+  return (
+    `<div class="pick" data-pick="${spec.name}">` +
+    `<button type="button" class="pick-trigger" data-role="pick-trigger" aria-haspopup="listbox"` +
+    ` aria-expanded="false" title="${escapeHtml(pickerTitle(spec, current))}"` +
+    ` aria-label="${escapeHtml(pickerTitle(spec, current))}">${pickOption(spec, current).mark}</button>` +
+    `<input type="hidden" form="${FORM_ID}" name="${spec.name}" value="${escapeHtml(current)}" />` +
+    `<div class="pick-menu pick-${spec.layout}" role="listbox" aria-label="${escapeHtml(spec.title)}"` +
+    ` data-role="pick-menu" hidden>${cells}</div>` +
+    `</div>`
+  );
+}
+
+// Renders all three pickers into the panel header row. Called by showItemForm
+// after setDetailTitle (which clears the row for the non-editable cases).
+function renderPickerTools(item: TimelineFileItem): void {
+  const current: Record<string, string> = {
+    icon: item.icon ?? '',
+    type: item.type ?? '',
+    status: statusOrDefault(item.status),
+  };
+  els.detailTools.innerHTML = PICKERS.map((spec) => pickerHtml(spec, current[spec.name])).join('');
+  els.detailTools.hidden = false;
+  els.detail.querySelector('.detail-header')?.classList.add('has-tools');
+}
+
+function wirePicker(spec: PickerSpec, onPick?: (value: string) => void): void {
+  const host = els.detailTools;
+  const root = host.querySelector<HTMLElement>(`[data-pick="${spec.name}"]`);
+  const trigger = root?.querySelector<HTMLButtonElement>('[data-role="pick-trigger"]');
+  const menu = root?.querySelector<HTMLElement>('[data-role="pick-menu"]');
+  const hidden = root?.querySelector<HTMLInputElement>('input[type="hidden"]');
+  if (!root || !trigger || !menu || !hidden) return;
+
+  const close = () => {
+    menu.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+  };
+  // Only one picker open at a time — they sit shoulder to shoulder, so a second
+  // open menu would cover its neighbour's trigger.
+  const open = () => {
+    closePickMenus(menu);
+    menu.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+  };
+
+  trigger.addEventListener('click', () => (menu.hidden ? open() : close()));
+
+  menu.addEventListener('click', (e) => {
+    const cell = (e.target as HTMLElement).closest<HTMLButtonElement>('.pick-cell');
+    if (!cell || cell.dataset.value == null) return;
+    const value = cell.dataset.value;
+    close();
+    trigger.focus();
+    if (hidden.value === value) return;
+    hidden.value = value;
+    trigger.innerHTML = pickOption(spec, value).mark;
+    const title = pickerTitle(spec, value);
+    trigger.title = title;
+    trigger.setAttribute('aria-label', title);
+    for (const c of menu.querySelectorAll<HTMLButtonElement>('.pick-cell')) {
+      c.setAttribute('aria-selected', String(c === cell));
+    }
+    onPick?.(value);
+    // The pickers sit outside the <form>, so a dispatched change event never
+    // reaches its listener — drive the live edit directly.
+    scheduleLiveEdit();
+  });
+}
+
+// Closes every open picker popover except `keep`. They sit shoulder to shoulder,
+// so a second open menu would cover its neighbour's trigger.
+function closePickMenus(keep?: HTMLElement): void {
+  for (const menu of els.detailTools.querySelectorAll<HTMLElement>('[data-role="pick-menu"]')) {
+    if (menu !== keep) menu.hidden = true;
+  }
+  for (const t of els.detailTools.querySelectorAll<HTMLElement>('[data-role="pick-trigger"]')) {
+    const own = t.parentElement?.querySelector('[data-role="pick-menu"]');
+    t.setAttribute('aria-expanded', String(own === keep && keep?.hidden === false));
+  }
+}
+
+// Outside-click / Escape dismissal. Bound once on the document for the app's
+// lifetime: the pickers are re-rendered per item, so per-instance document
+// listeners would stack one set per opened item.
+let pickGlobalWired = false;
+function wirePickDismiss(): void {
+  if (pickGlobalWired) return;
+  pickGlobalWired = true;
+  document.addEventListener('mousedown', (e) => {
+    if (!els.detailTools.contains(e.target as Node)) closePickMenus();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closePickMenus();
+  });
+}
+
 function tabStripHtml(): string {
   const tabs = FORM_TABS.map(
     ({ id, label }) =>
@@ -170,7 +423,12 @@ export function showItemForm(
   state.activeFormFeatureId = null;
   // Tell the others which item we now occupy (see publishSelfPresence).
   publishSelfPresence();
-  els.detailTitle.textContent = item.content || '(unbenannt)';
+  // The headline is this form's title editor, not just a caption; the pickers
+  // live in the header row above it (setDetailTitle cleared whatever the last
+  // panel put there).
+  setDetailTitle(item.content ?? '', true);
+  wireTitleHeadline();
+  renderPickerTools(item);
   els.detailMeta.innerHTML = '';
 
   const groupOptions = buildGroupOptions(
@@ -197,11 +455,8 @@ export function showItemForm(
   // flushed onto this (already switched-to) item.
   state.formRebuilding = true;
   els.detailBody.innerHTML = `
-    <form class="item-form" data-id="${escapeHtml(id)}">
-      <div class="field full">
-        <label for="f-content">Title</label>
-        <input id="f-content" name="content" value="${escapeHtml(item.content ?? '')}" />
-      </div>
+    <form class="item-form" id="${FORM_ID}" data-id="${escapeHtml(id)}">
+      <input id="f-content" name="content" type="hidden" value="${escapeHtml(item.content ?? '')}" />
       ${tabStripHtml()}
       ${panelHtml(
         'time',
@@ -217,18 +472,6 @@ export function showItemForm(
       <div class="field">
         <label for="f-duration">Duration</label>
         <input id="f-duration" name="duration" value="${escapeHtml(typeof item.duration === 'string' ? item.duration : item.duration != null ? String(item.duration) : '')}" placeholder="nur ohne End-Datum" />
-      </div>
-      <div class="field">
-        <label for="f-type">Type</label>
-        <select id="f-type" name="type">
-          ${[
-            ['', 'Automatisch'],
-            ['point', 'Meilenstein'],
-            ['range', 'Zeitraum'],
-            ['background', 'Phase (Hintergrund)'],
-            ['box', 'Markierung'],
-          ].map(([t, label]) => `<option value="${t}"${(item.type ?? '') === t ? ' selected' : ''}>${label}</option>`).join('')}
-        </select>
       </div>`,
       )}
       ${panelHtml(
@@ -239,19 +482,6 @@ export function showItemForm(
         <select id="f-group" name="group">${groupOptions}</select>
       </div>
       <div class="field">
-        <label for="f-status">Status</label>
-        <select id="f-status" name="status">
-          ${ITEM_STATUSES.map(({ key, label }) => `<option value="${key}"${statusOrDefault(item.status) === key ? ' selected' : ''}>${label}</option>`).join('')}
-        </select>
-      </div>
-      <div class="field">
-        <label for="f-icon">Icon</label>
-        <select id="f-icon" name="icon">
-          <option value=""${!item.icon ? ' selected' : ''}>— kein Icon —</option>
-          ${TIMELINE_ICONS.map(({ key, label }) => `<option value="${key}"${item.icon === key ? ' selected' : ''}>${label}</option>`).join('')}
-        </select>
-      </div>
-      <div class="field">
         <label for="f-owner">Owner</label>
         <input id="f-owner" name="owner" value="${escapeHtml(owner)}" />
       </div>
@@ -260,41 +490,46 @@ export function showItemForm(
         <div data-role="body-editor"></div>
         <textarea id="f-body" name="body" hidden>${escapeHtml(item.body ?? '')}</textarea>
       </div>
-      <div class="field full tags-field">
+      <div class="field tags-field">
         <label for="f-tags">Tags <small>(farbige Marker)</small></label>
-        <div class="tags-chips" data-role="tags-chips"></div>
-        <div class="tags-suggest">
-          <input id="f-tags" type="text" autocomplete="off" placeholder="Tag suchen oder neu eingeben…" />
-          <ul class="tags-suggest-list" data-role="tags-list" hidden></ul>
+        <div class="chip-box">
+          <div class="tags-chips" data-role="tags-chips"></div>
+          <div class="tags-suggest">
+            <input id="f-tags" type="text" autocomplete="off" placeholder="hinzufügen…" />
+            <ul class="tags-suggest-list" data-role="tags-list" hidden></ul>
+          </div>
         </div>
       </div>
       ${renderCustomFieldsHtml(metadata)}
-      <div class="field">
-        <label for="f-id">ID <small>(read-only)</small></label>
-        <input id="f-id" name="id" value="${escapeHtml(id)}" readonly />
-      </div>
-      <div class="field full meta-json">
-        <label for="f-meta">Other metadata (JSON)</label>
-        <textarea id="f-meta" name="metadata" rows="3" placeholder='{"key": "value"}'>${escapeHtml(metaJson)}</textarea>
-      </div>`,
+      <details class="adv-block"${metaJson ? ' open' : ''}>
+        <summary>Erweitert</summary>
+        <div class="field meta-json">
+          <label for="f-meta">Other metadata (JSON)</label>
+          <textarea id="f-meta" name="metadata" rows="3" placeholder='{"key": "value"}'>${escapeHtml(metaJson)}</textarea>
+        </div>
+      </details>`,
       )}
       ${panelHtml(
         'rel',
         `
       <div class="field full deps-field">
         <label for="f-deps">Depends on <small>(Einträge verknüpfen)</small></label>
-        <div class="deps-chips" data-role="deps-chips"></div>
-        <div class="deps-suggest">
-          <input id="f-deps" type="text" autocomplete="off" placeholder="Eintrag suchen…" />
-          <ul class="deps-suggest-list" data-role="deps-list" hidden></ul>
+        <div class="chip-box">
+          <div class="deps-chips" data-role="deps-chips"></div>
+          <div class="deps-suggest">
+            <input id="f-deps" type="text" autocomplete="off" placeholder="Eintrag suchen…" />
+            <ul class="deps-suggest-list" data-role="deps-list" hidden></ul>
+          </div>
         </div>
       </div>
       <div class="field full jira-field">
         <label for="f-jira">JIRA <small>(Tickets verlinken)</small></label>
-        <div class="jira-chips" data-role="jira-chips"></div>
-        <div class="jira-suggest">
-          <input id="f-jira" type="text" autocomplete="off" placeholder="Ticket suchen oder Key eingeben (z. B. PROJ-123)…" />
-          <ul class="jira-suggest-list" data-role="jira-list" hidden></ul>
+        <div class="chip-box">
+          <div class="jira-chips" data-role="jira-chips"></div>
+          <div class="jira-suggest">
+            <input id="f-jira" type="text" autocomplete="off" placeholder="Ticket suchen oder Key eingeben (z. B. PROJ-123)…" />
+            <ul class="jira-suggest-list" data-role="jira-list" hidden></ul>
+          </div>
         </div>
       </div>`,
       )}
@@ -307,19 +542,40 @@ export function showItemForm(
   state.formRebuilding = false;
 
   const form = els.detailBody.querySelector('form') as HTMLFormElement;
-  const typeSelect = form.querySelector<HTMLSelectElement>('#f-type')!;
-  const endField = form.querySelector<HTMLElement>('#f-end')!.closest('.field') as HTMLElement;
-  const durField = form.querySelector<HTMLElement>('#f-duration')!.closest('.field') as HTMLElement;
+  const endInput = form.querySelector<HTMLInputElement>('#f-end')!;
+  const durInput = form.querySelector<HTMLInputElement>('#f-duration')!;
+  const endField = endInput.closest('.field') as HTMLElement;
+  const durField = durInput.closest('.field') as HTMLElement;
   // A point (Meilenstein) has no extent. End/Duration stay editable: entering
   // one promotes the item to a range live (see applyItemForm). Just flag the
   // point state visually so the interaction reads cleanly.
-  const syncTypeFields = () => {
-    const isPoint = typeSelect.value === 'point';
+  const syncTypeFields = (value: string) => {
+    const isPoint = value === 'point';
     endField.classList.toggle('is-muted', isPoint);
     durField.classList.toggle('is-muted', isPoint);
   };
-  syncTypeFields();
-  typeSelect.addEventListener('change', syncTypeFields);
+  syncTypeFields(item.type ?? '');
+
+  // Picking Meilenstein has to clear the extent, because applyItemForm resolves
+  // the "a point has no extent" conflict in favour of the *extent* (so that a
+  // typed end date is never silently swallowed). For an item that had an end or a
+  // duration, the pick was therefore reverted in the same tick: the type never
+  // stuck and, since nothing changed, nothing was even saved. Clearing the two
+  // fields makes the pick the newer intent. The reverse still works — picking
+  // Zeitraum seeds a default duration, and typing an extent promotes a point
+  // back to a range.
+  const onTypePick = (value: string) => {
+    if (value === 'point') {
+      endInput.value = '';
+      durInput.value = '';
+    } else if ((value === 'range' || value === 'background') && !endInput.value && !durInput.value) {
+      // applyItemForm seeds this extent on the model anyway; writing it into the
+      // field too keeps the form from showing an empty Duration for a bar that
+      // does have one.
+      durInput.value = DEFAULT_EXTENT;
+    }
+    syncTypeFields(value);
+  };
 
   // Reactive editing: every change writes straight into the model and refreshes
   // the live view. No save button — the source is persisted when the sidebar is
@@ -334,6 +590,10 @@ export function showItemForm(
   });
 
   wireFormTabs(form);
+  wirePicker(ICON_SPEC);
+  wirePicker(TYPE_SPEC, onTypePick);
+  wirePicker(STATUS_SPEC);
+  wirePickDismiss();
   wireBodyEditor(form);
   wireJiraAutosuggest(form);
   wireDepsAutosuggest(form, id);
@@ -363,11 +623,7 @@ export function showItemForm(
 
   // Freshly-created items open with the placeholder title pre-selected, so the
   // user can just start typing to replace "Neuer Eintrag".
-  if (opts?.focusTitle) {
-    const contentInput = form.querySelector<HTMLInputElement>('#f-content');
-    contentInput?.focus();
-    contentInput?.select();
-  }
+  if (opts?.focusTitle) focusDetailTitle();
 }
 
 // ---- audit footer (localhost only) ----------------------------------------
@@ -395,13 +651,19 @@ function auditRowHtml(label: string, by?: string, iso?: string, version?: number
 }
 
 function auditBlockHtml(item: TimelineFileItem): string {
-  if (!import.meta.env.DEV) return '';
+  // The read-only id lives here instead of as its own form field: it is metadata
+  // of the same category as the audit rows, and as an 11px dt/dd pair it costs a
+  // fraction of the vertical space a labelled input took in the field grid.
+  // Unlike the audit rows it renders everywhere, not just on localhost.
+  const idRow = item.id ? `<dt>ID</dt><dd><code>${escapeHtml(item.id)}</code></dd>` : '';
+  const wrap = (body: string) =>
+    body ? `<div class="item-audit" data-role="audit"><dl>${body}</dl></div>` : '';
+  if (!import.meta.env.DEV) return wrap(idRow);
   const rows =
     auditRowHtml('Erstellt', item.createdBy, item.createdAt) +
     auditRowHtml('Aktualisiert', item.updatedBy, item.updatedAt, item.version);
   // Nothing known yet (e.g. a freshly added item before its first save round-trip).
-  const body = rows || '<dt>Metadaten</dt><dd>noch nicht gespeichert</dd>';
-  return `<div class="item-audit" data-role="audit"><dl>${body}</dl></div>`;
+  return wrap(idRow + (rows || '<dt>Metadaten</dt><dd>noch nicht gespeichert</dd>'));
 }
 
 // Re-render the audit block in place after a save writes fresh server values
@@ -893,11 +1155,16 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   const endVal = get('end');
   const durVal = get('duration');
 
-  const typeVal = get('type');
-  if (typeVal) {
-    item.type = typeVal as TimelineFileItem['type'];
-  } else {
-    delete item.type;
+  // Icon, type and status live in header controls *outside* the form (associated
+  // via their `form` attribute, see the picker section). A missing key therefore
+  // means "the control is not in the DOM right now", not "the user cleared the
+  // field" — so leave the model value alone rather than clobbering it. Without
+  // this guard a torn-down picker row silently reset the status to its default
+  // and dropped icon and type.
+  if (fd.has('type')) {
+    const typeVal = get('type');
+    if (typeVal) item.type = typeVal as TimelineFileItem['type'];
+    else delete item.type;
   }
 
   // Extent precedence must match the render path (buildItems: `end` wins, with
@@ -928,18 +1195,21 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   // the double-click "new item" default) so it renders as a visible bar the
   // user can then resize.
   if ((item.type === 'range' || item.type === 'background') && !item.end && !item.duration) {
-    item.duration = '1w';
+    item.duration = DEFAULT_EXTENT;
   }
 
   const grp = get('group');
   if (grp) item.group = grp;
 
-  const iconVal = get('icon');
-  if (iconVal) item.icon = iconVal;
-  else delete item.icon;
+  if (fd.has('icon')) {
+    const iconVal = get('icon');
+    if (iconVal) item.icon = iconVal;
+    else delete item.icon;
+  }
 
-  // status is mandatory (NOT NULL, default Open) — always store a canonical value.
-  item.status = statusOrDefault(get('status'));
+  // status is mandatory (NOT NULL, default Open) — always store a canonical
+  // value, but only when its control is actually present (see above).
+  if (fd.has('status')) item.status = statusOrDefault(get('status'));
 
   const body = String(fd.get('body') ?? '');
   if (body) item.body = body;
@@ -990,9 +1260,10 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   if (Object.keys(meta).length === 0) delete (item as any).metadata;
 
   rebuildAndApply();
-  // Keep the sidebar header and the timeline selection in sync with the live
-  // content (rebuildAndApply reloads the DataSet, which drops the selection).
-  els.detailTitle.textContent = item.content || '(unbenannt)';
+  // Keep the caption and the timeline selection in sync with the live content
+  // (rebuildAndApply reloads the DataSet, which drops the selection). Text only:
+  // setDetailTitle would tear down the header's picker row mid-edit.
+  setDetailTitleText(item.content || '(unbenannt)');
   try {
     state.timeline?.setSelection([id]);
   } catch {

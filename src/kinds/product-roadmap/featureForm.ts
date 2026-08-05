@@ -10,7 +10,7 @@ import { createMarkdownEditor } from '../../wysiwyg';
 import type { PricingFeature } from '../../types';
 import { state, els, setStatus } from '../../state';
 import { apiUpdateFeature, apiDeleteFeature, ConflictError } from '../../editor';
-import { hideDetail } from '../../detailPanel';
+import { hideDetail, setDetailTitle } from '../../detailPanel';
 import { renderPricingView } from './pricingMatrix';
 import { renderTimeline } from '../../render';
 
@@ -76,7 +76,7 @@ export function showFeatureForm(featureId: string): void {
   state.activeFormPhaseIndex = null;
   state.activeFormFeatureId = featureId;
 
-  els.detailTitle.textContent = feature.name || '(unbenanntes Feature)';
+  setDetailTitle(feature.name || '(unbenanntes Feature)');
   els.detailMeta.innerHTML = '';
 
   const versions = state.activeSourceFile?.pricing?.versions ?? [];

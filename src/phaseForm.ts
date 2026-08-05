@@ -11,7 +11,7 @@ import { state, els, setStatus, revealBesidePanel } from './state';
 import { parseLocalDay, durationToMs } from './date';
 import { rebuildAndApply } from './render';
 import { publishSelfPresence, schedulePersist } from './persistence';
-import { hideDetail } from './detailPanel';
+import { hideDetail, setDetailTitle } from './detailPanel';
 
 export function handlePhaseEdit(edit: PhaseEdit): void {
   const phase = state.activeSourceFile?.phases?.[edit.srcIndex];
@@ -42,7 +42,7 @@ export function showPhaseForm(srcIndex: number): void {
   // We just gave up the item we occupied — release its presence mark.
   publishSelfPresence();
 
-  els.detailTitle.textContent = phase.label || '(unbenannte Phase)';
+  setDetailTitle(phase.label || '(unbenannte Phase)');
   els.detailMeta.innerHTML = '';
 
   const iconOptions =

@@ -154,10 +154,13 @@
   font-size: 12px;
 }
 
-/* Per-item icon: the brand resolves `--item-icon` to a `--icon-<key>` glyph
-   (set inline on the span in main.ts). Masked so it takes the item text color
-   and adapts to every brand automatically. */
-.vis-item .item-icon {
+/* The semantic icon glyph, wherever it appears: on timeline items, on phase
+   ribbon segments, and in the form's icon picker. `--item-icon` resolves to a
+   `--icon-<key>` glyph (set inline on the span, see icons.ts iconSpanHtml) and
+   the mask makes it take the surrounding text colour, so it adapts to every
+   context and theme automatically. Deliberately unscoped: three scoped copies
+   of the same declarations meant a fix landed in one and missed the others. */
+.item-icon {
   display: inline-block;
   width: 1em;
   height: 1em;
@@ -300,19 +303,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   pointer-events: none;
-}
-
-/* The masked icon glyph inherits the ribbon's (white) text colour. Mirrors the
-   `.vis-item .item-icon` rule, which is scoped to timeline items. */
-.phase-seg .item-icon {
-  display: inline-block;
-  width: 1em;
-  height: 1em;
-  margin-right: 0.35em;
-  vertical-align: -0.15em;
-  background-color: currentColor;
-  -webkit-mask: var(--item-icon) center / contain no-repeat;
-  mask: var(--item-icon) center / contain no-repeat;
 }
 
 /* Editable phase segments: drag the body, resize from the edges */
