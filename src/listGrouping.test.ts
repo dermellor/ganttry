@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   computeSections,
+  dimensionLabel,
   groupByOptions,
   toValues,
   type SectionContext,
@@ -58,6 +59,24 @@ test('groupByOptions offers Tag only when something is tagged, plus custom field
   const tagged = groupByOptions([item('a', '2026-01-01', { tags: ['X'] })], [TIER]);
   assert.deepEqual(tagged.map((o) => o.key), ['group', 'tag', 'cf:tier']);
   assert.equal(tagged.find((o) => o.key === 'cf:tier')?.label, 'Tier');
+});
+
+test('a grouped field is listed under its section title, so same-named fields stay tellable apart', () => {
+  const pluginVersion: CustomFieldDef = {
+    key: 'featureVersion',
+    label: 'Version',
+    type: 'select',
+    group: 'Produkt',
+  };
+  const ownVersion: CustomFieldDef = { key: 'ver', label: 'Version', type: 'text' };
+  assert.equal(dimensionLabel(pluginVersion), 'Produkt · Version');
+  assert.equal(dimensionLabel(ownVersion), 'Version');
+
+  const opts = groupByOptions([item('a', '2026-01-01')], [ownVersion, pluginVersion]);
+  assert.deepEqual(
+    opts.map((o) => o.label),
+    ['Gruppe', 'Version', 'Produkt · Version'],
+  );
 });
 
 test('group dimension keeps the build group order and appends "Ohne Gruppe"', () => {

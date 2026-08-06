@@ -206,7 +206,9 @@ const itemFields = {
     .describe(
       'Free-form extras, e.g. { "owner": "Product Lead", "dependsOn": ["S-1"] }. Custom-field ' +
         'values also live here under the field key (string for text/select, string[] for ' +
-        'multi-select), e.g. { "tier": ["Free", "Scale"] } — see the timeline\'s customFields.',
+        'multi-select), e.g. { "risk": ["Technisch"] } — see the timeline\'s customFields. ' +
+        'Plugin-contributed fields store ids, not labels: { "tier": ["scale"] } ' +
+        '(pricing tier ids), { "featureIds": ["skill-pbx"] }, { "featureVersion": "2.0" }.',
     ),
 } as const;
 

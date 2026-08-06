@@ -1,7 +1,9 @@
-// Per-timeline custom fields in the item form. Definitions come from the
-// timeline (state.activeSourceFile.customFields, seeded backend-side); values
-// live per item in metadata[key]. This module renders a form control per field,
-// wires the multi-select chip editors, and reads the values back into metadata.
+// Per-timeline custom fields in the item form. Definitions come from two places:
+// the timeline itself (state.activeSourceFile.customFields, seeded backend-side)
+// and the enabled plugins, which derive fields from the timeline's own data
+// (kinds/registry.ts `pluginFieldDefs`). Values live per item in metadata[key].
+// This module renders a form control per field, wires the multi-select chip
+// editors, and reads the values back into metadata.
 //
 // Mirrors the tags chip editor (itemForm.ts) but with a *fixed* option set:
 // multi-select suggestions are the field's declared options, not free-form.
@@ -9,13 +11,8 @@
 import { escapeHtml } from './buildItems';
 import { state } from './state';
 import { scheduleLiveEdit } from './persistence';
-import { PRODUCT_ROADMAP_PLUGIN, hasPlugin } from './plugins';
-import {
-  PRICING_FEATURE_META_KEY,
-  PRICING_ITEM_VERSION_META_KEY,
-  type CustomFieldDef,
-  type CustomFieldOption,
-} from './types';
+import { mergeFieldDefs, pluginFieldDefs } from './kinds/registry';
+import { type CustomFieldDef, type CustomFieldOption } from './types';
 
 // metadata keys managed by their own dedicated form control (the reserved
 // built-ins handled directly in itemForm) — used to keep them out of the
@@ -24,43 +21,16 @@ const RESERVED_META_KEYS = new Set(['dependsOn', 'owner', 'jira', 'tags', 'tag']
 
 const FALLBACK_COLOR = '#64748B';
 
-// A product timeline exposes its pricing features as a synthetic multi-select
-// field (key = metadata.featureIds). Routing it through the custom-field
-// machinery gives the item form a feature picker, keeps the key out of the raw
-// metadata box, and offers grouping-by-feature in the list view — all for free,
-// without a parallel code path. It is NOT part of the stored `customFields` array
-// (it's derived from `pricing`), so it never gets persisted back as a definition.
-function pricingFieldDefs(): CustomFieldDef[] {
-  const file = state.activeSourceFile;
-  if (!file || !hasPlugin(file, PRODUCT_ROADMAP_PLUGIN)) return [];
-  const defs: CustomFieldDef[] = [];
-  const features = file.pricing?.features ?? [];
-  if (features.length) {
-    defs.push({
-      key: PRICING_FEATURE_META_KEY,
-      label: 'Features',
-      type: 'multi-select',
-      options: features.map((f) => ({ value: f.id, label: f.name })),
-    });
-  }
-  // Which pricing version this item's work targets (drives the matrix's
-  // version-dependent work indicator). Single-select from the declared versions.
-  const versions = file.pricing?.versions ?? [];
-  if (versions.length) {
-    defs.push({
-      key: PRICING_ITEM_VERSION_META_KEY,
-      label: 'Version',
-      type: 'select',
-      options: versions.map((v) => ({ value: v })),
-    });
-  }
-  return defs;
-}
-
+// Every field definition the active timeline offers: its own stored ones first,
+// then whatever the enabled plugins contribute (already stamped with the
+// plugin's label as their `group`), one definition per key — a contributed field
+// supersedes a stored one on the same key (see mergeFieldDefs). This module
+// deliberately knows nothing about which plugins exist — the registry is the only
+// place plugin ids live.
 export function getCustomFields(): CustomFieldDef[] {
   const cfs = state.activeSourceFile?.customFields;
   const stored = Array.isArray(cfs) ? cfs.filter((f) => f && f.key && f.type) : [];
-  return [...stored, ...pricingFieldDefs()];
+  return mergeFieldDefs(stored, pluginFieldDefs(state.activeSourceFile));
 }
 
 // True when a metadata key is surfaced by a dedicated control (reserved built-in
@@ -105,16 +75,49 @@ export function initCustomFieldState(meta: Record<string, unknown>): void {
 
 // HTML for the custom-fields section of the item form (empty string when the
 // timeline declares none). Inserted into the form template by showItemForm.
+//
+// Fields that declare a `group` (every plugin-contributed one does, carrying its
+// plugin's label) are collected into a titled section per group, in first-seen
+// order, after the ungrouped fields. Without that, a plugin's fields sat flat
+// among the timeline's own and nothing said they belonged together — or where
+// they came from. The sections are plain markup inside the same <form>, so
+// FormData, applyCustomFields and isManagedMetaKey are untouched by the grouping.
 export function renderCustomFieldsHtml(meta: Record<string, unknown>): string {
   const defs = getCustomFields();
   if (!defs.length) return '';
-  return defs
-    .map((def) => {
-      const key = escapeHtml(def.key);
-      const label = escapeHtml(def.label || def.key);
-      if (def.type === 'multi-select') {
-        return `
-      <div class="field cf-field" data-cf-key="${key}">
+
+  const ungrouped = defs.filter((d) => !d.group);
+  const sections = new Map<string, CustomFieldDef[]>();
+  for (const def of defs) {
+    if (!def.group) continue;
+    (sections.get(def.group) ?? sections.set(def.group, []).get(def.group)!).push(def);
+  }
+
+  const groupHtml = [...sections].map(
+    ([title, fields]) =>
+      // The fields live in their own grid inside the fieldset: a `display: grid`
+      // fieldset renders its legend inconsistently across engines, so the legend
+      // stays a normal flow child and the two-column layout moves one level in.
+      `<fieldset class="cf-group">` +
+      `<legend>${escapeHtml(title)}</legend>` +
+      `<div class="cf-group-fields">${fields.map((def) => fieldHtml(def, meta)).join('')}</div>` +
+      `</fieldset>`,
+  );
+
+  return ungrouped.map((def) => fieldHtml(def, meta)).join('') + groupHtml.join('');
+}
+
+// One field's control markup, identical whether it ends up flat or in a section.
+// `def.width: 'full'` reuses the form's existing `.field.full` rule (span both
+// grid columns), so a definition — a plugin's or the timeline's — controls its own
+// width the same way the built-in fields do.
+function fieldHtml(def: CustomFieldDef, meta: Record<string, unknown>): string {
+  const key = escapeHtml(def.key);
+  const label = escapeHtml(def.label || def.key);
+  const wide = def.width === 'full' ? ' full' : '';
+  if (def.type === 'multi-select') {
+    return `
+      <div class="field cf-field${wide}" data-cf-key="${key}">
         <label>${label}</label>
         <div class="chip-box">
           <div class="cf-chips" data-cf-chips="${key}"></div>
@@ -124,31 +127,29 @@ export function renderCustomFieldsHtml(meta: Record<string, unknown>): string {
           </div>
         </div>
       </div>`;
-      }
-      if (def.type === 'select') {
-        const cur = readValues(meta, def.key)[0] ?? '';
-        const opts = [`<option value=""${cur ? '' : ' selected'}>— —</option>`].concat(
-          (def.options ?? []).map((o) => {
-            const v = escapeHtml(o.value);
-            const l = escapeHtml(o.label ?? o.value);
-            return `<option value="${v}"${o.value === cur ? ' selected' : ''}>${l}</option>`;
-          }),
-        );
-        return `
-      <div class="field cf-field" data-cf-key="${key}">
+  }
+  if (def.type === 'select') {
+    const cur = readValues(meta, def.key)[0] ?? '';
+    const opts = [`<option value=""${cur ? '' : ' selected'}>— —</option>`].concat(
+      (def.options ?? []).map((o) => {
+        const v = escapeHtml(o.value);
+        const l = escapeHtml(o.label ?? o.value);
+        return `<option value="${v}"${o.value === cur ? ' selected' : ''}>${l}</option>`;
+      }),
+    );
+    return `
+      <div class="field cf-field${wide}" data-cf-key="${key}">
         <label>${label}</label>
         <select data-cf-control="${key}">${opts.join('')}</select>
       </div>`;
-      }
-      // text
-      const cur = escapeHtml(readValues(meta, def.key)[0] ?? '');
-      return `
-      <div class="field cf-field" data-cf-key="${key}">
+  }
+  // text
+  const cur = escapeHtml(readValues(meta, def.key)[0] ?? '');
+  return `
+      <div class="field cf-field${wide}" data-cf-key="${key}">
         <label>${label}</label>
         <input data-cf-control="${key}" type="text" value="${cur}" />
       </div>`;
-    })
-    .join('');
 }
 
 // ---- multi-select chip editor (one per multi-select field) -----------------

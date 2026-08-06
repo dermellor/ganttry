@@ -129,6 +129,19 @@ export type CustomFieldDef = {
   type: CustomFieldType;
   // Allowed choices for `select` / `multi-select`. Ignored for `text`.
   options?: CustomFieldOption[];
+  // Optional section title the field is rendered under in the item form, and
+  // the prefix its grouping/filter dimension is listed with ("Produkt · Version").
+  // Plugin-contributed fields get their plugin's label stamped on here
+  // (kinds/registry.ts `pluginFieldDefs`); a stored definition may declare one
+  // too, to file itself under the same heading. Ungrouped fields render flat,
+  // ahead of the grouped sections.
+  group?: string;
+  // How much of the form's two-column grid the control takes: `half` (the
+  // default) shares a row with its neighbour, `full` spans both columns. Together
+  // with the order of the definitions this is what lets a plugin lay out its own
+  // fields — a chip field with long labels wants the full width, two compact
+  // pickers read better side by side.
+  width?: 'half' | 'full';
 };
 
 // Pricing model, only meaningful for product-roadmap timelines. Two entities:
@@ -245,6 +258,11 @@ export const PRICING_FEATURE_META_KEY = 'featureIds';
 // one of Pricing.versions). Drives the version-dependent work indicator in the
 // matrix (an item is "work for version X on feature Y").
 export const PRICING_ITEM_VERSION_META_KEY = 'featureVersion';
+
+// Item metadata key holding the pricing tier ids an item concerns (string[]).
+// Keeps the historical key of the hand-seeded `tier` custom field it replaces —
+// the field is now derived from Pricing.tiers (see kinds/product-roadmap/fields).
+export const PRICING_TIER_META_KEY = 'tier';
 
 // A plugin (a.k.a. timeline kind) enabled on a timeline. Enablement is pure data
 // — a row in `timeline_plugins`, no core-schema change — so this array replaces

@@ -191,25 +191,39 @@ reach this seam.
 ### Timeline kinds (`src/kinds/`)
 
 A **timeline kind** is the *orthogonal* axis to source kinds: it's the timeline's
-*flavour* (what extra views/renderers it carries), not where its data comes from.
-The generic timeline+list core knows nothing kind-specific; a kind plugs into a
-registration seam ([`src/kinds/registry.ts`](src/kinds/registry.ts)):
+*flavour* (what extra views/renderers and extra item fields it carries), not where
+its data comes from. The generic timeline+list core knows nothing kind-specific; a
+kind plugs into a registration seam ([`src/kinds/registry.ts`](src/kinds/registry.ts)):
 
 - **`generic`** — the default: just timeline + list, no extra code.
 - **`product-roadmap`** — the pricing matrix/cards + feature form, living entirely
   under [`src/kinds/product-roadmap/`](src/kinds/product-roadmap/) (`pricing.ts`,
   `pricingCards.ts`, `pricingMatrix.ts`, `pricingWork.ts`, `featureForm.ts`,
-  `index.ts`).
+  `fields.ts`, `index.ts`).
 
-A `KindDescriptor` exposes a cheap synchronous `matches(file)` predicate + the
-extra `viewModes` it adds, plus a **`load()` that is a dynamic `import()`**. The
-core (`main.ts`, `render.ts`) only ever touches the descriptor's data (`activeKind`,
-`ensureKindLoaded`, `loadedKindView`) — it has **no static import of any pricing
-module**, so Rollup code-splits the kind into its own chunk and a **generic build
-downloads no pricing code** (the acceptance check: the entry chunk referenced by
-`dist/index.html` contains no `pm-cell-ver`/pricing strings; they live only in the
-lazily-loaded chunk). The chunk loads only when a product timeline enters the
-pricing view.
+A `KindDescriptor` exposes a cheap synchronous `matches(file)` predicate, a
+`label` (its display name), the extra `viewModes` it adds and the extra item
+`fields(file)` it contributes, plus a **`load()` that is a dynamic `import()`**.
+The core (`main.ts`, `render.ts`) only ever touches the descriptor's data
+(`activeKind`, `ensureKindLoaded`, `loadedKindView`) — it has **no static import
+of any pricing *view* module**, so Rollup code-splits the kind into its own chunk
+and a **generic build downloads no pricing code** (the acceptance check: the entry
+chunk referenced by `dist/index.html` contains no `pm-cell-ver`/pricing strings;
+they live only in the lazily-loaded chunk). The chunk loads only when a product
+timeline enters the pricing view.
+
+**Kinds contribute item fields** through `fields(file)` — synchronous,
+data-derived `CustomFieldDef[]`, gated internally on the plugin being enabled and
+therefore independent of `matches` (which additionally demands a populated pricing
+model before offering the *view*). `pluginFieldDefs(file)` collects every enabled
+kind's fields and stamps each with the kind's `label` as its `group`, which is
+what sections them under a plugin heading in the item form (see „Custom fields →
+Plugin-contributed fields"). The product-roadmap implementation lives in
+[`src/kinds/product-roadmap/fields.ts`](src/kinds/product-roadmap/fields.ts): it
+imports only `types` + `plugins`, so it is statically importable from the registry
+**without** adding an edge into the pricing chunk — the acceptance check above
+still passes. `customFields.ts` reads plugin fields through that one seam and
+knows no plugin ids.
 
 Adding a third kind is a new `KINDS[]` entry + a `src/kinds/<name>/` folder — no
 core-file change.
@@ -230,9 +244,6 @@ version list lives in that plugin's `config.versions` (was the dropped
 own data/tables — never a new core column or discriminator value.
 
 **Accepted first-cut deviations (documented, not blockers):**
-- `pricingFieldDefs()` stays in [`src/customFields.ts`](src/customFields.ts): it's a
-  data-driven check (`hasPlugin(file, 'product-roadmap')` + `file.pricing`) that
-  imports **no** pricing module, so it adds no static edge into the pricing chunk.
 - `apiUpdateFeature`/`apiDeleteFeature` stay in [`src/editor.ts`](src/editor.ts):
   type-only-typed fetch wrappers (zero bundle weight).
 - The **server side** of the kind (the `pricing-api` edge function, the pricing MCP
@@ -419,15 +430,16 @@ A definition is:
 
 ```jsonc
 {
-  "key": "tier",                 // metadata key the value is stored under
-  "label": "Tier",               // shown in the editor
+  "key": "risk",                 // metadata key the value is stored under
+  "label": "Risiko",             // shown in the editor
   "type": "multi-select",        // "text" | "select" | "multi-select"
   "options": [                   // choices for select / multi-select (ignored for text)
-    { "value": "Free",       "color": "#64748B" },
-    { "value": "Starter",    "color": "#1D9E75" },
-    { "value": "Scale",      "color": "#315DFF" },
-    { "value": "Enterprise", "color": "#8642FE" }
-  ]
+    { "value": "Technisch",   "color": "#64748B" },
+    { "value": "Rechtlich",   "color": "#1D9E75" },
+    { "value": "Kapazität",   "color": "#315DFF" }
+  ],
+  "group": "Risiken",            // optional: section heading in the item form
+  "width": "full"                // optional: "half" (default) | "full" (spans both columns)
 }
 ```
 
@@ -451,8 +463,64 @@ dropdown for `multi-select`, a `<select>` for `select`, a text input for `text`.
 Custom-field keys are treated as managed metadata (like `tags` / `dependsOn`),
 so they never leak into the free-form "Other metadata (JSON)" box.
 
-The **Example Timeline (v1)** timeline carries a seeded `tier` multi-select
-(Free / Starter / Scale / Enterprise).
+### Plugin-contributed fields
+
+The stored definitions above are not the only source of custom fields: an enabled
+**plugin** contributes its own, derived from the timeline's data rather than
+declared by hand (see „Timeline kinds"). `getCustomFields()` concatenates the
+timeline's stored defs with `pluginFieldDefs(file)`, and everything downstream —
+the form control, the managed-metadata rule, grouping and filtering — works off
+that one list, so a plugin field needs no parallel code path. Being derived, these
+defs are never persisted back as definitions. `product-roadmap` contributes:
+
+| Field        | Key                       | Options derived from                    | Width |
+| ------------ | ------------------------- | --------------------------------------- | ----- |
+| **Version**  | `metadata.featureVersion` | `pricing.versions`                      | half  |
+| **Tier**     | `metadata.tier`           | `pricing.tiers` (value = tier id)       | half  |
+| **Features** | `metadata.featureIds`     | `pricing.features` (value = feature id) | full  |
+
+**The plugin lays out its own section.** The order of the array `fields(file)`
+returns is the render order, and each def's `width` (`half`, the default, or
+`full`) decides whether it shares its grid row — `full` reuses the form's existing
+`.field.full` rule, the same seam the built-in fields use. So Version and Tier
+pair up on one row as compact pickers, and Features spans both columns below them
+because its chips carry long feature names. Changing that layout is a change to
+`fields()`, not to the form.
+
+**One definition per key** — a contributed field *supersedes* a stored one with
+the same key (`mergeFieldDefs` in `kinds/registry.ts`). Two defs on one key would
+render two controls writing the same `metadata[key]` and sharing one multi-select
+state bucket (that state is keyed by the field key). So a stored definition a
+plugin has taken over is inert, and dropping it is a tidy-up rather than a fix.
+
+**Tier was such a definition.** It used to be a hand-seeded stored field whose
+options were a copy of the tier *names*, so renaming a tier in the pricing model
+left the field offering the old label. Derived, it cannot drift. Two consequences
+of the switch: its values are tier **ids** (`"scale"`, like the feature field)
+rather than names, so a rename doesn't orphan them — no migration was needed, as
+no item carried a `tier` value; and the chip colour is derived from the tier id
+(`tierColor`, an hsl hue from a hash) instead of hand-picked per tier, because
+picking colours in the code would reintroduce exactly the duplication the derived
+field removes. A tier colour that has to be chosen belongs in `pricing_tiers` as a
+column, not in the field definition.
+
+**Sections.** A def may carry a `group`, and the item form renders one titled
+section per group in the Properties tab, after the ungrouped fields
+(`.cf-group` fieldset, styled in [`src/styles/forms.css`](src/styles/forms.css)):
+an open block behind a hairline, not a disclosure — these are ordinary item
+properties, and hiding them behind a click would cost a lookup on every edit. The
+caption is centred over the rule, because it titles the whole section; left-aligned
+at 11px uppercase it read as a label for the field directly beneath it.
+Plugin fields get their plugin's `label` stamped as the group (so product fields
+land under „Produkt"); a **stored** def may declare a `group` too, to file itself
+under the same heading. The sections are plain markup inside the same `<form>`, so
+`FormData`, `applyCustomFields` and `isManagedMetaKey` are untouched by the
+grouping.
+
+Because two sources can name a field the same thing, a grouped field is listed as
+„&lt;Gruppe&gt; · &lt;Label&gt;" in the Gruppieren / Filter dropdowns
+(`dimensionLabel` in [`src/listGrouping.ts`](src/listGrouping.ts)); the stored key
+stays untouched.
 
 > Note: metadata-only edits (custom fields, tags, `dependsOn`, owner, JIRA) rely
 > on the persist-diff seeing inside `metadata`. `canonicalItem`
@@ -655,9 +723,15 @@ Daten, kein `ALTER TABLE`. Die einzige Stelle, die Plugin-ids kennt, ist
 1. **Aktivieren = Datenzeile** (`replace_timeline`/SQL). Braucht kein Schema.
 2. **Eigene Ansicht?** → neuer `KINDS[]`-Eintrag + `src/kinds/<name>/`-Ordner
    (lazy-geladen, siehe „Timeline kinds"). Kein Core-Datei-Change.
-3. **Eigene persistierte Daten?** → eigene Tabellen + Write-Pfad (Vorbild:
+3. **Eigene Item-Felder?** → `fields(file)` am `KINDS[]`-Eintrag, Implementierung
+   in `src/kinds/<name>/fields.ts` (nur `types` + `plugins` importieren, sonst
+   zieht die Naht den View-Chunk in den generischen Build). Sie erscheinen
+   automatisch als Abschnitt unter dem `label` des Plugins, plus als Gruppieren-/
+   Filter-Dimension — siehe „Custom fields → Plugin-contributed fields". Kein
+   Core-Datei-Change.
+4. **Eigene persistierte Daten?** → eigene Tabellen + Write-Pfad (Vorbild:
    `pricing_*` + `assemblePricing`). Nie eine Spalte am Core.
-4. Reads über `file.plugins` stehen schon; das product-spezifische
+5. Reads über `file.plugins` stehen schon; das product-spezifische
    Auto-Enable-Verhalten (`resolveWritePlugins`) ist Vorbild, kein Zwang.
 
 ### Setup (einmalig)

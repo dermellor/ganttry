@@ -358,6 +358,65 @@
   border-color: var(--accent);
 }
 
+/* ---- plugin field section ("Produkt") ---------------------------------------
+   Fields a plugin contributes (or a stored definition that declares a `group`)
+   are collected under a titled section, so it reads as "these belong together,
+   and this is where they come from" rather than as loose fields among the
+   timeline's own. Open, not a disclosure: they are ordinary item properties, and
+   hiding them behind a click would cost a lookup on every edit.
+
+   The hairline is a top border rather than a box: a full frame around two fields
+   competes with the controls inside it, while a rule plus the caption is enough
+   to close off the section. */
+.item-form .cf-group {
+  grid-column: 1 / -1;
+  border: none;
+  margin: 8px 0 0;
+  padding: 0;
+  min-width: 0;
+}
+
+/* The caption sits centred *in* the divider, which the rule breaks around it: it
+   titles the whole section, and above the first field at 11px uppercase it read as
+   that field's own label instead.
+
+   The two line segments are the legend's own pseudo-elements rather than a border
+   on the fieldset. The native `<legend>` notch (browser cuts the block-start
+   border out behind the legend) would be the obvious route, but measured, the
+   legend rendered *below* the rule instead of straddling it, leaving an unbroken
+   line and a caption under it. Faking the gap with a background swatch would need
+   this element to know the panel's fill. Two flex-grown 1px segments need neither:
+   they draw the rule themselves, so the break is exact at any caption width. */
+.item-form .cf-group > legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--fg-muted, #646464);
+}
+
+.item-form .cf-group > legend::before,
+.item-form .cf-group > legend::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border, rgba(0, 0, 0, 0.12));
+}
+
+/* The section's own two-column grid — the fieldset itself stays a flow container
+   so its legend keeps that native notch behaviour (see renderCustomFieldsHtml). */
+.item-form .cf-group-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 12px;
+  margin-top: 12px;
+}
+
 /* Escape-hatch disclosure ("Erweitert"): the raw metadata JSON box is a rarely
    used fallback, so it stays collapsed and costs one 12px summary line instead
    of a labelled textarea. showItemForm renders it `open` when the item actually

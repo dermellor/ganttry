@@ -48,6 +48,15 @@ export function bucketsFor(item: TimelineItem, dim: string, ctx: SectionContext)
   return item.group && groupIds.has(item.group) ? [item.group] : [];
 }
 
+// Label a custom field is listed under as a dimension. A grouped field (a
+// plugin's, or a stored one that declares a group) is qualified with its section
+// title, so two fields named "Version" from different sources stay tellable
+// apart in the Gruppieren / Filter dropdowns.
+export function dimensionLabel(f: CustomFieldDef): string {
+  const own = f.label || f.key;
+  return f.group ? `${f.group} · ${own}` : own;
+}
+
 // Grouping dimensions offered for the current build: always the item group,
 // "Tag" when anything is tagged, plus one entry per declared custom field.
 export function groupByOptions(
@@ -56,7 +65,7 @@ export function groupByOptions(
 ): GroupByOption[] {
   const opts: GroupByOption[] = [{ key: GROUP_DIM, label: 'Gruppe' }];
   if (entries.some((it) => (it.tags?.length ?? 0) > 0)) opts.push({ key: TAG_DIM, label: 'Tag' });
-  for (const f of customFields) opts.push({ key: `${CF_PREFIX}${f.key}`, label: f.label || f.key });
+  for (const f of customFields) opts.push({ key: `${CF_PREFIX}${f.key}`, label: dimensionLabel(f) });
   return opts;
 }
 
