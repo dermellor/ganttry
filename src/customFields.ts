@@ -52,9 +52,29 @@ function optionColor(def: CustomFieldDef, value: string): string {
   return optionOf(def, value)?.color ?? FALLBACK_COLOR;
 }
 
+// An option's pill colour, for consumers outside this module (the context menu's
+// value rows). Exported rather than re-derived there so the fallback colour has
+// one definition.
+export function fieldOptionColor(def: CustomFieldDef, value: string): string {
+  return optionColor(def, value);
+}
+
+/**
+ * The fields that opted into being editable from an item's right-click menu
+ * (`def.contextMenu`), in definition order.
+ *
+ * A `text` field is filtered out no matter what it declares: a menu can only
+ * offer a fixed set of rows, and free text needs a keyboard. Keeping that rule
+ * here — beside the rest of the per-type field semantics — means contextMenu.ts
+ * never has to reason about field types.
+ */
+export function contextMenuFields(): CustomFieldDef[] {
+  return getCustomFields().filter((f) => f.contextMenu && f.type !== 'text');
+}
+
 // Read a stored value as string[] regardless of scalar/array shape, so a
 // multi-select tolerates a legacy scalar and a select tolerates a stray array.
-function readValues(meta: Record<string, unknown>, key: string): string[] {
+export function readFieldValues(meta: Record<string, unknown>, key: string): string[] {
   const v = meta[key];
   if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean);
   if (typeof v === 'string' && v.trim()) return [v.trim()];
@@ -68,7 +88,7 @@ export function initCustomFieldState(meta: Record<string, unknown>): void {
   const next: Record<string, string[]> = {};
   for (const def of getCustomFields()) {
     if (def.type !== 'multi-select') continue;
-    next[def.key] = readValues(meta, def.key);
+    next[def.key] = readFieldValues(meta, def.key);
   }
   state.formCustomMulti = next;
 }
@@ -129,7 +149,7 @@ function fieldHtml(def: CustomFieldDef, meta: Record<string, unknown>): string {
       </div>`;
   }
   if (def.type === 'select') {
-    const cur = readValues(meta, def.key)[0] ?? '';
+    const cur = readFieldValues(meta, def.key)[0] ?? '';
     const opts = [`<option value=""${cur ? '' : ' selected'}>— —</option>`].concat(
       (def.options ?? []).map((o) => {
         const v = escapeHtml(o.value);
@@ -144,7 +164,7 @@ function fieldHtml(def: CustomFieldDef, meta: Record<string, unknown>): string {
       </div>`;
   }
   // text
-  const cur = escapeHtml(readValues(meta, def.key)[0] ?? '');
+  const cur = escapeHtml(readFieldValues(meta, def.key)[0] ?? '');
   return `
       <div class="field cf-field${wide}" data-cf-key="${key}">
         <label>${label}</label>

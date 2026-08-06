@@ -231,6 +231,13 @@ const customFieldDef = z.object({
     .array(customFieldOption)
     .optional()
     .describe('Allowed choices for select / multi-select. Ignored for text.'),
+  contextMenu: z
+    .boolean()
+    .optional()
+    .describe(
+      'Also settable from an item\'s right-click menu, where the field appears as a submenu of ' +
+        'its options. Off by default. Ignored for text (a menu can only offer fixed choices).',
+    ),
 });
 
 const pricingFeature = z.object({

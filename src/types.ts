@@ -142,6 +142,13 @@ export type CustomFieldDef = {
   // fields — a chip field with long labels wants the full width, two compact
   // pickers read better side by side.
   width?: 'half' | 'full';
+  // Whether the field can also be set straight from an item's right-click menu,
+  // where it appears as a submenu of its options (see contextMenu.ts). Off by
+  // default: a menu of every field would defeat the point of a *quick* action, so
+  // each definition opts in. Only meaningful for `select` / `multi-select` — a
+  // `text` field has no fixed option set for a menu to offer, so the flag is
+  // ignored on one (`contextMenuFields` in customFields.ts owns that rule).
+  contextMenu?: boolean;
 };
 
 // Pricing model, only meaningful for product-roadmap timelines. Two entities:

@@ -13,17 +13,12 @@ Single Source of Truth lies in `AGENTS.md`.
   verschränken. Die Frage entfällt nur, wenn der User den Modus in der Nachricht
   bereits explizit genannt hat. Begründung + Kriterien: `AGENTS.md` →
   „Branching, Commits & Session Isolation".
-- **Live-Preview aus Worktree (Pool 31200–31209, PM2 nie stoppen):** Der
-  Vite-Dev-Server (PM2) läuft aus dem Main-Checkout auf 3120 und sieht
-  Worktree-Edits nicht. Braucht eine Aufgabe visuelle Verifikation, den
-  Worktree-Server auf einem fünfstelligen Preview-Port aus dem Pool **31200–31209**
-  starten (`npm run dev:worktree`, Default 31200; für weitere parallele Previews
-  `WT_PORT=31201 npm run dev:worktree` usw.). In Claude Code die Launch-Configs
-  `vite-worktree` / `vite-worktree-2` / `vite-worktree-3`. **Niemals PM2 stoppen**,
-  um 3120 freizumachen (reißt `timelines.localhost` für andere Sessions weg).
-  Preview dann unter `http://localhost:31200` (bzw. der gewählte Port). Alternativ
-  erst nach `main` mergen und dort prüfen. Details: `AGENTS.md` → „Ports →
-  Worktree-Live-Preview".
+- **Live-Preview aus Worktree:** PM2 serviert 3120 aus dem **Main-Checkout** und
+  sieht Worktree-Edits nicht; Worktree-Previews laufen auf dem Pool 31200–31209,
+  **PM2 nie stoppen**. Vor visueller Verifikation aus einem Worktree
+  `.claude/rules/worktree-preview.md` lesen — dort stehen der Ablauf und die zwei
+  Fallen (`preview_start` serviert den falschen Checkout; HMR lässt die
+  vis-Instanz stehen), die sonst eine Runde gegen fremden Code kosten.
 - **Foreign-Work-Check:** Zu Beginn einer Änderungs-Session `git status` prüfen.
   Uncommittete Änderungen, die nicht von dieser Session stammen, NIEMALS blind
   mitcommitten — dem User melden und in einem frischen Worktree ab `HEAD`

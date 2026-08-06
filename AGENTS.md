@@ -516,6 +516,127 @@ data mark has to come from JS on the item element (the pattern in
 template's output lands inside `.vis-item-content`, which is content-sized, so it
 cannot anchor to the bar's right edge.
 
+## Item context menu (right-click quick actions)
+
+Right-clicking an item on the timeline opens a small menu of the actions worth
+having without the detail form open: **Status**, every **custom field that opted
+in**, **Duplizieren**, **Löschen**. It lives in
+[`src/contextMenu.ts`](src/contextMenu.ts) with its styling in
+[`src/styles/menu.css`](src/styles/menu.css).
+
+**Value pickers are submenus, one per field; the root menu holds only nouns and
+the two verbs.** Status alone was three flat rows, and one opted-in field turned
+the root into a wall of values in which „Löschen" was just another line. Behind
+submenus the root stays the same size however many fields opt in, and each panel
+marks the item's current value(s):
+
+```
+Status       ▸        (● Open · Doing · Done)
+Version      ▸        (kein Wert · 1.0 · 2.0 · …)      ← a field that opted in
+Tier         ▸        (☑ Free · Starter · ☑ Scale · …)
+──────────────
+Duplizieren
+Löschen
+```
+
+A root row's mark is the item's **current** value when the field has exactly one
+(the status dot, a single-select's colour dot) and blank for a multi-select, where
+there is no single value to show. Submenu rows are `menuitemradio` for a single
+choice and `menuitemcheckbox` for a toggle, so the role itself says whether picking
+replaces or adds.
+
+**Which fields appear is per-definition opt-in:** `def.contextMenu` on a custom
+field (see „Custom fields → Quick-editable from the context menu"). Off by
+default — a menu of every field would defeat the point of a *quick* action.
+
+**The trigger is vis-timeline's own `contextmenu` event**, not a DOM listener of
+our own. vis hands the callback `getEventProperties()` — the display id under the
+cursor plus the raw event — so nothing here walks the DOM looking for a
+`.vis-item`. (itemRail.ts *has* to delegate a click listener, because a rail
+*mark* is not a vis concept and vis cannot resolve one; an item is.) A right-click
+that lands on the rail's own „×" still resolves to its item. vis does not suppress
+the browser menu itself (its `oncontextmenu` only emits), so `preventDefault()` is
+ours — and it is called **only once the click is known to have an actionable
+item**: on empty space, on an axis, on a phase tint (no row in the source file) or
+on a read-only view the browser's own menu is left intact rather than being
+replaced with nothing.
+
+- **The menu is built per open**, not created once and reused: which status row
+  carries `aria-checked` is a property of the item that was right-clicked.
+- **The mutations are not in this module.** They are passed in from render.ts the
+  way the rail takes its `deleteItem`, so each lives beside its peers:
+  `setItemStatus` / `setItemFieldValue` next to `deleteItem` in
+  [`src/itemForm.ts`](src/itemForm.ts), `duplicateItem` next to `createItem` in
+  [`src/render.ts`](src/render.ts). Delete routes through the *same* `deleteItem`
+  the rail mark and the form button use — one delete flow, not three.
+- **This module knows nothing about field types.** Which definitions qualify is
+  `contextMenuFields()` in [`src/customFields.ts`](src/customFields.ts), beside the
+  rest of the per-type field semantics — that is also where `text` is filtered out
+  whatever it declares, since a menu can only offer fixed rows and free text needs
+  a keyboard.
+- **A single-select stores a scalar, a multi-select an array** — the same shapes
+  the form's `<select>` / chip editor write, so a value set from the menu round-trips
+  through `metadata[key]` identically. A single-select carries a „kein Wert" row
+  (the empty choice its `<select>` has); a multi-select clears by untoggling.
+- **A multi-select keeps its panel open between picks** and re-marks the clicked
+  row from the values the mutation returns; everything else closes first. Picking
+  three tiers shouldn't mean reopening the menu three times, while delete raises a
+  `confirm()` the menu must not sit over.
+- **An emptied field loses its key, and an item with none left loses `metadata`.**
+  Same rule as `applyItemForm`, and load-bearing for the same reason: the persist
+  diff sends a missing clearable field as an explicit `null` (`buildItemPatch`), or
+  the old value comes back on reload.
+- **A status or field change has to re-render an open form**, and that is
+  correctness, not polish: the form's pickers keep their values in hidden inputs,
+  so a form still open on that item would hold the *old* value in its `FormData`
+  and the next `commitItemForm` would write it straight back over the change. Both
+  mutations therefore call `showItemForm` when the form is on that item, exactly as
+  `handleMove` does after a drag.
+- **No `markSelfEditing()` on a status change.** Presence attributes activity to
+  the item the open form / selection points at, and a right-click does not select
+  — so on an unselected item it would flag the wrong item as being edited.
+  Marking the right one needs the presence activity model to carry an explicit
+  item, which is a separate change.
+- **Duplicate** drops the server-managed fields (`version` + the audit stamps), so
+  the persist diff sees an id it has never saved and POSTs a new row instead of
+  PATCHing over the original, and deep-clones `metadata` (a shared object would
+  make a later edit to either copy change the other). The copy is placed clear of
+  its original — a bar starts where the original ended, anything without an extent
+  shifts by a day, a date-less item stays date-less — at day granularity, like
+  every drag. Its form opens with the title focused, which is why the content is
+  copied verbatim rather than suffixed.
+- **The status dot is the global `.status-dot`** from
+  [`src/styles/forms.css`](src/styles/forms.css), deliberately un-scoped from
+  `.detail-tools` when this menu arrived: two copies of the value→colour mapping
+  is how one of them ends up stale after a change to `--status-*`.
+- **Dismissal** is Escape, a pointerdown outside, a wheel, a window resize, and
+  the timeline's own `rangechange` (panning would slide the bar out from under a
+  menu anchored to viewport coordinates). Document-level listeners live only while
+  the menu is open. Escape backs out **one level** when a submenu is open, and that
+  check lives in the *document* handler rather than the menu's: the document one
+  captures, so it runs first and would otherwise dismiss everything from inside a
+  submenu.
+- **Keyboard** navigation is per level — arrow keys move within the open panel when
+  focus is inside it, the root otherwise. ArrowRight/Enter opens a submenu and
+  focuses its first row, ArrowLeft closes it and returns to the parent row, Tab
+  closes rather than trapping focus, and closing hands focus back where it came
+  from.
+- **Positioning** is viewport coordinates on `<body>`, so panels can overhang the
+  timeline's scroll panes instead of being clipped by them. The arithmetic is
+  DOM-free in [`src/menuPosition.ts`](src/menuPosition.ts) and unit-tested
+  (contextMenu.ts imports `state`, which touches `document` at load, so nothing in
+  it can be pulled into a test): the root menu is clamped horizontally and flipped
+  *up* on bottom overflow; a submenu goes right of its parent, flips left when
+  there is no room (never into negative x), and slides up rather than flipping,
+  because its top edge is tied to the row it belongs to. Submenu panels are DOM
+  children of the menu — which is what keeps `menuEl.contains()` true for clicks
+  inside them, so they don't read as a dismissal, and removes them with the parent.
+
+**Adding an action** is an entry in `menuHtml` plus a handler in
+`ItemMenuActions`; put the mutation itself next to its peers rather than in this
+module. **Adding a value picker** needs no menu change at all — flag the field
+`contextMenu: true`. Scope is the timeline view; the list view has no context menu.
+
 ## Custom fields (per timeline)
 
 Beyond the built-in item fields, each timeline can declare its own **custom
@@ -537,7 +658,8 @@ A definition is:
     { "value": "Kapazität",   "color": "#315DFF" }
   ],
   "group": "Risiken",            // optional: section heading in the item form
-  "width": "full"                // optional: "half" (default) | "full" (spans both columns)
+  "width": "full",               // optional: "half" (default) | "full" (spans both columns)
+  "contextMenu": true            // optional: also settable from an item's right-click menu
 }
 ```
 
@@ -561,6 +683,32 @@ dropdown for `multi-select`, a `<select>` for `select`, a text input for `text`.
 Custom-field keys are treated as managed metadata (like `tags` / `dependsOn`),
 so they never leak into the free-form "Other metadata (JSON)" box.
 
+### Quick-editable from the context menu (`contextMenu`)
+
+A definition may set **`contextMenu: true`**, which adds the field to an item's
+right-click menu as a submenu of its options (see „Item context menu"): a
+`select` picks one value or „kein Wert", a `multi-select` toggles values and keeps
+its panel open. Values are written to the same `metadata[key]` in the same shapes
+the form writes, so the two ways in are interchangeable.
+
+Off by default, per definition: the point is a *quick* action, and a menu listing
+every field would not be one. `text` is never offered whatever it declares — a menu
+can only present fixed rows, and free text needs a keyboard. The rule lives in
+`contextMenuFields()` ([`src/customFields.ts`](src/customFields.ts)), so the menu
+itself reasons about no field types.
+
+Set it the same ways as any other part of a definition (`set_custom_fields`,
+`replace_timeline`, `PATCH`, SQL). Note that the MCP `customFieldDef` schema is
+**not** pass-through — Zod strips keys it doesn't declare, so a property missing
+from it is silently dropped on that path. `contextMenu` is declared; `group` and
+`width` are not yet, and have to go through `PATCH`/SQL until they are added.
+
+**A plugin opts in through its own `fields()`** rather than through stored config,
+since its definitions are derived. `product-roadmap` flags **Version** and
+**Tier**: short, fixed lists that get retargeted often while planning. **Features**
+deliberately stays off — a timeline carries dozens, and a submenu that long is a
+worse way in than the form's searchable chip editor.
+
 ### Plugin-contributed fields
 
 The stored definitions above are not the only source of custom fields: an enabled
@@ -571,11 +719,11 @@ the form control, the managed-metadata rule, grouping and filtering — works of
 that one list, so a plugin field needs no parallel code path. Being derived, these
 defs are never persisted back as definitions. `product-roadmap` contributes:
 
-| Field        | Key                       | Options derived from                    | Width |
-| ------------ | ------------------------- | --------------------------------------- | ----- |
-| **Version**  | `metadata.featureVersion` | `pricing.versions`                      | half  |
-| **Tier**     | `metadata.tier`           | `pricing.tiers` (value = tier id)       | half  |
-| **Features** | `metadata.featureIds`     | `pricing.features` (value = feature id) | full  |
+| Field        | Key                       | Options derived from                    | Width | Context menu |
+| ------------ | ------------------------- | --------------------------------------- | ----- | ------------ |
+| **Version**  | `metadata.featureVersion` | `pricing.versions`                      | half  | yes          |
+| **Tier**     | `metadata.tier`           | `pricing.tiers` (value = tier id)       | half  | yes          |
+| **Features** | `metadata.featureIds`     | `pricing.features` (value = feature id) | full  | no (too many) |
 
 **The plugin lays out its own section.** The order of the array `fields(file)`
 returns is the render order, and each def's `width` (`half`, the default, or
@@ -1176,6 +1324,10 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
 
 - **Drag** an item left/right to move start, drag the right edge to resize, drag vertically to switch group. Persists on drop. On a selected bar the resize handle sits just inside the rail (see „Item rail"), not right at the edge.
 - **Delete** an item via the „×" mark at the bar's right edge, which appears on hover and while the item is selected — inside the bar on a bar wide enough for it, just outside on a narrow one. Clicking it neither selects the item nor opens its form. See „Item rail".
+- **Right-click** an item for quick actions without opening the form: set the
+  status, set any custom field that declared `contextMenu: true` (each a submenu of
+  its options), duplicate the item, delete it. Read-only views keep the browser's
+  own menu. See „Item context menu".
 - **Double-click** on empty timeline space to add a new item (defaults: 1-week duration, current group, content "Neuer Eintrag"). Form opens for further edits. The **+ Eintrag** toolbar button (editable views only) does the same, placing the item at the centre of the visible window. In **list mode** a new item (toolbar or per-section button) is created **date-less** — empty start/end/duration — so it starts as a clean row to fill in via the form; it stays list-only until a start is set.
 - **Click** an item to open the edit form in the side panel. The title is edited
   in the panel headline and the icon/type/status trio sits in the header row above

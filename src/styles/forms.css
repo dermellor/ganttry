@@ -86,18 +86,22 @@
   line-height: 1;
 }
 
-.detail-tools .status-dot {
+/* The status dot is deliberately NOT scoped to the picker: the context menu's
+   status rows render the same mark (see contextMenu.ts), and duplicating the
+   value→colour mapping is how one of the two ends up stale after a change to
+   `--status-*`. */
+.status-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: var(--status-open);
 }
 
-.detail-tools .status-dot[data-status='Doing'] {
+.status-dot[data-status='Doing'] {
   background: var(--status-doing);
 }
 
-.detail-tools .status-dot[data-status='Done'] {
+.status-dot[data-status='Done'] {
   background: var(--status-done);
 }
 

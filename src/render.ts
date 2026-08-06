@@ -37,6 +37,7 @@ import {
   loadSource,
 } from './editor';
 import type { TimelineFile, TimelineFileItem, View } from './types';
+import { durationToMs, parseLocalDay } from './date';
 import { firstAssignableGroup, resolveAssignableGroup } from './groupHierarchy';
 import {
   state,
@@ -56,7 +57,8 @@ import {
 } from './persistence';
 import { attachItemPresence } from './itemPresence';
 import { attachItemRail } from './itemRail';
-import { deleteItem, showItemForm } from './itemForm';
+import { attachItemContextMenu } from './contextMenu';
+import { deleteItem, setItemFieldValue, setItemStatus, showItemForm } from './itemForm';
 import { showDetailForId, hideDetail } from './detailPanel';
 import { renderListView } from './listView';
 import { loadedKindView } from './kinds/registry';
@@ -467,6 +469,14 @@ export async function renderTimeline(view: View) {
   // Same for the rail's delete mark — ours rather than vis's `editable.remove`
   // button, which only ever appears on a *selected* item (see itemRail.ts).
   attachItemRail(timeline, els.timeline, deleteItem);
+  // Right-click quick actions. Delete goes through the same `deleteItem` the rail
+  // mark and the form button use, so there is one delete flow, not three.
+  attachItemContextMenu(timeline, {
+    setStatus: setItemStatus,
+    setField: setItemFieldValue,
+    duplicate: duplicateItem,
+    remove: deleteItem,
+  });
 
   let lastH = containerHeight;
   const ro = new ResizeObserver(() => {
@@ -862,6 +872,73 @@ export function addNewItem(group?: string | null): void {
     }
     showItemForm(newItem, { focusTitle: true });
   }, 50);
+}
+
+/**
+ * Duplicate an item — the context menu's „Duplizieren". Sits beside `createItem`
+ * because it is the same job: mint an id, append to the source, persist, open the
+ * new item's form. The title is focused so the copy can be renamed straight away,
+ * which is also why the content is copied verbatim rather than suffixed.
+ *
+ * The copy drops the server-managed fields (`version` and the audit stamps), so
+ * the persist diff sees an id it has never saved and POSTs a new row instead of
+ * PATCHing over the original. `metadata` is deep-cloned — sharing that object
+ * would make a later edit to either copy silently change the other.
+ */
+export function duplicateItem(id: string): void {
+  if (!state.activeSourceFile) return;
+  const idx = findItemIndex(state.activeSourceFile, id);
+  if (idx === -1) return;
+  const src = state.activeSourceFile.items[idx];
+  const {
+    id: _id,
+    version: _v,
+    createdAt: _ca,
+    createdBy: _cb,
+    updatedAt: _ua,
+    updatedBy: _ub,
+    ...rest
+  } = src;
+  const copy: TimelineFileItem & { id: string } = {
+    ...rest,
+    id: generateNewId(state.activeSourceFile),
+  };
+  if (src.metadata) copy.metadata = structuredClone(src.metadata);
+  placeAfter(copy, src);
+  state.activeSourceFile.items.push(copy);
+  rebuildAndApply();
+  schedulePersist();
+  setTimeout(() => {
+    try {
+      timeline?.setSelection(displayIdsFor(copy.id));
+    } catch {
+      /* copy may be filtered out of the current view */
+    }
+    showItemForm(copy, { focusTitle: true });
+  }, 50);
+}
+
+// Move a duplicate clear of its original: a bar starts where the original ended,
+// anything without an extent shifts by a day. Day granularity throughout, like
+// every drag (which snaps to whole days). A date-less item stays date-less — it
+// lives in the list view only, where there is nothing to sit on top of.
+function placeAfter(copy: TimelineFileItem, src: TimelineFileItem): void {
+  if (!src.start) return;
+  const start = parseLocalDay(src.start).getTime();
+  if (src.end) {
+    const end = parseLocalDay(src.end).getTime();
+    // Guard against an end that isn't after the start (hand-edited data).
+    const span = Math.max(end - start, MS_PER_DAY);
+    copy.start = isoDateOnly(new Date(end));
+    copy.end = isoDateOnly(new Date(end + span));
+    // `end` and `duration` are mutually exclusive (end wins). Hand-edited data
+    // carrying both would otherwise have the copy send a contradictory payload
+    // for the write layer to resolve.
+    delete copy.duration;
+    return;
+  }
+  // `duration` carries over unchanged, so shifting the start by it is enough.
+  copy.start = isoDateOnly(new Date(start + (durationToMs(src.duration) ?? MS_PER_DAY)));
 }
 
 // Re-apply the active grouping/filter to the live views without a full rebuild,

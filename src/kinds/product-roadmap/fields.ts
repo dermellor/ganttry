@@ -35,6 +35,12 @@ function tierColor(id: string): string {
 // fields render in, and `width` decides whether a field shares its row. Version
 // and Tier are compact pickers and pair up on the first row; Features carries
 // long feature names as chips and takes the full width below them.
+//
+// Version and Tier also opt into the item's right-click menu (`contextMenu`):
+// both are short, fixed lists that get retargeted often while planning, which is
+// exactly the quick-action case. Features deliberately does not — a timeline
+// carries dozens of them, and a submenu that long is a worse way in than the
+// form's searchable chip editor.
 export function productRoadmapFields(file: TimelineFile | null | undefined): CustomFieldDef[] {
   if (!file || !hasPlugin(file, PRODUCT_ROADMAP_PLUGIN)) return [];
   const defs: CustomFieldDef[] = [];
@@ -47,6 +53,7 @@ export function productRoadmapFields(file: TimelineFile | null | undefined): Cus
       key: PRICING_ITEM_VERSION_META_KEY,
       label: 'Version',
       type: 'select',
+      contextMenu: true,
       options: versions.map((v) => ({ value: v })),
     });
   }
@@ -62,6 +69,7 @@ export function productRoadmapFields(file: TimelineFile | null | undefined): Cus
       key: PRICING_TIER_META_KEY,
       label: 'Tier',
       type: 'multi-select',
+      contextMenu: true,
       options: tiers.map((t) => ({ value: t.id, label: t.name, color: tierColor(t.id) })),
     });
   }

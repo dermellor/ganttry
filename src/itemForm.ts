@@ -8,12 +8,14 @@ import {
   applyCustomFields,
   initCustomFieldState,
   isManagedMetaKey,
+  readFieldValues,
   renderCustomFieldsHtml,
   wireCustomFields,
 } from './customFields';
 import { TIMELINE_ICONS } from './icons';
-import { ITEM_STATUSES, statusOrDefault } from './status';
+import { ITEM_STATUSES, statusOrDefault, type StatusKey } from './status';
 import { findItemIndex, isoDateOnly } from './editor';
+import { applyFieldPick } from './fieldValue';
 import { createMarkdownEditor, type MarkdownEditor } from './wysiwyg';
 import {
   isJiraKey,
@@ -1270,6 +1272,71 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     /* item may be filtered out of the current view */
   }
   if (metaError) setStatus('Metadata JSON ungültig — Änderung nicht übernommen');
+}
+
+/**
+ * Set an item's status without going through the form — the context menu's
+ * status rows (see contextMenu.ts). Lives here next to `deleteItem` because it
+ * is the same kind of thing: a mutation of an existing item that has to keep an
+ * open form in step.
+ *
+ * That last part is a correctness requirement, not a cosmetic one. The status
+ * picker holds its value in a hidden input, so a form still open on this item
+ * would keep the *old* status in its FormData and the next `commitItemForm`
+ * would write it straight back over this change. Re-rendering the form syncs the
+ * picker, exactly as `handleMove` does after a drag.
+ *
+ * Deliberately no `markSelfEditing()`: presence attributes activity to the item
+ * the form/selection points at, and a right-click doesn't select — so on an
+ * unselected item it would flag the wrong one as being edited.
+ */
+export function setItemStatus(id: string, status: StatusKey): void {
+  if (!state.activeSourceFile) return;
+  const idx = findItemIndex(state.activeSourceFile, id);
+  if (idx === -1) return;
+  const item = state.activeSourceFile.items[idx];
+  if (statusOrDefault(item.status) === status) return;
+  item.status = status;
+  rebuildAndApply();
+  if (state.activeFormItemId === id) showItemForm(item);
+  schedulePersist();
+}
+
+/**
+ * Set (or, for a multi-select, toggle) one custom-field value on an item from the
+ * context menu — the counterpart to `setItemStatus` for the fields that opted in
+ * via `def.contextMenu`. An empty `value` on a single-select clears the field.
+ *
+ * Values live in `metadata[key]`, so the same emptiness rule as `applyItemForm`
+ * applies: a field with no values loses its key, and an item with no keys left
+ * loses `metadata` entirely — which the persist diff sends as an explicit `null`
+ * (see `buildItemPatch`), or the old value would come back on reload.
+ *
+ * Returns the values the item carries afterwards, so the menu can re-mark its
+ * rows without reaching into the model itself.
+ */
+export function setItemFieldValue(
+  id: string,
+  key: string,
+  value: string,
+  multi: boolean,
+): string[] {
+  if (!state.activeSourceFile) return [];
+  const idx = findItemIndex(state.activeSourceFile, id);
+  if (idx === -1) return [];
+  const item = state.activeSourceFile.items[idx];
+  const meta = ((item.metadata ??= {}) as Record<string, unknown>);
+  // Toggle-vs-replace and the stored shape are resolved in fieldValue.ts, where
+  // they are unit-testable.
+  const { values, stored } = applyFieldPick(readFieldValues(meta, key), value, multi);
+  if (stored === undefined) delete meta[key];
+  else meta[key] = stored;
+  if (Object.keys(meta).length === 0) delete (item as any).metadata;
+
+  rebuildAndApply();
+  if (state.activeFormItemId === id) showItemForm(item);
+  schedulePersist();
+  return values;
 }
 
 export function deleteItem(id: string): void {
