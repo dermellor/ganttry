@@ -39,6 +39,12 @@
 
 :root {
   --ui-icon-delete: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6.5 6.5l11 11m0-11l-11 11' stroke='%23000' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+  /* The overdue mark on an item the timeline shows as finished while its status
+     says otherwise. A **filled** triangle, not an alias of the item icon
+     `warning` (which is an outline): an item may well carry that icon itself, and
+     two identical glyphs on one bar read as a rendering bug. Solid also suits a
+     mark that is chrome rather than a label. */
+  --ui-icon-warning: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M13.03 3.6a1.2 1.2 0 0 0-2.06 0L1.9 19.2A1.2 1.2 0 0 0 2.93 21h18.14a1.2 1.2 0 0 0 1.03-1.8L13.03 3.6ZM10.8 8.6h2.4v6h-2.4v-6ZM12 19.1a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Z' fill='%23000'/%3E%3C/svg%3E");
   /* The done mark on a finished item's bar. Drawn in the same weight and cap
      style as the delete „×" so the two read as one family of rail marks — this
      is chrome, not the user-pickable `--icon-done`. */
@@ -73,6 +79,13 @@
   --status-open: #94a3b8;
   --status-doing: #315dff;
   --status-done: #1d9e75;
+
+  /* „Laut Timeline fertig, Status sagt nein" — the overdue mark and its overrun
+     line (see „Item rail" in AGENTS.md). Deliberately *not* `--warning`: the theme
+     spends that same amber on `--lane-1-border`, so an amber mark sat at ~1.4
+     contrast on that lane's bars and the line vanished wherever it crossed one.
+     No lane uses red. */
+  --overdue: var(--danger);
 
   --font-body: system-ui, -apple-system, sans-serif;
   --font-headline: Georgia, serif;

@@ -1,7 +1,7 @@
 import type { Config, FilterClause, Note, TimelineFile, TimelineFileItem, View } from './types';
 import { matches, resolveGroupBy } from './filter';
 import { normalizeIcon } from './icons';
-import { normalizeStatus } from './status';
+import { isOverdue, normalizeStatus } from './status';
 import type { StatusKey } from './status';
 import { durationToMs } from './date';
 
@@ -65,6 +65,30 @@ export function assignLanes(items: TimelineItem[], groups: TimelineGroup[]): voi
     const cls = laneByGroup.get(item.group);
     if (cls) item.className = cls;
   }
+}
+
+/**
+ * Stamp each item's status onto its `className` as the rail's status-mark class
+ * (see „Item rail → The status mark" in AGENTS.md). Runs *after* a build, once per
+ * populate — never inside one, because `assignLanes` above owns `className` and
+ * overwrites it on every regroup. Marked items are returned as **shallow copies**,
+ * so the build's own items stay untouched and the persist diff never sees a
+ * display concern.
+ *
+ * At most one mark per item: the two states are mutually exclusive. `status-mark`
+ * carries the shared rail geometry, the state class only its glyph — so a third
+ * state is a CSS rule plus a branch here.
+ */
+export function withStatusMarks<T extends TimelineItem>(items: T[], now: number): T[] {
+  return items.map((it) => {
+    const mark = statusMarkClass(it, now);
+    return mark ? { ...it, className: `${it.className ? `${it.className} ` : ''}${mark}` } : it;
+  });
+}
+
+function statusMarkClass(item: TimelineItem, now: number): string | null {
+  if (item.status === 'Done') return 'status-mark status-done';
+  return isOverdue(item, now) ? 'status-mark status-overdue' : null;
 }
 
 export type DetailNote = {
@@ -354,11 +378,21 @@ export function assignLaneSubgroups(
   // are supplied (live, on every zoom) we convert the measured label width (px)
   // into a time width via the current px/day so the point reserves exactly the
   // room its label needs at this zoom level.
+  // Read once, so every item in one packing pass measures its overrun (below)
+  // against the same instant.
+  const packedAt = Date.now();
   const endMs = (it: TimelineItem) => {
     if (it.type === 'point' && opts && opts.pxPerDay > 0 && Number.isFinite(opts.pxPerDay)) {
       return startMs(it) + (opts.pointLabelPx(it) / opts.pxPerDay) * LANE_DAY_MS;
     }
-    return new Date(it.end ?? it.start!).getTime();
+    const own = new Date(it.end ?? it.start!).getTime();
+    // An overdue range runs on past its own end as the overrun line (see
+    // overrun.ts), and that line is part of the item's visual footprint exactly
+    // like a point's label is. Packing therefore reserves the room out to „now",
+    // so a following bar is pushed into the next lane instead of landing on top of
+    // the line. Points carry no line (their box is content-sized), so they keep
+    // the label-width reservation above.
+    return isOverdue(it, packedAt) ? Math.max(own, packedAt) : own;
   };
 
   const byGroup = new Map<string, TimelineItem[]>();

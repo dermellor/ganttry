@@ -99,6 +99,14 @@
   /* Resting opacity of a visible mark. A var because a faded item (status
      „Done") has to raise it to land at the same effective strength. */
   --rail-mark-dim: 0.5;
+
+  /* Overrun line (a late item's run-on to „now" — see its block below). Kept
+     deliberately fine and pale: it is context for the mark, not a second alarm.
+     Its *length* comes from overrun.ts as `--overrun`. */
+  --overrun-h: 2px;
+  --overrun-dash: 3px;
+  --overrun-gap: 4px;
+  --overrun-dim: 0.5;
   --rail-slots: calc(var(--rail-delete) + var(--rail-marks));
   --rail-w: calc(var(--rail-slots) * var(--rail-slot) + var(--rail-inset));
 }
@@ -200,9 +208,9 @@
 /* ── Item rail: trailing marks inside the bar's right edge ─────────────────
  *
  * A range bar reserves a strip at its inner right edge for small marks. Two live
- * there: the delete affordance and the done mark (a data mark, see its own block
- * below). The delete takes the outermost slot, and the done mark shares it —
- * hovering swaps the check for the „×" instead of adding a mark beside it.
+ * there: the delete affordance and the **status mark** (data — see its own block
+ * below). The delete takes the outermost slot, and the status mark shares it —
+ * hovering swaps the mark for the „×" instead of adding one beside it.
  *
  * Slots are counted right-to-left from the bar's inner edge, so a mark's
  * position is arithmetic on `--rail-slot` and every mark lines up without
@@ -210,11 +218,12 @@
  * currently is, which is what the label's fade reads.
  *
  * Adding a further data mark = render it as an absolutely positioned child of the
- * `.vis-item` (or a pseudo-element of it, as the done mark is), position it with
+ * `.vis-item` (or a pseudo-element of it, as the status mark is), position it with
  *   right: calc(var(--bar-gutter) + var(--rail-inset)
  *               + <marks already inside> * var(--rail-slot))
  * raise `--rail-marks` on the item so the fade widens with the rail, and add it
- * to the selectors below. All geometry stays in the vars above.
+ * to the selectors below. All geometry stays in the vars above. A further *status*
+ * mark needs no new selector at all — see `--rail-mark-glyph`.
  *
  * The delete mark is `.rail-delete`, ours rather than vis-timeline's own
  * `.vis-delete` (`editable.remove` is off) — vis only creates its button on a
@@ -223,10 +232,10 @@
 
 /* A mark: a round 18px box carrying a mask glyph in the item's own text colour,
    so it adapts to every lane and theme like `.item-icon` does. Shared by both
-   marks — the delete button and the done mark — so they sit in the same slot
+   marks — the delete button and the status mark — so they sit in the same slot
    geometry and draw at the same weight. */
 .timeline .vis-item .rail-delete,
-.timeline .vis-item.status-done::after {
+.timeline .vis-item.status-mark::after {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
@@ -256,7 +265,7 @@
 }
 
 .timeline .vis-item .rail-delete::after,
-.timeline .vis-item.status-done::after {
+.timeline .vis-item.status-mark::after {
   content: '';
   background-color: currentColor;
   -webkit-mask-repeat: no-repeat;
@@ -306,38 +315,63 @@
   --rail-delete: 1;
 }
 
-/* ── The done mark: the rail's first data mark ─────────────────────────────
+/* ── The status mark: the rail's data mark ─────────────────────────────────
  *
- * A finished item (status „Done", stamped as `status-done` by render.ts) carries
- * a check in the rail and is painted lighter, so a glance over the timeline
- * separates what is still ahead from what is behind. Unlike the delete it is not
- * an affordance but data, so it shows unconditionally — on a read-only timeline
- * too, which is why it is a pseudo-element off the item's own class instead of
- * something the (editable-only) itemRail paints.
+ * An item's status is drawn on the bar as one mark in the rail, stamped as
+ * `status-mark` plus a state class by render.ts (`statusMarkClass`). Two states
+ * earn one, and they are mutually exclusive, so the item never carries two:
  *
- * The delete **replaces** it while it shows rather than joining it beside it: two
- * marks on one bar make the rail (and the label's fade under it) twice as wide
- * for a state that lasts as long as the pointer rests there, and the check has
- * nothing to say while you are reaching for the „×". So both live in the same
+ *   `status-done`     — finished: a check, and the item painted lighter.
+ *   `status-overdue`  — the timeline has it finished but its status doesn't: a
+ *                       warning triangle in the warning colour.
+ *
+ * `status-mark` carries everything shared (box, slot, hand-over, fade); a state
+ * class carries only its glyph (`--rail-mark-glyph`) and any paint of its own. So
+ * a third state mark is one rule, no selector surgery.
+ *
+ * Unlike the delete these are not affordances but data, so they show
+ * unconditionally — on a read-only timeline too, which is why they are a
+ * pseudo-element off the item's own class instead of something the
+ * (editable-only) itemRail paints.
+ *
+ * The delete **replaces** the mark while it shows rather than joining it beside
+ * it: two marks on one bar make the rail (and the label's fade under it) twice as
+ * wide for a state that lasts as long as the pointer rests there, and the status
+ * has nothing to add while you are reaching for the „×". So both live in the same
  * outermost slot and the rail stays one slot wide in every state.
  * ────────────────────────────────────────────────────────────────────── */
-.timeline .vis-item.status-done {
-  /* The check occupies the slot permanently, so the rail — and with it the
+.timeline .vis-item.status-mark {
+  /* The mark occupies the slot permanently, so the rail — and with it the
      label's fade — is claimed even on an unhovered bar. */
   --rail-marks: 1;
-  /* Lighter, but still legible: the whole item fades together, ring and marks
-     included, rather than the fill drifting away from its own label. */
-  opacity: 0.62;
-  /* 0.8 through that 0.62 lands where the 0.5 base does on a full-strength bar,
-     so the delete reads the same on a finished item as on any other. */
-  --rail-mark-dim: 0.8;
 }
 
-.timeline .vis-item.status-done::after {
+/* vis copies an item's `className` onto its **satellite elements** as well — the
+   dot of a point/box item and a box's connector line are each their own
+   `.vis-item.vis-dot` / `.vis-item.vis-line` carrying the same classes. Every
+   status rule here would therefore match them too, and a milestone grew a second
+   mark on its dot (left of its label, since the dot sits at the item's left edge).
+   The marks and the overrun line belong to the item *box* alone. Custom
+   properties inherit, so a satellite would even pick up its box's `--overrun`. */
+.timeline .vis-item.vis-dot::before,
+.timeline .vis-item.vis-dot::after,
+.timeline .vis-item.vis-line::before,
+.timeline .vis-item.vis-line::after {
+  content: none;
+}
+
+/* Same reason: a done item's fade is applied to its box, and the satellites are
+   inside it — multiplying the two would make a milestone's dot darker than the
+   label it belongs to. */
+.timeline .vis-item.vis-dot.status-done,
+.timeline .vis-item.vis-line.status-done {
+  opacity: 1;
+}
+
+.timeline .vis-item.status-mark::after {
   right: calc(0px - var(--rail-mark) - var(--rail-inset));
-  -webkit-mask-image: var(--ui-icon-check);
-  mask-image: var(--ui-icon-check);
-  /* Full strength inside the faded item — this mark is the reason it is faded. */
+  -webkit-mask-image: var(--rail-mark-glyph);
+  mask-image: var(--rail-mark-glyph);
   opacity: 0.9;
   /* Cross-fades with the delete taking its place. */
   transition: opacity 0.12s linear;
@@ -346,9 +380,76 @@
   pointer-events: none;
 }
 
+.timeline .vis-item.status-done {
+  --rail-mark-glyph: var(--ui-icon-check);
+  /* Lighter, but still legible: the whole item fades together, ring and marks
+     included, rather than the fill drifting away from its own label. */
+  opacity: 0.62;
+  /* 0.8 through that 0.62 lands where the 0.5 base does on a full-strength bar,
+     so the delete reads the same on a finished item as on any other. */
+  --rail-mark-dim: 0.8;
+}
+
+/* The one mark that does *not* take the item's text colour: a warning that blends
+   into the bar it is warning about is no warning. Full opacity for the same
+   reason — the check may sit back, this one is asking to be noticed. `--overdue`
+   rather than `--warning`, because that amber is lane 1's own border colour. */
+.timeline .vis-item.status-overdue {
+  --rail-mark-glyph: var(--ui-icon-warning);
+}
+
+.timeline .vis-item.status-overdue::after {
+  background-color: var(--overdue);
+  opacity: 1;
+}
+
+/* ── The overrun line ──────────────────────────────────────────────────────
+ *
+ * A dashed run-on from a late bar's own end to „now": the rail mark says the item
+ * is overdue, this says by how much, which is the part you plan around.
+ *
+ * Its **length** is the one thing CSS can't know — end→now is a duration, and how
+ * many pixels that is depends on the zoom — so overrun.ts sets `--overrun` per
+ * item on every re-layout and window move. Everything else lives here.
+ *
+ * It continues at the bar's **mid-height**, so it reads as that bar running on past
+ * its end. Hanging it below the bar (in the gutter vis leaves between sub-lanes)
+ * was tried and dropped: detached from the bar's own line of sight it reads as a
+ * stray rule under the whole row, belonging to no bar in particular.
+ *
+ * Nothing can cover it, because the line is part of the item's **footprint**, not
+ * a decoration painted over the lane: `assignLaneSubgroups` reserves an overdue
+ * range's room out to „now" (see `endMs` there, which does the same for a point's
+ * label), so a following bar is packed into the next lane instead of landing on the
+ * line. Overlap is a layout question, and it is answered in the layout — no
+ * z-index games, which could never have worked anyway (vis puts every item at
+ * `z-index: 1`, so two overdue neighbours just tie).
+ *
+ * Deliberately quiet: 2px tall, fine dashes, half opacity, no pointer events. It
+ * is context for a mark that already carries the state, not a second alarm.
+ * ────────────────────────────────────────────────────────────────────── */
+.timeline .vis-item.status-overdue::before {
+  content: '';
+  position: absolute;
+  /* Starts at the item box's right edge, i.e. `--bar-gutter` past the visible
+     bar — the gutter doubles as the gap between bar and line. */
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--overrun, 0px);
+  height: var(--overrun-h);
+  background: repeating-linear-gradient(
+    to right,
+    var(--overdue) 0 var(--overrun-dash),
+    transparent var(--overrun-dash) calc(var(--overrun-dash) + var(--overrun-gap))
+  );
+  opacity: var(--overrun-dim);
+  pointer-events: none;
+}
+
 /* Inside the bar, in the rail's outermost slot — the delete's slot, which it
    hands over below. */
-.timeline .vis-item.vis-range.status-done::after {
+.timeline .vis-item.vis-range.status-mark::after {
   right: calc(var(--bar-gutter) + var(--rail-inset));
 }
 
@@ -356,29 +457,30 @@
    (see the drag-handle note below): it shows while the pointer is on that bar, so
    it is obviously about it. A data mark is permanent, and once the bar is
    narrower than the mark's own box it hangs past the bar's left edge and reads as
-   a check floating in empty space next to a sliver. Below that width the lighter
-   paint carries the status on its own. The literal is `--rail-mark` +
-   `--rail-inset` + `--bar-gutter`, spelled out because a container query can't
-   read a custom property — keep it in step with those.
-   `.vis-item.vis-range` is the query container (below), and a pseudo-element
-   queries its originating element. */
+   a glyph floating in empty space next to a sliver. Below that width a done bar's
+   lighter paint carries the status on its own; an overdue one loses its mark,
+   which is the accepted cost of not littering the lane with loose triangles.
+   The literal is `--rail-mark` + `--rail-inset` + `--bar-gutter`, spelled out
+   because a container query can't read a custom property — keep it in step with
+   those. `.vis-item.vis-range` is the query container (below), and a
+   pseudo-element queries its originating element. */
 @container (max-width: 23px) {
-  .timeline .vis-item.vis-range.status-done::after {
+  .timeline .vis-item.vis-range.status-mark::after {
     display: none;
   }
 }
 
-/* Hand the slot over while the delete shows: the check fades out and stops
+/* Hand the slot over while the delete shows: the mark fades out and stops
    claiming its slot, so the rail width (and the fade) never changes. Gated on
    the delete actually existing — on a read-only timeline nothing replaces the
-   check, so hovering there must not drop it. */
-.timeline .vis-item.status-done:has(> .rail-delete):hover,
-.timeline .vis-item.status-done:has(> .rail-delete).vis-selected {
+   mark, so hovering there must not drop it. */
+.timeline .vis-item.status-mark:has(> .rail-delete):hover,
+.timeline .vis-item.status-mark:has(> .rail-delete).vis-selected {
   --rail-marks: 0;
 }
 
-.timeline .vis-item.status-done:has(> .rail-delete):hover::after,
-.timeline .vis-item.status-done:has(> .rail-delete).vis-selected::after {
+.timeline .vis-item.status-mark:has(> .rail-delete):hover::after,
+.timeline .vis-item.status-mark:has(> .rail-delete).vis-selected::after {
   opacity: 0;
 }
 
@@ -391,7 +493,7 @@
    width never changes on a done bar: the delete replaces the check in the same
    slot instead of adding one. */
 .timeline .vis-item.vis-range:has(> .rail-delete) > .vis-item-overflow::after,
-.timeline .vis-item.vis-range.status-done > .vis-item-overflow::after {
+.timeline .vis-item.vis-range.status-mark > .vis-item-overflow::after {
   content: '';
   position: absolute;
   top: 0;
@@ -406,8 +508,8 @@
   pointer-events: none;
 }
 
-/* The done mark is always there, so its share of the ramp is always shown. */
-.timeline .vis-item.vis-range.status-done > .vis-item-overflow::after,
+/* The status mark is always there, so its share of the ramp is always shown. */
+.timeline .vis-item.vis-range.status-mark > .vis-item-overflow::after,
 .timeline .vis-item.vis-range:has(> .rail-delete):hover > .vis-item-overflow::after,
 .timeline
   .vis-item.vis-range:has(> .rail-delete).vis-selected

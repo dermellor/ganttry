@@ -9,6 +9,10 @@
 // pure (no DOM), so both the client form and the server data-access layer import
 // it — see `src/itemForm.ts` and `scripts/db/timeline-repo.ts`.
 
+// `.ts` extension on purpose: this module is reachable from the Deno edge bundle
+// (via scripts/db/timeline-repo.ts), which resolves imports with real extensions.
+import { parseLocalDay } from './date.ts';
+
 export type StatusKey = 'Open' | 'Doing' | 'Done';
 
 // key -> label for the editor dropdown. Labels intentionally match the values
@@ -39,4 +43,28 @@ export function normalizeStatus(value: unknown): StatusKey | undefined {
 // Used wherever a column/render needs a concrete status (the field is mandatory).
 export function statusOrDefault(value: unknown): StatusKey {
   return normalizeStatus(value) ?? DEFAULT_STATUS;
+}
+
+/**
+ * Does the item's status contradict its own dates — the timeline shows it as
+ * finished, but it is not `Done`? Drives the overdue mark on the bar (see the
+ * item rail).
+ *
+ * The finish is the item's `end`, or its `start` when it has no extent (a
+ * milestone is over the moment it passes). Day strings are read as *local*
+ * midnight via `parseLocalDay`, the same boundary vis-timeline places the item
+ * at, so the mark appears exactly when the bar's right edge crosses "now".
+ *
+ * An item with **no status at all** never counts: a file-based (read-only)
+ * source has no status concept, so „not Done" would be a complaint about
+ * something nobody can act on. Only Open/Doing items can be overdue.
+ */
+export function isOverdue(
+  item: { start?: string; end?: string; status?: StatusKey },
+  now: number,
+): boolean {
+  if (!item.status || item.status === 'Done') return false;
+  const finish = item.end ?? item.start;
+  if (!finish) return false;
+  return parseLocalDay(finish).getTime() <= now;
 }

@@ -1,5 +1,11 @@
 import type { View } from './types';
-import { escapeHtml, type DetailNote, type TimelineGroup, type TimelineItem } from './buildItems';
+import {
+  escapeHtml,
+  withStatusMarks,
+  type DetailNote,
+  type TimelineGroup,
+  type TimelineItem,
+} from './buildItems';
 import { JIRA_BASE_URL } from './jira';
 
 import visJsRaw from 'vis-timeline/standalone/umd/vis-timeline-graph2d.min.js?raw';
@@ -172,7 +178,14 @@ function buildHtml(args: ExportArgs): string {
     detailsObj[k] = v;
   });
   const payload = JSON.stringify({
-    items: build.items,
+    // Same status marks the live timeline draws (the rail's check / warning): the
+    // export inlines timeline.css, so all it was missing was the class. Start-less
+    // items are dropped here too — vis can't place them, and the export has no
+    // list view to show them in.
+    items: withStatusMarks(
+      build.items.filter((it) => !!it.start),
+      Date.now(),
+    ),
     groups: build.groups,
     details: detailsObj,
     jiraBaseUrl: JIRA_BASE_URL,

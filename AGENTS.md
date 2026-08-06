@@ -415,20 +415,38 @@ Status also surfaces on the built `TimelineItem` ([`src/buildItems.ts`](src/buil
 and renders as a **Status column in the Liste view** ([`src/listView.ts`](src/listView.ts));
 items without a status (file-based sources) show „—".
 
-On the **timeline** a `Done` item is painted **lighter** and carries a **check**
-in the item rail — the rail's first data mark, so a glance separates what is
-behind from what is still ahead (see „Item rail → The done mark"). `Doing` and
-`Open` get no bar treatment: three states each with their own paint would make
-every bar a legend lookup, and the two live states are the normal case.
+On the **timeline** the status is drawn on the bar as **one mark** in the item rail
+(see „Item rail → The status mark"), plus, where the status contradicts the dates,
+a line that quantifies the contradiction:
+
+- **`Done`** — the item is painted **lighter** and carries a **check**, so a glance
+  separates what is behind from what is still ahead.
+- **overdue** — the timeline shows the item as finished (its `end`, or its `start`
+  when it has no extent, is in the past) while its status still says `Open`/`Doing`.
+  It carries a **warning triangle**, and a range bar also grows a dashed
+  **overrun line** from its own end to „now" — the mark says *that* it is late,
+  the line *by how much* (see „Item rail → The overrun line").
+- **`Open` / `Doing` on time** — no bar treatment at all. Three states each with
+  their own paint would make every bar a legend lookup, and being in progress on
+  schedule is the normal case; the Status column in the Liste view carries the
+  full three-way split.
+
+The rule is `isOverdue(item, now)` in [`src/status.ts`](src/status.ts) (pure,
+tested in [`src/status.test.ts`](src/status.test.ts)), and it deliberately treats an
+item with **no status at all** as never overdue: a file-based source has no status
+concept, so „not Done" there would be a complaint about something nobody can act
+on. Day strings are read as *local* midnight (`parseLocalDay`), the same boundary
+vis places the item at, so the mark appears exactly when the bar's right edge
+crosses „now".
 
 ## Item rail (marks inside the bar's right edge)
 
 A range bar reserves a strip at its inner right edge for small marks, and the
 label fades into the bar's own fill under it instead of being hard clipped. Two
 marks live there: the **delete affordance**, which appears on **hover as well as
-on selection**, and the **done mark**, a permanent data mark on a finished item
-(see „The done mark" below). They share one slot — hovering a finished bar swaps
-the check for the „×" instead of putting the two side by side.
+on selection**, and the **status mark**, a permanent data mark carrying the item's
+status (see „The status mark" below). They share one slot — hovering a marked bar
+swaps the status glyph for the „×" instead of putting the two side by side.
 
 **The mark is ours, not vis-timeline's** (`editable.remove` is off, and vis's
 `onRemove` handler is gone with it). vis creates its `.vis-delete` button only
@@ -473,21 +491,21 @@ measuring anything.
 - **Occupancy** is read off the DOM (`:has(> .rail-delete)`) for the delete, not
   off a state class, so a read-only timeline neither reserves that slot nor fades
   its labels for it. The slot is claimed only while the mark is actually visible,
-  so an unhovered, unselected bar keeps its full width for the label. The done
+  so an unhovered, unselected bar keeps its full width for the label. The status
   mark is data rather than an affordance, so it claims its slot off the item's own
-  class (`--rail-marks: 1` on `.status-done`) and holds it until the delete takes
+  class (`--rail-marks: 1` on `.status-mark`) and holds it until the delete takes
   over. `--rail-delete` + `--rail-marks` add up to `--rail-slots`.
 - **Marks fill the strip from the edge inward**, and the delete takes the
-  outermost slot. The done mark shares that slot rather than sitting beside it, so
-  the rail is one slot wide in every state — see „The done mark".
+  outermost slot. The status mark shares that slot rather than sitting beside it,
+  so the rail is one slot wide in every state — see „The status mark".
 - **The fade** is an `::after` on `.vis-item-overflow` painted in
   `background-color: inherit` (whatever lane colour the wrapper carries) and
   masked into a ramp. Masking the wrapper itself would fade its border and fill
   along with the text. It stays in the DOM at `opacity: 0` so it fades in with
-  the mark rather than snapping on. On a done bar it is shown unconditionally:
-  that mark is always there, including on a read-only timeline where no
+  the mark rather than snapping on. On a marked bar it is shown unconditionally:
+  a status mark is always there, including on a read-only timeline where no
   `.rail-delete` exists. Its width never changes there either, since the delete
-  replaces the check in the same slot instead of adding one.
+  replaces the status glyph in the same slot instead of adding one.
 - **A range bar takes the in-bar slot at every width**, however narrow. Zoomed
   out most bars are a few dozen pixels wide — narrower than the rail itself — so
   on those the mark covers the bar and the fade swallows the whole label while
@@ -516,62 +534,143 @@ inline-size containment has nothing to break (verified: it moves no bar by a
 pixel). Milestones and boxes are deliberately excluded, since containment would
 cut off content-sized items. The `56px` threshold is a literal (container queries
 can't read custom properties) — keep it in step with the rail vars. One threshold
-covers a finished bar too, because its rail is no wider (the marks share a slot).
+covers a marked bar too, because its rail is no wider (the marks share a slot).
 
-### The done mark
+### The status mark
 
-An item with status `Done` (see „Item status") is painted lighter and carries a
-check in the rail — the first **data** mark, as opposed to the delete affordance.
+The rail's one **data** mark, as opposed to the delete affordance: it draws the
+item's status on the bar (see „Item status" for which states earn one and why).
+Two do, and they are mutually exclusive, so an item never carries two — `Done`
+(a check, item painted lighter) or overdue (a warning triangle).
 
-- **It is a pseudo-element off the item's own class** (`.status-done::after`),
+- **It is a pseudo-element off the item's own class** (`.status-mark::after`),
   not something `itemRail` paints. The rail's JS runs for the delete only, which
-  is editable-only; the done mark is data and has to show on a read-only
-  timeline and in the export too, so it comes from the class alone with no JS.
+  is editable-only; a status mark is data and has to show on a read-only
+  timeline and in the exported HTML too, so it comes from the class alone with no
+  JS (the export inlines `timeline.css`, so the CSS is already there).
   It shares one declaration block with `.rail-delete` for the mark box and the
   glyph, so both sit in the same slot geometry and draw at the same weight.
+- **`status-mark` carries the shared behaviour, a state class only its glyph.**
+  Everything in this section keys on `.status-mark`; `.status-done` /
+  `.status-overdue` set `--rail-mark-glyph` (plus, for done, its own paint). So a
+  third state mark is a rule with a glyph plus a branch in `statusMarkClass`, not a
+  round of selector surgery.
 - **The delete replaces it, it does not join it.** Both sit in the rail's
-  outermost slot; while the delete shows, the check fades out and gives up its
-  slot (`--rail-marks: 0`), so the rail — and the label's fade under it — is one
-  slot wide in every state. Two marks side by side would eat twice the label for a
-  state that lasts as long as the pointer rests there, and the check has nothing
-  to add while you are reaching for the „×". The hand-over is gated on
-  `:has(> .rail-delete)`: on a read-only timeline nothing replaces the check, so
-  hovering there must not drop it. The check also needs `pointer-events: none` —
+  outermost slot; while the delete shows, the status glyph fades out and gives up
+  its slot (`--rail-marks: 0`), so the rail — and the label's fade under it — is
+  one slot wide in every state. Two marks side by side would eat twice the label
+  for a state that lasts as long as the pointer rests there, and the status has
+  nothing to add while you are reaching for the „×". The hand-over is gated on
+  `:has(> .rail-delete)`: on a read-only timeline nothing replaces the mark, so
+  hovering there must not drop it. The mark also needs `pointer-events: none` —
   a pseudo-element paints after the item's real children, so it would otherwise
   swallow the delete's click.
-- **The class is stamped in `timelineItems()`** ([`src/render.ts`](src/render.ts)),
-  the one seam every populate of the item DataSet passes through. It cannot be
-  stamped during the build: `assignLanes` owns `className` there and overwrites it
-  on every regroup. A done item therefore gets a **shallow copy** rather than a
-  mutation, so the build's own items stay untouched and the persist diff never
-  sees a display concern.
-- **Lighter is `opacity` on the whole item**, ring and marks included, rather than
-  a lightened fill — that would mean re-deriving all six lane colours, and a
-  faded fill under a full-strength label reads as a rendering glitch. The delete's
-  resting opacity is raised on a done item (`--rail-mark-dim`) so it lands at the
-  same effective strength as on any other bar.
+- **The class comes from `withStatusMarks(items, now)`**
+  ([`src/buildItems.ts`](src/buildItems.ts)), called by `timelineItems()`
+  ([`src/render.ts`](src/render.ts)) — the one seam every populate of the item
+  DataSet passes through — and by the HTML export, which serialises its own payload
+  and would otherwise ship unmarked bars. It cannot be stamped *during* the build:
+  `assignLanes` owns `className` there and overwrites it on every regroup. A marked
+  item therefore gets a **shallow copy** rather than a mutation, so the build's own
+  items stay untouched and the persist diff never sees a display concern. „Now" is
+  read once per populate, so every item in one repaint is judged against the same
+  instant.
+- **Done's „lighter" is `opacity` on the whole item**, ring and marks included,
+  rather than a lightened fill — that would mean re-deriving all six lane colours,
+  and a faded fill under a full-strength label reads as a rendering glitch. The
+  delete's resting opacity is raised on a done item (`--rail-mark-dim`) so it lands
+  at the same effective strength as on any other bar.
+- **The overdue glyph is the only mark not in the item's text colour**: a warning
+  that blends into the bar it is warning about is no warning, so it takes
+  `--overdue` at full opacity. That token exists because `--warning` cannot serve
+  here — the theme spends the same amber on `--lane-1-border`, which put the
+  triangle at ~1.4 contrast on that lane's own bars. `--overdue` aliases
+  `--danger`; no lane uses red, and the delete's red never shows at the same time
+  (it replaces the mark).
+- **vis copies an item's `className` onto its satellite elements**, so every rule
+  here matches them too: the dot of a point/box item and a box's connector line are
+  each their own `.vis-item.vis-dot` / `.vis-item.vis-line` carrying the same
+  classes. A milestone therefore grew a **second** mark, on its dot — i.e. left of
+  its label, since the dot sits at the item's left edge. One reset block kills both
+  pseudo-elements on the satellites (and un-does the done fade there, which would
+  otherwise multiply with the box's). Custom properties inherit, so a satellite
+  would even pick up its box's `--overrun`.
+- **Its glyph is `--ui-icon-warning`, a *filled* triangle of its own** — not an
+  alias of the item icon `warning`, which is an outline. An item may carry that
+  icon itself, and two identical glyphs on one bar read as a rendering bug; solid
+  also suits a mark that is chrome rather than a label.
 - **It is hidden on a bar narrower than its own box** (a container query, max
   `23px` = `--rail-mark` + `--rail-inset` + `--bar-gutter`). The delete may
   overhang a narrow bar because it shows while the pointer is on that bar, so it
   is obviously about it; a permanent mark on a sliver hangs past the bar's left
-  edge and reads as a check floating in empty space next to it. Below that width
-  the lighter paint carries the status alone. `.vis-item.vis-range` is the query
-  container and a pseudo-element queries its originating element, so this needs
-  no extra element.
-- **Only `Done` gets a bar treatment.** Three states each with their own paint
-  would turn every bar into a legend lookup, and `Open`/`Doing` are the normal
-  case — the Status column in the Liste view carries the full three-way split.
+  edge and reads as a glyph floating in empty space next to it. Below that width a
+  done bar's lighter paint carries the status, and an overdue bar's overrun line
+  does. `.vis-item.vis-range` is the query container and a pseudo-element queries
+  its originating element, so this needs no extra element.
 
-**Adding another data mark:** render it as an absolutely positioned child of the
-`.vis-item` (or, like the done mark, as a pseudo-element of it), position it with
+### The overrun line
+
+A range bar whose status is overdue grows a dashed run-on from its own end to
+„now" ([`src/overrun.ts`](src/overrun.ts) + the overrun block in
+`styles/timeline.css`). The mark says *that* an item is late; this says *by how
+much*, which is the part you plan around.
+
+- **JS supplies only the length.** end→now is a duration, and how many pixels that
+  is depends on the zoom — so the module sets one custom property per overdue item
+  (`--overrun`) and CSS owns height, dash pattern, colour and opacity
+  (`--overrun-h` / `--overrun-dash` / `--overrun-gap` / `--overrun-dim`). Length
+  comes from vis's own `body.util.toScreen`, so the line ends on the same pixel as
+  vis's current-time marker (the phaseBand note about re-deriving the mapping
+  yourself applies here too). It re-measures on `changed` / `rangechange` /
+  `rangechanged` — the same set as the phase ribbon, since every one of those
+  changes px-per-ms — coalesced through a timer, not `requestAnimationFrame`
+  (hidden tabs stop firing rAF; see itemPresence.ts).
+- **It continues at the bar's mid-height**, so it reads as that bar running on past
+  its end. Hanging it below the bar — in the gutter vis leaves between sub-lanes,
+  where no bar paints — dodges the overlap problem for free, and was tried:
+  detached from the bar's own line of sight it reads as a stray rule under the whole
+  row, belonging to no bar in particular. The line's one job is to say „this bar is
+  still running", so it stays on the bar's axis.
+- **It is part of the item's footprint, so nothing can cover it.** If the line
+  behaves like a bar, then bars and lines must not overlap — and that is a layout
+  question, answered in the layout: `endMs` in `assignLaneSubgroups`
+  ([`src/buildItems.ts`](src/buildItems.ts)) reserves an overdue range's room out
+  to „now", exactly as it already reserves a point item's label width. A following
+  bar is then packed into the next sub-lane instead of landing on the line. The cost
+  is honest and visible: a group with late items gains sub-lanes and gets taller.
+  Items starting *after* „now" don't collide with the reservation, so they stay put
+  and lanes aren't inflated needlessly.
+  A `z-index` lift was the first attempt and cannot work: vis puts every item at
+  `z-index: 1`, so two overdue neighbours simply tie and the later one still wins.
+- **It is deliberately quiet besides**: 2px tall, fine dashes, half opacity, and
+  no pointer events. It is context for a mark that already carries the state, not
+  a second alarm.
+- **Colour is `--overdue`, not `--warning`.** Same reason as the mark: the theme
+  spends that amber on `--lane-1-border`, so an amber line disappeared wherever it
+  ran past one of that lane's bars. `--overdue` aliases `--danger`, which no lane
+  uses.
+- **Ranges only.** A milestone has no extent to overrun, and vis sizes a point
+  item's box to its label, so `left: 100%` there would start the line a
+  label-width right of the date it belongs to. Those items keep the mark alone.
+- **Shorter than one dash, no line** (`MIN_OVERRUN_PX`): a 2px stub at the bar's
+  edge reads as a rendering artefact, not as a signal.
+- **Not in the exported HTML.** The export ships its own small inline script, not
+  this module, so `--overrun` is never set there and the line's width stays `0`.
+  The status mark carries the state in an export; wiring the line in would mean
+  re-implementing the time→pixel measurement inside the export bundle.
+
+**Adding a mark.** Another *status* state needs no new selector: a class setting
+`--rail-mark-glyph`, plus its line in `statusMarkClass`. A mark of a different
+kind, sitting *beside* the status one, is more work: render it as an absolutely
+positioned child of the `.vis-item` (or a pseudo-element of it), position it with
 `right: calc(var(--bar-gutter) + var(--rail-inset) + <marks already inside> *
 var(--rail-slot))`, raise `--rail-marks` on the item so the fade widens with the
-rail, and add it to the occupancy/fade selectors. Decide whether it stacks beside
-the delete or hands its slot over the way the done mark does. A data mark cannot come from the vis `template`: that
-output lands inside `.vis-item-content`, which is content-sized, so it cannot
-anchor to the bar's right edge. If it needs behaviour (a click), it needs a real
-element from JS — the pattern in [`src/itemPresence.ts`](src/itemPresence.ts) /
-[`src/itemRail.ts`](src/itemRail.ts).
+rail, and add it to the occupancy/fade selectors — deciding whether it stacks
+beside the delete or hands its slot over the way the status mark does. A data mark
+cannot come from the vis `template`: that output lands inside `.vis-item-content`,
+which is content-sized, so it cannot anchor to the bar's right edge. If it needs
+behaviour (a click), it needs a real element from JS — the pattern in
+[`src/itemPresence.ts`](src/itemPresence.ts) / [`src/itemRail.ts`](src/itemRail.ts).
 
 ## Item context menu (right-click quick actions)
 

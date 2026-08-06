@@ -10,6 +10,7 @@ import {
   buildFromJson,
   buildFromNotes,
   tagPillsHtml,
+  withStatusMarks,
   type BuildResult,
   type TimelineGroup,
   type TimelineItem,
@@ -58,6 +59,7 @@ import {
 import { attachItemPresence } from './itemPresence';
 import { attachItemRail } from './itemRail';
 import { attachItemContextMenu } from './contextMenu';
+import { attachOverrunLines } from './overrun';
 import { deleteItem, setItemFieldValue, setItemStatus, showItemForm } from './itemForm';
 import { showDetailForId, hideDetail } from './detailPanel';
 import { renderListView } from './listView';
@@ -269,20 +271,14 @@ export async function refreshActiveSourceInPlace(view: View): Promise<boolean> {
 // timeline DataSet. They still live in the build and show in the list view.
 //
 // Also the one seam every populate of the item DataSet passes through, so it is
-// where a status gets turned into a class on the bar (`status-done` → lighter
-// paint + the rail's done mark, see the rail block in styles/timeline.css). The
-// class can't be stamped during the build: `assignLanes` owns `className` there
-// and overwrites it on every regroup. A done item therefore gets a shallow copy
-// rather than a mutation — the build's own items stay untouched, so the persist
-// diff never sees a display concern.
+// where the status gets stamped onto the bar as the rail's data mark
+// (`withStatusMarks`, see buildItems.ts). „Now" is read once per populate, so
+// every item in one repaint is judged against the same instant.
 export function timelineItems(items: TimelineItem[]): TimelineItemWithStart[] {
-  return items
-    .filter((it): it is TimelineItemWithStart => !!it.start)
-    .map((it) =>
-      it.status === 'Done'
-        ? { ...it, className: `${it.className ? `${it.className} ` : ''}status-done` }
-        : it,
-    );
+  return withStatusMarks(
+    items.filter((it): it is TimelineItemWithStart => !!it.start),
+    Date.now(),
+  );
 }
 
 export function applyBuildToDataSets(): void {
@@ -491,6 +487,10 @@ export async function renderTimeline(view: View) {
     duplicate: duplicateItem,
     remove: deleteItem,
   });
+
+  // And for the overrun line, whose length is a duration and therefore depends on
+  // the current zoom (see overrun.ts).
+  attachOverrunLines(timeline);
 
   let lastH = containerHeight;
   const ro = new ResizeObserver(() => {
