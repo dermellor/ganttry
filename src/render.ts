@@ -267,8 +267,22 @@ export async function refreshActiveSourceInPlace(view: View): Promise<boolean> {
 // Client-side timeline validation: vis-timeline needs a start to position an
 // item, so start-less items (which the DB now allows) are kept out of the
 // timeline DataSet. They still live in the build and show in the list view.
+//
+// Also the one seam every populate of the item DataSet passes through, so it is
+// where a status gets turned into a class on the bar (`status-done` → lighter
+// paint + the rail's done mark, see the rail block in styles/timeline.css). The
+// class can't be stamped during the build: `assignLanes` owns `className` there
+// and overwrites it on every regroup. A done item therefore gets a shallow copy
+// rather than a mutation — the build's own items stay untouched, so the persist
+// diff never sees a display concern.
 export function timelineItems(items: TimelineItem[]): TimelineItemWithStart[] {
-  return items.filter((it): it is TimelineItemWithStart => !!it.start);
+  return items
+    .filter((it): it is TimelineItemWithStart => !!it.start)
+    .map((it) =>
+      it.status === 'Done'
+        ? { ...it, className: `${it.className ? `${it.className} ` : ''}status-done` }
+        : it,
+    );
 }
 
 export function applyBuildToDataSets(): void {

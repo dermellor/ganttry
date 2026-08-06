@@ -415,17 +415,20 @@ Status also surfaces on the built `TimelineItem` ([`src/buildItems.ts`](src/buil
 and renders as a **Status column in the Liste view** ([`src/listView.ts`](src/listView.ts));
 items without a status (file-based sources) show „—".
 
-> There is **no visual timeline-bar treatment yet** — on the bars status is
-> field-only for now (stored + editable). A status mark on the bar is the
-> intended first consumer of the item rail (see below).
+On the **timeline** a `Done` item is painted **lighter** and carries a **check**
+in the item rail — the rail's first data mark, so a glance separates what is
+behind from what is still ahead (see „Item rail → The done mark"). `Doing` and
+`Open` get no bar treatment: three states each with their own paint would make
+every bar a legend lookup, and the two live states are the normal case.
 
 ## Item rail (marks inside the bar's right edge)
 
 A range bar reserves a strip at its inner right edge for small marks, and the
-label fades into the bar's own fill under it instead of being hard clipped. The
-only mark today is the **delete affordance**, which appears on **hover as well as
-on selection**. The strip is built as a general mechanism so a data mark (a
-status glyph, say) can join it.
+label fades into the bar's own fill under it instead of being hard clipped. Two
+marks live there: the **delete affordance**, which appears on **hover as well as
+on selection**, and the **done mark**, a permanent data mark on a finished item
+(see „The done mark" below). They share one slot — hovering a finished bar swaps
+the check for the „×" instead of putting the two side by side.
 
 **The mark is ours, not vis-timeline's** (`editable.remove` is off, and vis's
 `onRemove` handler is gone with it). vis creates its `.vis-delete` button only
@@ -459,25 +462,32 @@ measuring anything.
   the timeline instances rendered into it.
 
 - **Geometry** lives entirely in the vars on `.vis-item`: `--rail-mark` (mark
-  box), `--rail-gap`, `--rail-inset`, `--rail-fade` (the gradient ramp),
+  box), `--rail-glyph` (the glyph inside it, shared so every mark draws at one
+  size), `--rail-gap`, `--rail-inset`, `--rail-fade` (the gradient ramp),
   `--rail-slot` (mark + gap), and `--rail-w` (the space the occupied rail
-  claims). `--bar-gutter` names the 2px gutter a range bar reserves so
+  claims). `--rail-mark-dim` is a visible mark's resting opacity, a var because a
+  faded item (status „Done") has to raise it to land at the same effective
+  strength. `--bar-gutter` names the 2px gutter a range bar reserves so
   back-to-back bars don't touch — a mark sits inside the *visible* bar, so the
   rail has to offset by it.
-- **Occupancy** is read off the DOM (`:has(> .rail-delete)`), not off a state
-  class, so a read-only timeline neither reserves the slot nor fades its labels.
-  The slot is claimed only while the mark is actually visible, so an unhovered,
-  unselected bar keeps its full width for the label. `--rail-delete` +
-  `--rail-marks` add up to `--rail-slots`.
-- **Marks fill the strip from the edge inward, delete outermost.** A data mark
-  therefore sits at slot `--rail-delete` (0 normally, 1 while the delete shows)
-  and keeps a stable place at the edge instead of leaving a hole there when the
-  item is deselected.
+- **Occupancy** is read off the DOM (`:has(> .rail-delete)`) for the delete, not
+  off a state class, so a read-only timeline neither reserves that slot nor fades
+  its labels for it. The slot is claimed only while the mark is actually visible,
+  so an unhovered, unselected bar keeps its full width for the label. The done
+  mark is data rather than an affordance, so it claims its slot off the item's own
+  class (`--rail-marks: 1` on `.status-done`) and holds it until the delete takes
+  over. `--rail-delete` + `--rail-marks` add up to `--rail-slots`.
+- **Marks fill the strip from the edge inward**, and the delete takes the
+  outermost slot. The done mark shares that slot rather than sitting beside it, so
+  the rail is one slot wide in every state — see „The done mark".
 - **The fade** is an `::after` on `.vis-item-overflow` painted in
   `background-color: inherit` (whatever lane colour the wrapper carries) and
   masked into a ramp. Masking the wrapper itself would fade its border and fill
   along with the text. It stays in the DOM at `opacity: 0` so it fades in with
-  the mark rather than snapping on.
+  the mark rather than snapping on. On a done bar it is shown unconditionally:
+  that mark is always there, including on a read-only timeline where no
+  `.rail-delete` exists. Its width never changes there either, since the delete
+  replaces the check in the same slot instead of adding one.
 - **A range bar takes the in-bar slot at every width**, however narrow. Zoomed
   out most bars are a few dozen pixels wide — narrower than the rail itself — so
   on those the mark covers the bar and the fade swallows the whole label while
@@ -505,16 +515,63 @@ container — safe, because vis sets a range bar's width inline from its dates, 
 inline-size containment has nothing to break (verified: it moves no bar by a
 pixel). Milestones and boxes are deliberately excluded, since containment would
 cut off content-sized items. The `56px` threshold is a literal (container queries
-can't read custom properties) — keep it in step with the rail vars.
+can't read custom properties) — keep it in step with the rail vars. One threshold
+covers a finished bar too, because its rail is no wider (the marks share a slot).
 
-**Adding a data mark:** render it as an absolutely positioned child of the
-`.vis-item`, position it with `right: calc(var(--bar-gutter) + var(--rail-inset)
-+ var(--rail-delete) * var(--rail-slot))`, set `--rail-marks: 1` on the item so
-the fade widens with the rail, and add it to the `:has()` selectors. Note that a
-data mark has to come from JS on the item element (the pattern in
-[`src/itemPresence.ts`](src/itemPresence.ts)), not from the vis `template`: the
-template's output lands inside `.vis-item-content`, which is content-sized, so it
-cannot anchor to the bar's right edge.
+### The done mark
+
+An item with status `Done` (see „Item status") is painted lighter and carries a
+check in the rail — the first **data** mark, as opposed to the delete affordance.
+
+- **It is a pseudo-element off the item's own class** (`.status-done::after`),
+  not something `itemRail` paints. The rail's JS runs for the delete only, which
+  is editable-only; the done mark is data and has to show on a read-only
+  timeline and in the export too, so it comes from the class alone with no JS.
+  It shares one declaration block with `.rail-delete` for the mark box and the
+  glyph, so both sit in the same slot geometry and draw at the same weight.
+- **The delete replaces it, it does not join it.** Both sit in the rail's
+  outermost slot; while the delete shows, the check fades out and gives up its
+  slot (`--rail-marks: 0`), so the rail — and the label's fade under it — is one
+  slot wide in every state. Two marks side by side would eat twice the label for a
+  state that lasts as long as the pointer rests there, and the check has nothing
+  to add while you are reaching for the „×". The hand-over is gated on
+  `:has(> .rail-delete)`: on a read-only timeline nothing replaces the check, so
+  hovering there must not drop it. The check also needs `pointer-events: none` —
+  a pseudo-element paints after the item's real children, so it would otherwise
+  swallow the delete's click.
+- **The class is stamped in `timelineItems()`** ([`src/render.ts`](src/render.ts)),
+  the one seam every populate of the item DataSet passes through. It cannot be
+  stamped during the build: `assignLanes` owns `className` there and overwrites it
+  on every regroup. A done item therefore gets a **shallow copy** rather than a
+  mutation, so the build's own items stay untouched and the persist diff never
+  sees a display concern.
+- **Lighter is `opacity` on the whole item**, ring and marks included, rather than
+  a lightened fill — that would mean re-deriving all six lane colours, and a
+  faded fill under a full-strength label reads as a rendering glitch. The delete's
+  resting opacity is raised on a done item (`--rail-mark-dim`) so it lands at the
+  same effective strength as on any other bar.
+- **It is hidden on a bar narrower than its own box** (a container query, max
+  `23px` = `--rail-mark` + `--rail-inset` + `--bar-gutter`). The delete may
+  overhang a narrow bar because it shows while the pointer is on that bar, so it
+  is obviously about it; a permanent mark on a sliver hangs past the bar's left
+  edge and reads as a check floating in empty space next to it. Below that width
+  the lighter paint carries the status alone. `.vis-item.vis-range` is the query
+  container and a pseudo-element queries its originating element, so this needs
+  no extra element.
+- **Only `Done` gets a bar treatment.** Three states each with their own paint
+  would turn every bar into a legend lookup, and `Open`/`Doing` are the normal
+  case — the Status column in the Liste view carries the full three-way split.
+
+**Adding another data mark:** render it as an absolutely positioned child of the
+`.vis-item` (or, like the done mark, as a pseudo-element of it), position it with
+`right: calc(var(--bar-gutter) + var(--rail-inset) + <marks already inside> *
+var(--rail-slot))`, raise `--rail-marks` on the item so the fade widens with the
+rail, and add it to the occupancy/fade selectors. Decide whether it stacks beside
+the delete or hands its slot over the way the done mark does. A data mark cannot come from the vis `template`: that
+output lands inside `.vis-item-content`, which is content-sized, so it cannot
+anchor to the bar's right edge. If it needs behaviour (a click), it needs a real
+element from JS — the pattern in [`src/itemPresence.ts`](src/itemPresence.ts) /
+[`src/itemRail.ts`](src/itemRail.ts).
 
 ## Item context menu (right-click quick actions)
 

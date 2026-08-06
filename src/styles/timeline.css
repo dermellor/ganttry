@@ -85,6 +85,9 @@
 
   /* Item rail geometry — see the rail block further down. */
   --rail-mark: 18px;
+  /* Glyph inside a mark's box. Shared by every mark so they all draw at one
+     size; the box stays `--rail-mark` wide, which is what the slots count. */
+  --rail-glyph: 12px;
   --rail-gap: 2px;
   --rail-inset: 4px;
   --rail-fade: 14px;
@@ -93,6 +96,9 @@
      editable view) plus any data marks. */
   --rail-delete: 0;
   --rail-marks: 0;
+  /* Resting opacity of a visible mark. A var because a faded item (status
+     „Done") has to raise it to land at the same effective strength. */
+  --rail-mark-dim: 0.5;
   --rail-slots: calc(var(--rail-delete) + var(--rail-marks));
   --rail-w: calc(var(--rail-slots) * var(--rail-slot) + var(--rail-inset));
 }
@@ -193,43 +199,37 @@
 
 /* ── Item rail: trailing marks inside the bar's right edge ─────────────────
  *
- * A range bar reserves a strip at its inner right edge for small marks. Today
- * the only mark is the delete affordance; the strip is built as a general
- * mechanism so a data mark — a status glyph, say — can join it later.
+ * A range bar reserves a strip at its inner right edge for small marks. Two live
+ * there: the delete affordance and the done mark (a data mark, see its own block
+ * below). The delete takes the outermost slot, and the done mark shares it —
+ * hovering swaps the check for the „×" instead of adding a mark beside it.
  *
  * Slots are counted right-to-left from the bar's inner edge, so a mark's
  * position is arithmetic on `--rail-slot` and every mark lines up without
- * measuring anything. Marks fill the strip from the edge inward, with the
- * delete always outermost: a data mark therefore sits at slot `--rail-delete`
- * (0 normally, 1 while the delete is showing) and so keeps a stable place at
- * the edge instead of leaving a hole there when the item is deselected.
+ * measuring anything. `--rail-slots` (delete + data marks) is how wide the rail
+ * currently is, which is what the label's fade reads.
  *
- * Adding a data mark = render it as an absolutely positioned child of the
- * `.vis-item`, position it with
+ * Adding a further data mark = render it as an absolutely positioned child of the
+ * `.vis-item` (or a pseudo-element of it, as the done mark is), position it with
  *   right: calc(var(--bar-gutter) + var(--rail-inset)
- *               + var(--rail-delete) * var(--rail-slot))
- * set `--rail-marks: 1` on the item so the fade widens with the rail, and add
- * it to the selectors below. All geometry stays in the vars above.
+ *               + <marks already inside> * var(--rail-slot))
+ * raise `--rail-marks` on the item so the fade widens with the rail, and add it
+ * to the selectors below. All geometry stays in the vars above.
  *
  * The delete mark is `.rail-delete`, ours rather than vis-timeline's own
  * `.vis-delete` (`editable.remove` is off) — vis only creates its button on a
  * *selected* item, so hovering a bar showed nothing at all. See itemRail.ts.
  * ────────────────────────────────────────────────────────────────────── */
 
-/* The mark: a round 18px button carrying a mask glyph in the item's own text
-   colour, so it adapts to every lane and theme like `.item-icon` does. It is in
-   the DOM for every editable item and hidden until the bar is hovered or
-   selected — letting the selector decide keeps hover-tracking out of the JS. */
-.timeline .vis-item .rail-delete {
+/* A mark: a round 18px box carrying a mask glyph in the item's own text colour,
+   so it adapts to every lane and theme like `.item-icon` does. Shared by both
+   marks — the delete button and the done mark — so they sit in the same slot
+   geometry and draw at the same weight. */
+.timeline .vis-item .rail-delete,
+.timeline .vis-item.status-done::after {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  /* Non-range items (milestones, boxes) hug their content, so there is no room
-     inside for a rail; they keep vis's placement just outside the right edge,
-     re-centred for the smaller mark. Range bars always take the in-bar slot
-     below, however narrow they are — a mark hanging outside the bar is what this
-     whole block exists to get rid of. */
-  right: calc(0px - var(--rail-mark) - var(--rail-inset));
   width: var(--rail-mark);
   height: var(--rail-mark);
   padding: 0;
@@ -237,27 +237,46 @@
   border-radius: 50%;
   background: transparent;
   color: inherit;
-  cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s linear, color 0.12s linear;
   /* Above `.vis-drag-center` and `.vis-drag-right`, which vis appends to the
      same item box and which would otherwise swallow the click. */
   z-index: 3;
 }
 
-.timeline .vis-item .rail-delete::after {
+.timeline .vis-item .rail-delete {
+  /* Non-range items (milestones, boxes) hug their content, so there is no room
+     inside for a rail; they keep vis's placement just outside the right edge,
+     re-centred for the smaller mark. Range bars always take the in-bar slot
+     below, however narrow they are — a mark hanging outside the bar is what this
+     whole block exists to get rid of. */
+  right: calc(0px - var(--rail-mark) - var(--rail-inset));
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s linear, color 0.12s linear;
+}
+
+.timeline .vis-item .rail-delete::after,
+.timeline .vis-item.status-done::after {
   content: '';
-  position: absolute;
-  inset: 3px;
   background-color: currentColor;
-  -webkit-mask: var(--ui-icon-delete) center / contain no-repeat;
-  mask: var(--ui-icon-delete) center / contain no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: var(--rail-glyph);
+  mask-size: var(--rail-glyph);
+}
+
+.timeline .vis-item .rail-delete::after {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: var(--ui-icon-delete);
+  mask-image: var(--ui-icon-delete);
 }
 
 .timeline .vis-item:hover > .rail-delete,
 .timeline .vis-item.vis-selected > .rail-delete {
-  opacity: 0.5;
+  opacity: var(--rail-mark-dim);
   pointer-events: auto;
 }
 
@@ -287,13 +306,92 @@
   --rail-delete: 1;
 }
 
+/* ── The done mark: the rail's first data mark ─────────────────────────────
+ *
+ * A finished item (status „Done", stamped as `status-done` by render.ts) carries
+ * a check in the rail and is painted lighter, so a glance over the timeline
+ * separates what is still ahead from what is behind. Unlike the delete it is not
+ * an affordance but data, so it shows unconditionally — on a read-only timeline
+ * too, which is why it is a pseudo-element off the item's own class instead of
+ * something the (editable-only) itemRail paints.
+ *
+ * The delete **replaces** it while it shows rather than joining it beside it: two
+ * marks on one bar make the rail (and the label's fade under it) twice as wide
+ * for a state that lasts as long as the pointer rests there, and the check has
+ * nothing to say while you are reaching for the „×". So both live in the same
+ * outermost slot and the rail stays one slot wide in every state.
+ * ────────────────────────────────────────────────────────────────────── */
+.timeline .vis-item.status-done {
+  /* The check occupies the slot permanently, so the rail — and with it the
+     label's fade — is claimed even on an unhovered bar. */
+  --rail-marks: 1;
+  /* Lighter, but still legible: the whole item fades together, ring and marks
+     included, rather than the fill drifting away from its own label. */
+  opacity: 0.62;
+  /* 0.8 through that 0.62 lands where the 0.5 base does on a full-strength bar,
+     so the delete reads the same on a finished item as on any other. */
+  --rail-mark-dim: 0.8;
+}
+
+.timeline .vis-item.status-done::after {
+  right: calc(0px - var(--rail-mark) - var(--rail-inset));
+  -webkit-mask-image: var(--ui-icon-check);
+  mask-image: var(--ui-icon-check);
+  /* Full strength inside the faded item — this mark is the reason it is faded. */
+  opacity: 0.9;
+  /* Cross-fades with the delete taking its place. */
+  transition: opacity 0.12s linear;
+  /* A data mark is never a hit target — and being a pseudo-element it paints
+     after the delete button, so without this it would swallow its click. */
+  pointer-events: none;
+}
+
+/* Inside the bar, in the rail's outermost slot — the delete's slot, which it
+   hands over below. */
+.timeline .vis-item.vis-range.status-done::after {
+  right: calc(var(--bar-gutter) + var(--rail-inset));
+}
+
+/* …but only on a bar with room to hold it. The delete may overhang a narrow bar
+   (see the drag-handle note below): it shows while the pointer is on that bar, so
+   it is obviously about it. A data mark is permanent, and once the bar is
+   narrower than the mark's own box it hangs past the bar's left edge and reads as
+   a check floating in empty space next to a sliver. Below that width the lighter
+   paint carries the status on its own. The literal is `--rail-mark` +
+   `--rail-inset` + `--bar-gutter`, spelled out because a container query can't
+   read a custom property — keep it in step with those.
+   `.vis-item.vis-range` is the query container (below), and a pseudo-element
+   queries its originating element. */
+@container (max-width: 23px) {
+  .timeline .vis-item.vis-range.status-done::after {
+    display: none;
+  }
+}
+
+/* Hand the slot over while the delete shows: the check fades out and stops
+   claiming its slot, so the rail width (and the fade) never changes. Gated on
+   the delete actually existing — on a read-only timeline nothing replaces the
+   check, so hovering there must not drop it. */
+.timeline .vis-item.status-done:has(> .rail-delete):hover,
+.timeline .vis-item.status-done:has(> .rail-delete).vis-selected {
+  --rail-marks: 0;
+}
+
+.timeline .vis-item.status-done:has(> .rail-delete):hover::after,
+.timeline .vis-item.status-done:has(> .rail-delete).vis-selected::after {
+  opacity: 0;
+}
+
 /* The label fades into the bar's own fill under the rail instead of being hard
    clipped by it. `background-color: inherit` picks up whatever lane colour the
    wrapper is painted in, and the mask turns that flat colour into the ramp —
    masking the wrapper itself would fade its border and fill along with the
    text. Sits inside the border box, so the border stays crisp. Kept in the DOM
-   at `opacity: 0` so it can fade in with the mark rather than snapping on. */
-.timeline .vis-item.vis-range:has(> .rail-delete) > .vis-item-overflow::after {
+   at `opacity: 0` so it can fade in with the mark rather than snapping on. Its
+   width never changes on a done bar: the delete replaces the check in the same
+   slot instead of adding one. */
+.timeline .vis-item.vis-range:has(> .rail-delete) > .vis-item-overflow::after,
+.timeline .vis-item.vis-range.status-done > .vis-item-overflow::after {
   content: '';
   position: absolute;
   top: 0;
@@ -308,6 +406,8 @@
   pointer-events: none;
 }
 
+/* The done mark is always there, so its share of the ramp is always shown. */
+.timeline .vis-item.vis-range.status-done > .vis-item-overflow::after,
 .timeline .vis-item.vis-range:has(> .rail-delete):hover > .vis-item-overflow::after,
 .timeline
   .vis-item.vis-range:has(> .rail-delete).vis-selected
