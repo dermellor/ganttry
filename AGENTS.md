@@ -1249,7 +1249,11 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
   dependencies, JIRA) renders its chips and its search input inside **one**
   bordered `.chip-box` that reads as a single control
   ([`src/styles/chips.css`](src/styles/chips.css)) — that frees a row per field
-  and lets those fields sit at half width beside each other. The Markdown body
+  and lets a chip field sit at half width beside another one. **Tags spans the
+  full width** (`.field.full`) even so: a chip row fills up fast, and at half
+  width it wrapped into a second line after two or three tags, costing back the
+  row the `.chip-box` had just saved. Custom multi-selects stay at half width.
+  The Markdown body
   grows from a low floor instead of reserving a screenful
   ([`src/styles/wysiwyg.css`](src/styles/wysiwyg.css)), and the read-only item
   **id** lives in the audit footer (`auditBlockHtml`) instead of a labelled

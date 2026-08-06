@@ -490,7 +490,7 @@ export function showItemForm(
         <div data-role="body-editor"></div>
         <textarea id="f-body" name="body" hidden>${escapeHtml(item.body ?? '')}</textarea>
       </div>
-      <div class="field tags-field">
+      <div class="field full tags-field">
         <label for="f-tags">Tags <small>(farbige Marker)</small></label>
         <div class="chip-box">
           <div class="tags-chips" data-role="tags-chips"></div>
