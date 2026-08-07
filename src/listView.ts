@@ -21,6 +21,7 @@ import { computeSections, GROUP_DIM } from './listGrouping';
 import { metaOf, resolveGrouping, sectionContext, syncGroupByControl } from './grouping';
 import { syncFilterControl } from './filterControl';
 import { parentGroupIds } from './groupHierarchy';
+import { ownerCellHtml } from './users';
 
 const TYPE_LABELS: Record<TimelineItem['type'], string> = {
   point: 'Meilenstein',
@@ -52,7 +53,7 @@ function rowHtml(item: TimelineItem, selected: boolean): string {
     <td class="list-date">${item.type === 'point' ? '—' : formatDate(item.end)}</td>
     <td class="list-type">${TYPE_LABELS[item.type] ?? escapeHtml(item.type)}</td>
     <td class="list-status">${item.status ? escapeHtml(item.status) : '<span class="list-empty">—</span>'}</td>
-    <td class="list-owner">${owner ? escapeHtml(owner) : '<span class="list-empty">—</span>'}</td>
+    <td class="list-owner">${ownerCellHtml(owner)}</td>
   </tr>`;
 }
 

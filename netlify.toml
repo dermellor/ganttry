@@ -36,6 +36,12 @@
   function = "timelines-api"
   path = "/api/sources"
 
+# User directory an item's Owner links to. Same function: it needs the same DB
+# drivers and the same auth gate, and serving it registers the caller.
+[[edge_functions]]
+  function = "timelines-api"
+  path = "/api/users"
+
 # PUBLIC pricing model for external marketing pages (Astro). No auth (see
 # auth.ts excludedPath); serves only the pricing model, never roadmap items.
 [[edge_functions]]

@@ -18,7 +18,7 @@ import type { Context, Config } from '@netlify/edge-functions';
 import postgres from 'https://esm.sh/postgres@3.4.9';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { readSession, hasValidMcpToken } from './_shared/session.ts';
-import { resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
+import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
 
 // Module-scoped, reused postgres.js connection. Opened once per isolate and
 // reused across invocations — NEVER call sql.end() in a handler (it throws a
@@ -62,7 +62,11 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
 
   const reqUrl = new URL(req.url);
   const isCollection = reqUrl.pathname === '/api/sources';
-  const parsed = isCollection ? { id: '' } : parseSourcePath(reqUrl.pathname.replace(/^\/api\/source/, ''));
+  const isUsers = reqUrl.pathname === '/api/users';
+  const parsed =
+    isCollection || isUsers
+      ? { id: '' }
+      : parseSourcePath(reqUrl.pathname.replace(/^\/api\/source/, ''));
   if (!parsed) return; // not our route → fall through
 
   // Auth gate: valid session or MCP service token.
@@ -71,6 +75,20 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
   if (!mcp && !session) {
     // When the site isn't gated at all, allow reads; otherwise 401.
     if (Deno.env.get('AUTH_REQUIRED') === 'true') return json({ error: 'unauthorized' }, 401);
+  }
+
+  // The user directory (`/api/users`) rides along in this function rather than in
+  // its own: it needs exactly this driver setup and this auth gate, and a second
+  // edge bundle importing both drivers to serve one read would be a copy of the
+  // 40 lines above. Serving it registers the caller — see handleUsersApi.
+  if (isUsers) {
+    const repo = resolveRepo(conns);
+    if (!repo) return json({ users: [] });
+    const result = await handleUsersApi(repo, {
+      method: req.method ?? 'GET',
+      caller: session ? { email: session.email, name: session.name ?? null } : undefined,
+    });
+    return json(result.json, result.status);
   }
 
   const method = req.method ?? 'GET';
@@ -113,5 +131,5 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
 }
 
 export const config: Config = {
-  path: ['/api/source/*', '/api/sources'],
+  path: ['/api/source/*', '/api/sources', '/api/users'],
 };

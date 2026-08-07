@@ -36,6 +36,7 @@ import {
 import { GROUP_DIM } from './listGrouping';
 import { commitItemForm } from './persistence';
 import type { PresenceUser } from './presence';
+import { loadUserDirectory } from './users';
 import { deleteItem } from './itemForm';
 import { hideDetail, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
@@ -186,6 +187,10 @@ async function bootstrap() {
     loadConfig(),
     loadNotes(),
     loadCurrentUser(),
+    // The user directory an item's Owner resolves against. Loaded once, up front,
+    // because both the list's Owner column and the item form's picker read it
+    // synchronously; fetching it also registers us in it (see src/users.ts).
+    loadUserDirectory(),
   ]);
   state.config = cfg;
   state.allNotes = notesData.notes;

@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
 import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
-import { resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
+import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
 
 // Additive dual-adapter: prefer native postgres.js (TIMELINES_DATABASE_URL),
 // else supabase-js (TIMELINES_SUPABASE_URL + SERVICE_KEY). Both factories cache,
@@ -133,11 +133,39 @@ function timelinesApi(): Plugin {
       //   document.cookie = 'dev_user=alice'; location.reload()
       // Dev-server only; the deployed site derives the identity from the signed
       // session cookie (netlify/edge-functions/me.ts).
-      server.middlewares.use('/api/me', (req, res, next) => {
-        if (req.method !== 'GET') return next();
+      const devIdentity = (req: any): { email: string; name: string } => {
         const cookie = /(?:^|;\s*)dev_user=([^;]*)/.exec(req.headers.cookie ?? '')?.[1];
         const email = cookie ? decodeURIComponent(cookie) : 'local';
-        send(res, 200, { email, name: email });
+        return { email, name: email };
+      };
+
+      server.middlewares.use('/api/me', (req, res, next) => {
+        if (req.method !== 'GET') return next();
+        send(res, 200, devIdentity(req));
+      });
+
+      // GET /api/users — the user directory an item's Owner links to. Serving it
+      // also registers the caller (see handleUsersApi), which locally means the
+      // `dev_user` identity — but only when it is address-shaped, so the default
+      // "local" never lands in the (live) directory. Getting a test person in:
+      //   document.cookie = 'dev_user=alice@example.com'; location.reload()
+      //
+      // Without a DB there is no directory. It answers 200 with an empty list
+      // rather than failing: the owner picker then has nothing to offer, which is
+      // the truth for a notes-only checkout, and no source is editable anyway.
+      server.middlewares.use('/api/users', async (req, res, next) => {
+        if (req.method !== 'GET') return next();
+        const repo = resolveRepo(dbConns());
+        if (!repo) return send(res, 200, { users: [] });
+        // Email only, no name: the dev identity has none, and `/api/me` reports
+        // the address *as* the name so the presence badge has something to label
+        // with. Registering that would store "alice@example.com" as Alice's
+        // display name; without it she shows as "alice" (the local part).
+        const result = await handleUsersApi(repo, {
+          method: 'GET',
+          caller: { email: devIdentity(req).email },
+        });
+        send(res, result.status, result.json);
       });
 
       // GET /api/sources — list timelines

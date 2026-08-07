@@ -1,7 +1,7 @@
 // The editable item form shown in the detail panel: field layout, the Markdown
-// body editor, the JIRA / dependencies / tags chip editors with autosuggest,
-// and the reactive apply/delete logic. Persistence is deferred to
-// persistence.ts (commitItemForm / scheduleLiveEdit).
+// body editor, the JIRA / dependencies / tags chip editors and the owner picker
+// with autosuggest, and the reactive apply/delete logic. Persistence is deferred
+// to persistence.ts (commitItemForm / scheduleLiveEdit).
 
 import { escapeHtml, readTags, tagColor } from './buildItems';
 import {
@@ -24,7 +24,8 @@ import {
   searchJira,
   type JiraIssue,
 } from './jira';
-import type { TimelineFileItem } from './types';
+import type { DirectoryUser, TimelineFileItem } from './types';
+import { directoryState, displayName, resolveOwner, searchUsers, userAvatar } from './users';
 import { assignableLeaves, parentGroupIds } from './groupHierarchy';
 import { state, els, setStatus, revealBesidePanel, clearFormSlots } from './state';
 import { parseLocalDay, durationToMs, shiftDays } from './date';
@@ -484,9 +485,16 @@ export function showItemForm(
         <label for="f-group">Group</label>
         <select id="f-group" name="group">${groupOptions}</select>
       </div>
-      <div class="field">
-        <label for="f-owner">Owner</label>
-        <input id="f-owner" name="owner" value="${escapeHtml(owner)}" />
+      <div class="field owner-field">
+        <label for="f-owner-search">Owner</label>
+        <div class="chip-box">
+          <div class="owner-chip-slot" data-role="owner-chip"></div>
+          <div class="owner-suggest">
+            <input id="f-owner-search" type="text" autocomplete="off" placeholder="Person suchen…" />
+            <ul class="owner-suggest-list" data-role="owner-list" hidden></ul>
+          </div>
+        </div>
+        <input id="f-owner" name="owner" type="hidden" value="${escapeHtml(owner)}" />
       </div>
       <div class="field full">
         <label>Body</label>
@@ -623,6 +631,7 @@ export function showItemForm(
   wireJiraAutosuggest(form);
   wireDepsAutosuggest(form, id);
   wireTagsAutosuggest(form);
+  wireOwnerPicker(form);
   wireCustomFields(form);
 
   els.detail.hidden = false;
@@ -1013,6 +1022,175 @@ function wireDepsAutosuggest(form: HTMLFormElement, selfId: string): void {
     // Let a mousedown on a suggestion fire first, then close.
     setTimeout(closeList, 120);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Owner picker
+// ---------------------------------------------------------------------------
+// Owner links a **user** rather than holding free text: the value stored in
+// `metadata.owner` is an e-mail, resolved for display against the directory
+// (src/users.ts). One owner per item, so this is a single-value combobox, not a
+// chip list — but it borrows the `.chip-box` shell the multi-value fields use, so
+// a filled owner reads as the same kind of control as a filled Tags field.
+//
+// The picked value lives in a **hidden `owner` input**, which is what keeps the
+// rest of the form oblivious: `FormData` still carries `owner`, and
+// `applyItemForm`'s `get('owner')` is unchanged from when this was a text input.
+// The visible input is a search box only and is deliberately unnamed, or it would
+// submit a half-typed name as the owner.
+//
+// Two states, never both: an empty owner shows the search box; a set owner shows
+// its chip and hides the search box (a second person cannot be added, so leaving
+// the box there would invite a pick that silently replaces the first).
+function wireOwnerPicker(form: HTMLFormElement): void {
+  const hidden = form.querySelector<HTMLInputElement>('#f-owner');
+  const slot = form.querySelector<HTMLElement>('[data-role="owner-chip"]');
+  const input = form.querySelector<HTMLInputElement>('#f-owner-search');
+  const list = form.querySelector<HTMLUListElement>('[data-role="owner-list"]');
+  if (!hidden || !slot || !input || !list) return;
+
+  let activeIndex = -1;
+  let current: DirectoryUser[] = [];
+
+  const closeList = () => {
+    list.hidden = true;
+    list.innerHTML = '';
+    activeIndex = -1;
+    current = [];
+  };
+
+  const renderChip = () => {
+    const owner = resolveOwner(hidden.value);
+    slot.replaceChildren();
+    input.hidden = !!owner;
+    if (!owner) return;
+
+    const chip = document.createElement('span');
+    // An unresolvable value is a legacy free-text owner (or a file source's).
+    // Marked as such rather than dropped, and shown without an avatar: inventing
+    // a monogram and a colour for "Strategy Team" would present a string as a
+    // person the directory never knew.
+    chip.className = owner.known ? 'owner-chip' : 'owner-chip is-unlinked';
+    if (owner.known && owner.user) chip.appendChild(userAvatar(owner.user, 'owner-chip-avatar'));
+    const label = document.createElement('span');
+    label.className = 'owner-chip-label';
+    label.textContent = owner.label;
+    chip.appendChild(label);
+    chip.title = owner.known ? owner.raw : `${owner.raw} — nicht mit einem Benutzer verknüpft`;
+
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'owner-chip-x';
+    x.setAttribute('aria-label', 'Owner entfernen');
+    x.textContent = '×';
+    x.addEventListener('click', () => setOwner(''));
+    chip.appendChild(x);
+    slot.appendChild(chip);
+  };
+
+  const setOwner = (email: string) => {
+    hidden.value = email;
+    input.value = '';
+    closeList();
+    renderChip();
+    scheduleLiveEdit();
+    if (!email) input.focus();
+  };
+
+  const highlight = () => {
+    list.querySelectorAll<HTMLLIElement>('.owner-suggest-item').forEach((li, i) => {
+      li.classList.toggle('is-active', i === activeIndex);
+    });
+  };
+
+  const pick = (i: number) => {
+    const user = current[i];
+    if (user) setOwner(user.email);
+  };
+
+  const renderList = (users: DirectoryUser[]) => {
+    current = users;
+    activeIndex = -1;
+    if (!users.length) {
+      // Say why instead of just not opening. Nothing happening at all is
+      // indistinguishable from a broken field — and on a fresh install the
+      // directory legitimately *is* empty until someone signs in, which is a
+      // different problem from the endpoint being unreachable (e.g. migration
+      // 0015 not applied). `current` stays empty, so the row is inert: arrow
+      // keys and Enter have nothing to pick.
+      const { status } = directoryState();
+      const msg =
+        status === 'unavailable'
+          ? 'Benutzerverzeichnis nicht erreichbar'
+          : status === 'empty'
+            ? 'Noch keine Benutzer erfasst'
+            : 'Kein Treffer';
+      const li = document.createElement('li');
+      li.className = 'owner-suggest-empty';
+      li.setAttribute('role', 'presentation');
+      li.textContent = msg;
+      list.replaceChildren(li);
+      list.hidden = false;
+      return;
+    }
+    list.replaceChildren(
+      ...users.map((u, i) => {
+        const li = document.createElement('li');
+        li.className = 'owner-suggest-item';
+        li.dataset.i = String(i);
+        li.setAttribute('role', 'option');
+        li.appendChild(userAvatar(u, 'owner-suggest-avatar'));
+        const name = document.createElement('span');
+        name.className = 'owner-suggest-label';
+        name.textContent = displayName(u);
+        li.appendChild(name);
+        // The address is shown next to the name, not only in a tooltip: two
+        // colleagues can share a display name, and the address is the value
+        // actually stored.
+        const mail = document.createElement('span');
+        mail.className = 'owner-suggest-mail';
+        mail.textContent = u.email;
+        li.appendChild(mail);
+        li.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          pick(i);
+        });
+        return li;
+      }),
+    );
+    list.hidden = false;
+  };
+
+  input.addEventListener('input', () => renderList(searchUsers(input.value)));
+  input.addEventListener('focus', () => renderList(searchUsers(input.value)));
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (list.hidden) renderList(searchUsers(input.value));
+      activeIndex = Math.min(activeIndex + 1, current.length - 1);
+      highlight();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+      highlight();
+    } else if (e.key === 'Enter') {
+      // No free-form fallback here (unlike Tags): the field links an existing
+      // user, so typed text that matches nobody must not become the value.
+      e.preventDefault();
+      if (activeIndex >= 0) pick(activeIndex);
+      else if (current.length === 1) pick(0);
+    } else if (e.key === 'Escape') {
+      closeList();
+    }
+  });
+
+  input.addEventListener('blur', () => {
+    // Let a mousedown on a suggestion fire first, then close.
+    setTimeout(closeList, 120);
+  });
+
+  renderChip();
 }
 
 // Distinct tags already in use across the current source, for autosuggest.

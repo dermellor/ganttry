@@ -109,6 +109,11 @@ async function listSources(): Promise<Array<{ id: string; name?: string; descrip
   return data.sources ?? [];
 }
 
+async function listUsers(): Promise<Array<{ email: string; name?: string }>> {
+  const data = (await api('/api/users')) as { users?: Array<{ email: string; name?: string }> };
+  return data.users ?? [];
+}
+
 // Encode each path segment but keep the "/" separators — timeline ids like
 // "<namespace>/<name>" must stay real path segments (encodeURIComponent would turn
 // the slash into %2F, which the /api/source/* route doesn't match → 404).
@@ -204,7 +209,9 @@ const itemFields = {
     .record(z.unknown())
     .optional()
     .describe(
-      'Free-form extras, e.g. { "owner": "Product Lead", "dependsOn": ["S-1"] }. Custom-field ' +
+      'Free-form extras, e.g. { "owner": "robin@example.com", "dependsOn": ["S-1"] }. ' +
+        '`owner` links a user and holds their e-mail from list_users — a free-text name ' +
+        'is still stored but shows as unlinked. Custom-field ' +
         'values also live here under the field key (string for text/select, string[] for ' +
         'multi-select), e.g. { "risk": ["Technisch"] } — see the timeline\'s customFields. ' +
         'Plugin-contributed fields store ids, not labels: { "tier": ["scale"] } ' +
@@ -333,6 +340,17 @@ server.registerTool(
     inputSchema: {},
   },
   async () => ok(await listSources()),
+);
+
+server.registerTool(
+  'list_users',
+  {
+    title: 'List users',
+    description:
+      'List the users an item\'s Owner can be linked to (email, name). `metadata.owner` stores one of these emails — call this before setting an owner instead of writing a free-text name, which no longer resolves to a person.',
+    inputSchema: {},
+  },
+  async () => ok(await listUsers()),
 );
 
 server.registerTool(

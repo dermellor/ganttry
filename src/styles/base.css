@@ -69,7 +69,13 @@ body {
   align-items: center;
 }
 
-.presence-avatar {
+/* One person, one look. The initials avatar is shared: the presence badge, the
+   per-item presence marks, an item's Owner chip and the list's Owner column all
+   build on `.user-avatar`, so the same colleague is the same monogram in the same
+   colour wherever they show up (hue from hueFor(), see src/presenceModel.ts).
+   `.presence-avatar` adds only what is presence-specific — the overlap that turns
+   a row of them into a stack, and the ring on our own. */
+.user-avatar {
   width: 28px;
   height: 28px;
   border-radius: var(--mark-radius, 50%);
@@ -83,10 +89,14 @@ body {
   background: hsl(var(--presence-hue, 260), 52%, 46%);
   border: 2px solid var(--surface, #fff);
   box-sizing: border-box;
-  margin-left: -8px;
   cursor: default;
   user-select: none;
   text-transform: uppercase;
+  flex: none;
+}
+
+.presence-avatar {
+  margin-left: -8px;
 }
 
 .presence-avatar:first-child {

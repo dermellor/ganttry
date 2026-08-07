@@ -288,7 +288,7 @@ File shape:
       "icon": "milestone",               // optional: semantic icon key (see "Item icons")
       "status": "Open",                  // optional: Open | Doing | Done (see "Item status"); defaults to Open
       "body": "Markdown shown in detail panel",  // optional
-      "metadata": { "owner": "Product Lead", "tags": ["Qualität & Daten"] }  // optional
+      "metadata": { "owner": "robin@example.com", "tags": ["Qualität & Daten"] }  // optional
     }
   ],
   "groups": [
@@ -488,6 +488,77 @@ concept, so „not Done" there would be a complaint about something nobody can a
 on. Day strings are read as *local* midnight (`parseLocalDay`), the same boundary
 vis places the item at, so the mark appears exactly when the bar's right edge
 crosses „now".
+
+## Item owner (links a user, not a name)
+
+An item's **owner** links a person: `metadata.owner` holds that person's
+**e-mail**, and the display resolves it to a name + avatar. It used to be a free
+text input, which meant „Robin", „robin" and „R. Fischer" were three different
+owners, a typo was invisible, and the value had no relation to the identities the
+app already knows from auth and presence.
+
+**Where the candidates come from.** A user directory in its own table,
+`app_users` (migration `0015`, see „Schema"): `email` PK, optional `name`,
+`first_seen_at` / `last_seen_at`. Deliberately **not** timeline-scoped and not a
+membership list — the deploy is gated to an allowed sign-in domain, so „everyone
+who has used this instance" already *is* the candidate set. It **fills itself**:
+serving `GET /api/users` upserts its caller (`handleUsersApi` in
+[`scripts/db/api.ts`](scripts/db/api.ts)), and the client asks once per load, so
+anyone who opens the app is assignable from then on. Migration `0015` seeds it
+from the existing `created_by` / `updated_by` attribution, so it is not empty on
+day one. There is no seeding step and no list to maintain by hand.
+
+Only an **address-shaped** identity registers. `updated_by` also carries
+non-person actors (`mcp`) and the dev server's placeholder `local`, and a local
+`npm run dev` points at the live DB — an unfiltered upsert would put „local" in
+the real directory. Same filter as the backfill, one rule for both.
+
+- **Endpoint:** `GET /api/users` → `{ users: [{ email, name? }] }`, ordered for a
+  picker (named users first, then by name). Served by the Vite middleware locally
+  and by the **`timelines-api` edge function** on the deploy — the directory rides
+  along in that function rather than getting its own, because it needs exactly the
+  same driver setup and the same auth gate. Storage sits behind the usual
+  `TimelineRepo` seam (`listUsers` / `touchUser`, both drivers).
+- **Client:** the pure rules (what a stored value means, which users a query
+  matches) are DOM-free in [`src/ownerModel.ts`](src/ownerModel.ts) and tested in
+  [`src/ownerModel.test.ts`](src/ownerModel.test.ts); the cache, the fetch and the
+  rendering sit on top in [`src/users.ts`](src/users.ts) — the same split
+  `presenceModel.ts`/`presence.ts` has. The directory is loaded **once per page
+  load**: it changes only when someone new signs in, and it is read on every list
+  repaint and every form open.
+- **Editing:** the item form renders a single-value combobox
+  (`wireOwnerPicker` in [`src/itemForm.ts`](src/itemForm.ts)) — type to search name
+  or address, pick to link. The picked value lives in a **hidden `owner` input**, so
+  `FormData` still carries `owner` and `applyItemForm` is unchanged from when this
+  was a text field. Chip and search box are two states of one slot, never both:
+  one owner per item, so leaving the search box beside a filled chip would invite a
+  pick that silently replaces it. Unlike Tags there is **no free-form fallback** —
+  typed text that matches nobody must not become the value.
+- **MCP:** `list_users` lists the assignable people; `metadata.owner` takes one of
+  their addresses (`add_item` / `update_item`).
+
+**A value that matches no user stays visible, marked as unlinked** — italic and
+muted, no avatar (`resolveOwner().known === false`; `.is-unlinked`). Owner was free
+text before this, so real data carries values like „Strategy Team", and
+**file-based sources have no directory at all** — inventing a monogram and a colour
+for a string the directory never knew would present it as a person. Rendering it as
+what it is keeps someone's deliberate note legible instead of dropping it. The
+committed example `data/launch-roadmap.json` keeps its role-shaped owners („UX
+Lead", „Tech Lead") for exactly this reason: they are not people, and they
+demonstrate the unlinked case.
+
+**One person, one look.** The initials avatar is shared: `.user-avatar` in
+[`src/styles/base.css`](src/styles/base.css) carries the look, and
+`.presence-avatar` adds only what is presence-specific (the stacking overlap, the
+self ring). So the same colleague is the same monogram in the same colour as a
+presence avatar, as a per-item presence mark, as an owner chip and in the list's
+Owner column. Hue and initials come from `hueFor()` / `initials()`
+([`src/presenceModel.ts`](src/presenceModel.ts)). The avatar markup has **two forms
+from one definition** (`userAvatarHtml` string / `userAvatar` element), because the
+list builds html and the form assembles nodes.
+
+Owner is not (yet) a Gruppieren/Filter dimension, and the read-only detail panel
+does not show it — it surfaces in the item form and the Liste view's Owner column.
 
 ## Item rail (marks inside the bar's right edge)
 
@@ -1078,7 +1149,8 @@ Drei Tabellen (Migrationen in `supabase/migrations/`):
   „Plugin-Registry".
 - `timeline_items` — Spalten für start/end/duration/content/group/type/title/
   body/icon/status/class_name (`status` `NOT NULL DEFAULT 'Open'` + CHECK
-  `Open|Doing|Done`, siehe „Item status"), `metadata` (jsonb: `dependsOn`, `owner`, `jira`, freie
+  `Open|Doing|Done`, siehe „Item status"), `metadata` (jsonb: `dependsOn`, `owner`
+  — die E-Mail des verknüpften Benutzers, siehe „Item owner" —, `jira`, freie
   Extras), `version` (Trigger-Bump bei UPDATE), `sort`, `updated_by`. Nur
   `content` ist Pflicht; `start` ist seit Migration `0006_start_nullable` nullable (ein über die
   Liste angelegter Eintrag darf datumslos sein und erscheint dann nur in der
@@ -1091,6 +1163,14 @@ Drei Tabellen (Migrationen in `supabase/migrations/`):
   (Regel in [`src/itemExtent.ts`](src/itemExtent.ts), siehe „Standalone JSON
   timelines"); kein DB-CHECK, weil `start`/`end` `text` sind.
 - `timeline_groups` — id, content, nested_groups, show_nested, sort.
+- `app_users` — das **Benutzerverzeichnis** (Migration `0015`), auf das ein
+  Item-Owner verweist: `email` PK, optional `name`, `first_seen_at`,
+  `last_seen_at`. Nicht timeline-scoped (wie `listTimelines` ein
+  Collection-Level-Konzept), keine `version`-Spalte und kein optimistisches
+  Locking — eine Zeile trägt keinen nutzergeschriebenen Inhalt, nur die Identität,
+  die der Auth-Provider ohnehin behauptet. Kein anon-SELECT: gelesen wird über den
+  server-gateten `/api/users`-Endpoint (Service-Key), subscribed wird nie. Füllt
+  sich selbst (siehe „Item owner").
 - **Pricing-Tabellen** (Migration `0009`, nur relevant für product-roadmap-Timelines):
   `pricing_features`, `pricing_tiers`, `pricing_highlights` — je Zeile pro
   Entität mit eigener `version`-Spalte (Trigger-Bump, optimistisches Locking wie
@@ -1467,6 +1547,7 @@ auf der Live-Site read-only und daher nicht manipulierbar.
 | Tool                | Wirkung                                                        |
 | ------------------- | ------------------------------------------------------------- |
 | `list_timelines`    | listet alle DB-Timelines (id, name, description)              |
+| `list_users`        | listet die verknüpfbaren Benutzer (email, name) für `metadata.owner` |
 | `get_timeline`      | komplette Timeline (items + groups) per id                    |
 | `add_item`          | Item anhängen (Pflicht: `start`, `content`)                   |
 | `update_item`       | Item patchen (nur übergebene Felder; `metadata` wird gemergt) |
@@ -1485,7 +1566,9 @@ auf der Live-Site read-only und daher nicht manipulierbar.
 
 Die granularen Item-/Group-Tools laufen read-modify-write: der Server holt die
 Timeline, mutiert im Speicher und schreibt sie per PUT (Bulk-Replace) zurück.
-`dependsOn` und `owner` liegen unter `metadata`. Die granularen **Pricing**-Tools
+`dependsOn` und `owner` liegen unter `metadata`; `owner` trägt die E-Mail eines
+Benutzers aus `list_users` (siehe „Item owner") — ein Freitext-Name wird zwar
+gespeichert, erscheint aber als nicht verknüpft. Die granularen **Pricing**-Tools
 dagegen treffen direkt den jeweiligen Zeilen-Endpoint (kein read-modify-write,
 kein Komplett-Dump) — Details unter „Pricing".
 
@@ -1548,7 +1631,8 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
     against each other so they can't cross, and a reversed pair typed in anyway is
     refused with a status-line message — see „An item's `end` must lie after its
     `start`".
-  - **Properties** — group, owner, body (Markdown), tags, and the per-timeline
+  - **Properties** — group, owner (a user picker, see „Item owner"), body
+    (Markdown), tags, and the per-timeline
     custom fields. The free-form metadata JSON box sits behind an „Erweitert"
     `<details>` disclosure, collapsed unless the item actually carries extra
     metadata.

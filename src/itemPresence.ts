@@ -138,7 +138,7 @@ function avatars(users: PresenceEntry[]): HTMLElement[] {
   const shown = users.slice(0, MAX_MARKS);
   const out = shown.map((u) => {
     const el = document.createElement('span');
-    el.className = 'presence-avatar presence-mark';
+    el.className = 'user-avatar presence-avatar presence-mark';
     if (u.editing) el.classList.add('is-editing');
     el.style.setProperty('--presence-hue', String(hueFor(u.email)));
     el.textContent = initials(u);
@@ -150,7 +150,7 @@ function avatars(users: PresenceEntry[]): HTMLElement[] {
   const overflow = users.length - shown.length;
   if (overflow > 0) {
     const more = document.createElement('span');
-    more.className = 'presence-avatar presence-mark presence-more';
+    more.className = 'user-avatar presence-avatar presence-mark presence-more';
     more.textContent = `+${overflow}`;
     more.title = users.slice(MAX_MARKS).map(labelFor).join('\n');
     out.push(more);

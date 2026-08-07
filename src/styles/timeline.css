@@ -772,7 +772,7 @@ body.phase-dragging {
   left: -26px;
 }
 
-/* Smaller variant of the header avatar (base.css `.presence-avatar`). */
+/* Smaller variant of the shared avatar (base.css `.user-avatar`). */
 .presence-avatar.presence-mark {
   width: 18px;
   height: 18px;

@@ -64,6 +64,18 @@ export type SourceCapabilities = { editable: boolean; live: SourceLive };
 //       so item edits, phase/meta writes and renames all bump it
 export type Watermark = { v: number; n: number; t: string | null };
 
+/**
+ * One entry of the user directory (`app_users`, served by `GET /api/users`).
+ * The e-mail is the identity an item's `metadata.owner` stores; `name` is only
+ * for display and may be missing (a row backfilled from edit attribution knows
+ * the address but not the name until that person's next visit).
+ *
+ * Structurally a `PresenceUser` (src/presenceModel.ts), which is why the label /
+ * initials / hue helpers there serve both: the same person shown as a presence
+ * avatar and as an item's owner has to look like the same person.
+ */
+export type DirectoryUser = { email: string; name?: string };
+
 export type View = {
   id: string;
   name: string;

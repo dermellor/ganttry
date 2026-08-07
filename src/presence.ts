@@ -39,7 +39,9 @@ export function renderPresence(users: PresenceUser[], selfEmail: string | null):
 
   for (const u of shown) {
     const avatar = document.createElement('span');
-    avatar.className = 'presence-avatar';
+    // `user-avatar` carries the shared avatar look (base.css); `presence-avatar`
+    // adds only the stacking overlap and the self ring.
+    avatar.className = 'user-avatar presence-avatar';
     if (u.email === selfEmail) avatar.classList.add('is-self');
     avatar.style.setProperty('--presence-hue', String(hueFor(u.email)));
     avatar.textContent = initials(u);
@@ -49,7 +51,7 @@ export function renderPresence(users: PresenceUser[], selfEmail: string | null):
 
   if (overflow > 0) {
     const more = document.createElement('span');
-    more.className = 'presence-avatar presence-more';
+    more.className = 'user-avatar presence-avatar presence-more';
     more.textContent = `+${overflow}`;
     more.title = sorted.slice(MAX_AVATARS).map(label).join('\n');
     frag.appendChild(more);

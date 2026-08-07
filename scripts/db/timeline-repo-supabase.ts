@@ -15,6 +15,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   CustomFieldDef,
+  DirectoryUser,
   PluginRef,
   Pricing,
   PricingFeature,
@@ -159,6 +160,33 @@ export async function listTimelines(db: SupabaseClient): Promise<TimelineMeta[]>
     description: r.description ?? undefined,
     groupBy: r.group_by ?? undefined,
   }));
+}
+
+// ---- user directory (app_users) --------------------------------------------
+// Named users first so a picker shows resolvable people before the address-only
+// rows the backfill created; alphabetical within each group.
+
+export async function listUsers(db: SupabaseClient): Promise<DirectoryUser[]> {
+  const { data, error } = await db
+    .from('app_users')
+    .select('email, name')
+    .order('name', { ascending: true, nullsFirst: false })
+    .order('email', { ascending: true });
+  if (error) throw new Error(`listUsers: ${error.message}`);
+  return (data ?? []).map((r) => (r.name != null ? { email: r.email, name: r.name } : { email: r.email }));
+}
+
+export async function touchUser(db: SupabaseClient, email: string, name?: string | null): Promise<void> {
+  const clean = email.trim();
+  if (!clean) return;
+  const label = name?.trim();
+  // PostgREST's upsert sets exactly the columns present in the payload, so
+  // leaving `name` out when we don't know one is what keeps a stored name intact
+  // (the postgres.js driver spells the same rule as coalesce(excluded.name, …)).
+  const row: Record<string, unknown> = { email: clean, last_seen_at: new Date().toISOString() };
+  if (label) row.name = label;
+  const { error } = await db.from('app_users').upsert(row, { onConflict: 'email' });
+  if (error) throw new Error(`touchUser: ${error.message}`);
 }
 
 export async function getTimeline(db: SupabaseClient, id: string): Promise<TimelineFile | null> {
@@ -1129,6 +1157,8 @@ export async function replacePricing(
 export function makeSupabaseRepo(db: SupabaseClient): TimelineRepo {
   return {
     listTimelines: () => listTimelines(db),
+    listUsers: () => listUsers(db),
+    touchUser: (email, name) => touchUser(db, email, name),
     getTimeline: (id) => getTimeline(db, id),
     getWatermark: (id) => getWatermark(db, id),
     getPublicPricing: (id) => getPublicPricing(db, id),

@@ -16,6 +16,7 @@
 
 import type {
   CustomFieldDef,
+  DirectoryUser,
   Pricing,
   PricingFeature,
   PricingHighlight,
@@ -75,6 +76,17 @@ export interface TimelineRepo {
   getTimeline(id: string): Promise<TimelineFile | null>;
   getWatermark(id: string): Promise<Watermark>;
   getPublicPricing(id: string): Promise<PublicPricing | null>;
+
+  // user directory (`app_users`) — not timeline-scoped, like listTimelines()
+  /** The whole directory, ordered for a picker (named users first, then by name). */
+  listUsers(): Promise<DirectoryUser[]>;
+  /**
+   * Register a caller in the directory: insert them, refresh `last_seen_at`, and
+   * fill in a `name` once one is known. Never clears a stored name with an empty
+   * one — an identity source that only knows the address must not erase what a
+   * previous visit already learned.
+   */
+  touchUser(email: string, name?: string | null): Promise<void>;
 
   // whole-timeline
   replaceTimeline(id: string, file: TimelineFile): Promise<void>;

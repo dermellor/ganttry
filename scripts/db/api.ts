@@ -67,6 +67,47 @@ const err = (status: number, error: string, extra?: Record<string, unknown>): Ap
   json: { error, ...extra },
 });
 
+/**
+ * `GET /api/users` — the user directory an item's Owner links to.
+ *
+ * Serving the read also **registers the caller** (`repo.touchUser`), which is
+ * what keeps the directory filled without a seeding step or a membership list to
+ * maintain: the client asks this once per load, so anyone who opens the app is
+ * assignable from then on. `/api/me` would be the more obvious registration
+ * point, but it deliberately has no DB wiring (a second edge bundle carrying a
+ * driver, for one upsert), and this endpoint needs the connection anyway.
+ *
+ * `caller` is the identity the runtime already resolved for `updated_by`. Only an
+ * address-shaped one registers — the same filter the 0015 backfill applies, and
+ * for the same reason: `updated_by` also carries non-person actors (`mcp`) and
+ * the dev server's placeholder `local`, and a local `npm run dev` points at the
+ * live DB, so an unfiltered upsert would put "local" in the real directory. To
+ * test the picker locally, set an address-shaped dev identity:
+ *   document.cookie = 'dev_user=alice@example.com'; location.reload()
+ */
+export async function handleUsersApi(
+  repo: TimelineRepo,
+  req: { method: string; caller?: { email: string; name?: string | null } },
+): Promise<ApiResult> {
+  if (req.method !== 'GET') return err(405, 'method not allowed');
+  const email = req.caller?.email?.trim() ?? '';
+  if (email.includes('@')) {
+    // Registration is a side effect, the read is the job — so a failing upsert
+    // must not cost the caller the directory. It would otherwise blank every
+    // owner picker over something the reader cannot act on.
+    try {
+      await repo.touchUser(email, req.caller?.name ?? null);
+    } catch {
+      // ignore: the caller just won't be assignable until their next visit
+    }
+  }
+  try {
+    return ok({ users: await repo.listUsers() });
+  } catch (e) {
+    return err(500, 'server_error', { message: e instanceof Error ? e.message : String(e) });
+  }
+}
+
 export async function handleTimelineApi(repo: TimelineRepo, req: ApiRequest): Promise<ApiResult> {
   // Collection: GET /api/sources
   if (req.id === '') {

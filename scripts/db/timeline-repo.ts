@@ -20,6 +20,7 @@
 import type { Sql } from 'postgres';
 import type {
   CustomFieldDef,
+  DirectoryUser,
   PluginRef,
   Pricing,
   PricingFeature,
@@ -180,6 +181,28 @@ export async function listTimelines(sql: Sql): Promise<TimelineMeta[]> {
     description: r.description ?? undefined,
     groupBy: r.group_by ?? undefined,
   }));
+}
+
+// ---- user directory (app_users) --------------------------------------------
+// Named users first so a picker shows resolvable people before the address-only
+// rows the backfill created; alphabetical within each group.
+
+export async function listUsers(sql: Sql): Promise<DirectoryUser[]> {
+  const rows = await sql`select email, name from app_users order by name asc nulls last, email asc`;
+  return rows.map((r) => (r.name != null ? { email: r.email, name: r.name } : { email: r.email }));
+}
+
+export async function touchUser(sql: Sql, email: string, name?: string | null): Promise<void> {
+  const clean = email.trim();
+  if (!clean) return;
+  const label = name?.trim() || null;
+  // coalesce(excluded.name, app_users.name): a caller that knows only the address
+  // must not wipe a name an earlier visit stored.
+  await sql`
+    insert into app_users (email, name) values (${clean}, ${label})
+    on conflict (email) do update
+      set name = coalesce(excluded.name, app_users.name),
+          last_seen_at = now()`;
 }
 
 export async function getTimeline(sql: Sql, id: string): Promise<TimelineFile | null> {
@@ -1106,6 +1129,8 @@ export async function replacePricing(
 export function makePostgresRepo(sql: Sql): TimelineRepo {
   return {
     listTimelines: () => listTimelines(sql),
+    listUsers: () => listUsers(sql),
+    touchUser: (email, name) => touchUser(sql, email, name),
     getTimeline: (id) => getTimeline(sql, id),
     getWatermark: (id) => getWatermark(sql, id),
     getPublicPricing: (id) => getPublicPricing(sql, id),
