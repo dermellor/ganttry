@@ -7,7 +7,7 @@ import { isoDateOnly } from './editor';
 import type { PhaseEdit } from './phaseBand';
 import { describePhaseOverlap, findPhaseOverlap } from './phaseOverlap';
 import type { TimelinePhase } from './types';
-import { state, els, setStatus, revealBesidePanel } from './state';
+import { state, els, setStatus, revealBesidePanel, clearFormSlots } from './state';
 import { parseLocalDay, durationToMs } from './date';
 import { rebuildAndApply } from './render';
 import { publishSelfPresence, schedulePersist } from './persistence';
@@ -33,9 +33,8 @@ export function showPhaseFormByIndex(srcIndex: number): void {
 export function showPhaseForm(srcIndex: number): void {
   const phase = state.activeSourceFile?.phases?.[srcIndex];
   if (!phase) return;
-  // Opening a phase form supersedes any open item/feature form.
-  state.activeFormItemId = null;
-  state.activeFormFeatureId = null;
+  // Opening a phase form supersedes any other open form.
+  clearFormSlots();
   state.activeFormPhaseIndex = srcIndex;
   state.timeline?.setSelection([]);
   state.selectedItemId = null;

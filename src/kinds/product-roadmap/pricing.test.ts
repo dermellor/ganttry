@@ -16,6 +16,7 @@ import {
   resolveFeatureDescription,
   resolveFeatureDescriptionParts,
   resolveHighlightLabel,
+  slugId,
   type PricingDoc,
 } from './pricing';
 import type { PricingFeature, PricingTier } from '../../types';
@@ -586,4 +587,35 @@ test('empty pricing renders a placeholder, no matrix', () => {
   );
   assert.match(md, /Kein Preismodell/);
   assert.doesNotMatch(md, /Feature-Matrix/);
+});
+
+// ---- slugId ---------------------------------------------------------------
+// Ids for new features/tiers are derived from the display name, so the model
+// stays legible in SQL and MCP output. Collisions must never silently reuse an
+// existing id — that would patch the wrong row.
+
+test('slugId slugifies a name', () => {
+  assert.equal(slugId('Inkludierte Minuten', [], 'feature'), 'inkludierte-minuten');
+});
+
+test('slugId transliterates umlauts instead of dropping them', () => {
+  // Naive [^a-z0-9] stripping would turn "Anrufübersicht" into "anrufbersicht".
+  assert.equal(slugId('Anrufübersicht', [], 'feature'), 'anrufuebersicht');
+  assert.equal(slugId('Größe', [], 'feature'), 'groesse');
+});
+
+test('slugId trims separator runs at both ends and collapses inner ones', () => {
+  assert.equal(slugId('  Agent Skills  ', [], 'feature'), 'agent-skills');
+  assert.equal(slugId('A / B  Test', [], 'feature'), 'a-b-test');
+});
+
+test('slugId suffixes on collision rather than reusing a taken id', () => {
+  assert.equal(slugId('Support', ['support'], 'feature'), 'support-2');
+  assert.equal(slugId('Support', ['support', 'support-2'], 'feature'), 'support-3');
+});
+
+test('slugId falls back when the name slugifies to nothing', () => {
+  assert.equal(slugId('✓✓✓', [], 'tarif'), 'tarif');
+  // …and the fallback is itself collision-checked.
+  assert.equal(slugId('✓', ['tarif'], 'tarif'), 'tarif-2');
 });

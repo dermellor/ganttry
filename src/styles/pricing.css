@@ -631,3 +631,216 @@
 .pm-tip-note {
   color: var(--fg);
 }
+
+/* ---- Editing affordances (editable, DB-backed timelines only) ----------- */
+/* Everything below is gated on classes/attributes pricingMatrix.ts emits only
+   for an editable timeline, so a read-only matrix picks up none of it. */
+
+/* A tier's column head opens its Stammdaten drawer, mirroring the feature row
+   header — so it gets the same hover treatment rather than a separate one. */
+.pm-tier-editable {
+  cursor: pointer;
+}
+.pricing-table thead th.pm-tier-editable:hover {
+  color: var(--accent-strong);
+}
+
+/* Cells are click targets. The hint is a tint on hover rather than a border or a
+   pencil glyph: the matrix is dense, and a per-cell affordance drawn permanently
+   would out-shout the values it sits next to. */
+.pm-cell-editable {
+  cursor: pointer;
+}
+.pm-cell-editable:hover {
+  background: var(--hover);
+}
+.pm-cell-editable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Row reordering. The buttons only appear while the pointer is on the row (or one
+   of them has keyboard focus) — two arrows per row, shown permanently, would read
+   as part of the feature name. They stay in the DOM so focus order is stable. */
+.pm-reorder {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 6px;
+  vertical-align: middle;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.pricing-table tbody tr:hover .pm-reorder,
+.pm-reorder:focus-within {
+  opacity: 1;
+}
+
+.pm-move {
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1;
+  padding: 3px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.pm-move:hover {
+  color: var(--accent-strong);
+  border-color: var(--accent);
+}
+
+/* Add affordances: a toolbar pair for the matrix's two axes, plus a per-section
+   button in each group row. */
+.pm-add {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.pm-add-btn,
+.pm-add-inline {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.pm-add-btn:hover,
+.pm-add-inline:hover {
+  color: var(--accent-strong);
+  border-color: var(--accent);
+}
+
+/* The in-section button rides in the group header row, so it drops to that row's
+   scale and un-inherits the uppercase/letter-spacing the group label sets. */
+.pm-add-inline {
+  margin-left: 10px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  text-transform: none;
+  letter-spacing: 0;
+  vertical-align: middle;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.pm-group-row:hover .pm-add-inline,
+.pm-add-inline:focus-visible {
+  opacity: 1;
+}
+
+/* ---- Matrix cell editor popover ---------------------------------------- */
+/* Same fixed-on-body layer as .pm-tip (see popover.ts) — but interactive, so it
+   takes pointer events and its own focus ring. */
+.pm-cell-editor {
+  position: fixed;
+  z-index: 70;
+  width: max-content;
+  min-width: 220px;
+  max-width: 300px;
+  padding: 12px;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  font-size: 0.85rem;
+  text-align: left;
+}
+.pm-cell-editor[hidden] {
+  display: none;
+}
+
+/* Which cell is being edited — the popover can sit some distance from its anchor
+   after a viewport flip, so it names its own coordinates. */
+.pm-ce-head {
+  margin: 0 0 10px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.pm-ce-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.pm-ce-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.pm-ce-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+}
+.pm-ce-field[hidden] {
+  display: none;
+}
+
+.pm-ce-field input,
+.pm-ce-field select {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--fg);
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+/* Focus tints the border rather than drawing a ring, matching the item form. */
+.pm-ce-field input:focus,
+.pm-ce-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.pm-ce-field select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pm-ce-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* The form-button styles in forms.css are scoped to .item-form, so this popover
+   carries its own — same shapes, so the two read as one system. */
+.pm-cell-editor .btn-primary,
+.pm-cell-editor .btn-secondary {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.pm-cell-editor .btn-primary {
+  background: var(--accent);
+  color: var(--surface, #fff);
+}
+.pm-cell-editor .btn-primary:hover {
+  background: var(--accent-strong, var(--accent));
+}
+.pm-cell-editor .btn-secondary {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--fg-muted);
+}
+.pm-cell-editor .btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--fg);
+}

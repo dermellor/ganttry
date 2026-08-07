@@ -103,6 +103,9 @@ export interface AppState {
   // Feature id whose Stammdaten form is open in the detail drawer (pricing
   // matrix), mutually exclusive with activeFormItemId / activeFormPhaseIndex.
   activeFormFeatureId: string | null;
+  // Tier id whose Stammdaten form is open in the detail drawer (pricing matrix
+  // column head) — mutually exclusive with the other activeForm* slots.
+  activeFormTierId: string | null;
   // True while showItemForm is swapping the form's DOM. Removing the old
   // (focused) form fires a focusout → commit; suppress it so the previous
   // form's values aren't written onto the item being switched to.
@@ -171,6 +174,7 @@ export const state: AppState = {
   activeFormItemId: null,
   activeFormPhaseIndex: null,
   activeFormFeatureId: null,
+  activeFormTierId: null,
   formRebuilding: false,
   formJiraIssues: [],
   formDependsOn: [],
@@ -260,6 +264,30 @@ export function revealBesidePanel(startMs: number, endMs?: number): void {
 
 export function isEditableView(): boolean {
   return !!state.activeSourceFile && !!state.activeSourceId && state.activeSourceEditable;
+}
+
+// The detail drawer shows one form at a time, so the activeForm* slots are
+// mutually exclusive: opening any form clears the rest. Both halves of that rule
+// live here rather than being spelled out at each call site — otherwise every new
+// form kind (feature, tier, …) means hunting down four places that enumerate the
+// slots, and the one that gets missed leaves a stale form marked open.
+
+/** Clear every detail-form slot. Callers then set the one they are opening. */
+export function clearFormSlots(): void {
+  state.activeFormItemId = null;
+  state.activeFormPhaseIndex = null;
+  state.activeFormFeatureId = null;
+  state.activeFormTierId = null;
+}
+
+/** True while any detail form is open (an edit in progress). */
+export function isAnyFormOpen(): boolean {
+  return (
+    state.activeFormItemId != null ||
+    state.activeFormPhaseIndex != null ||
+    state.activeFormFeatureId != null ||
+    state.activeFormTierId != null
+  );
 }
 
 export function syncUrl(): void {

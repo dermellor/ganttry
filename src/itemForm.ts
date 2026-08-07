@@ -26,7 +26,7 @@ import {
 } from './jira';
 import type { TimelineFileItem } from './types';
 import { assignableLeaves, parentGroupIds } from './groupHierarchy';
-import { state, els, setStatus, revealBesidePanel } from './state';
+import { state, els, setStatus, revealBesidePanel, clearFormSlots } from './state';
 import { parseLocalDay, durationToMs } from './date';
 import {
   commitItemForm,
@@ -420,9 +420,8 @@ export function showItemForm(
   const id = item.id;
   // Switching to a different item = leaving the previous form → persist it.
   if (state.activeFormItemId && state.activeFormItemId !== id) commitItemForm();
+  clearFormSlots();
   state.activeFormItemId = id;
-  state.activeFormPhaseIndex = null;
-  state.activeFormFeatureId = null;
   // Tell the others which item we now occupy (see publishSelfPresence).
   publishSelfPresence();
   // The headline is this form's title editor, not just a caption; the pickers

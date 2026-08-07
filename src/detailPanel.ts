@@ -4,7 +4,7 @@
 import { marked } from 'marked';
 import { escapeHtml, type DetailNote } from './buildItems';
 import { jiraLinksHtml, readJiraIssues } from './jira';
-import { state, els, isEditableView, revealBesidePanel } from './state';
+import { state, els, isEditableView, revealBesidePanel, clearFormSlots } from './state';
 import { cancelThrottledPersist, publishSelfPresence } from './persistence';
 import { showItemForm } from './itemForm';
 
@@ -122,9 +122,7 @@ export function hideDetail() {
   cancelThrottledPersist();
   els.detail.hidden = true;
   els.detailBody.classList.remove('detail-form');
-  state.activeFormItemId = null;
-  state.activeFormPhaseIndex = null;
-  state.activeFormFeatureId = null;
+  clearFormSlots();
   // Panel closed → release the item mark we held for the others.
   publishSelfPresence();
 }

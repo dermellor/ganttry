@@ -8,8 +8,9 @@
 import { escapeHtml } from '../../buildItems';
 import { createMarkdownEditor } from '../../wysiwyg';
 import type { PricingFeature } from '../../types';
-import { state, els, setStatus } from '../../state';
-import { apiUpdateFeature, apiDeleteFeature, ConflictError } from '../../editor';
+import { state, els, setStatus, clearFormSlots } from '../../state';
+import { apiAddFeature, apiUpdateFeature, apiDeleteFeature, apiMoveFeature, ConflictError } from '../../editor';
+import { slugId } from './pricing';
 import { hideDetail, setDetailTitle } from '../../detailPanel';
 import { renderPricingView } from './pricingMatrix';
 import { renderTimeline } from '../../render';
@@ -71,9 +72,8 @@ function existingGroups(): string[] {
 export function showFeatureForm(featureId: string): void {
   const feature = findFeature(featureId);
   if (!feature) return;
-  // Opening a feature form supersedes any open item/phase form.
-  state.activeFormItemId = null;
-  state.activeFormPhaseIndex = null;
+  // Opening a feature form supersedes any other open form.
+  clearFormSlots();
   state.activeFormFeatureId = featureId;
 
   setDetailTitle(feature.name || '(unbenanntes Feature)');
@@ -266,4 +266,67 @@ async function deleteFeature(featureId: string): Promise<void> {
   state.activeFormFeatureId = null;
   renderPricingView();
   hideDetail();
+}
+
+/**
+ * Create a feature and open its form. The row is written immediately (rather than
+ * the form saving a draft) so it exists server-side before the user starts filling
+ * cells for it — the same "create then edit" flow items and tiers use.
+ *
+ * `group` pre-fills the matrix section, so the per-section button lands the row in
+ * that section while the toolbar button leaves it ungrouped (the form's group
+ * field, with its datalist of existing groups, is how it moves afterwards).
+ *
+ * The server appends the row at the end of the global sort order, which — because
+ * the matrix re-groups by label — is exactly the end of its own section.
+ */
+export async function addFeature(group?: string): Promise<void> {
+  const pricing = state.activeSourceFile?.pricing;
+  const sourceId = state.activeSourceId;
+  if (!pricing || !sourceId) return;
+
+  const name = prompt('Name des neuen Features?')?.trim();
+  if (!name) return;
+
+  const id = slugId(
+    name,
+    pricing.features.map((f) => f.id),
+    'feature',
+  );
+  try {
+    const saved = await apiAddFeature(sourceId, { id, name, ...(group ? { group } : {}) });
+    pricing.features.push(saved);
+    renderPricingView();
+    showFeatureForm(saved.id ?? id);
+    setStatus(`Feature „${name}" angelegt`);
+  } catch (err) {
+    setStatus(`Feature anlegen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Reposition a feature relative to one anchor feature. The caller (the matrix)
+ * picks the anchor from what is actually on screen — its visible neighbour inside
+ * the same section — so the row moves one step in the direction the user asked for
+ * regardless of how the global sort order interleaves groups.
+ */
+export async function moveFeature(featureId: string, anchor: { after?: string; before?: string }): Promise<void> {
+  const pricing = state.activeSourceFile?.pricing;
+  const sourceId = state.activeSourceId;
+  if (!pricing || !sourceId) return;
+
+  try {
+    const order = await apiMoveFeature(sourceId, featureId, anchor);
+    // Adopt the server's resulting order rather than replaying the move locally —
+    // it owns the `sort` column and renumbers. Anything it didn't mention (it
+    // returns the full list, so nothing should be) keeps its relative place at the
+    // end instead of silently vanishing from the matrix.
+    const byId = new Map(pricing.features.map((f) => [f.id, f]));
+    const ranked = order.map((fid) => byId.get(fid)).filter((f): f is PricingFeature => !!f);
+    const seen = new Set(order);
+    pricing.features = [...ranked, ...pricing.features.filter((f) => !seen.has(f.id))];
+    renderPricingView();
+  } catch (err) {
+    setStatus(`Umsortieren fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }

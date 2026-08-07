@@ -4,9 +4,11 @@
 // items linked to that feature) plus a popover listing those items — each
 // click opens the item in the detail drawer. A version switcher filters both
 // the feature rows (cumulative) and the work items (exact selected version).
-// On editable (DB-backed) timelines, clicking a feature row itself opens its
-// Stammdaten in the same drawer (featureForm.ts). Tier/highlight editing still
-// happens via the item form / MCP, not here.
+// On editable (DB-backed) timelines the matrix is also its own editor: a feature
+// row opens its Stammdaten (featureForm.ts), a tier column head opens its
+// Stammdaten (tierForm.ts), a cell opens the value popover (cellEditor.ts), and
+// rows can be added/reordered in place. Each writes only the row or cell it edits.
+// Highlights and the version list are still authored via MCP.
 
 import { escapeHtml } from '../../buildItems';
 import {
@@ -23,7 +25,10 @@ import {
 } from './pricing';
 import { state, els, isEditableView } from '../../state';
 import { showDetailForId } from '../../detailPanel';
-import { showFeatureForm } from './featureForm';
+import { showFeatureForm, addFeature, moveFeature } from './featureForm';
+import { showTierForm, addTier } from './tierForm';
+import { openCellEditor, closeCellEditor } from './cellEditor';
+import { ensureLayer, positionLayer } from './popover';
 import { renderCardsHtml } from './pricingCards';
 import { workDotHtml } from './pricingWork';
 import { type TimelineFile, type PricingFeature } from '../../types';
@@ -39,6 +44,17 @@ type SubView = 'matrix' | 'cards';
 let selectedVersion: string | null = localStorage.getItem(PRICING_VERSION_KEY) || null;
 // Matrix (full grid) vs cards (curated highlight tiles). Persisted.
 let subView: SubView = localStorage.getItem(PRICING_SUBVIEW_KEY) === 'cards' ? 'cards' : 'matrix';
+// Which subview the DOM currently holds. A repaint replaces the whole subtree —
+// scroll container included — so the offsets are carried across by hand, but only
+// across a repaint of the *same* subview: switching matrix↔cards is a different
+// body of content and belongs at the top.
+let renderedSubView: SubView | null = null;
+
+// The scrolling element of either subview (see the `.pricing-inner > …` rule in
+// pricing.css — the header stays put and only the body scrolls).
+function scrollBody(host: HTMLElement): HTMLElement | null {
+  return host.querySelector<HTMLElement>('.pricing-table-wrap, .pc-cards');
+}
 
 /** True when the active timeline is a product timeline with a populated pricing model. */
 export function hasPricing(file: TimelineFile | null | undefined): file is TimelineFile {
@@ -61,9 +77,18 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
   const showWorkCol = anyLinked || anyWarning;
   const totalCols = tiers.length + 1 + (showWorkCol ? 1 : 0);
 
+  // A tier's column head is its edit affordance (the Stammdaten drawer), mirroring
+  // the feature row header. data-tier-id is only emitted when editable — unlike the
+  // feature rows, nothing read-only needs to look a tier up off the DOM.
   const head =
     `<tr><th class="pm-feature">Feature</th>` +
-    tiers.map((t) => `<th class="pm-tier">${escapeHtml(t.name)}</th>`).join('') +
+    tiers
+      .map((t) =>
+        editable
+          ? `<th class="pm-tier pm-tier-editable" data-tier-id="${escapeHtml(t.id)}" title="Tarif bearbeiten">${escapeHtml(t.name)}</th>`
+          : `<th class="pm-tier">${escapeHtml(t.name)}</th>`,
+      )
+      .join('') +
     (showWorkCol ? `<th class="pm-work-col" title="Roadmap-Arbeit an diesem Feature">Arbeit</th>` : '') +
     `</tr>`;
 
@@ -78,31 +103,56 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
     const visible = fs.filter((f) => featureVisibleForVersion(f, versions, selectedVersion));
     if (!visible.length) continue;
     if (group) {
+      // Per-section add, so a new row lands in the section the user is looking at
+      // (the toolbar button leaves it ungrouped). Same two-affordance pattern the
+      // list view uses for "+ Eintrag".
+      const addInGroup = editable
+        ? `<button type="button" class="pm-add-inline" data-add-feature-group="${escapeHtml(group)}">+ Feature</button>`
+        : '';
       bodyRows.push(
-        `<tr class="pm-group-row"><th class="pm-feature" colspan="${totalCols}">${escapeHtml(group)}</th></tr>`,
+        `<tr class="pm-group-row"><th class="pm-feature" colspan="${totalCols}">${escapeHtml(group)}${addInGroup}</th></tr>`,
       );
     }
-    for (const f of visible) {
+    for (let i = 0; i < visible.length; i++) {
+      const f = visible[i];
       const cells = tiers
         .map((t) => {
           const v = t.values?.[f.id];
           const off = v === false || v == null || v === '';
-          const dash = `<td class="pm-cell is-off"><span class="pm-dash" aria-hidden="true">–</span></td>`;
-          if (off) return dash;
           // Version-gated cell: not yet available at the pinned version → dash.
           // In "Alle" mode (no pin) show the end state plus an "ab <version>" chip
           // stating from which version this tier includes the feature (mirrors the
           // feature-row chip). No chip once a version is pinned — the gating itself
           // (cell present vs. dash) already carries the information.
           const af = t.valueVersions?.[f.id];
-          if (!cellActiveForVersion(af, versions, selectedVersion)) return dash;
-          const chip =
-            !selectedVersion && af
-              ? ` <span class="pricing-badge-version pm-cell-ver">ab ${escapeHtml(af)}</span>`
-              : '';
-          if (v === true)
-            return `<td class="pm-cell is-on"><span class="pm-check" aria-label="enthalten">✓</span>${chip}</td>`;
-          return `<td class="pm-cell is-value">${escapeHtml(String(v))}${chip}</td>`;
+          const gated = !off && !cellActiveForVersion(af, versions, selectedVersion);
+
+          let cls: string;
+          let inner: string;
+          if (off || gated) {
+            cls = 'pm-cell is-off';
+            inner = '<span class="pm-dash" aria-hidden="true">–</span>';
+          } else {
+            const chip =
+              !selectedVersion && af
+                ? ` <span class="pricing-badge-version pm-cell-ver">ab ${escapeHtml(af)}</span>`
+                : '';
+            if (v === true) {
+              cls = 'pm-cell is-on';
+              inner = `<span class="pm-check" aria-label="enthalten">✓</span>${chip}`;
+            } else {
+              cls = 'pm-cell is-value';
+              inner = `${escapeHtml(String(v))}${chip}`;
+            }
+          }
+          // On an editable timeline every cell is a click target, an empty one
+          // included — switching a feature on for a tier is exactly the edit that
+          // starts from a dash.
+          if (!editable) return `<td class="${cls}">${inner}</td>`;
+          return (
+            `<td class="${cls} pm-cell-editable" data-tier-id="${escapeHtml(t.id)}"` +
+            ` data-feature-id="${escapeHtml(f.id)}" tabindex="0" role="button" title="Zelle bearbeiten">${inner}</td>`
+          );
         })
         .join('');
 
@@ -129,6 +179,22 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
             : '';
       const name = escapeHtml(resolveFeatureName(f, versions, selectedVersion));
       const featureThClass = editable ? 'pm-feature pm-feature-editable' : 'pm-feature';
+      // Row reordering anchors on the *visible* neighbour inside this section, so
+      // one click moves the row one step in the direction the user sees — whatever
+      // the global sort order does between groups, and whatever the version filter
+      // has hidden. A row with no neighbour on that side simply gets no button.
+      const prev = visible[i - 1];
+      const next = visible[i + 1];
+      const moveBtn = (fid: string, anchorAttr: string, glyph: string, label: string) =>
+        `<button type="button" class="pm-move" data-move-feature="${escapeHtml(f.id)}" ${anchorAttr}="${escapeHtml(fid)}"` +
+        ` title="${label}" aria-label="${label}">${glyph}</button>`;
+      const reorder =
+        editable && visible.length > 1
+          ? `<span class="pm-reorder">` +
+            (prev ? moveBtn(prev.id, 'data-move-before', '↑', 'Nach oben') : '') +
+            (next ? moveBtn(next.id, 'data-move-after', '↓', 'Nach unten') : '') +
+            `</span>`
+          : '';
       // Info icon only when there's an actual description (base text or version
       // notes) — availability alone is already conveyed by the badge/switcher.
       // The icon is the tooltip trigger; it reads the feature id off the <th>.
@@ -141,7 +207,7 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
       // the feature in read-only views too. Click-to-edit stays gated by
       // pm-feature-editable.
       bodyRows.push(
-        `<tr><th class="${featureThClass}" scope="row" data-feature-id="${escapeHtml(f.id)}">${name}${badge}${info}</th>${cells}${workCell}</tr>`,
+        `<tr><th class="${featureThClass}" scope="row" data-feature-id="${escapeHtml(f.id)}">${name}${badge}${info}${reorder}</th>${cells}${workCell}</tr>`,
       );
     }
   }
@@ -150,32 +216,77 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
 }
 
 // Wire feature-row clicks to open the Stammdaten drawer (editable timelines
-// only — matrixHtml only emits the [data-feature-id] attribute when editable).
+// only — matrixHtml only emits the pm-feature-editable class when editable).
 function wireFeatureClicks(host: HTMLElement): void {
   host.querySelectorAll<HTMLElement>('.pm-feature-editable[data-feature-id]').forEach((th) => {
-    th.addEventListener('click', () => {
+    th.addEventListener('click', (e) => {
+      // The reorder buttons live inside this th; a click on one of them is not a
+      // request to open the form.
+      if ((e.target as HTMLElement).closest('.pm-move')) return;
       const id = th.dataset.featureId;
       if (id) showFeatureForm(id);
     });
   });
 }
 
+// Editable-only wiring: tier column heads open the tier drawer, cells open the
+// cell popover, the reorder buttons move a row, and the add buttons create rows /
+// columns. All of it is gated by the attributes matrixHtml only emits when
+// editable, so a read-only timeline wires nothing.
+function wireEditing(host: HTMLElement): void {
+  host.querySelectorAll<HTMLElement>('.pm-tier-editable[data-tier-id]').forEach((th) => {
+    th.addEventListener('click', () => {
+      const id = th.dataset.tierId;
+      if (id) showTierForm(id);
+    });
+  });
+
+  host.querySelectorAll<HTMLElement>('.pm-cell-editable').forEach((td) => {
+    const open = () => {
+      const { tierId, featureId } = td.dataset;
+      if (tierId && featureId) openCellEditor(td, tierId, featureId);
+    };
+    td.addEventListener('click', open);
+    // The cell is a focusable role=button, so it owes the keyboard the same opening.
+    td.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        open();
+      }
+    });
+  });
+
+  host.querySelectorAll<HTMLButtonElement>('.pm-move[data-move-feature]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const { moveFeature: fid, moveBefore, moveAfter } = btn.dataset;
+      if (!fid) return;
+      void moveFeature(fid, moveBefore ? { before: moveBefore } : { after: moveAfter });
+    });
+  });
+
+  host.querySelectorAll<HTMLButtonElement>('[data-add-feature-group]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void addFeature(btn.dataset.addFeatureGroup);
+    });
+  });
+
+  host.querySelector<HTMLButtonElement>('[data-action="add-feature"]')?.addEventListener('click', () => {
+    void addFeature();
+  });
+  host.querySelector<HTMLButtonElement>('[data-action="add-tier"]')?.addEventListener('click', () => {
+    void addTier();
+  });
+}
+
 // ---- feature description tooltip -------------------------------------------
-// A single styled tooltip, reused across all feature rows and re-renders. It
-// lives on <body> and is position:fixed, so the table's `overflow-x` clip (which
-// also clips overflow-y) can't cut it off, and it can sit right next to the row.
+// A single styled tooltip, reused across all feature rows and re-renders. Creation
+// and placement come from popover.ts, shared with the cell editor (see the note
+// there on why these layers are fixed-on-body rather than nested in the table).
 
 function ensureTip(): HTMLElement {
-  let tip = document.getElementById('pm-tip');
-  if (!tip) {
-    tip = document.createElement('div');
-    tip.id = 'pm-tip';
-    tip.className = 'pm-tip';
-    tip.setAttribute('role', 'tooltip');
-    tip.hidden = true;
-    document.body.appendChild(tip);
-  }
-  return tip;
+  return ensureLayer('pm-tip', 'pm-tip', 'tooltip');
 }
 
 // Structured description → styled tooltip HTML: availability line, base
@@ -203,26 +314,6 @@ function featureTipHtml(f: PricingFeature, versions: string[]): string {
   return parts.join('');
 }
 
-function positionTip(tip: HTMLElement, anchor: HTMLElement): void {
-  const r = anchor.getBoundingClientRect();
-  const gap = 8;
-  const tw = tip.offsetWidth;
-  const th = tip.offsetHeight;
-  const vw = window.innerWidth || document.documentElement.clientWidth || 0;
-  const vh = window.innerHeight || document.documentElement.clientHeight || 0;
-  let left = r.left;
-  let top = r.bottom + gap;
-  // Flip above the anchor only when we know the viewport height and it would
-  // overflow the bottom. (Guarding on vh>0 avoids a spurious flip when viewport
-  // metrics are unavailable, e.g. a not-yet-painted tab.)
-  if (vh > 0 && top + th > vh - gap) top = r.top - gap - th;
-  // Clamp inside the viewport when its width is known.
-  if (vw > 0) left = Math.max(gap, Math.min(left, vw - gap - tw));
-  top = Math.max(gap, top);
-  tip.style.left = `${left}px`;
-  tip.style.top = `${top}px`;
-}
-
 function wireFeatureTooltips(host: HTMLElement): void {
   const tip = ensureTip();
   tip.hidden = true; // reset across re-renders
@@ -238,7 +329,7 @@ function wireFeatureTooltips(host: HTMLElement): void {
     if (!html) return;
     tip.innerHTML = html;
     tip.hidden = false;
-    positionTip(tip, icon);
+    positionLayer(tip, icon);
   };
   host.querySelectorAll<HTMLElement>('.pm-info').forEach((icon) => {
     icon.addEventListener('mouseenter', () => show(icon));
@@ -303,8 +394,12 @@ export function renderPricingView(): void {
   const file = state.activeSourceFile;
   const host = els.pricing;
   if (!host) return;
+  // A repaint replaces the cell the editor is anchored to, so a still-open popover
+  // would float over a stale position (or over a cell that no longer exists).
+  closeCellEditor();
   if (!hasPricing(file)) {
     host.innerHTML = '<p class="pricing-empty">Kein Preismodell hinterlegt.</p>';
+    renderedSubView = null;
     return;
   }
 
@@ -325,6 +420,18 @@ export function renderPricingView(): void {
       `</div>`
     : '';
 
+  // Add affordances for the matrix's two axes. Only in the matrix subview: the
+  // cards view renders highlights, so a "+ Feature" there would add a row the user
+  // can't see. "+ Feature" here leaves the row ungrouped — the per-section buttons
+  // in the group rows are the way into a specific section.
+  const addControls =
+    editable && subView === 'matrix'
+      ? `<div class="pm-add" role="group" aria-label="Hinzufügen">` +
+        `<button type="button" class="pm-add-btn" data-action="add-feature">+ Feature</button>` +
+        `<button type="button" class="pm-add-btn" data-action="add-tier">+ Tarif</button>` +
+        `</div>`
+      : '';
+
   const switcher = versions.length
     ? `<label class="pm-version-switch">Version` +
       `<select class="pm-version-select"><option value="">Alle</option>` +
@@ -334,14 +441,31 @@ export function renderPricingView(): void {
       `</select></label>`
     : '';
 
+  // Every edit repaints through here, so without carrying the scroll offsets the
+  // matrix would jump back to the top after each saved cell — the row just edited
+  // scrolling out from under the pointer.
+  const prev = scrollBody(host);
+  const carry = prev && renderedSubView === subView ? { top: prev.scrollTop, left: prev.scrollLeft } : null;
+
   host.innerHTML =
     `<div class="pricing-inner">` +
     `<div class="pricing-header">` +
     `<h2 class="pricing-title">${escapeHtml(file.name ?? 'Preismodell')} — Preise</h2>` +
-    `<div class="pricing-controls">${toggle}${switcher}</div>` +
+    `<div class="pricing-controls">${addControls}${toggle}${switcher}</div>` +
     `</div>` +
     body +
     `</div>`;
+  renderedSubView = subView;
+
+  if (carry) {
+    const next = scrollBody(host);
+    if (next) {
+      // Deleting rows can shorten the content; the browser clamps to the new max,
+      // which lands as close to the old spot as the content allows.
+      next.scrollTop = carry.top;
+      next.scrollLeft = carry.left;
+    }
+  }
 
   host.querySelector<HTMLSelectElement>('.pm-version-select')?.addEventListener('change', (e) => {
     const sel = e.currentTarget as HTMLSelectElement;
@@ -361,6 +485,7 @@ export function renderPricingView(): void {
 
   wireWork(host);
   wireFeatureClicks(host);
+  if (editable) wireEditing(host);
   wireFeatureTooltips(host);
   if (subView === 'matrix') syncStickyHeadOffset(host);
   else headRowObserver?.disconnect();

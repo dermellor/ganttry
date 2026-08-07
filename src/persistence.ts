@@ -13,7 +13,7 @@ import {
 import { isRealtimeEnabled, watchTimeline, joinPresence } from './realtime';
 import { renderPresence } from './presence';
 import { clearItemPresence, setItemPresence } from './itemPresence';
-import { state, els, setStatus, PERSIST_THROTTLE_MS } from './state';
+import { state, els, setStatus, PERSIST_THROTTLE_MS, isAnyFormOpen } from './state';
 import { refreshActiveSourceInPlace, renderTimeline } from './render';
 import { applyItemForm, refreshItemAudit } from './itemForm';
 
@@ -305,12 +305,9 @@ export function setupRealtime(): void {
   }, {
     live,
     // Poll only: hold the reload while any edit form is open (item / phase /
-    // pricing feature). The realtime path already flags an edited item above;
-    // for polling we defer the whole reload until the user is done.
-    isBusy: () =>
-      state.activeFormItemId != null ||
-      state.activeFormPhaseIndex != null ||
-      state.activeFormFeatureId != null,
+    // pricing feature / tier). The realtime path already flags an edited item
+    // above; for polling we defer the whole reload until the user is done.
+    isBusy: isAnyFormOpen,
   });
 }
 

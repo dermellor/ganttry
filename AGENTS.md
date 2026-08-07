@@ -196,10 +196,11 @@ its data comes from. The generic timeline+list core knows nothing kind-specific;
 kind plugs into a registration seam ([`src/kinds/registry.ts`](src/kinds/registry.ts)):
 
 - **`generic`** — the default: just timeline + list, no extra code.
-- **`product-roadmap`** — the pricing matrix/cards + feature form, living entirely
-  under [`src/kinds/product-roadmap/`](src/kinds/product-roadmap/) (`pricing.ts`,
-  `pricingCards.ts`, `pricingMatrix.ts`, `pricingWork.ts`, `featureForm.ts`,
-  `fields.ts`, `index.ts`).
+- **`product-roadmap`** — the pricing matrix/cards plus the matrix's own editors,
+  living entirely under [`src/kinds/product-roadmap/`](src/kinds/product-roadmap/)
+  (`pricing.ts`, `pricingCards.ts`, `pricingMatrix.ts`, `pricingWork.ts`,
+  `featureForm.ts`, `tierForm.ts`, `cellEditor.ts`, `popover.ts`, `fields.ts`,
+  `index.ts`).
 
 A `KindDescriptor` exposes a cheap synchronous `matches(file)` predicate, a
 `label` (its display name), the extra `viewModes` it adds and the extra item
@@ -244,8 +245,13 @@ version list lives in that plugin's `config.versions` (was the dropped
 own data/tables — never a new core column or discriminator value.
 
 **Accepted first-cut deviations (documented, not blockers):**
-- `apiUpdateFeature`/`apiDeleteFeature` stay in [`src/editor.ts`](src/editor.ts):
-  type-only-typed fetch wrappers (zero bundle weight).
+- The pricing `api*` wrappers stay in [`src/editor.ts`](src/editor.ts) —
+  `apiAddFeature`/`apiUpdateFeature`/`apiDeleteFeature`/`apiMoveFeature`,
+  `apiAddTier`/`apiUpdateTier`/`apiDeleteTier`, `apiSetTierValue`: type-only-typed
+  fetch wrappers, so the generic entry chunk carries their URL fragments
+  (`/feature/`, `/tier/`, `/tier-value`) and nothing else. The acceptance check is
+  about the pricing *view* code — `pm-cell-ver`, `pm-cell-editable`,
+  `pricing-badge-new`, `pc-card` are all absent from the entry chunk.
 - The **server side** of the kind (the `pricing-api` edge function, the pricing MCP
   tools, the `pricing_*` tables + `assemblePricing` in `timeline-repo.ts`) stays in
   place — DoD is about the *client* generic bundle, and the Deno edge import graph
@@ -1838,7 +1844,7 @@ Cloud Console — otherwise the callback returns `redirect_uri_mismatch`.
 
 ## Pricing
 
-> Der **Client**-Code des Preismodells (Matrix, Cards, Feature-Formular) lebt als
+> Der **Client**-Code des Preismodells (Matrix, Cards, Matrix-Editoren) lebt als
 > Timeline-Kind unter [`src/kinds/product-roadmap/`](src/kinds/product-roadmap/)
 > und wird lazy geladen (siehe „Timeline kinds"). Der Server-Teil (Tabellen,
 > `assemblePricing`, `pricing-api`, MCP-Tools) bleibt wie unten beschrieben.
@@ -1879,9 +1885,62 @@ Semantik ist weg; genau sie führte zu Überschreibungen bei parallelen Edits):
   (`reorderIds`, rein + getestet) und nummeriert `sort` neu (nur geänderte
   Zeilen). `sort` ist sonst über keinen anderen Schreibpfad exponiert; ein
   Feature behält dabei seine `group` (Gruppe wechseln → `update_feature`).
-- Client: das Feature-Formular schreibt granular per `PATCH …/feature/<id>` mit
-  `If-Match`; Tiers/Matrix/Highlights/Versionen/Reihenfolge werden aktuell über
-  MCP gepflegt.
+- Client: die **Matrix-Ansicht ist im Interface editierbar** (siehe „Matrix im
+  Interface bearbeiten"), und zwar über dieselben granularen Endpoints — pro
+  Zelle, pro Tarif, pro Feature. **Highlights** (Kacheln) und die
+  **Versionsliste** werden weiterhin über MCP gepflegt.
+
+### Matrix im Interface bearbeiten
+
+Auf einer editierbaren (DB-gestützten) Produkt-Timeline trägt die Matrix ihre
+eigenen Schreibpfade. Jeder schreibt genau die eine Zeile bzw. Zelle, die
+bearbeitet wurde — kein Modell-Dump, also kollidieren parallele Edits an
+verschiedenen Stellen nicht.
+
+| Was | Affordance | Endpoint | Locking |
+| --- | --- | --- | --- |
+| **Zelle** (Tarif × Feature) | Klick (oder Enter) auf die Zelle → Popover | `PUT …/tier-value` | keins — eine Zelle ist atomar |
+| **Tarif** (Spalte) | Klick auf den Spaltenkopf → Drawer-Formular | `PATCH/DELETE …/tier/<id>` | `If-Match` auf `rowVersion` |
+| **Tarif anlegen** | „+ Tarif" in der Kopfzeile | `POST …/tier` | — |
+| **Feature** (Zeile) | Klick auf den Zeilenkopf → Drawer-Formular | `PATCH/DELETE …/feature/<id>` | `If-Match` auf `rowVersion` |
+| **Feature anlegen** | „+ Feature" (Kopfzeile = ohne Gruppe, pro Abschnitt = in dieser Gruppe) | `POST …/feature` | — |
+| **Zeile umsortieren** | ↑/↓ auf der Zeile (bei Hover) | `POST …/feature-move` | — |
+
+Ein paar Entscheidungen, die nicht offensichtlich sind:
+
+- **Die Zelle bekommt ein Popover, keinen Klick-Zyklus**
+  ([`src/kinds/product-roadmap/cellEditor.ts`](src/kinds/product-roadmap/cellEditor.ts)).
+  Eine Zelle trägt zwei Dimensionen (`value` und die Verfügbarkeit ab Version) und
+  der Wert selbst hat drei Gestalten (`true` / Freitext / leer). Durchklicken kann
+  das nicht ausdrücken. „Wert" mit leerem Text speichert bewusst als *leer*: beides
+  rendert als „–", und der Server löscht bei falsy — die zwei Zustände zu trennen
+  wäre eine Unterscheidung ohne Unterschied.
+- **Auch eine leere Zelle ist klickbar.** Ein Feature für einen Tarif
+  einzuschalten ist genau der Edit, der beim Gedankenstrich anfängt.
+- **Umsortieren ankert am *sichtbaren* Nachbarn innerhalb des Abschnitts.**
+  `moveFeature` sortiert global über alle Features, und der Versions-Switcher kann
+  Zeilen ausblenden; am sichtbaren Nachbarn verankert bewegt sich die Zeile genau
+  einen Schritt in die Richtung, die der Nutzer sieht. Der Client übernimmt danach
+  die vom Server zurückgegebene Reihenfolge, statt den Zug lokal nachzuspielen —
+  die `sort`-Spalte gehört dem Server.
+- **Das Tarif-Formular fasst keine Zellen an.** `updateTier` liest die Zellzeilen
+  neu und gibt sie vollständig zurück, also übernimmt der Client die Antwort
+  unverändert; die Spaltenwerte bleiben dabei erhalten.
+- **Popover-Layer liegen `fixed` am `<body>`** (`popover.ts`, geteilt mit dem
+  Feature-Tooltip): der Tabellen-Wrap trägt `overflow-x`, und das clippt auch
+  `overflow-y` — ein eingebetteter Layer würde an der Zeilenkante abgeschnitten.
+- **Neue ids sind Slugs aus dem Namen** (`slugId` in
+  [`pricing.ts`](src/kinds/product-roadmap/pricing.ts), Umlaute transliteriert,
+  Zähler-Suffix bei Kollision), damit das Modell in SQL und MCP-Output lesbar
+  bleibt.
+
+**Noch nicht im Interface:** Highlights (Kacheln) und der Versions-Editor. Bei den
+Versionen ist das kein Zufall — `updateVersions` schreibt nur die Plugin-Config und
+migriert **keine** Referenzen. Da die Gates „unbekannte Version versteckt nie"
+implementieren (`featureVisibleForVersion`), würde ein Umbenennen von `3.0` alle
+3.0-gegateten Features in *jeder* gepinnten Version sichtbar machen — still und
+falsch. Ein Versions-Editor muss `feature.version`, `tier.valueVersions`,
+`descriptionByVersion`, `nameByVersion` und `labelByVersion` mitmigrieren.
 
 Shape (assembliert):
 - `features[]`: `{ id, name, group, version?, description?, nameByVersion?, descriptionByVersion?, rowVersion? }`.

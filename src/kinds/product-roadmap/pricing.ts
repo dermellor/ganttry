@@ -382,6 +382,28 @@ function markdownCell(tier: PricingTier, featureId: string): string {
 // groups and features. Ungrouped features collect under an empty-string key,
 // rendered last without a header. Shared by the Markdown serializer and the
 // in-app matrix (src/pricingMatrix.ts) so grouping stays consistent.
+/**
+ * Derive a readable id from a display name, uniquified against `taken`. Pricing
+ * ids are slugs rather than opaque handles so the model stays legible in SQL and
+ * MCP output; features and tiers share this so the two can't drift into different
+ * id styles. `fallback` covers a name that slugifies to nothing (e.g. "✓").
+ */
+export function slugId(name: string, taken: Iterable<string>, fallback: string): string {
+  const umlauts: Record<string, string> = { ä: 'ae', ö: 'oe', ü: 'ue', ß: 'ss' };
+  const base =
+    name
+      .toLowerCase()
+      .replace(/[äöüß]/g, (c) => umlauts[c] ?? c)
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || fallback;
+  const used = new Set(taken);
+  if (!used.has(base)) return base;
+  for (let i = 2; ; i++) {
+    const candidate = `${base}-${i}`;
+    if (!used.has(candidate)) return candidate;
+  }
+}
+
 export function groupFeatures(features: PricingFeature[]): { group: string; features: PricingFeature[] }[] {
   const order: string[] = [];
   const byGroup = new Map<string, PricingFeature[]>();
