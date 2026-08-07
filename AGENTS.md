@@ -1934,11 +1934,42 @@ notes** (standalone/DB sources still build); it does not fail. In
 
 ```bash
 npm install
-npm run dev     # build data + Vite + chokidar watcher on ~/_NOTIZEN
-npm run build   # static dist
+npm run dev       # build data + Vite + chokidar watcher on the notes dir
+npm run build     # static dist
+npm test          # unit tests (node --test, TZ-pinned to Europe/Berlin)
+npm run typecheck # tsc --noEmit
 ```
 
 `npm run dev` rebuilds `notes.json` whenever a Markdown file changes.
+
+### CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to
+`main` and on every pull request, over a Node 20 + 22 matrix: `npm ci`,
+`npm test`, `npm run build`, then the bundle-split check below.
+
+**The build step runs with no credentials on purpose** — that is the path a
+contributor takes after a plain `git clone`. It has to stay non-fatal: the build
+discovers no DB timelines and warns about the missing notes directory rather
+than failing (see „Configuration" and „Prinzip: keine Notfall-/Fallback-Daten").
+A change that makes a missing DB or notes dir fatal breaks CI for everyone
+without a deploy's env vars.
+
+**`npm run typecheck` is deliberately non-blocking** (`continue-on-error`): the
+repo carries 7 pre-existing errors (`Dirent` typing in `build-data.ts`, missing
+`@types/ws`, two library signature mismatches). They are unrelated to any
+current change, so gating PRs on them would block contributions on a debt that
+predates them. The step still reports the count, which is what catches a
+regression — dropping `continue-on-error` is the one-line change once the count
+reaches zero.
+
+**Bundle-split acceptance check**
+([`scripts/ci/check-bundle-split.sh`](scripts/ci/check-bundle-split.sh)) enforces
+the promise from „Timeline kinds": a generic build downloads no pricing *view*
+code. It asserts the pricing markers are absent from the entry chunk **and
+present in some lazy chunk** — the second half is what keeps it honest, since
+testing only absence turns the check into a silent pass the day those CSS class
+names are renamed. Runnable locally after `npm run build`.
 
 ## Theming
 
