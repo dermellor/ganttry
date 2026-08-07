@@ -27,6 +27,7 @@ import type {
 } from '../../src/types';
 import { statusOrDefault } from '../../src/status.ts';
 import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
+import { describeReversedExtent, findReversedExtent, hasReversedExtent } from '../../src/itemExtent.ts';
 import { PRODUCT_ROADMAP_PLUGIN, resolveWritePlugins, versionsFromConfig } from '../../src/plugins.ts';
 import {
   ConflictError,
@@ -84,6 +85,23 @@ function rowToItem(row: Record<string, any>): TimelineFileItem {
 export function enforceExtentExclusivity<T extends { end?: unknown; duration?: unknown }>(o: T): T {
   if (o.end != null) (o as { duration?: unknown }).duration = null;
   return o;
+}
+
+/**
+ * DB invariant: an item's `end` lies AFTER its `start`. Rejected before any write
+ * persists it, from any path (item API, MCP, direct API) — the rule itself is
+ * shared with the client in `src/itemExtent.ts`. Unlike `enforceExtentExclusivity`
+ * this cannot be normalised away: which of the two dates the caller meant is not
+ * knowable, so the write fails loudly (400) instead of guessing.
+ */
+function assertExtentOrdered(item: { start?: unknown; end?: unknown }): void {
+  if (hasReversedExtent(item)) throw new ValidationError(describeReversedExtent(item.start, item.end));
+}
+
+/** Bulk counterpart: one reversed item rejects the whole write. */
+function assertItemExtentsOrdered(items: TimelineFileItem[] | undefined): void {
+  const bad = findReversedExtent(items ?? []);
+  if (bad) throw new ValidationError(describeReversedExtent(bad.start, bad.end));
 }
 
 // Columns for insert/update. `sort` and `version` are managed here / by trigger.
@@ -388,6 +406,10 @@ export async function assemblePricing(
 
 export async function replaceTimeline(db: SupabaseClient, id: string, file: TimelineFile): Promise<void> {
   assertPhasesNonOverlapping(file.phases);
+  // Before the wipe below, not while mapping the rows: this replace deletes the
+  // existing items first, so a reversed item discovered mid-map would leave the
+  // timeline emptied.
+  assertItemExtentsOrdered(file.items);
   const { error: upErr } = await db.from('timelines').upsert({
     id,
     name: file.name ?? null,
@@ -449,6 +471,7 @@ export async function addItem(
   item: TimelineFileItem,
   updatedBy?: string,
 ): Promise<TimelineFileItem> {
+  assertExtentOrdered(item);
   const row = itemToRow(timelineId, item, await nextSort(db, timelineId));
   if (updatedBy) {
     row.updated_by = updatedBy;
@@ -457,6 +480,39 @@ export async function addItem(
   const { data, error } = await db.from('timeline_items').insert(row).select(ITEM_SELECT).single();
   if (error) throw new Error(`addItem: ${error.message}`);
   return rowToItem(data);
+}
+
+/**
+ * Order-check an item patch, which needs the *effective* post-patch pair: a
+ * partial patch can reverse the extent while carrying only one of the two dates
+ * (`PATCH {end}` alone against a later stored `start`), so the counterpart has to
+ * come off the stored row. Reads it only when the patch actually leaves one side
+ * open — the viewer always sends a full patch (`buildItemPatch`), so that read is
+ * the direct-API / MCP-shaped case, not the interactive one.
+ *
+ * Takes the already-normalised column patch, so a switch to `duration` (which
+ * clears `end`, see `updateItem`) is correctly seen as having no `end` left to
+ * reverse. A null on either side likewise can't be reversed — clearing a date is
+ * always allowed.
+ */
+async function assertPatchExtentOrdered(
+  db: SupabaseClient,
+  timelineId: string,
+  itemId: string,
+  set: Record<string, any>,
+): Promise<void> {
+  const patchedStart = 'start' in set ? set.start : undefined;
+  const patchedEnd = 'end' in set ? set.end : undefined;
+  if (patchedStart == null && patchedEnd == null) return;
+  let start = patchedStart;
+  let end = patchedEnd;
+  if (start === undefined || end === undefined) {
+    const cur = await getItem(db, timelineId, itemId);
+    if (!cur) throw new NotFoundError();
+    if (start === undefined) start = cur.start;
+    if (end === undefined) end = cur.end;
+  }
+  assertExtentOrdered({ start, end });
 }
 
 /**
@@ -494,6 +550,7 @@ export async function updateItem(
     if (!cur) throw new NotFoundError();
     return cur;
   }
+  await assertPatchExtentOrdered(db, timelineId, itemId, set);
 
   let q = db.from('timeline_items').update(set).eq('timeline_id', timelineId).eq('id', itemId);
   if (expectedVersion != null) q = q.eq('version', expectedVersion);

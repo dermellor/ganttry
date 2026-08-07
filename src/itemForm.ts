@@ -27,7 +27,8 @@ import {
 import type { TimelineFileItem } from './types';
 import { assignableLeaves, parentGroupIds } from './groupHierarchy';
 import { state, els, setStatus, revealBesidePanel, clearFormSlots } from './state';
-import { parseLocalDay, durationToMs } from './date';
+import { parseLocalDay, durationToMs, shiftDays } from './date';
+import { describeReversedExtent, isReversedExtent } from './itemExtent';
 import {
   commitItemForm,
   publishSelfPresence,
@@ -473,7 +474,8 @@ export function showItemForm(
       <div class="field">
         <label for="f-duration">Duration</label>
         <input id="f-duration" name="duration" value="${escapeHtml(typeof item.duration === 'string' ? item.duration : item.duration != null ? String(item.duration) : '')}" placeholder="nur ohne End-Datum" />
-      </div>`,
+      </div>
+      <p class="field-error" data-role="extent-error" role="alert" hidden></p>`,
       )}
       ${panelHtml(
         'props',
@@ -543,10 +545,32 @@ export function showItemForm(
   state.formRebuilding = false;
 
   const form = els.detailBody.querySelector('form') as HTMLFormElement;
+  const startInput = form.querySelector<HTMLInputElement>('#f-start')!;
   const endInput = form.querySelector<HTMLInputElement>('#f-end')!;
   const durInput = form.querySelector<HTMLInputElement>('#f-duration')!;
   const endField = endInput.closest('.field') as HTMLElement;
   const durField = durInput.closest('.field') as HTMLElement;
+
+  // Native bounds so the two date pickers can't offer a reversed extent in the
+  // first place: the end starts the day *after* the start (the rule is strict —
+  // see src/itemExtent.ts), and the start ends the day before the end. This is
+  // the proactive half of the guard, the counterpart to the phase ribbon clamping
+  // to its neighbour's edge; it is an affordance, not the enforcement — a typed
+  // (rather than picked) date still lands in the field, so applyItemForm rejects
+  // it as well. Re-synced on every edit because either date may have just moved.
+  const syncExtentBounds = () => {
+    endInput.min = startInput.value ? shiftDays(startInput.value, 1) : '';
+    startInput.max = endInput.value ? shiftDays(endInput.value, -1) : '';
+  };
+  syncExtentBounds();
+  // An item stored with a reversed extent (from before this rule existed) opens
+  // with the reason already showing, not only after the first keystroke — it is
+  // what explains the hairline bar on the timeline.
+  showExtentError(
+    form,
+    isReversedExtent(item.start, item.end) ? describeReversedExtent(item.start, item.end) : null,
+  );
+  form.addEventListener('change', syncExtentBounds);
   // A point (Meilenstein) has no extent. End/Duration stay editable: entering
   // one promotes the item to a range live (see applyItemForm). Just flag the
   // point state visually so the interaction reads cleanly.
@@ -1134,6 +1158,23 @@ function wireTagsAutosuggest(form: HTMLFormElement): void {
   });
 }
 
+// Show (or clear) the reason an extent was refused, in the Date & Time panel
+// under the three date fields.
+//
+// Deliberately NOT the status line, which is where the sibling "metadata JSON
+// ungültig" notice goes: leaving a field's edit out of the model schedules a
+// commit anyway, and the persist that follows reports „Gespeichert" milliseconds
+// later — so a status-line message flashed and vanished, leaving the user looking
+// at „Gespeichert" while their typed date had in fact been refused. That reads as
+// a successful save of bad data, which is worse than saying nothing. An error
+// anchored in the form outlives every status write and sits where the problem is.
+function showExtentError(form: HTMLFormElement, message: string | null): void {
+  const box = form.querySelector<HTMLElement>('[data-role="extent-error"]');
+  if (!box) return;
+  box.textContent = message ?? '';
+  box.hidden = !message;
+}
+
 // Reads the open item form and writes its values into the in-memory model,
 // then refreshes the live view. Reactive: called on every field change, so the
 // timeline reflects edits as you type. Persistence is deferred until the
@@ -1149,12 +1190,41 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   const item = state.activeSourceFile.items[idx];
   item.content = get('content') || item.content;
   const startVal = get('start');
-  // Start is optional: clearing the field removes the date (the item then shows
-  // only in the list view, hidden from the timeline).
-  if (startVal) item.start = startVal;
-  else delete item.start;
   const endVal = get('end');
   const durVal = get('duration');
+
+  // An `end` before (or on) its `start` renders as a hairline stripe and the
+  // server rejects it outright (see src/itemExtent.ts), so it must never reach
+  // the model. The form is reactive, so there is no save button to block: keep
+  // the last valid dates instead and name the problem under the fields (see
+  // showExtentError). A `type=date` input yields either a complete date or
+  // nothing, so no half-typed state trips this.
+  //
+  // Rejects the extent as a whole rather than guessing which of the two dates the
+  // user meant to move. To shift an item past its own end, change the end first.
+  const extentReversed = isReversedExtent(startVal, endVal);
+  if (!extentReversed) {
+    // Start is optional: clearing the field removes the date (the item then shows
+    // only in the list view, hidden from the timeline).
+    if (startVal) item.start = startVal;
+    else delete item.start;
+
+    // Extent precedence must match the render path (buildItems: `end` wins, with
+    // `duration` only a fallback). Committing with the opposite precedence is what
+    // collapsed items carrying *both* fields — a long `end`-based bar silently
+    // shrank to its stale `duration` on the next commit. Prefer `end` here and
+    // drop the other so the two never coexist going forward.
+    if (endVal) {
+      item.end = endVal;
+      delete item.duration;
+    } else if (durVal) {
+      item.duration = durVal;
+      delete item.end;
+    } else {
+      delete item.duration;
+      delete item.end;
+    }
+  }
 
   // Icon, type and status live in header controls *outside* the form (associated
   // via their `form` attribute, see the picker section). A missing key therefore
@@ -1166,22 +1236,6 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     const typeVal = get('type');
     if (typeVal) item.type = typeVal as TimelineFileItem['type'];
     else delete item.type;
-  }
-
-  // Extent precedence must match the render path (buildItems: `end` wins, with
-  // `duration` only a fallback). Committing with the opposite precedence is what
-  // collapsed items carrying *both* fields — a long `end`-based bar silently
-  // shrank to its stale `duration` on the next commit. Prefer `end` here and
-  // drop the other so the two never coexist going forward.
-  if (endVal) {
-    item.end = endVal;
-    delete item.duration;
-  } else if (durVal) {
-    item.duration = durVal;
-    delete item.end;
-  } else {
-    delete item.duration;
-    delete item.end;
   }
 
   // A point has no extent — but if the user gave it one, honour that and
@@ -1270,6 +1324,7 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   } catch {
     /* item may be filtered out of the current view */
   }
+  showExtentError(form, extentReversed ? describeReversedExtent(startVal, endVal) : null);
   if (metaError) setStatus('Metadata JSON ungültig — Änderung nicht übernommen');
 }
 

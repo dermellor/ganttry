@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isoDateOnly, parseLocalDay } from './date';
+import { isoDateOnly, parseLocalDay, shiftDays } from './date';
 
 // The regression these guard (Date→day shifting back a day) only manifests in a
 // UTC+ timezone, so `npm test` runs with TZ=Europe/Berlin. Warn — don't silently
@@ -64,4 +64,17 @@ test('parseLocalDay: Date and number inputs pass through unchanged', () => {
 test('parseLocalDay: a value with a time component keeps its instant', () => {
   // Not a bare day → native parsing (here an explicit UTC instant).
   assert.equal(parseLocalDay('2026-10-15T09:00:00Z').getTime(), Date.UTC(2026, 9, 15, 9));
+});
+
+test('shiftDays: whole-day arithmetic across month, year and DST boundaries', () => {
+  assert.equal(shiftDays('2026-06-29', 1), '2026-06-30');
+  assert.equal(shiftDays('2026-06-29', -1), '2026-06-28');
+  assert.equal(shiftDays('2026-06-30', 1), '2026-07-01'); // month end
+  assert.equal(shiftDays('2026-01-01', -1), '2025-12-31'); // year start
+  assert.equal(shiftDays('2028-02-28', 1), '2028-02-29'); // leap day
+  // Europe/Berlin DST switches (the reason this must not do ms arithmetic on a
+  // UTC-parsed Date): a 23h and a 25h local day both still shift by one day.
+  assert.equal(shiftDays('2026-03-29', -1), '2026-03-28');
+  assert.equal(shiftDays('2026-10-25', 1), '2026-10-26');
+  assert.equal(shiftDays('', 1), '');
 });

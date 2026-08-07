@@ -32,6 +32,18 @@ export function parseLocalDay(value: Date | number | string): Date {
   return new Date(value);
 }
 
+// Shift a calendar day by whole days, staying in local time. Goes through
+// parseLocalDay/localDay for the same reason everything else here does: doing the
+// arithmetic on a UTC-parsed Date would land the result a day off in any UTC+
+// zone. Used for the item form's date bounds — an end must be at least the day
+// after its start (see src/itemExtent.ts).
+export function shiftDays(day: string, days: number): string {
+  const d = parseLocalDay(day);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() + days);
+  return localDay(d);
+}
+
 // Duration parsing lives here (with the other pure date maths) rather than in
 // buildItems so the server write path — reachable from the Deno edge bundle via
 // phaseOverlap — can parse a phase/item `duration` without dragging the heavy,

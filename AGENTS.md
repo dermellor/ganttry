@@ -279,7 +279,7 @@ File shape:
     {
       "id": "kickoff",                   // optional
       "start": "2026-01-15",             // optional; a date-less item shows only in the list view (see below)
-      "end": "2026-02-28",               // optional; mutually exclusive with duration (end wins)
+      "end": "2026-02-28",               // optional; must be AFTER start; mutually exclusive with duration (end wins)
       "duration": "3w",                  // optional ("7d", "2w", "90m", number = ms) — only when no end
       "content": "Kickoff",
       "group": "Phase 1",                // optional
@@ -331,6 +331,50 @@ overlapping write with `400` from any source (UI, MCP, direct API), and the
 client prevents it proactively (ribbon drag/resize clamps to the neighbour edge,
 the phase form blocks a save that would overlap). Without this, an underlying
 phase used to show through the gap between overlapping bars.
+
+**An item's `end` must lie after its `start`** — a reversed or zero-length extent
+is rejected, not rendered. vis-timeline derives a bar's width from `end - start`,
+so a non-positive result collapses the bar to its minimum width and the item shows
+as a hairline stripe that reads as a rendering glitch rather than as bad data.
+Every write path used to accept it silently.
+
+The rule lives once in [`src/itemExtent.ts`](src/itemExtent.ts) and is enforced on
+both sides, the same shape as the phase-overlap rule above: the server write path
+(`addItem` / `updateItem` / `replaceTimeline`, in **both** DB drivers) rejects it
+with `400` from any source (UI, MCP, direct API), and the client prevents it
+proactively — the two date inputs carry native `min`/`max` bounds so the pickers
+can't offer a crossing date, and `applyItemForm` refuses to write a reversed pair
+into the model, keeping the last valid dates. It rejects the extent as a whole
+rather than guessing which date the user meant to move: to shift an item past its
+own end, change the end first.
+
+The reason is shown **in the form**, under the date fields (`showExtentError` /
+`.field-error`), not in the status line where the sibling „Metadata JSON ungültig"
+notice goes. That distinction is load-bearing rather than cosmetic: leaving a
+field's edit out of the model still schedules a commit, and the persist that
+follows reports „Gespeichert" milliseconds later — so a status-line message
+flashed and vanished, leaving the user looking at „Gespeichert" while the date
+they typed had in fact been refused. That reads as a successful save of bad data,
+which is worse than saying nothing. An item already stored reversed (from before
+this rule) shows the message the moment its form opens, since that is what
+explains its hairline bar.
+
+Strict on purpose — `end == start` is a zero-day range and produces the identical
+hairline, and `resolvePhaseExtentMs` demands `end > start` for phases too. A single
+point in time is a Meilenstein (`type: "point"`), a single day carries
+`duration: "1d"`. `duration` needs no counterpart rule: `durationToMs` rejects
+non-positive values and its pattern accepts no sign, so an extent expressed that
+way can never run backwards.
+
+`updateItem` is the one non-obvious spot: a *partial* patch can reverse the extent
+while carrying only one of the two dates (`PATCH {end}` alone against a later
+stored `start`), so the counterpart is read off the stored row — only when the
+patch actually leaves one side open. The viewer always sends a full patch
+(`buildItemPatch`), so that extra read is the direct-API/MCP-shaped case, never
+the interactive one. There is deliberately **no** DB `CHECK` constraint: `start` /
+`end` are `text` columns, so the check would be a lexicographic comparison that
+silently stops holding for any other date format, and it would surface as a `500`
+instead of the `400` with a readable message.
 
 A group with `nestedGroups` is a **parent/container only** — items are assignable
 solely to its leaf children, never to the parent itself. The editor enforces this
@@ -1042,7 +1086,10 @@ Drei Tabellen (Migrationen in `supabase/migrations/`):
   `duration` schließen sich aus (Ausdehnung entweder/oder, `end` gewinnt) —
   erzwungen im Write-Layer für alle Pfade (`enforceExtentExclusivity` +
   patch-bewusstes Gegenstück-Löschen in [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts),
-  MCP `add_item`/`update_item`, Client-Form).
+  MCP `add_item`/`update_item`, Client-Form). Ist `end` gesetzt, muss es **nach**
+  `start` liegen — verdrehte oder null-lange Extents werden mit `400` abgelehnt
+  (Regel in [`src/itemExtent.ts`](src/itemExtent.ts), siehe „Standalone JSON
+  timelines"); kein DB-CHECK, weil `start`/`end` `text` sind.
 - `timeline_groups` — id, content, nested_groups, show_nested, sort.
 - **Pricing-Tabellen** (Migration `0009`, nur relevant für product-roadmap-Timelines):
   `pricing_features`, `pricing_tiers`, `pricing_highlights` — je Zeile pro
@@ -1497,7 +1544,10 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
   three tabs ([`src/itemForm.ts`](src/itemForm.ts), `FORM_TABS`), with the Delete
   button + audit footer below the tabstrip so they stay reachable from any tab:
   - **Date & Time** — start, end, duration (a Meilenstein has no extent, so
-    picking that type mutes end/duration).
+    picking that type mutes end/duration). The two date pickers are bounded
+    against each other so they can't cross, and a reversed pair typed in anyway is
+    refused with a status-line message — see „An item's `end` must lie after its
+    `start`".
   - **Properties** — group, owner, body (Markdown), tags, and the per-timeline
     custom fields. The free-form metadata JSON box sits behind an „Erweitert"
     `<details>` disclosure, collapsed unless the item actually carries extra

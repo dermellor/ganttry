@@ -31,6 +31,18 @@
   display: none;
 }
 
+/* Why a field's edit was refused, shown under the fields it belongs to rather
+   than in the status line — see showExtentError in itemForm.ts for why that
+   distinction is load-bearing. Spans the grid so the sentence has a full line
+   instead of wrapping inside one column. */
+.item-form .field-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--danger);
+}
+
 /* ---- header picker trio (icon / type / status) ------------------------------
    Three instances of the same picker (see pickerHtml in itemForm.ts) live in the
    panel header row, on the close button's line and above the headline: icon-only
