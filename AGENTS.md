@@ -4,7 +4,7 @@ Generic timeline viewer. Reads frontmatter dates from a notes directory of Markd
 
 ## The name covers the product, not its vocabulary or its instances
 
-**Ganttry** is the product (`ganttry.io`, `ganttry.dev`, dev domain
+**Ganttry** is the product (`ganttry.dev`, which forwards here; dev domain
 `ganttry.localhost`). Three families of `timeline(s)` are deliberately left
 alone, and a sweep that "finishes the rename" breaks all three:
 
