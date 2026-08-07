@@ -1,5 +1,5 @@
 // Node-side Supabase client factory. Reads credentials from the shared cascade
-// (process.env → ~/_AGENTS/.env → <repo>/.env.local) via ./env.ts, the same
+// (process.env → <repo>/.env.local → TIMELINES_ENV_FILE) via ./env.ts, the same
 // source ./sql.ts uses for the postgres.js connection string. The edge function
 // builds its own client from Deno.env instead.
 

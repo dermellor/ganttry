@@ -9,7 +9,8 @@
 // Auth: the auth gate is bypassed with an X-MCP-Token header; server-side the
 // timelines-api function uses the Supabase service key to reach the DB.
 //
-// Config (env, with fallback to ~/_AGENTS/.env then <repo>/.env.local):
+// Config (read through the shared cascade in ../db/env.ts: process.env →
+// <repo>/.env.local → files named by TIMELINES_ENV_FILE):
 //   MCP_API_TOKEN      — required; must match the Netlify env var of the same name
 //   TIMELINES_LIVE_URL — required; the deploy to target (e.g. https://<site>.netlify.app)
 //
@@ -19,49 +20,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { TimelineFile, TimelineFileItem } from '../../src/types.js';
+import { envSourcesHint, envValue } from '../db/env.js';
 import { enforceExtentExclusivity, type TimelineGroupDecl } from '../db/timeline-repo.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '..', '..');
 
 // ---------- config / env ----------
 
-/** Minimal .env parser — mirrors vite.config.ts. process.env always wins. */
-function parseEnvFile(path: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    const raw = readFileSync(path, 'utf8');
-    for (const line of raw.split('\n')) {
-      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-      if (!m) continue;
-      let value = m[2].trim();
-      if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-      ) {
-        value = value.slice(1, -1);
-      }
-      out[m[1]] = value;
-    }
-  } catch {
-    /* file may not exist — fine */
-  }
-  return out;
-}
-
-const fromFiles = {
-  ...parseEnvFile(resolve(homedir(), '_AGENTS/.env')),
-  ...parseEnvFile(resolve(REPO_ROOT, '.env.local')),
-};
-const pick = (k: string): string => process.env[k] ?? fromFiles[k] ?? '';
-
-const BASE_URL = pick('TIMELINES_LIVE_URL').replace(/\/+$/, '');
-const API_TOKEN = pick('MCP_API_TOKEN');
+const BASE_URL = envValue('TIMELINES_LIVE_URL').replace(/\/+$/, '');
+const API_TOKEN = envValue('MCP_API_TOKEN');
 
 // ---------- live-site client ----------
 
@@ -78,7 +44,7 @@ class ApiError extends Error {
 async function api(path: string, init?: RequestInit): Promise<unknown> {
   if (!API_TOKEN) {
     throw new Error(
-      'MCP_API_TOKEN is not set. Add it to ~/_AGENTS/.env (and the matching Netlify env var).',
+      `MCP_API_TOKEN is not set. Add it to ${envSourcesHint()} (and the matching Netlify env var).`,
     );
   }
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -745,7 +711,7 @@ async function main(): Promise<void> {
   if (!BASE_URL) {
     console.error(
       '[timelines-mcp] TIMELINES_LIVE_URL is not set. Point it at your deploy ' +
-        '(e.g. https://<site>.netlify.app) via env, ~/_AGENTS/.env, .env.local, ' +
+        `(e.g. https://<site>.netlify.app) via ${envSourcesHint()}, ` +
         'or the MCP server config.',
     );
     process.exit(1);

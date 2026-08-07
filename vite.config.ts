@@ -1,7 +1,6 @@
 import { defineConfig, type Plugin } from 'vite';
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { resolve } from 'node:path';
+import { envSourcesHint, envValue } from './scripts/db/env';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
 import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
@@ -18,44 +17,17 @@ const hasDb = (c: DbConnections): boolean => Boolean(c.sql || c.supabase);
 
 const ID_SEGMENT = /^[a-zA-Z0-9_-]+$/;
 
-// Minimal .env parser — only what's needed to surface JIRA credentials that
-// live in ~/_AGENTS/.env (cross-project keys) or a local .env.local without
-// pulling in a dotenv dependency. process.env always wins.
-function parseEnvFile(path: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    const raw = readFileSync(path, 'utf8');
-    for (const line of raw.split('\n')) {
-      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-      if (!m) continue;
-      let value = m[2].trim();
-      if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-      ) {
-        value = value.slice(1, -1);
-      }
-      out[m[1]] = value;
-    }
-  } catch {
-    /* file may not exist — fine */
-  }
-  return out;
-}
-
 type JiraCreds = { baseUrl: string; email: string; apiToken: string };
 
+// Credentials come from the shared cascade in scripts/db/env.ts (process.env →
+// .env.local → TIMELINES_ENV_FILE), the same one the DB client and the MCP
+// server use.
 let jiraCredsCache: JiraCreds | null | undefined;
 function loadJiraCreds(): JiraCreds | null {
   if (jiraCredsCache !== undefined) return jiraCredsCache;
-  const fromFiles = {
-    ...parseEnvFile(resolve(homedir(), '_AGENTS/.env')),
-    ...parseEnvFile(resolve(__dirname, '.env.local')),
-  };
-  const pick = (k: string) => process.env[k] ?? fromFiles[k] ?? '';
-  const baseUrl = pick('JIRA_BASE_URL');
-  const email = pick('JIRA_EMAIL');
-  const apiToken = pick('JIRA_API_TOKEN');
+  const baseUrl = envValue('JIRA_BASE_URL');
+  const email = envValue('JIRA_EMAIL');
+  const apiToken = envValue('JIRA_API_TOKEN');
   jiraCredsCache = baseUrl && email && apiToken ? { baseUrl, email, apiToken } : null;
   return jiraCredsCache;
 }
@@ -74,7 +46,7 @@ function timelinesApi(): Plugin {
           res.end(
             JSON.stringify({
               error: 'jira_not_configured',
-              detail: 'Set JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN (in ~/_AGENTS/.env or .env.local).',
+              detail: `Set JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN (in ${envSourcesHint()}).`,
             }),
           );
           return;

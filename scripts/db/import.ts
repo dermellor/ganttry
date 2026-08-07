@@ -7,6 +7,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveRepoFromEnv, closeRepoFromEnv } from './repo-node.ts';
+import { envSourcesHint } from './env.ts';
 import type { TimelineFile } from '../../src/types';
 
 const ROOT = process.cwd();
@@ -30,7 +31,7 @@ async function main() {
     console.error(
       '[import] Missing DB connection. Set TIMELINES_DATABASE_URL (native postgres.js)\n' +
         '         or TIMELINES_SUPABASE_URL + TIMELINES_SUPABASE_SERVICE_KEY (supabase-js)\n' +
-        '         (in ~/_AGENTS/.env or .env.local).',
+        `         (in ${envSourcesHint()}).`,
     );
     process.exit(1);
   }

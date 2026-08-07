@@ -1294,9 +1294,10 @@ Daten, kein `ALTER TABLE`. Die einzige Stelle, die Plugin-ids kennt, ist
 
 ### Setup (einmalig)
 
-Credentials in `~/_AGENTS/.env` (oder `.env.local`), gelesen über die Kaskade in
-[`scripts/db/env.ts`](scripts/db/env.ts) (`process.env` → `~/_AGENTS/.env` →
-`.env.local`). Je nach gewähltem Treiber (siehe „Treiber"): supabase-js über
+Credentials in `.env.local`, gelesen über die Kaskade in
+[`scripts/db/env.ts`](scripts/db/env.ts) (`process.env` → `.env.local` → die
+Dateien aus `TIMELINES_ENV_FILE`, siehe „Credential-Kaskade" unten). Je nach
+gewähltem Treiber (siehe „Treiber"): supabase-js über
 `getServiceClient()` ([`scripts/db/client.ts`](scripts/db/client.ts)), postgres.js
 über `getSql()` ([`scripts/db/sql.ts`](scripts/db/sql.ts)):
 
@@ -1321,6 +1322,31 @@ Danach den Server mit `TIMELINES_DATABASE_URL` fahren (Live-Updates via
 `TIMELINES_DB_LIVE=poll`, ohne anon-Key/Realtime — siehe „Live-Update-Naht").
 `0000_prereq_roles.sql` erledigt die früher manuelle `anon`/Publication-Anlage,
 also ist kein Handanlegen mehr nötig.
+
+#### Credential-Kaskade (`TIMELINES_ENV_FILE`)
+
+Jeder Node-Einstiegspunkt liest Konfiguration über **eine** Implementierung:
+`envValue()` in [`scripts/db/env.ts`](scripts/db/env.ts). Die Reihenfolge ist
+`process.env` → `<repo>/.env.local` → die Dateien aus `TIMELINES_ENV_FILE`
+(Präzedenz in genau dieser Richtung: `process.env` gewinnt über `.env.local`,
+das über die externen Dateien). Die Edge-Functions nutzen stattdessen `Deno.env`.
+
+`TIMELINES_ENV_FILE` ist die **Opt-in-Naht für Credentials außerhalb des Repos**
+(z.B. eine Datei mit projektübergreifenden Keys): ein oder mehrere Pfade, per
+`:` getrennt, jeder optional mit `~/` beginnend; fehlende Dateien werden
+ignoriert, Setzen ist also immer gefahrlos. **Ohne die Var liest ein Checkout
+nichts außerhalb des Repos** — genau deshalb steht hier kein fester Pfad mehr im
+Code. Früher war `~/_AGENTS/.env` in vier Dateien fest verdrahtet, was auf
+fremden Rechnern nicht existiert und dessen Fehlermeldungen Beitragende in ein
+Verzeichnis schickten, das nur der Autor hat.
+
+Der Repo-Root wird aus `import.meta.url` abgeleitet, **nicht** aus
+`process.cwd()`: der MCP-Server ist user-global registriert und läuft aus
+beliebigen Verzeichnissen, hätte `.env.local` also sonst nicht gefunden. Die
+Aufteilungsregeln des Specs sind als reine Funktion `envFilePaths` DOM-/FS-frei
+und in [`scripts/db/env.test.ts`](scripts/db/env.test.ts) getestet.
+`envSourcesHint()` formuliert daraus den Hinweis für Fehlermeldungen, damit
+keine Meldung einen Pfad nennt, der beim Leser nicht existiert.
 
 #### Per-Source-Connections (Phase 4, #30)
 
@@ -1605,8 +1631,8 @@ Supabase-Service-Key auf die DB zu. MCP-Edits werden über `updated_by` als
 
 ### Konfiguration
 
-Server-seitig (lokal, gelesen aus `process.env` → `~/_AGENTS/.env` →
-`.env.local`):
+Server-seitig (lokal, gelesen über die Kaskade `process.env` → `.env.local` →
+`TIMELINES_ENV_FILE`, siehe „Credential-Kaskade"):
 
 | Var                  | Bedeutung                                                    |
 | -------------------- | ----------------------------------------------------------- |
@@ -1758,9 +1784,9 @@ JIRA call. Because it lives in `metadata`, it round-trips through the
 **How the autosuggest is served:**
 
 - **Locally:** Vite dev middleware `GET /api/jira/search?q=` (in `vite.config.ts`)
-  proxies the issue picker. Credentials come from `process.env`, then
-  `~/_AGENTS/.env`, then `.env.local` (all gitignored): `JIRA_BASE_URL`,
-  `JIRA_EMAIL`, `JIRA_API_TOKEN` (Atlassian API token). Without them the field
+  proxies the issue picker. Credentials come from the shared cascade
+  (`process.env` → `.env.local` → `TIMELINES_ENV_FILE`, see „Credential-Kaskade"):
+  `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` (Atlassian API token). Without them the field
   still works for pasting raw keys — only the live search is disabled.
 - **Production (Netlify):** the `jira-api` Edge Function
   (`netlify/edge-functions/jira-api.ts`) proxies the same picker behind the
@@ -1881,7 +1907,7 @@ app (paste, back/forward) re-apply state without reload.
 `notesDir` is the directory scanned for Markdown notes. The env var
 **`TIMELINES_NOTES_DIR`** overrides the committed `notesDir` (same `~` expansion),
 so a checkout can point at its own notes without editing the tracked config —
-e.g. set `TIMELINES_NOTES_DIR=~/_NOTIZEN` in `~/_AGENTS/.env` / `.env.local`. If
+e.g. set `TIMELINES_NOTES_DIR=~/my-notes` in `.env.local`. If
 the resolved directory does not exist, the build **warns and proceeds with zero
 notes** (standalone/DB sources still build); it does not fail. In
 `TIMELINES_STATIC_ONLY` mode the notes scan is skipped entirely.

@@ -113,10 +113,12 @@ tokens in `theme.css` are the single styling seam.
 ## Configuration
 
 Environment variables (build-time `VITE_*` are baked into the bundle; server vars
-are read from `process.env`, then `~/_AGENTS/.env`, then `.env.local`):
+are read from `process.env`, then `.env.local`, then any file named by
+`TIMELINES_ENV_FILE`):
 
 | Var | Purpose |
 | --- | --- |
+| `TIMELINES_ENV_FILE` | Optional. Extra `.env` file(s) to read, `:`-separated, `~/` allowed. Off by default, so a fresh checkout reads nothing outside the repo. Use it when your credentials live elsewhere. |
 | `TIMELINES_DATABASE_URL` | Postgres connection string. Set to use the native postgres.js driver. Also enables per-source connections via `TIMELINES_DATABASE_URL_<NAMESPACE>`. |
 | `TIMELINES_SUPABASE_URL` / `TIMELINES_SUPABASE_SERVICE_KEY` | Supabase project URL + service-role key. Used when `TIMELINES_DATABASE_URL` is unset. |
 | `TIMELINES_DB_LIVE` | Set to `poll` to serve DB sources in polling mode (live updates without Supabase Realtime). |
