@@ -22,6 +22,9 @@
     "typecheck": "tsc --noEmit",
     "mcp": "tsx scripts/mcp/server.ts"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@supabase/supabase-js": "^2.110.0",

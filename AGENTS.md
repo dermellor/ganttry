@@ -1945,8 +1945,16 @@ npm run typecheck # tsc --noEmit
 ### CI
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to
-`main` and on every pull request, over a Node 20 + 22 matrix: `npm ci`,
+`main` and on every pull request, over a Node 22 + 24 matrix: `npm ci`,
 `npm test`, `npm run build`, then the bundle-split check below.
+
+**Node 22 is the floor** (`engines.node` in `package.json`), and that is a real
+constraint rather than a preference: the test script hands a glob
+(`'{src,scripts}/**/*.test.ts'`) to `node --test`, and Node 20 does not expand it
+— it fails with „Could not find …" before running a single test. The first CI run
+proved it, which is what the matrix is for. Node 20 has also been EOL since
+April 2026. Lowering the floor again means resolving the glob in the script
+instead of leaving it to the runtime.
 
 **The build step runs with no credentials on purpose** — that is the path a
 contributor takes after a plain `git clone`. It has to stay non-fatal: the build
