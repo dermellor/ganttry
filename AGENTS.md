@@ -1,6 +1,29 @@
-# Timelines
+# Ganttry
 
 Generic timeline viewer. Reads frontmatter dates from a notes directory of Markdown files (configurable via `notesDir` / `TIMELINES_NOTES_DIR`), builds timelines via [vis-timeline](https://visjs.github.io/vis-timeline/), and ships a single neutral theme themeable through CSS custom properties.
+
+## The name covers the product, not its vocabulary or its instances
+
+**Ganttry** is the product (`ganttry.io`, `ganttry.dev`, dev domain
+`ganttry.localhost`). Three families of `timeline(s)` are deliberately left
+alone, and a sweep that "finishes the rename" breaks all three:
+
+- **Domain vocabulary.** A timeline is still called a timeline: the tables
+  `timelines` / `timeline_items`, types like `TimelineFile`, `vis-timeline`, the
+  Timeline view. That is the noun the product operates on, so renaming it would
+  cost a schema migration and buy nothing.
+- **Deployment identity.** An instance carries its own name. Acme runs one at
+  `timelines.example.com`, so the Netlify site, the `timelines-api` /
+  `pricing-api` edge functions, the `TIMELINES_*` env vars and the MCP URL keep
+  saying `timelines`. Renaming the env vars means editing the Netlify dashboard
+  and every `.env` in lockstep; a half-applied rename takes DB access down (it
+  fails loudly by design, see „Prinzip: keine Notfall-/Fallback-Daten").
+- **Applied migrations.** `supabase/migrations/*.sql` are checksummed by
+  `db:migrate`; editing even a comment in one raises a drift warning.
+
+`localStorage` keys (`timelines.viewMode` and its siblings) also still carry the
+old prefix. Renaming them without a read-both migration silently resets every
+user's saved view, grouping and filter state.
 
 ## Branching, Commits & Session Isolation
 
@@ -62,7 +85,7 @@ in must be cleaned up explicitly.
 does **not** see edits made in a worktree. When a task needs live visual
 verification, start the worktree server on a five-digit preview port from the
 **31200–31209** pool (`npm run dev:worktree`, default 31200) so PM2 keeps serving
-3120 — **never stop PM2** to free 3120 (that tears down `timelines.localhost` for
+3120 — **never stop PM2** to free 3120 (that tears down `ganttry.localhost` for
 every other session). Details: „Ports → Worktree-Live-Preview". Alternatively
 merge to `main` and verify there.
 Never assume the running app reflects worktree edits — that mismatch is a known
@@ -90,7 +113,7 @@ working tree.
 
 Either way, the done-gate (rule 2) applies. If a change is too risky for `main`,
 gate it with a feature flag, not a long-lived branch. Issues live in this repo's
-own tracker (<https://github.com/dermellor/timelines/issues>); reference them from
+own tracker (<https://github.com/dermellor/ganttry/issues>); reference them from
 the closing commit with `Closes #NN`.
 
 ### 4. Guard against foreign in-flight work
@@ -112,7 +135,7 @@ Belegt im 3120er-Block (siehe [`~/Development/PORTS.md`](../PORTS.md)).
 
 URLs:
 
-- `https://timelines.localhost` — primärer Zugang über Caddy (HTTPS, von PM2 verwaltet)
+- `https://ganttry.localhost` — primärer Zugang über Caddy (HTTPS, von PM2 verwaltet)
 - `http://localhost:3120` — direkt auf Vite (Main-Checkout, von PM2)
 - `http://localhost:31200` … `31209` — Worktree-Previews (siehe unten)
 
@@ -122,7 +145,7 @@ Crasht bei Port-Konflikt (`strictPort: true`), kein Auto-Fallback.
 
 Der PM2-Dev-Server auf 3120 läuft aus dem **Main-Checkout** und sieht
 Worktree-Edits nicht (siehe „Live-preview caveat" oben). Um Änderungen aus einem
-Worktree live zu sehen, **niemals PM2 stoppen** (das reißt `timelines.localhost`
+Worktree live zu sehen, **niemals PM2 stoppen** (das reißt `ganttry.localhost`
 für alle anderen Sessions weg). Stattdessen den Worktree-Server auf einem eigenen
 fünfstelligen Preview-Port starten — PM2 bleibt parallel auf 3120:
 

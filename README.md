@@ -1,4 +1,4 @@
-# Timelines
+# Ganttry
 
 A generic, self-hostable timeline and roadmap viewer built on
 [vis-timeline](https://visjs.github.io/vis-timeline/). It renders items, groups,
@@ -137,7 +137,7 @@ server.
 ## Contributing
 
 Issues and pull requests are welcome at
-<https://github.com/dermellor/timelines/issues>.
+<https://github.com/dermellor/ganttry/issues>.
 
 - Run the test suite with `npm test` (Node's built-in test runner over
   `{src,scripts}/**/*.test.ts`).

@@ -1,7 +1,7 @@
-// Timelines MCP server (stdio).
+// Ganttry MCP server (stdio).
 //
 // Lets Claude Code read and manipulate DB-backed timelines by talking to the
-// live Timelines deploy. Every read/write goes through the site's
+// live Ganttry deploy. Every read/write goes through the site's
 // /api/source(s) endpoints, which hit the timelines-api edge function backed by
 // Supabase (Postgres) — so the DB stays the single source of truth and edits are
 // immediately live.

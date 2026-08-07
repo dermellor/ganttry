@@ -1,5 +1,5 @@
 {
-  "name": "timelines",
+  "name": "ganttry",
   "private": true,
   "version": "0.0.1",
   "description": "Generic timeline/roadmap viewer (vis-timeline) with pluggable source adapters (file JSON, Postgres) and timeline kinds (generic, product-roadmap).",
