@@ -220,6 +220,9 @@ npm run build        # static dist
 npm test             # unit tests (node --test, TZ-pinned to Europe/Berlin)
 npm run typecheck    # tsc --noEmit
 npm run db:check     # migrations pending? (runs before `dev`; no-op without a DB)
+npm run db:local:up  # throwaway Postgres in Docker (port 55432)
+npm run db:reset     # drop schema → migrate → seed; refuses non-local databases
+npm run dev:local    # dev server against that local database, not a hosted one
 npm run schema       # regenerate the JSON Schemas from src/types.ts
 npm run schema:check # verify they match the types + the examples validate (CI)
 npm run openapi      # regenerate openapi.yaml
