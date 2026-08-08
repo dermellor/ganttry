@@ -291,6 +291,8 @@ export const PRICING_TIER_META_KEY = 'tier';
 export type PluginRef = { id: string; config?: Record<string, unknown> };
 
 export type TimelineFile = {
+  /** Points editors at schema/timeline.schema.json for completion + validation. */
+  $schema?: string;
   name?: string;
   description?: string;
   groupBy?: string;
@@ -310,6 +312,8 @@ export type TimelineFile = {
 };
 
 export type Config = {
+  /** Points editors at schema/config.schema.json for completion + validation. */
+  $schema?: string;
   notesDir: string;
   defaultView: string;
   dateFields: string[];

@@ -292,10 +292,21 @@ own data/tables — never a new core column or discriminator value.
 
 Drop a `*.json` file into the project's `data/` folder. The build script copies it to `public/data/sources/<basename>.json` and adds it as an automatic view (`id: "src:<basename>"`). No config edit needed.
 
-File shape:
+**The field list is not maintained here.** It is generated from
+[`src/types.ts`](src/types.ts) into
+[`schema/timeline.schema.json`](schema/timeline.schema.json) (`npm run schema`), so
+add `"$schema": "../schema/timeline.schema.json"` to your file and the editor
+completes and validates it. CI checks that the committed schema still matches the
+types and that the examples still validate, which is what keeps this section from
+drifting: a stale `title` field survived here for a while after the DB column
+backing it was dropped, precisely because it was a hand-maintained copy.
+
+What the schema cannot express is below: the constraints between fields, and why
+they exist. Shape at a glance:
 
 ```jsonc
 {
+  "$schema": "../schema/timeline.schema.json",
   "name": "Projektplan 2026",            // optional, falls back to filename
   "description": "...",                  // optional
   "items": [
@@ -306,12 +317,11 @@ File shape:
       "duration": "3w",                  // optional ("7d", "2w", "90m", number = ms) — only when no end
       "content": "Kickoff",
       "group": "Phase 1",                // optional
-      "title": "Tooltip text",           // optional
       "type": "point",                   // optional: point | range | background | box
       "icon": "milestone",               // optional: semantic icon key (see "Item icons")
       "status": "Open",                  // optional: Open | Doing | Done (see "Item status"); defaults to Open
       "body": "Markdown shown in detail panel",  // optional
-      "metadata": { "owner": "robin@example.com", "tags": ["Qualität & Daten"] }  // optional
+      "metadata": { "owner": "someone@example.com", "tags": ["Qualität & Daten"] }  // optional
     }
   ],
   "groups": [
@@ -1937,11 +1947,36 @@ notes** (standalone/DB sources still build); it does not fail. In
 
 ```bash
 npm install
-npm run dev       # build data + Vite + chokidar watcher on the notes dir
-npm run build     # static dist
-npm test          # unit tests (node --test, TZ-pinned to Europe/Berlin)
-npm run typecheck # tsc --noEmit
+npm run dev          # build data + Vite + chokidar watcher on the notes dir
+npm run build        # static dist
+npm test             # unit tests (node --test, TZ-pinned to Europe/Berlin)
+npm run typecheck    # tsc --noEmit
+npm run schema       # regenerate the JSON Schemas from src/types.ts
+npm run schema:check # verify they match the types + the examples validate (CI)
 ```
+
+### Generated schemas (`schema/`)
+
+The shape of the committed data files is **derived, not documented twice**:
+[`scripts/schema/build.ts`](scripts/schema/build.ts) generates
+`schema/timeline.schema.json` (from `TimelineFile`) and `schema/config.schema.json`
+(from `Config`) out of [`src/types.ts`](src/types.ts), which stays authoritative.
+
+The output **is committed**, and that is the point rather than an oversight: it is
+what lets a data file carry `"$schema": "../schema/timeline.schema.json"` and get
+completion and validation in an editor. `npm run schema:check` therefore
+regenerates into memory and compares, so a type change without a regenerated
+schema fails in CI instead of shipping a schema that describes yesterday's types.
+
+The generator runs with `additionalProperties: false`, which makes an unknown key
+an error rather than something silently accepted. That is what surfaced a stale
+`title` field: the DB column behind it was dropped in migration `0014`, but the
+examples and the prose kept carrying it, invisible because both were maintained by
+hand.
+
+The same step validates the committed examples, which turns
+`data/example-projektplan.json` and `data/launch-roadmap.json` into tests: a
+change to the item shape that forgets them fails loudly.
 
 `npm run dev` rebuilds `notes.json` whenever a Markdown file changes.
 
@@ -1949,7 +1984,8 @@ npm run typecheck # tsc --noEmit
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to
 `main` and on every pull request, over a Node 22 + 24 matrix: `npm ci`,
-`npm test`, `npm run build`, then the bundle-split check below.
+`npm test`, `npm run schema:check`, `npm run build`, then the bundle-split check
+below.
 
 **Node 22 is the floor** (`engines.node` in `package.json`), and that is a real
 constraint rather than a preference: the test script hands a glob

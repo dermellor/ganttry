@@ -1,4 +1,5 @@
 {
+  "$schema": "../schema/timeline.schema.json",
   "name": "Beispiel: Projektplan",
   "description": "Manuell gepflegte Timeline. Liegt in data/ und wird beim Build automatisch eingelesen.",
   "items": [
@@ -8,7 +9,6 @@
       "content": "Kickoff",
       "group": "Phase 1 — Discovery",
       "icon": "meeting",
-      "title": "Erstes Stakeholder-Meeting",
       "body": "## Kickoff\n\n- Vorstellung des Teams\n- Ziele und Scope\n- Risiken sammeln"
     },
     {

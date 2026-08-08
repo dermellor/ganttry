@@ -38,6 +38,12 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # Two failures in one step: a committed schema that no longer matches
+      # src/types.ts, and a committed data file that violates it. The second is
+      # what makes the examples a test rather than decoration.
+      - name: JSON Schemas match the types, examples validate
+        run: npm run schema:check
+
       # No credentials are configured here on purpose: this is the path a
       # contributor takes after a plain `git clone`. The build discovers no DB
       # timelines and warns about the missing notes directory, both non-fatal.

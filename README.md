@@ -68,9 +68,12 @@ npm install
 npm run dev
 ```
 
-The file shape (items, groups, phases, dependencies, custom fields) is documented
-in [`AGENTS.md`](AGENTS.md); `data/example-projektplan.json` and
-`data/launch-roadmap.json` are reference files.
+Add `"$schema": "../schema/timeline.schema.json"` at the top and your editor
+completes and validates the file. That schema is generated from the TypeScript
+types, so it cannot drift from what the app actually reads.
+`data/example-projektplan.json` and `data/launch-roadmap.json` are reference files;
+[`AGENTS.md`](AGENTS.md) explains the constraints a schema cannot express, such as
+why `end` and `duration` are mutually exclusive.
 
 ### Notes-driven views (optional)
 

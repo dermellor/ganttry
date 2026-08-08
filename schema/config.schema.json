@@ -1,0 +1,201 @@
+{
+  "$id": "https://ganttry.dev/schema/config.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/Config",
+  "definitions": {
+    "Config": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string",
+          "description": "Points editors at schema/config.schema.json for completion + validation."
+        },
+        "notesDir": {
+          "type": "string"
+        },
+        "defaultView": {
+          "type": "string"
+        },
+        "dateFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "filenameDatePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "views": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/View"
+          }
+        }
+      },
+      "required": [
+        "notesDir",
+        "defaultView",
+        "dateFields",
+        "filenameDatePatterns",
+        "views"
+      ],
+      "additionalProperties": false
+    },
+    "View": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "filter": {
+          "$ref": "#/definitions/FilterClause"
+        },
+        "dateFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "groupBy": {
+          "type": "string"
+        },
+        "colorBy": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/definitions/ViewSource"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "filter"
+      ],
+      "additionalProperties": false
+    },
+    "FilterClause": {
+      "type": "object",
+      "properties": {
+        "filenameContains": {
+          "type": "string"
+        },
+        "folder": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "categories": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "has": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "anyOf": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FilterClause"
+          }
+        },
+        "allOf": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FilterClause"
+          }
+        },
+        "not": {
+          "$ref": "#/definitions/FilterClause"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ViewSource": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/SourceKind"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "SourceKind": {
+      "type": "string",
+      "enum": [
+        "db",
+        "file"
+      ]
+    }
+  }
+}

@@ -20,6 +20,8 @@
     "preview": "vite preview",
     "test": "TZ=Europe/Berlin node --import tsx --test '{src,scripts}/**/*.test.ts'",
     "typecheck": "tsc --noEmit",
+    "schema": "tsx scripts/schema/build.ts",
+    "schema:check": "tsx scripts/schema/build.ts --check",
     "mcp": "tsx scripts/mcp/server.ts"
   },
   "engines": {
@@ -39,9 +41,12 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/turndown": "^5.0.6",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "chokidar": "^3.6.0",
     "concurrently": "^9.0.0",
     "gray-matter": "^4.0.3",
+    "ts-json-schema-generator": "^2.9.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0",
     "vite": "^5.4.0"

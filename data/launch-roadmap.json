@@ -1,4 +1,5 @@
 {
+  "$schema": "../schema/timeline.schema.json",
   "name": "Launch-Roadmap (5 Tracks)",
   "description": "Cross-funktionaler Produkt-Launch über fünf parallele Tracks mit teilweisen Abhängigkeiten. Abhängigkeiten stehen im 'dependsOn'-Metadatenfeld und werden im Detail-Panel angezeigt.",
   "groups": [
@@ -30,7 +31,6 @@
       "duration": "1w",
       "content": "Vision Workshop",
       "group": "1-strategy",
-      "title": "2-tägiger Workshop, Outcome: Vision Statement",
       "body": "## Vision Workshop\n\n- Stakeholder: CEO, Head of Product, Lead Designer, CTO\n- Ergebnis: Einseitiges Vision-Doc + Top-3 OKRs",
       "metadata": {
         "owner": "Product Lead"
