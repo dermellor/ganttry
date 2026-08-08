@@ -16,6 +16,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/items.md`](docs/items.md) | What an item carries beyond dates: icons, status, owner, custom fields. |
 | [`docs/editing.md`](docs/editing.md) | Editing in the interface: the item rail, the context menu, drag and form behaviour, the two view modes, URL state. |
 | [`docs/database.md`](docs/database.md) | Postgres as the data source: schema, the two drivers, optimistic locking, live updates, presence. |
+| [`docs/local-sources.md`](docs/local-sources.md) | **Proposal, not built:** one `local` adapter for JSON and Markdown, with editability decided by the runtime instead of the format. |
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server and its tools. |
 | [`docs/deploy.md`](docs/deploy.md) | The Netlify deploy, the auth gate, JIRA linking. |
 | [`docs/pricing.md`](docs/pricing.md) | The pricing model of a product-roadmap timeline. |
