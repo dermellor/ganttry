@@ -116,6 +116,30 @@ gate it with a feature flag, not a long-lived branch. Issues live in this repo's
 own tracker (<https://github.com/dermellor/ganttry/issues>); reference them from
 the closing commit with `Closes #NN`.
 
+### 5. Issues are public: never file instance-specific ones
+
+There is **one** tracker, and it is the public one. GitHub has no such thing as a
+private issue: everything in a public repo's tracker is world-readable, including
+its whole edit history, and closing an issue does not hide it. Moving it to
+another repo afterwards does not help either, since anything already public stays
+mirrored, cached and indexed.
+
+So an issue must never carry **instance-specific content**: a customer or tenant
+name, a deployment's configuration or credentials, internal strategy, a named
+competitor, or the contents of a private timeline. That kind of material is not
+tracker material in the first place. A deployment's configuration belongs in the
+operator's own notes and its host's dashboard, tenant data belongs in the
+database, and a migration for one instance is a script.
+
+What is left is product work — adapters, bugs, rendering behaviour, extension
+seams — and that is unproblematic in the open. The test when filing: would this
+still make sense to somebody who has never seen our deployment? If it only makes
+sense with context that nobody outside has, it does not belong in an issue at all.
+
+The same rule governs a **second repository**: do not keep one around as a private
+tracker. Two trackers in parallel is overhead that goes stale within weeks, and a
+stale tracker misleads.
+
 ### 4. Guard against foreign in-flight work
 
 At the start of a change-session, check `git status`. If it already contains
