@@ -50,10 +50,12 @@ Netlify dashboard (Site settings → Environment variables).
   scoped by the same `TIMELINES_SOURCES_SUBDIR` used as an **id namespace prefix**
   (e.g. subdir `acme` → all `acme/…` timelines). No committed stubs; if the build
   can reach the DB but the list query fails, the build fails loudly.
-- **Notes scan:** off when `TIMELINES_STATIC_ONLY=true`, which then also drops the
-  notes-driven views. It is a per-deploy policy choice and therefore a dashboard
-  variable, not committed in `netlify.toml`: an instance that does serve notes
-  leaves it unset.
+- **`TIMELINES_STATIC_ONLY` is gone.** Its only job was to skip the notes scan
+  and hide the notes-driven views; with the notes pipeline retired there is
+  nothing left for it to switch off. A deploy that should carry no local sources
+  simply ships none under `data/`. Remove the variable from the dashboard if it
+  is still set there — it does nothing, and a dead switch invites someone to
+  reach for it.
 - **Editing** is live when the Supabase env vars are set (see „Postgres as the
   data source → Production setup"): the `timelines-api` edge function serves
   DB-backed timelines editable. Without those vars, the DB read fails and the

@@ -1,5 +1,4 @@
-import type { Config, FilterClause, Note, TimelineFile, TimelineFileItem, View } from './types';
-import { matches, resolveGroupBy } from './filter';
+import type { TimelineFile, TimelineFileItem, View } from './types';
 import { normalizeIcon } from './icons';
 import { isOverdue, normalizeStatus } from './status';
 import type { StatusKey } from './status';
@@ -137,24 +136,6 @@ export function endFromDuration(start: string, ms: number): string | null {
   return time === '00:00:00' ? date : `${date}T${time}`;
 }
 
-export function pickStartForView(
-  note: Note,
-  view: View,
-  fallbackFields: string[],
-): { iso: string; field: string } | null {
-  const fields = view.dateFields ?? fallbackFields;
-  for (const f of fields) {
-    const v = (note.frontmatter as Record<string, unknown>)[f];
-    if (v == null || v === '') continue;
-    const date =
-      v instanceof Date
-        ? v
-        : new Date(typeof v === 'string' && v.length === 10 ? `${v}T00:00:00` : String(v));
-    if (!isNaN(date.getTime())) return { iso: date.toISOString(), field: f };
-  }
-  if (note.start) return { iso: note.start, field: note.dateSource ?? '__filename__' };
-  return null;
-}
 
 export function detailFromJsonItem(raw: TimelineFileItem & { id: string }): DetailNote {
   return {
@@ -170,19 +151,6 @@ export function detailFromJsonItem(raw: TimelineFileItem & { id: string }): Deta
   };
 }
 
-export function detailFromNote(note: Note, dateField: string, startIso: string): DetailNote {
-  return {
-    id: note.id,
-    title: note.title,
-    start: startIso,
-    end: note.end,
-    dateSource: dateField,
-    folder: note.folder,
-    filename: note.filename,
-    frontmatter: note.frontmatter,
-    body: note.body,
-  };
-}
 
 export type ResolvedPhase = {
   id: string;
@@ -546,44 +514,3 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
   return { items, groups, details, dependencies, phases };
 }
 
-export function buildFromNotes(view: View, notes: Note[], cfg: Config): BuildResult {
-  const items: TimelineItem[] = [];
-  const groupSet = new Map<string, TimelineGroup>();
-  const details = new Map<string, DetailNote>();
-
-  for (const note of notes) {
-    if (!matches(note, view.filter as FilterClause)) continue;
-    const start = pickStartForView(note, view, cfg.dateFields);
-    if (!start) continue;
-
-    const groupId = resolveGroupBy(note, view.groupBy) ?? UNGROUPED;
-    if (!groupSet.has(groupId)) {
-      groupSet.set(groupId, {
-        id: groupId,
-        content: groupId === UNGROUPED ? '—' : escapeHtml(groupId),
-      });
-    }
-
-    const isRange = !!note.end && note.end !== start.iso;
-    items.push({
-      id: note.id,
-      group: groupId,
-      start: start.iso,
-      end: isRange ? note.end! : undefined,
-      content: escapeHtml(note.title),
-      title: `${note.title}\n${start.field}: ${start.iso.slice(0, 10)}`,
-      type: isRange ? 'range' : 'point',
-    });
-    details.set(note.id, detailFromNote(note, start.field, start.iso));
-  }
-
-  const groups = [...groupSet.values()].sort((a, b) => {
-    if (a.id === UNGROUPED) return 1;
-    if (b.id === UNGROUPED) return -1;
-    return a.id.localeCompare(b.id, 'de');
-  });
-
-  assignLaneSubgroups(items, groups, new Map());
-  assignLanes(items, groups);
-  return { items, groups, details, dependencies: new Map(), phases: [] };
-}

@@ -1,37 +1,5 @@
 import type { StatusKey } from './status';
 
-export type Note = {
-  id: string;
-  path: string;
-  filename: string;
-  folder: string;
-  title: string;
-  start: string | null;
-  end: string | null;
-  dateSource: string | null;
-  frontmatter: Record<string, unknown>;
-  body: string;
-};
-
-export type NotesData = {
-  generatedAt: string;
-  count: number;
-  notes: Note[];
-};
-
-export type FilterClause = {
-  filenameContains?: string;
-  folder?: string | string[];
-  status?: string | string[];
-  categories?: string | string[];
-  tags?: string | string[];
-  draft?: boolean;
-  has?: string | string[];
-  anyOf?: FilterClause[];
-  allOf?: FilterClause[];
-  not?: FilterClause;
-};
-
 // Where a source-backed view gets its data. The `kind` is the explicit
 // discriminator that drives loading — deliberately NOT a "try the API, then
 // fall back to a static file" guess, which conflates a live DB timeline with a
@@ -89,15 +57,18 @@ export type Watermark = { v: number; n: number; t: string | null };
  */
 export type DirectoryUser = { email: string; name?: string };
 
+/**
+ * One entry in the viewer's view picker. Every view names a source: since the
+ * Markdown notes pipeline was retired there is no other way for one to exist,
+ * which is what removed the „view without a source" branch from the renderer.
+ */
 export type View = {
   id: string;
   name: string;
   description?: string;
-  filter: FilterClause;
-  dateFields?: string[];
   groupBy?: string;
   colorBy?: string;
-  source?: ViewSource;
+  source: ViewSource;
 };
 
 export type TimelineFileItem = {
@@ -327,9 +298,26 @@ export type TimelineContainer = Omit<TimelineFile, 'items'>;
 export type Config = {
   /** Points editors at schema/config.schema.json for completion + validation. */
   $schema?: string;
-  notesDir: string;
   defaultView: string;
+  /**
+   * Frontmatter keys tried in order for an item's start, and the filename
+   * patterns tried when none of them carries one. Both are read by the
+   * directory scanner (`scripts/local/scan.ts`); a JSON source states its dates
+   * outright and never consults them.
+   */
   dateFields: string[];
   filenameDatePatterns: string[];
-  views: View[];
 };
+
+/**
+ * What the client actually loads: the committed config plus the views the build
+ * discovered (local sources under `data/`, timelines found in the database).
+ *
+ * Two types rather than one with an optional `views`, for the same reason
+ * `TimelineContainer` is separate from `TimelineFile`: optional would push an
+ * undefined-check into every one of the half-dozen places that iterate the
+ * views, none of which ever sees the committed file. The committed one is
+ * validated against `schema/config.schema.json`; this one is a build artefact
+ * and needs no schema.
+ */
+export type BuiltConfig = Config & { views: View[] };

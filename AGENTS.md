@@ -283,7 +283,7 @@ touch a local checkout.
 
 ```bash
 npm install
-npm run dev          # build data + Vite + chokidar watcher on the notes dir
+npm run dev          # build data + Vite + chokidar watcher on data/
 npm run build        # static dist
 npm test             # unit tests (node --test, TZ-pinned to Europe/Berlin)
 npm run typecheck    # tsc --noEmit
@@ -358,7 +358,7 @@ so „this one is public" is machine-readable rather than a sentence. Validated 
 large dependency for a file that already has unit tests plus a regeneration
 check).
 
-`npm run dev` rebuilds `notes.json` whenever a Markdown file changes.
+`npm run dev` rebuilds the discovered config and the materialized local sources whenever a file under `data/` changes, Markdown included.
 
 ### CI
 
@@ -377,14 +377,15 @@ instead of leaving it to the runtime.
 
 **The build step runs with no credentials on purpose** — that is the path a
 contributor takes after a plain `git clone`. It has to stay non-fatal: the build
-discovers no DB timelines and warns about the missing notes directory rather
-than failing (see „Configuration" (docs/mcp.md) and „Principle: no emergency or fallback data").
-A change that makes a missing DB or notes dir fatal breaks CI for everyone
-without a deploy's env vars.
+discovers no DB timelines and registers only the local sources rather than
+failing (see „Configuration" (docs/mcp.md) and „Principle: no emergency or fallback data").
+A change that makes a missing DB fatal breaks CI for everyone without a
+deploy's env vars.
 
 **`npm run typecheck` is deliberately non-blocking** (`continue-on-error`): the
-repo carries 7 pre-existing errors (`Dirent` typing in `build-data.ts`, missing
-`@types/ws`, two library signature mismatches). They are unrelated to any
+repo carries 3 pre-existing errors (missing `@types/ws`, two library signature
+mismatches). It was 7 until the notes pipeline went: the four `Dirent` ones lived
+in its directory walk. They are unrelated to any
 current change, so gating PRs on them would block contributions on a debt that
 predates them. The step still reports the count, which is what catches a
 regression — dropping `continue-on-error` is the one-line change once the count

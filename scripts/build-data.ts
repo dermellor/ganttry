@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto';
 import { join, relative, basename, dirname, extname, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import matter from 'gray-matter';
 import { envValue } from './db/env.ts';
 import { scanDirectory, timelineDirectories } from './local/scan.ts';
 
@@ -16,7 +15,6 @@ const CONFIG_PATH = join(ROOT, 'timelines.config.json');
 // the matching base path, derived from the same value in vite.config.ts.
 const DATA_DIR = (envValue('TIMELINES_DATA_DIR') || 'data').replace(/^\/+|\/+$/g, '');
 const OUT_DIR = join(ROOT, 'public', DATA_DIR);
-const OUT_FILE = join(OUT_DIR, 'notes.json');
 // Via the shared cascade, so which data an instance builds is part of its
 // profile rather than something the shell has to export.
 const SOURCES_SUBDIR = envValue('TIMELINES_SOURCES_SUBDIR').replace(/^\/+|\/+$/g, '');
@@ -24,158 +22,25 @@ const SOURCES_DIR_IN = SOURCES_SUBDIR ? join(ROOT, 'data', SOURCES_SUBDIR) : joi
 const SOURCES_DIR_OUT = join(OUT_DIR, 'sources');
 
 type Config = {
-  notesDir: string;
   dateFields: string[];
   filenameDatePatterns: string[];
 };
 
-type Note = {
-  id: string;
-  path: string;
-  filename: string;
-  folder: string;
-  title: string;
-  start: string | null;
-  end: string | null;
-  dateSource: string | null;
-  frontmatter: Record<string, unknown>;
-  body: string;
-};
 
-function expandHome(p: string): string {
-  if (p.startsWith('~')) return join(homedir(), p.slice(1));
-  return p;
-}
-
-/**
- * Directory to scan for Markdown notes. `TIMELINES_NOTES_DIR` (from the env
- * cascade, so an instance profile can set it) overrides the committed
- * `notesDir` in the config, so a checkout can point at its own notes without
- * editing the tracked file.
- */
-function resolveNotesDir(config: Config): string {
-  return expandHome(envValue('TIMELINES_NOTES_DIR') || config.notesDir);
-}
 
 async function loadConfig(): Promise<Config> {
   const raw = await readFile(CONFIG_PATH, 'utf8');
   return JSON.parse(raw);
 }
 
-async function walk(dir: string, base = dir): Promise<string[]> {
-  const out: string[] = [];
-  let entries: Awaited<ReturnType<typeof readdir>>;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return out;
-  }
-  for (const e of entries) {
-    if (e.name.startsWith('.')) continue;
-    const full = join(dir, e.name);
-    if (e.isDirectory()) {
-      out.push(...(await walk(full, base)));
-    } else if (e.isFile() && extname(e.name).toLowerCase() === '.md') {
-      out.push(full);
-    }
-  }
-  return out;
-}
 
-function toIsoDate(value: unknown): string | null {
-  if (value == null) return null;
-  if (value instanceof Date && !isNaN(value.getTime())) return value.toISOString();
-  if (typeof value === 'string' && value.trim()) {
-    const s = value.trim();
-    const d = new Date(s.length === 10 ? `${s}T00:00:00` : s);
-    if (!isNaN(d.getTime())) return d.toISOString();
-  }
-  if (typeof value === 'number') {
-    const d = new Date(value);
-    if (!isNaN(d.getTime())) return d.toISOString();
-  }
-  return null;
-}
 
-function pickDate(
-  fm: Record<string, unknown>,
-  fields: string[],
-): { iso: string; field: string } | null {
-  for (const field of fields) {
-    const v = fm[field];
-    const iso = toIsoDate(v);
-    if (iso) return { iso, field };
-  }
-  return null;
-}
 
-function dateFromFilename(filename: string, patterns: string[]): string | null {
-  const stem = basename(filename, extname(filename));
-  for (const p of patterns) {
-    const re = new RegExp(p);
-    const m = stem.match(re);
-    if (m) {
-      const y = m[1];
-      const mo = m[2];
-      const d = m[3];
-      if (y && mo && d) {
-        const iso = `${y}-${mo}-${d}T00:00:00`;
-        const date = new Date(iso);
-        if (!isNaN(date.getTime())) return date.toISOString();
-      }
-    }
-  }
-  return null;
-}
 
-const DURATION_RE = /^(\d+(?:\.\d+)?)\s*([a-zA-Z]+)$/;
 
-function parseDuration(value: unknown): number | null {
-  if (value == null) return null;
-  if (typeof value === 'number') return value > 0 ? value : null;
-  if (typeof value !== 'string') return null;
-  const s = value.trim();
-  if (!s) return null;
-  // ISO 8601 duration (subset): PnYnMnDTnHnMnS
-  if (/^P/.test(s)) return parseIsoDuration(s);
-  const m = s.match(DURATION_RE);
-  if (!m) return null;
-  const n = parseFloat(m[1]);
-  const unit = m[2].toLowerCase();
-  return n * unitToMs(unit);
-}
 
-function parseIsoDuration(s: string): number | null {
-  const re = /^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/;
-  const m = s.match(re);
-  if (!m) return null;
-  const [, y, mo, w, d, h, mi, sec] = m;
-  let ms = 0;
-  ms += (parseInt(y || '0') || 0) * 365 * 24 * 3600 * 1000;
-  ms += (parseInt(mo || '0') || 0) * 30 * 24 * 3600 * 1000;
-  ms += (parseInt(w || '0') || 0) * 7 * 24 * 3600 * 1000;
-  ms += (parseInt(d || '0') || 0) * 24 * 3600 * 1000;
-  ms += (parseInt(h || '0') || 0) * 3600 * 1000;
-  ms += (parseInt(mi || '0') || 0) * 60 * 1000;
-  ms += (parseFloat(sec || '0') || 0) * 1000;
-  return ms || null;
-}
 
-function unitToMs(unit: string): number {
-  switch (unit) {
-    case 'ms': return 1;
-    case 's': case 'sec': case 'secs': case 'second': case 'seconds': return 1000;
-    case 'm': case 'min': case 'mins': case 'minute': case 'minutes': return 60 * 1000;
-    case 'h': case 'hr': case 'hrs': case 'hour': case 'hours': return 3600 * 1000;
-    case 'd': case 'day': case 'days': return 24 * 3600 * 1000;
-    case 'w': case 'wk': case 'weeks': case 'week': return 7 * 24 * 3600 * 1000;
-    case 'mo': case 'month': case 'months': return 30 * 24 * 3600 * 1000;
-    case 'y': case 'yr': case 'year': case 'years': return 365 * 24 * 3600 * 1000;
-    default: return 0;
-  }
-}
 
-const STATIC_ONLY = /^(1|true|yes)$/i.test(envValue('TIMELINES_STATIC_ONLY'));
 
 /**
  * Local sources are stamped NOT editable here, and the dev server overrides that
@@ -256,86 +121,7 @@ async function collectDbSources(): Promise<unknown[]> {
 
 async function buildOnce(): Promise<void> {
   const config = await loadConfig();
-  const notesDir = resolveNotesDir(config);
-
-  // Missing notes dir is non-fatal: proceed with zero notes so a fresh clone
-  // (or a deploy with no notes) still builds standalone/DB sources. Set
-  // TIMELINES_NOTES_DIR (or config.notesDir) to scan Markdown notes.
-  const notesDirMissing = !STATIC_ONLY && !existsSync(notesDir);
-  if (notesDirMissing) {
-    console.warn(`[build-data] notesDir not found, skipping notes scan: ${notesDir}`);
-  }
-
-  const files = STATIC_ONLY || notesDirMissing ? [] : await walk(notesDir);
-  const notes: Note[] = [];
-  let skipped = 0;
-
-  for (const file of files) {
-    let raw: string;
-    try {
-      raw = await readFile(file, 'utf8');
-    } catch {
-      continue;
-    }
-    let parsed: matter.GrayMatterFile<string>;
-    try {
-      parsed = matter(raw);
-    } catch {
-      continue;
-    }
-    const fm = (parsed.data ?? {}) as Record<string, unknown>;
-    const rel = relative(notesDir, file);
-    const folder = rel.includes('/') ? rel.split('/').slice(0, -1).join('/') : '';
-    const filename = basename(file);
-    const title =
-      (typeof fm.title === 'string' && fm.title.trim()) ||
-      basename(file, extname(file));
-
-    const fmDate = pickDate(fm, config.dateFields);
-    let startIso: string | null = fmDate?.iso ?? null;
-    let dateSource: string | null = fmDate?.field ?? null;
-    if (!startIso) {
-      const fileDate = dateFromFilename(filename, config.filenameDatePatterns);
-      if (fileDate) {
-        startIso = fileDate;
-        dateSource = '__filename__';
-      }
-    }
-
-    if (!startIso) {
-      skipped++;
-      continue;
-    }
-
-    let endIso: string | null = null;
-    const durationMs = parseDuration(fm.duration);
-    if (durationMs && durationMs > 0) {
-      endIso = new Date(new Date(startIso).getTime() + durationMs).toISOString();
-    } else {
-      const fmEnd = pickDate(fm, ['end', 'end_date', 'until']);
-      if (fmEnd) endIso = fmEnd.iso;
-    }
-
-    notes.push({
-      id: rel,
-      path: rel,
-      filename,
-      folder,
-      title,
-      start: startIso,
-      end: endIso,
-      dateSource,
-      frontmatter: fm,
-      body: parsed.content,
-    });
-  }
-
-  notes.sort((a, b) => (a.start! < b.start! ? -1 : 1));
-
   await mkdir(OUT_DIR, { recursive: true });
-
-  const notesPayload = JSON.stringify({ count: notes.length, notes }, null, 2);
-  const notesChanged = await writeIfChanged(OUT_FILE, notesPayload);
 
   // File sources (committed data/*.json) plus DB timelines discovered live from
   // the DB. On an id collision the DB timeline wins (it is the live source of
@@ -343,28 +129,21 @@ async function buildOnce(): Promise<void> {
   const fileViews = await collectStandaloneSources(config);
   const dbViews = await collectDbSources();
   const dbIds = new Set(dbViews.map((v: any) => v.id));
-  const autoViews = [...fileViews.filter((v: any) => !dbIds.has(v.id)), ...dbViews];
-  const baseViews = STATIC_ONLY
-    ? [] // hide markdown-driven views in static mode
-    : (config as any).views ?? [];
-  let defaultView: string = (config as any).defaultView;
-  if (STATIC_ONLY) {
-    const firstSrc = (autoViews[0] as any)?.id;
-    if (firstSrc) defaultView = firstSrc;
-  }
-  const mergedConfig = {
-    ...config,
-    defaultView,
-    views: [...baseViews, ...autoViews],
-  };
+  const views = [...fileViews.filter((v: any) => !dbIds.has(v.id)), ...dbViews];
+  // Every view is discovered. `defaultView` may still name one from the
+  // committed config; if it names nothing that exists (or nothing at all), the
+  // first discovered source is the honest fallback — otherwise the viewer opens
+  // on a view id that no longer resolves and shows an empty screen.
+  const declared: string = (config as any).defaultView;
+  const defaultView = views.some((v: any) => v.id === declared)
+    ? declared
+    : ((views[0] as any)?.id ?? declared);
+  const mergedConfig = { ...config, defaultView, views };
   const configOut = join(OUT_DIR, 'config.json');
   const configChanged = await writeIfChanged(configOut, JSON.stringify(mergedConfig, null, 2));
 
-  if (notesChanged || configChanged) {
-    console.log(
-      `[build-data] wrote ${notes.length} notes (${skipped} skipped, no date) + ${autoViews.length} standalone source(s)` +
-        (notesChanged ? ' [notes]' : '') + (configChanged ? ' [config]' : ''),
-    );
+  if (configChanged) {
+    console.log(`[build-data] wrote ${views.length} source(s)`);
   }
 }
 
@@ -487,10 +266,7 @@ async function main() {
   await buildOnce();
 
   if (process.argv.includes('--watch')) {
-    const config = await loadConfig();
-    const notesDir = resolveNotesDir(config);
     await mkdir(SOURCES_DIR_IN, { recursive: true });
-    const watchNotes = process.argv.includes('--watch-notes');
     const { default: chokidar } = await import('chokidar');
     let timer: NodeJS.Timeout | null = null;
     let pending = false;
@@ -511,8 +287,14 @@ async function main() {
       if (timer) clearTimeout(timer);
       timer = setTimeout(run, 1000);
     };
-    const watchPaths = [CONFIG_PATH, join(SOURCES_DIR_IN, '**', '*.json')];
-    if (watchNotes) watchPaths.unshift(join(notesDir, '**/*.md'));
+    // Both shapes of a local source: a JSON timeline, and the Markdown files of
+    // a directory one. Watching only the JSON would leave a directory source
+    // stale in the build output after a note changes.
+    const watchPaths = [
+      CONFIG_PATH,
+      join(SOURCES_DIR_IN, '**', '*.json'),
+      join(SOURCES_DIR_IN, '**', '*.md'),
+    ];
 
     chokidar
       .watch(watchPaths, {
@@ -532,9 +314,7 @@ async function main() {
     // browser, and the DB timeline list refreshes on each build via
     // collectDbSources().
     console.log(
-      watchNotes
-        ? `[build-data] watching ${notesDir}/**/*.md + ${relative(ROOT, SOURCES_DIR_IN)}/**/*.json + config`
-        : `[build-data] watching ${relative(ROOT, SOURCES_DIR_IN)}/**/*.json + config (notes excluded — use 'npm run dev:notes' to include)`,
+      `[build-data] watching ${relative(ROOT, SOURCES_DIR_IN)}/**/*.{json,md} + config`,
     );
     return; // stay alive; the watcher keeps the event loop (and DB handle) open
   }

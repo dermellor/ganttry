@@ -10,8 +10,8 @@ its file when it lives in another chapter.
 
 Two-step:
 
-1. **Build script** (`scripts/build-data.ts`) walks the notes directory, parses YAML frontmatter (`gray-matter`), extracts dates, writes `public/data/notes.json` + a copy of the config.
-2. **Static viewer** (Vite + TypeScript, `src/`) loads the JSON, applies the active view's filter, renders a vis-timeline, styled through the CSS custom properties in `src/styles/theme.css`.
+1. **Build script** (`scripts/build-data.ts`) discovers the sources — the local ones under `data/` (a JSON file, or a directory of Markdown scanned by `scripts/local/scan.ts`) and the timelines in the database — registers each as a view, and writes the merged config plus a materialized copy of every local source to `public/<data dir>/`.
+2. **Static viewer** (Vite + TypeScript, `src/`) loads that config, loads the active view's source (live from the API where the runtime allows it, otherwise the materialized copy), and renders a vis-timeline, styled through the CSS custom properties in `src/styles/theme.css`.
 
 Electron wrapper can later embed the same `dist/` build.
 

@@ -165,44 +165,37 @@ When generating a roadmap (whether for this project or invoked from elsewhere �
 
 ```jsonc
 {
-  "notesDir": "~/notes",
-  "defaultView": "all",
+  "$schema": "./schema/config.schema.json",
+  "defaultView": "src:example-projektplan",
   "dateFields": ["date", "scheduled", "created"],
-  "filenameDatePatterns": ["^(\\d{4})-(\\d{2})-(\\d{2})", "^(\\d{4})(\\d{2})(\\d{2})"],
-  "views": [
-    {
-      "id": "kurzbeitraege",
-      "name": "Kurzbeiträge",
-      "filter": { "filenameContains": "Kurzbeitrag" },
-      "dateFields": ["scheduled", "date", "created"],
-      "groupBy": "status"
-    }
-  ]
+  "filenameDatePatterns": ["^(\\d{4})-(\\d{2})-(\\d{2})", "^(\\d{4})(\\d{2})(\\d{2})"]
 }
 ```
 
-`notesDir` is the directory scanned for Markdown notes. The env var
-**`TIMELINES_NOTES_DIR`** overrides the committed `notesDir` (same `~` expansion),
-so a checkout can point at its own notes without editing the tracked config —
-e.g. set `TIMELINES_NOTES_DIR=~/my-notes` in `.env.local`. If
-the resolved directory does not exist, the build **warns and proceeds with zero
-notes** (standalone/DB sources still build); it does not fail. In
-`TIMELINES_STATIC_ONLY` mode the notes scan is skipped entirely.
+That is the whole file. **Views are discovered, not declared:** `build-data.ts`
+registers one per local source under `data/` and one per timeline it finds in the
+database, and writes the merged list into the build output the client reads. The
+committed config carries no `views` array, which is why the type it validates
+against (`Config`) has none and the built one (`BuiltConfig`) does.
 
-### Filter clauses
+`dateFields` and `filenameDatePatterns` are read by the directory scanner
+([`scripts/local/scan.ts`](../scripts/local/scan.ts)) when it turns Markdown
+frontmatter into items: the first key that carries a date wins, and the filename
+patterns are tried when none of them does. A JSON source states its dates
+outright and never consults either.
 
-| Key                 | Type                 | Effect                                            |
-| ------------------- | -------------------- | ------------------------------------------------- |
-| `filenameContains`  | string               | substring match on filename                       |
-| `folder`            | string \| string[]   | folder path (or prefix) match                     |
-| `status`            | string \| string[]   | match against `status` frontmatter                |
-| `categories`        | string \| string[]   | intersect with `categories` frontmatter           |
-| `tags`              | string \| string[]   | intersect with `tags` frontmatter                 |
-| `draft`             | boolean              | match `draft: true/false`                         |
-| `has`               | string \| string[]   | require frontmatter keys to be set                |
-| `allOf` / `anyOf`   | FilterClause[]       | logical combinators                               |
-| `not`               | FilterClause         | negation                                          |
+`defaultView` names the view to open. It is checked against what was actually
+discovered, and falls back to the first source when it names nothing that exists
+— otherwise the viewer opens on an id that no longer resolves and shows an empty
+screen.
 
-### Grouping
+### What used to be here
 
-`groupBy` is a frontmatter expression: `categories[0]`, `status`, `folder`, `topics[0]`, `tags[0]`. Notes without that field land in an `_ungrouped` bucket.
+A committed `views` array with a `filter` clause per view, over a directory of
+Markdown notes named by `notesDir` / `TIMELINES_NOTES_DIR`. That pipeline is
+gone: notes are now an ordinary local source (a directory with a
+`timeline.json`), and one directory is one timeline rather than a pool that
+several views slice up. Narrowing what you see is the interface's own Filter
+control ([`src/filterControl.ts`](../src/filterControl.ts)), which works on every
+source instead of only on notes. The reasoning is in
+[`docs/local-sources.md`](local-sources.md).

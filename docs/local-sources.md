@@ -1,12 +1,12 @@
 # Local sources (design proposal)
 
 **Status: stages 1 and 2 are built; stage 3 is not.** A single `local` source
-adapter replaces the former `file` kind and makes editability a property of the
-runtime rather than of the file format. What exists today: a `data/*.json` timeline is
-editable under `npm run dev` and read-only on a static deploy, and a directory of
-Markdown files with a `timeline.json` in it is served as a source, read-only.
-Everything that writes back into a note is still a proposal, and so is retiring
-the old notes pipeline. Each section below says which it is.
+adapter replaced the former `file` kind and the separate Markdown notes pipeline,
+and made editability a property of the runtime rather than of the file format.
+What exists: a `data/*.json` timeline is editable under `npm run dev` and
+read-only on a static deploy, and a directory of Markdown files with a
+`timeline.json` in it is served as a source, read-only. Writing back into a note
+is still a proposal. Each section below says which it is.
 
 Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
@@ -14,8 +14,8 @@ its file when it lives in another chapter.
 
 ## The problem
 
-There are three places data comes from today, and they sit on two and a half
-axes rather than one:
+There used to be three places data came from, sitting on two and a half axes
+rather than one. This is the picture the change started from:
 
 | | Markdown notes | `file` | `db` |
 | --- | --- | --- | --- |
@@ -132,8 +132,8 @@ behind this) is fixed when the bundle is built.
 `live: 'poll'`, via the existing watermark sub-resource: the adapter answers with
 the newest mtime across the source's files, and the client polls it exactly as it
 does for a Postgres without Realtime. The dev server already runs a chokidar
-watcher over the notes directory, so pushing instead of polling is available later
-as an optimization rather than as a prerequisite.
+watcher over `data/`, so pushing instead of polling is available later as an
+optimization rather than as a prerequisite.
 
 ## The write path
 
@@ -224,18 +224,28 @@ Deleting an item deletes one of the user's files, so it moves the file to
 ignores) instead of unlinking it. An `unlink` here is unrecoverable data loss on
 data the tool did not create.
 
-## What this removes
+## What this removed
 
-Worth stating, because it is the argument for the change beyond consistency:
+Done, and the argument for the change beyond consistency:
 
-- `buildFromNotes` and the `if (view.source) … else` branch in `render.ts`.
+- `buildFromNotes` and the `if (view.source) … else` branch in `render.ts`. Every
+  view now names a source, so `View.source` is required rather than optional.
 - The `NotesData` / `notes.json` payload and its type, as a second thing the
-  client knows how to load.
-- The `TIMELINES_STATIC_ONLY` special case that hides Markdown views entirely
-  (`baseViews = []`). Under this design a static build materializes them read-only
-  like any other local source, which is a behaviour change and needs a deliberate
-  decision: **materialize them**, since „a deploy shows no notes at all" is
-  surprising, and read-only is the accurate representation of a static deploy.
+  client knows how to load — **and its second copy in
+  [`scripts/export-view.ts`](../scripts/export-view.ts)**, which carried its own
+  `buildFromNotes`. That duplicate is the clearest argument of the lot: it is
+  exactly what „A rule lives in exactly one place" (AGENTS.md) exists to prevent.
+- `src/filter.ts`, `FilterClause`, and the committed `views` array with a filter
+  clause per view. A directory is one timeline now, not a pool that several views
+  slice up; narrowing what you see is the interface's own Filter control, which
+  works on every source instead of only on notes.
+- `TIMELINES_STATIC_ONLY`, whose only job was hiding the notes-driven views.
+- Four of the repo's seven pre-existing typecheck errors, which lived in the
+  notes directory walk.
+
+**What it cost:** config-declared filter views. Nothing replaces them one-for-one.
+If a saved, named slice of one timeline turns out to be wanted, it is a feature
+on top of sources rather than a reason to keep a second data path alive.
 
 ## Constraints that must hold
 

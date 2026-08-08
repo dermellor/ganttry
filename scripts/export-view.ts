@@ -2,8 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { matches, resolveGroupBy } from '../src/filter';
-import type { Config, FilterClause, Note, NotesData, TimelineFile, TimelineFileItem, View } from '../src/types';
+import type { BuiltConfig, TimelineFile, TimelineFileItem, View } from '../src/types';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DATA_DIR = join(ROOT, 'public', 'data');
@@ -53,18 +52,6 @@ function durationToMs(value: unknown): number | null {
     mo: 2592000000, month: 2592000000, y: 31536000000, year: 31536000000,
   };
   return n * (map[unit] ?? 0) || null;
-}
-
-function pickStartForView(note: Note, view: View, fallbackFields: string[]): { iso: string; field: string } | null {
-  const fields = view.dateFields ?? fallbackFields;
-  for (const f of fields) {
-    const v = (note.frontmatter as Record<string, unknown>)[f];
-    if (v == null || v === '') continue;
-    const date = v instanceof Date ? v : new Date(typeof v === 'string' && v.length === 10 ? `${v}T00:00:00` : String(v));
-    if (!isNaN(date.getTime())) return { iso: date.toISOString(), field: f };
-  }
-  if (note.start) return { iso: note.start, field: note.dateSource ?? '__filename__' };
-  return null;
 }
 
 type ExportItem = {
@@ -157,52 +144,6 @@ function buildFromJson(view: View, file: TimelineFile): { items: ExportItem[]; g
   return { items, groups, details };
 }
 
-function buildFromNotes(view: View, notes: Note[], cfg: Config): { items: ExportItem[]; groups: ExportGroup[]; details: Record<string, ExportNote> } {
-  const items: ExportItem[] = [];
-  const groupSet = new Map<string, ExportGroup>();
-  const details: Record<string, ExportNote> = {};
-
-  for (const note of notes) {
-    if (!matches(note, view.filter as FilterClause)) continue;
-    const start = pickStartForView(note, view, cfg.dateFields);
-    if (!start) continue;
-
-    const groupId = resolveGroupBy(note, view.groupBy) ?? UNGROUPED;
-    if (!groupSet.has(groupId)) {
-      groupSet.set(groupId, { id: groupId, content: groupId === UNGROUPED ? '—' : escapeHtml(groupId) });
-    }
-
-    const isRange = !!note.end && note.end !== start.iso;
-    items.push({
-      id: note.id,
-      group: groupId,
-      start: start.iso,
-      end: isRange ? note.end! : undefined,
-      content: escapeHtml(note.title),
-      title: `${note.title}\n${start.field}: ${start.iso.slice(0, 10)}`,
-      type: isRange ? 'range' : 'point',
-    });
-    details[note.id] = {
-      id: note.id,
-      title: note.title,
-      start: start.iso,
-      end: note.end,
-      dateSource: start.field,
-      folder: note.folder,
-      filename: note.filename,
-      frontmatter: note.frontmatter,
-      body: note.body,
-    };
-  }
-
-  const groups = [...groupSet.values()].sort((a, b) => {
-    if (a.id === UNGROUPED) return 1;
-    if (b.id === UNGROUPED) return -1;
-    return a.id.localeCompare(b.id, 'de');
-  });
-
-  return { items, groups, details };
-}
 
 function safeFilename(s: string): string {
   return s.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'view';
@@ -333,15 +274,13 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
 
   const configPath = join(DATA_DIR, 'config.json');
-  const notesPath = join(DATA_DIR, 'notes.json');
-  if (!existsSync(configPath) || !existsSync(notesPath)) {
-    console.error(`[export] Missing ${configPath} or ${notesPath}.`);
+  if (!existsSync(configPath)) {
+    console.error(`[export] Missing ${configPath}.`);
     console.error(`[export] Run 'npm run build:data' first (or use 'npm run export -- ${args.viewId}').`);
     process.exit(1);
   }
 
-  const config: Config = JSON.parse(await readTextFile(configPath));
-  const notesData: NotesData = JSON.parse(await readTextFile(notesPath));
+  const config: BuiltConfig = JSON.parse(await readTextFile(configPath));
 
   const view = config.views.find((v) => v.id === args.viewId);
   if (!view) {
@@ -350,18 +289,15 @@ async function main() {
     process.exit(1);
   }
 
-  let built: { items: ExportItem[]; groups: ExportGroup[]; details: Record<string, ExportNote> };
-  if (view.source) {
-    const srcPath = join(DATA_DIR, 'sources', `${view.source.id}.json`);
-    if (!existsSync(srcPath)) {
-      console.error(`[export] Source file not found: ${srcPath}`);
-      process.exit(1);
-    }
-    const file: TimelineFile = JSON.parse(await readTextFile(srcPath));
-    built = buildFromJson(view, file);
-  } else {
-    built = buildFromNotes(view, notesData.notes, config);
+  // Every view is source-backed since the notes pipeline was retired, so the
+  // export reads the one materialized file and has no second build path.
+  const srcPath = join(DATA_DIR, 'sources', `${view.source.id}.json`);
+  if (!existsSync(srcPath)) {
+    console.error(`[export] Source file not found: ${srcPath}`);
+    process.exit(1);
   }
+  const file: TimelineFile = JSON.parse(await readTextFile(srcPath));
+  const built = buildFromJson(view, file);
 
   const [baseCss, themeCss, timelineCss, visCss, visJs, markedJs] = await Promise.all([
     readTextFile(join(STYLES_DIR, 'base.css')),

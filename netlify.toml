@@ -8,18 +8,6 @@
   NODE_VERSION = "22"
   # Instance-specific values are NOT committed here — set them per site in the
   # Netlify dashboard (Site settings → Environment variables):
-  #   TIMELINES_STATIC_ONLY    — "true" to skip the Markdown notes scan and drop
-  #                              notes-driven views. A policy choice per deploy:
-  #                              an instance that serves notes wants it unset.
-  #   TIMELINES_SOURCES_SUBDIR — scope the file-source scan to data/<subdir>/
-  #   VITE_JIRA_BASE_URL       — public base URL for JIRA browse links (not a secret)
-  #   ALLOWED_EMAIL_DOMAINS    — comma-separated allowed sign-in domains for the
-  #                              auth gate (code default is empty → fail-closed).
-  #                              The auth edge function reads this at runtime, so
-  #                              it must be a runtime env var, not just build-time.
-  # Tell Netlify's secret scanner these keys aren't secrets.
-  # (Real secrets — GOOGLE_CLIENT_*, AUTH_SECRET — live as runtime-only env vars
-  # in the Netlify dashboard, not in this file.)
   SECRETS_SCAN_OMIT_KEYS = "ALLOWED_EMAIL_DOMAINS,AUTH_REQUIRED"
 
 # Edge function as global auth gate (runs first on all paths).

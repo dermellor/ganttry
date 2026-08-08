@@ -1,51 +1,9 @@
 {
   "$schema": "./schema/config.schema.json",
-  "notesDir": "~/notes",
-  "defaultView": "all",
+  "defaultView": "src:example-projektplan",
   "dateFields": ["date", "scheduled", "created"],
   "filenameDatePatterns": [
     "^(\\d{4})-(\\d{2})-(\\d{2})",
     "^(\\d{4})(\\d{2})(\\d{2})"
-  ],
-  "views": [
-    {
-      "id": "all",
-      "name": "All notes",
-      "description": "Every note with a resolvable date",
-      "filter": {},
-      "groupBy": "categories[0]"
-    },
-    {
-      "id": "by-filename",
-      "name": "Filename match",
-      "description": "Notes whose filename contains a marker — swap the marker for your own",
-      "filter": {
-        "filenameContains": "meeting"
-      },
-      "dateFields": ["scheduled", "date", "created"],
-      "groupBy": "status"
-    },
-    {
-      "id": "by-category",
-      "name": "One category",
-      "description": "Notes carrying a given frontmatter category",
-      "filter": {
-        "categories": ["research"]
-      },
-      "groupBy": "categories[0]"
-    },
-    {
-      "id": "drafts",
-      "name": "Drafts",
-      "description": "Notes with status: open, or draft: true",
-      "filter": {
-        "anyOf": [
-          { "status": ["open"] },
-          { "draft": true }
-        ]
-      },
-      "dateFields": ["scheduled", "date", "created"],
-      "groupBy": "categories[0]"
-    }
   ]
 }

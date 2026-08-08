@@ -12,7 +12,7 @@
 // after all modules have finished evaluating), never at module top level.
 
 import type { Timeline } from 'vis-timeline/standalone';
-import type { Config, Note, SourceLive, TimelineFile, View } from './types';
+import type { BuiltConfig, SourceLive, TimelineFile, View } from './types';
 import type { BuildResult } from './buildItems';
 import type { JiraIssue } from './jira';
 import type { PresenceUser } from './presence';
@@ -89,8 +89,7 @@ export interface AppState {
   timeline: Timeline | null;
   // arrows, phaseBand and the vis DataSets are render-internal — they live as
   // module-level state in render.ts, not here.
-  allNotes: Note[];
-  config: Config | null;
+  config: BuiltConfig | null;
   activeView: View | null;
   activeSourceId: string | null;
   activeSourceFile: TimelineFile | null;
@@ -167,7 +166,6 @@ export interface AppState {
 
 export const state: AppState = {
   timeline: null,
-  allNotes: [],
   config: null,
   activeView: null,
   activeSourceId: null,
