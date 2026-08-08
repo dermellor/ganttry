@@ -122,14 +122,18 @@ Files, all inside the plugin's own folder:
 
 | File | What |
 | --- | --- |
+| `manifest.ts` | what the plugin declares: id, capabilities, views, config schema, the metadata keys it owns |
 | `fields.ts` | derived `CustomFieldDef[]`, gated on the plugin being enabled |
 | `fields.test.ts` | the derivation, tested without a DOM |
 | `index.ts` | the lazily loaded view module, if there is a view |
 | `README.md` | what it does, the field reference, the GEO material from phase 1 |
 | `AGENTS.md` | conventions for changing **this** plugin |
 
-Registration is one entry in the registry
-([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)). That entry has to stay cheap
+Registration is one `register()` call in the registry
+([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)), passing the
+manifest plus the parts that are code rather than data. An invalid manifest is
+refused there, so a missing capability shows up at startup and not halfway through
+a render. That entry has to stay cheap
 and synchronous: `matches` and `fields` may import types and the plugin helper and
 nothing else, or the plugin's code lands in the generic bundle and the lazy split is
 gone.
@@ -221,8 +225,9 @@ deploy verified green. See „Branching, Commits & Session Isolation" in
 The epic ([#9](https://github.com/dermellor/ganttry/issues/9)) makes plugins
 installable at runtime. Exactly two paragraphs of this playbook change:
 
-- **Registration** becomes a manifest in the plugin folder instead of a line in the
-  registry ([#11](https://github.com/dermellor/ganttry/issues/11)).
+- **Registration** loses its `register()` call: the manifest already in the plugin
+  folder is read by the loader instead
+  ([#14](https://github.com/dermellor/ganttry/issues/14)).
 - **The path** becomes `src/plugins/<id>/`, with the host under `src/pluginHost/`
   ([#19](https://github.com/dermellor/ganttry/issues/19)).
 

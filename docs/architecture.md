@@ -79,6 +79,42 @@ CSS inside that chunk, so a deploy without the plugin ships neither its code nor
 stylesheet. Both halves are asserted by
 [`scripts/ci/check-bundle-split.sh`](../scripts/ci/check-bundle-split.sh).
 
+**The manifest is what the host reads before running anything.**
+[`src/pluginHost/manifest.ts`](../src/pluginHost/manifest.ts) defines it: id, name,
+version, the contract range it was built against, its capabilities, its views, the
+config schema, and (for the generic store) the collections, references and item
+metadata keys it owns. Static data on purpose — listing, verifying and
+version-checking a plugin has to work **without executing it**, which is what makes
+installing one possible at all.
+
+`register()` refuses a manifest that does not validate, loudly. Strictness is the
+point: a declaration the host silently ignored leaves the plugin running as if it
+had access it was never granted, and the symptom then surfaces far from the cause.
+The validator also insists that declarations are covered by capabilities (views
+need `views`, collections need `data:own`, `publicRead` needs `public:read`), which
+is what keeps the capability list meaningful rather than decorative — it is the
+list shown to whoever installs the plugin.
+
+**The contract is versioned** ([`src/pluginHost/apiVersion.ts`](../src/pluginHost/apiVersion.ts)).
+The host declares `HOST_API_VERSION`, a plugin declares a range (`^1`, `^1.2`), and
+an incompatible plugin is refused with a sentence saying which side is behind.
+A plugin is an artifact that is not rebuilt when the host changes, so without this
+the first removed field fails somewhere in the middle of a render.
+
+**The host API is async and serializable throughout**
+([`src/pluginHost/hostApi.ts`](../src/pluginHost/hostApi.ts)), even though plugins
+currently run in the app's own realm where a direct call would be cheaper. The
+isolation decision is still open (<https://github.com/dermellor/ganttry/issues/14>),
+and an API shaped around shared objects cannot be moved behind an iframe or a
+worker afterwards without rewriting every plugin. `createHostApi` gates by
+capability structurally: without `items:write` there is no item-write method to
+call, rather than a check that refuses at call time.
+
+The contract is re-exported as one import from
+[`src/pluginHost/api.ts`](../src/pluginHost/api.ts), which pulls in no runtime code
+from the app. Publishing it as a package belongs with distribution
+(<https://github.com/dermellor/ganttry/issues/15>).
+
 **A plugin declares its views; the host builds the chrome.** `PluginView` carries
 an id, a label and the icon markup for the header toggle. The host creates one
 button and one `.plugin-view` section per declared view

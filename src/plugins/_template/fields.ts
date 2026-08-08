@@ -17,15 +17,20 @@
 // the generic bundle and the lazy split is gone.
 
 import { hasPlugin, pluginConfig } from '../../pluginHost/plugins';
+import { exampleManifest } from './manifest';
 import type { CustomFieldDef, TimelineFile } from '../../types';
 
-/** Stable id of this plugin: the value in its `timeline_plugins` row. */
-export const EXAMPLE_PLUGIN = 'example';
+/**
+ * Stable id of this plugin: the value in its `timeline_plugins` row. Read from the
+ * manifest so the id exists exactly once — the manifest is what the host reads,
+ * so a second copy here is the one that goes stale.
+ */
+export const EXAMPLE_PLUGIN = exampleManifest.id;
 
 /**
- * The `metadata` key the field writes to. It lives here rather than in the core
- * `src/types.ts`, because it is a fact about this plugin and nothing in the core
- * needs to know it (see #18).
+ * The `metadata` key the field writes to. A fact about this plugin, so it lives
+ * here rather than in the core `src/types.ts` (see #18) — and it is declared in
+ * the manifest's `metadataKeys`, which is what lets an uninstall clean it up.
  */
 export const EXAMPLE_META_KEY = 'example';
 
