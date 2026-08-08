@@ -53,7 +53,7 @@ test('findPhaseOverlap: contiguous (touching) sequence is clean', () => {
   assert.equal(findPhaseOverlap(phases), null);
 });
 
-test('findPhaseOverlap: a phase reaching into the next is caught (the Sona bug)', () => {
+test('findPhaseOverlap: a phase reaching into the next is caught (the original bug)', () => {
   const phases = [
     ph('pre', '2026-06-28', '2026-11-07'), // overlaps launch & amplify
     ph('launch', '2026-10-14', '2026-10-15'),
