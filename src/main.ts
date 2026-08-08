@@ -46,6 +46,7 @@ import {
   ensurePluginLoaded,
   legacyViewMode,
   pluginAppliesTo,
+  pluginViews,
   resolveViewMode,
   type PluginView,
 } from './pluginHost/registry';
@@ -129,10 +130,11 @@ export function updatePluginViews(): void {
   // plugin's chunk.
   const available = new Set<string>();
   for (const plugin of activePlugins(state.activeSourceFile)) {
-    for (const view of plugin.views) {
-      available.add(pluginViewMode(plugin.id, view.id));
-      pluginViewButton(els.modeToggle, plugin.id, view, (m) => applyViewMode(m as ViewMode)).hidden = false;
-      pluginViewSection(els.contentArea, plugin.id, view);
+    const pluginId = plugin.manifest.id;
+    for (const view of pluginViews(plugin)) {
+      available.add(pluginViewMode(pluginId, view.id));
+      pluginViewButton(els.modeToggle, pluginId, view, (m) => applyViewMode(m as ViewMode)).hidden = false;
+      pluginViewSection(els.contentArea, pluginId, view);
     }
   }
   for (const [mode, btn] of pluginViewButtons()) {

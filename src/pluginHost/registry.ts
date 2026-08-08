@@ -18,25 +18,17 @@
 
 import type { CustomFieldDef, TimelineFile } from '../types';
 import { pluginViewMode, type PluginViewMode } from './viewMode';
+import { validateManifest, type ManifestView, type PluginManifest } from './manifest';
 import { PRODUCT_ROADMAP_PLUGIN } from '../plugins/product-roadmap/plugin';
+import { productRoadmapManifest } from '../plugins/product-roadmap/manifest';
 import { productRoadmapFields } from '../plugins/product-roadmap/fields';
 import { hasPlugin } from './plugins';
 
-/** One view a plugin adds to the header's mode toggle. */
-export interface PluginView {
-  /** Unique within the plugin. Part of the addressable mode id and the DOM id. */
-  id: string;
-  /** Button title/aria-label, and the section's accessible name. */
-  label: string;
-  /** Inline SVG markup for the toggle button. Rendered as-is into the button. */
-  icon: string;
-  /**
-   * Whether the shared grouping/filter toolbar applies to this view. Off by
-   * default: a plugin view that is not a rendering of the item list has nothing
-   * to group, and leaving the toolbar up implies otherwise.
-   */
-  toolbar?: boolean;
-}
+/**
+ * One view a plugin adds to the header's mode toggle. Declared in the manifest,
+ * so the host has it before any plugin code runs.
+ */
+export type PluginView = ManifestView;
 
 /** The lazily-loaded surface a plugin exposes to the host. */
 export interface PluginModule {
@@ -48,9 +40,12 @@ export interface PluginModule {
 }
 
 export interface PluginDescriptor {
-  id: string;
-  /** Display name — the item form's section heading for this plugin's fields. */
-  label: string;
+  /**
+   * What the plugin declares about itself: id, display name, views, capabilities
+   * and (for #12/#20) its data. The single source for all of it — the descriptor
+   * adds only the parts that are code rather than data.
+   */
+  manifest: PluginManifest;
   /**
    * Cheap predicate — decides view *availability*. May demand enough data to make
    * the view worth showing. No plugin view imports.
@@ -66,14 +61,6 @@ export interface PluginDescriptor {
    * decides whether the user *stays* in a view.
    */
   applies?(file: TimelineFile | null | undefined): boolean;
-  /** Views this plugin contributes beyond the built-in timeline / list. */
-  views: PluginView[];
-  /**
-   * Bare mode ids this plugin's views used to answer to, before view modes were
-   * addressable. Read once when a stored or linked mode is resolved, so old
-   * localStorage values and shared deep links keep working; see readViewMode.
-   */
-  legacyModeIds?: Record<string, string>;
   /**
    * Postgres tables the plugin owns, for the realtime subscription. Data-only, so
    * naming them here costs the core no import. Goes away with the generic store
@@ -93,16 +80,34 @@ export interface PluginDescriptor {
 
 const PLUGINS: PluginDescriptor[] = [];
 
-/** Register a plugin. The seam a runtime loader will call (#9). */
+/**
+ * Register a plugin. The seam a runtime loader will call (#9).
+ *
+ * A manifest that does not validate is **refused**, loudly. A plugin running with
+ * a declaration the host silently ignored is the failure mode this check exists
+ * for: it then behaves as if it had access it was never granted, and the symptom
+ * shows up far from the cause.
+ */
 export function register(descriptor: PluginDescriptor): void {
-  const idx = PLUGINS.findIndex((p) => p.id === descriptor.id);
+  const result = validateManifest(descriptor.manifest);
+  if (!result.ok) {
+    throw new Error(
+      `plugin "${(descriptor.manifest as { id?: string })?.id ?? '?'}" has an invalid manifest:\n` +
+        result.problems.map((p) => `  - ${p}`).join('\n'),
+    );
+  }
+  const idx = PLUGINS.findIndex((p) => p.manifest.id === descriptor.manifest.id);
   if (idx >= 0) PLUGINS[idx] = descriptor;
   else PLUGINS.push(descriptor);
 }
 
+/** Views a plugin declares, or none. */
+export function pluginViews(plugin: PluginDescriptor): PluginView[] {
+  return plugin.manifest.views ?? [];
+}
+
 register({
-  id: PRODUCT_ROADMAP_PLUGIN,
-  label: 'Produkt',
+  manifest: productRoadmapManifest,
   // Enabled by the product-roadmap plugin registration (a data row), plus a
   // populated pricing model. Still a cheap sync check that pulls in no pricing
   // code, so the generic bundle never reaches the plugin's chunk.
@@ -110,20 +115,7 @@ register({
     hasPlugin(f, PRODUCT_ROADMAP_PLUGIN) &&
     !!f?.pricing &&
     (f.pricing.tiers.length > 0 || f.pricing.features.length > 0),
-  views: [
-    {
-      id: 'pricing',
-      label: 'Preise',
-      icon:
-        '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-        '<rect x="3" y="4" width="18" height="16" rx="2" />' +
-        '<line x1="3" y1="9" x2="21" y2="9" />' +
-        '<line x1="11" y1="9" x2="11" y2="20" />' +
-        '</svg>',
-    },
-  ],
   applies: (f) => hasPlugin(f, PRODUCT_ROADMAP_PLUGIN),
-  legacyModeIds: { pricing: 'pricing' },
   realtimeTables: ['pricing_features', 'pricing_tiers', 'pricing_tier_values', 'pricing_highlights'],
   fields: productRoadmapFields,
   load: () => import('../plugins/product-roadmap/index'),
@@ -145,7 +137,7 @@ export function activePlugins(file: TimelineFile | null | undefined): PluginDesc
 
 /** Is the plugin behind this mode enabled on the timeline at all? */
 export function pluginAppliesTo(file: TimelineFile | null | undefined, pluginId: string): boolean {
-  const plugin = PLUGINS.find((p) => p.id === pluginId);
+  const plugin = PLUGINS.find((p) => p.manifest.id === pluginId);
   if (!plugin) return false;
   return plugin.applies ? plugin.applies(file) : plugin.matches(file);
 }
@@ -156,8 +148,8 @@ export function resolveViewMode(
   pluginId: string,
   viewId: string,
 ): { plugin: PluginDescriptor; view: PluginView } | null {
-  const plugin = activePlugins(file).find((p) => p.id === pluginId);
-  const view = plugin?.views.find((v) => v.id === viewId);
+  const plugin = activePlugins(file).find((p) => p.manifest.id === pluginId);
+  const view = pluginViews(plugin ?? ({ manifest: {} } as PluginDescriptor)).find((v) => v.id === viewId);
   return plugin && view ? { plugin, view } : null;
 }
 
@@ -168,8 +160,8 @@ export function resolveViewMode(
  */
 export function legacyViewMode(legacyId: string): PluginViewMode | null {
   for (const plugin of PLUGINS) {
-    const viewId = plugin.legacyModeIds?.[legacyId];
-    if (viewId) return pluginViewMode(plugin.id, viewId);
+    const viewId = plugin.manifest.legacyModeIds?.[legacyId];
+    if (viewId) return pluginViewMode(plugin.manifest.id, viewId);
   }
   return null;
 }
@@ -192,7 +184,7 @@ export function pluginFieldDefs(file: TimelineFile | null | undefined): CustomFi
   const out: CustomFieldDef[] = [];
   for (const plugin of PLUGINS) {
     for (const def of plugin.fields(file)) {
-      out.push(def.group ? def : { ...def, group: plugin.label });
+      out.push(def.group ? def : { ...def, group: plugin.manifest.name });
     }
   }
   return out;
@@ -223,10 +215,10 @@ const loaded = new Map<string, PluginModule>();
 
 /** Import (and cache) a plugin's module. Call before rendering its view. */
 export async function ensurePluginLoaded(desc: PluginDescriptor): Promise<PluginModule> {
-  const cached = loaded.get(desc.id);
+  const cached = loaded.get(desc.manifest.id);
   if (cached) return cached;
   const mod = await desc.load();
-  loaded.set(desc.id, mod);
+  loaded.set(desc.manifest.id, mod);
   return mod;
 }
 
