@@ -10,34 +10,34 @@
   "views": [
     {
       "id": "all",
-      "name": "Alle Notizen",
-      "description": "Alle Notizen mit erkennbarem Datum",
+      "name": "All notes",
+      "description": "Every note with a resolvable date",
       "filter": {},
       "groupBy": "categories[0]"
     },
     {
-      "id": "kurzbeitraege",
-      "name": "Kurzbeiträge",
-      "description": "LinkedIn-Kurzbeiträge nach Veröffentlichungsdatum",
+      "id": "by-filename",
+      "name": "Filename match",
+      "description": "Notes whose filename contains a marker — swap the marker for your own",
       "filter": {
-        "filenameContains": "Kurzbeitrag"
+        "filenameContains": "meeting"
       },
       "dateFields": ["scheduled", "date", "created"],
       "groupBy": "status"
     },
     {
-      "id": "trends",
-      "name": "Trends",
-      "description": "Notizen mit Kategorie Trends",
+      "id": "by-category",
+      "name": "One category",
+      "description": "Notes carrying a given frontmatter category",
       "filter": {
-        "categories": ["Trends"]
+        "categories": ["research"]
       },
-      "groupBy": "trends[0]"
+      "groupBy": "categories[0]"
     },
     {
       "id": "drafts",
       "name": "Drafts",
-      "description": "Notizen mit status: open oder draft: true",
+      "description": "Notes with status: open, or draft: true",
       "filter": {
         "anyOf": [
           { "status": ["open"] },

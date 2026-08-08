@@ -103,4 +103,7 @@ change does, and mention how you verified it. Screenshots help for anything
 visual, since much of this project is rendering behaviour that tests cannot
 capture.
 
+By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md), which
+fits on one screen.
+
 Issues and questions: <https://github.com/dermellor/ganttry/issues>.

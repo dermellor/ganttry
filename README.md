@@ -160,7 +160,8 @@ extension seams and conventions. Read it before larger changes and keep it in
 sync when behaviour changes.
 
 Security reports go through a private advisory, not a public issue: see
-[`SECURITY.md`](SECURITY.md).
+[`SECURITY.md`](SECURITY.md). Participation is covered by the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
