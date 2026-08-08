@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vite';
 import { resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { envSourcesHint, envValue, hydrateProcessEnv } from './scripts/db/env';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
 import { getSql, getSqlForSource } from './scripts/db/sql';
@@ -169,6 +170,40 @@ function timelinesApi(): Plugin {
           caller: { email: devIdentity(req).email },
         });
         send(res, result.status, result.json);
+      });
+
+      // GET /<data dir>/config.json — the built viewer config, with one field
+      // corrected for THIS runtime: local sources are editable here, because
+      // this process has a filesystem and serves /api/source/<id> writes.
+      //
+      // The path is derived from DATA_DIR rather than hardcoded to `/data`,
+      // because it is per-instance (`public/data-<instance>/`) and the client
+      // asks for the matching prefix. Hardcoding it means the override silently
+      // never fires on any instance that sets TIMELINES_DATA_DIR, and its local
+      // sources stay read-only for no visible reason.
+      //
+      // The build stamps `editable: false` (right for a static deploy) and the
+      // runtime that can do better says so, exactly as the DB adapter declares
+      // its own `live` mode through X-Source-Live. That is a server stating its
+      // capability, not the client probing for one — the client still routes on
+      // a single value it is given, so there is no „try the API, fall back to
+      // the file" guess (AGENTS.md → „No fallback data, ever").
+      //
+      // Doing it here rather than at build time is what survives `npm run build`
+      // being run in the same checkout: both commands write the same config
+      // file, so a build would otherwise turn the running dev server read-only
+      // without a word.
+      server.middlewares.use(`/${DATA_DIR}/config.json`, async (req, res, next) => {
+        if (req.method !== 'GET') return next();
+        try {
+          const built = JSON.parse(await readFile(resolve(__dirname, 'public', DATA_DIR, 'config.json'), 'utf8'));
+          for (const view of built.views ?? []) {
+            if (view?.source?.kind === 'local') view.source.editable = true;
+          }
+          send(res, 200, built);
+        } catch {
+          next(); // not built yet — let the static handler produce its own 404
+        }
       });
 
       // GET /api/sources — list timelines

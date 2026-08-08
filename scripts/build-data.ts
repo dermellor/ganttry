@@ -177,18 +177,21 @@ function unitToMs(unit: string): number {
 const STATIC_ONLY = /^(1|true|yes)$/i.test(envValue('TIMELINES_STATIC_ONLY'));
 
 /**
- * Are local file sources editable in the runtime this build is for?
+ * Local sources are stamped NOT editable here, and the dev server overrides that
+ * for its own responses (see the `/data/config.json` middleware in
+ * `vite.config.ts`).
  *
- * Only a dev server has a process with filesystem access behind `/api/source`;
- * `vite build` produces a static `dist/` that is served by a CDN, where no such
- * process exists. So the answer is fixed at build time and stamped into each
- * view's source descriptor, which is what lets the client route without probing
- * (see „Capabilities are stamped at build time" in docs/local-sources.md).
+ * The obvious alternative — an env var like TIMELINES_DEV set by the `dev`
+ * script — was tried and is a trap: `npm run dev` and `npm run build` write the
+ * SAME `public/<data dir>/config.json`, so running a build once flips the
+ * running dev server to read-only, silently, until someone restarts it. Nothing
+ * in the interface explains that, and it looks like the feature broke.
  *
- * `npm run dev` sets TIMELINES_DEV=1 through the dev script; anything else,
- * including a plain `npm run build`, is a static build.
+ * Not editable is also the right default on its own terms: it is what a static
+ * deploy is, and it is the answer that cannot cause a write to be attempted
+ * against something that cannot take one.
  */
-const LOCAL_EDITABLE = /^(1|true|yes)$/i.test(process.env.TIMELINES_DEV ?? '');
+const LOCAL_EDITABLE = false;
 
 // Discover DB-backed timelines from the DB at build time and register them as
 // views. The registration stub (name/description/groupBy + empty items —

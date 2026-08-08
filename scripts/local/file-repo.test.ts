@@ -110,6 +110,35 @@ describe('makeFileRepo: writes', () => {
     assert.equal(item.group, 'g1');
   });
 
+  test('a full patch does not litter the file with nulls', async () => {
+    await seed('null-1');
+    const repo = makeFileRepo(dirs);
+    // The shape the viewer actually sends: every field, unset ones as null.
+    await repo.updateItem('null-1', 'a', {
+      content: 'Erstes',
+      start: '2026-01-01',
+      end: '2026-03-15',
+      duration: null,
+      type: null,
+      className: null,
+      metadata: null,
+    } as any);
+    const item = (await raw('null-1')).items.find((i) => i.id === 'a')!;
+    assert.equal(item.end, '2026-03-15');
+    for (const key of ['duration', 'type', 'className', 'metadata']) {
+      assert.ok(!(key in item), `„${key}" must be absent, not null — a null fails the JSON Schema`);
+    }
+  });
+
+  test('a null clears a field that had a value', async () => {
+    await seed('null-2', { items: [{ id: 'a', content: 'X', start: '2026-01-01', duration: '3w' }] });
+    const repo = makeFileRepo(dirs);
+    await repo.updateItem('null-2', 'a', { duration: null } as any);
+    const item = (await raw('null-2')).items.find((i) => i.id === 'a')!;
+    assert.ok(!('duration' in item), 'clearing a field removes its key');
+    assert.equal(item.content, 'X', 'the rest survives');
+  });
+
   test('updateItem on an unknown item is a 404, not a silent no-op', async () => {
     await seed('patch-2');
     await assert.rejects(() => makeFileRepo(dirs).updateItem('patch-2', 'ghost', { content: 'x' }), NotFoundError);

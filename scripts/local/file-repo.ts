@@ -15,7 +15,7 @@
 // place" (AGENTS.md) is what that would have broken.
 
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rename, stat, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 
 import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
@@ -74,9 +74,36 @@ function idFor(dirs: FileRepoDirs, path: string): string {
   return rel.slice(0, -extname(rel).length);
 }
 
-/** mtime in whole milliseconds: the stand-in for the DB's per-row version. */
-function versionOf(mtimeMs: number): number {
-  return Math.floor(mtimeMs);
+/**
+ * The stand-in for the DB's per-row version: the file's mtime in whole
+ * milliseconds, raised to stay strictly increasing across writes.
+ *
+ * mtime alone is not enough. Two writes inside one millisecond report the same
+ * value, and then a client holding the first version passes an `If-Match` that
+ * should have failed — it overwrites a change it never saw. This is not
+ * hypothetical: the repo's own tests hit it on the first run.
+ *
+ * So each issued version is remembered per path and the next one is forced past
+ * it. Nudging the file's mtime instead (via `utimes`) was tried first and is the
+ * more fragile mechanism: it depends on the filesystem storing what it is given,
+ * and it fights whatever else writes the file.
+ *
+ * The state is per process, which is the right scope: it exists to order OUR
+ * writes. A restart falls back to the plain mtime, and clients reload anyway.
+ * The one case it cannot see is an external write landing at an mtime below a
+ * version we already issued — possible only within the few milliseconds we ever
+ * run ahead of the clock.
+ */
+const issued = new Map<string, number>();
+
+function versionOf(path: string, mtimeMs: number): number {
+  return Math.max(Math.floor(mtimeMs), issued.get(path) ?? 0);
+}
+
+function nextVersion(path: string, mtimeMs: number, previous: number): number {
+  const version = Math.max(Math.floor(mtimeMs), previous + 1);
+  issued.set(path, version);
+  return version;
 }
 
 async function load(dirs: FileRepoDirs, id: string): Promise<Loaded> {
@@ -102,44 +129,43 @@ async function load(dirs: FileRepoDirs, id: string): Promise<Loaded> {
   if (!file || typeof file !== 'object' || !Array.isArray(file.items)) {
     throw new ValidationError(`„${id}" has no "items" array`);
   }
-  return { file, version: versionOf(mtimeMs), path };
+  return { file, version: versionOf(path, mtimeMs), path };
 }
 
 /**
- * Write the document back and return the new version.
+ * Drop keys that carry no value.
  *
- * Atomic (temp file + rename) because a truncated write loses the user's data
- * outright: this file is the source of truth, and there is no second copy to
- * recover it from („Principle: no emergency or fallback data").
+ * The viewer always sends a FULL item patch (`buildItemPatch`), so every field
+ * the user left empty arrives as an explicit `null`. A column takes that as
+ * NULL and nothing shows; a JSON file would keep it verbatim, and the file then
+ * carries `"duration": null, "type": null, "metadata": null` — noise in a
+ * hand-written file, and invalid against `schema/timeline.schema.json`, whose
+ * `duration` is string|number. The file's own way of saying „unset" is the
+ * absent key, so that is what a null becomes here.
  *
- * Server-managed fields are stripped rather than persisted. `version` above all:
- * it is derived from mtime, so writing it would bake in a number that is stale
- * the instant the write completes, and a later reader would trust it.
+ * Only the item's own keys are considered. `metadata` is the user's object and
+ * its contents are none of our business.
  */
+function withoutEmpty<T extends Record<string, unknown>>(obj: T): T {
+  const out = {} as Record<string, unknown>;
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== null && value !== undefined) out[key] = value;
+  }
+  return out as T;
+}
+
 async function save(loaded: Loaded, file: TimelineFile): Promise<number> {
   const clean: TimelineFile = {
     ...file,
-    items: file.items.map(({ version, ...rest }) => rest),
+    items: file.items.map(({ version, ...rest }) => withoutEmpty(rest)),
   };
   const tmp = `${loaded.path}.${process.pid}.tmp`;
   await mkdir(dirname(loaded.path), { recursive: true });
   await writeFile(tmp, `${JSON.stringify(clean, null, 2)}\n`, 'utf8');
   await rename(tmp, loaded.path);
 
-  // Force the version to move, even when the write lands in the same
-  // millisecond as the read. Without this, two edits inside one millisecond
-  // share a version, and a client still holding the first one passes the
-  // If-Match check it should have failed — it then overwrites a change it never
-  // saw. Millisecond collisions are not hypothetical: the repo's own tests hit
-  // one on the first run, seeding and writing within the same tick.
   const st = await stat(loaded.path);
-  let version = versionOf(st.mtimeMs);
-  if (version <= loaded.version) {
-    version = loaded.version + 1;
-    const stamp = new Date(version);
-    await utimes(loaded.path, stamp, stamp);
-  }
-  return version;
+  return nextVersion(loaded.path, st.mtimeMs, loaded.version);
 }
 
 /**
@@ -311,9 +337,12 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       // `updateItem` reads the stored counterpart in the DB drivers.
       assertExtent(merged);
       const items = [...loaded.file.items];
-      items[idx] = merged;
+      // A null in the patch clears the field, and clearing a field in a file
+      // means removing the key. Stripping here (not only on the way to disk)
+      // keeps what the client gets back identical to what was stored.
+      items[idx] = withoutEmpty(merged);
       const version = await save(loaded, { ...loaded.file, items });
-      return { ...merged, version };
+      return { ...items[idx], version };
     },
 
     async getItem(id: string, itemId: string): Promise<TimelineFileItem | null> {
