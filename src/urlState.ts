@@ -1,3 +1,5 @@
+import { parseLocalDay } from './date';
+
 export type UrlState = {
   view?: string;
   item?: string;
@@ -32,6 +34,34 @@ export function readUrlState(): UrlState {
   const mode = p.get('mode');
   if (mode) state.mode = mode;
   return state;
+}
+
+/**
+ * The `from`/`to` pair as a timeline window, or null when it is absent or
+ * unparseable.
+ *
+ * Goes through `parseLocalDay` rather than `new Date`, because the hash carries
+ * the same "YYYY-MM-DD" calendar day everything else stores (syncUrl writes it
+ * with `isoDateOnly`) and a bare day string parses as **UTC** midnight in the
+ * native constructor. That opened a deep-linked window one timezone offset off
+ * the local-midnight days vis-timeline places items on. The error does not
+ * accumulate over a share → open → share loop (the write side collapses back to a
+ * calendar day), and on a months-wide window it is invisible; what it does do is
+ * contradict the single convention `src/date.ts` exists to hold, which is how a
+ * zoomed-in window ends up a day off its items.
+ *
+ * Both entry points (bootstrap and the hashchange handler) read the window here
+ * so the rule cannot be fixed in one of them and left broken in the other, which
+ * is how it got two copies in the first place. Anything carrying a time
+ * component still falls through to the native constructor, so a link shared with
+ * a full ISO timestamp keeps resolving to the same instant it always did.
+ */
+export function parseUrlWindow(state: UrlState): { start: Date; end: Date } | null {
+  if (!state.from || !state.to) return null;
+  const start = parseLocalDay(state.from);
+  const end = parseLocalDay(state.to);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return { start, end };
 }
 
 function buildHash(state: UrlState): string {

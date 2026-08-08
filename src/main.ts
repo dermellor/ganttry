@@ -8,6 +8,7 @@ import { escapeHtml } from './buildItems';
 import type { Config, NotesData } from './types';
 import {
   onExternalUrlStateChange,
+  parseUrlWindow,
   readUrlState,
   type UrlState,
 } from './urlState';
@@ -278,13 +279,7 @@ async function bootstrap() {
   setupFilterControl();
 
   state.pendingItem = urlState.item ?? null;
-  if (urlState.from && urlState.to) {
-    const startD = new Date(urlState.from);
-    const endD = new Date(urlState.to);
-    if (!Number.isNaN(startD.getTime()) && !Number.isNaN(endD.getTime())) {
-      state.pendingWindow = { start: startD, end: endD };
-    }
-  }
+  state.pendingWindow = parseUrlWindow(urlState);
 
   state.suppressUrlSync = true;
   await applyView(initialView);
@@ -371,15 +366,7 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
     const wantMode: ViewMode = readViewMode(incoming.mode, legacyViewMode);
 
     const targetViewId = incoming.view ?? state.config.defaultView;
-    const targetWindow = incoming.from && incoming.to
-      ? (() => {
-          const s = new Date(incoming.from!);
-          const e = new Date(incoming.to!);
-          return !Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime())
-            ? { start: s, end: e }
-            : null;
-        })()
-      : null;
+    const targetWindow = parseUrlWindow(incoming);
 
     if (state.activeView?.id !== targetViewId) {
       state.pendingItem = incoming.item ?? null;

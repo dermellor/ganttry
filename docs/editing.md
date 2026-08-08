@@ -554,3 +554,10 @@ back/forward navigation works. Format:
 Only non-default values are written (`mode` only when `list`). Switching views
 via the dropdown clears `item` and `from`/`to`. Hash changes from outside the
 app (paste, back/forward) re-apply state without reload.
+
+`from`/`to` are calendar days like every other date the app stores, so they are
+read as **local** midnight — via `parseUrlWindow`, which both the initial load and
+the hashchange handler go through so the rule keeps living in one place. `new Date`
+would read a bare day as UTC midnight and open the window a timezone offset away
+from the days vis-timeline places items on. A value carrying a time component is
+still accepted and resolves to that instant, which keeps older shared links valid.
