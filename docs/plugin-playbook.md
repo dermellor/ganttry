@@ -9,7 +9,7 @@ The phases are ordered on purpose and each one has an exit condition. Skipping
 phase 1 is the one that costs the most later, because the vocabulary it produces
 ends up in `metadata` keys, and those are expensive to rename once items carry them.
 
-Copy [`src/kinds/_template/`](../src/kinds/_template/) to start. The template
+Copy [`src/plugins/_template/`](../src/plugins/_template/) to start. The template
 carries the file layout this playbook assumes.
 
 ---
@@ -129,7 +129,7 @@ Files, all inside the plugin's own folder:
 | `AGENTS.md` | conventions for changing **this** plugin |
 
 Registration is one entry in the registry
-([`src/kinds/registry.ts`](../src/kinds/registry.ts)). That entry has to stay cheap
+([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)). That entry has to stay cheap
 and synchronous: `matches` and `fields` may import types and the plugin helper and
 nothing else, or the plugin's code lands in the generic bundle and the lazy split is
 gone.

@@ -170,7 +170,7 @@ async function saveCell(
 ): Promise<void> {
   // Imported lazily to keep the module graph acyclic: pricingMatrix.ts owns the
   // cell click that opens this editor.
-  const { renderPricingView } = await import('./pricingMatrix');
+  const { repaintPricingView } = await import('./pricingMatrix');
   try {
     await apiSetTierValue(sourceId, tier.id, featureId, value, availableFrom);
   } catch (err) {
@@ -195,6 +195,6 @@ async function saveCell(
     }
   }
 
-  renderPricingView();
+  repaintPricingView();
   setStatus(value === null ? 'Zelle geleert' : 'Zelle gespeichert');
 }

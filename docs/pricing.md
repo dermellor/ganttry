@@ -9,8 +9,8 @@ its file when it lives in another chapter.
 ## Pricing
 
 > The pricing model's **client** code (matrix, cards, matrix editors) lives as a
-> timeline kind under [`src/kinds/product-roadmap/`](../src/kinds/product-roadmap/)
-> and is lazily loaded (see „Timeline kinds" (docs/architecture.md)). The server side (tables,
+> timeline kind under [`src/plugins/product-roadmap/`](../src/plugins/product-roadmap/)
+> and is lazily loaded (see „Plugins" (docs/architecture.md)). The server side (tables,
 > `assemblePricing`, `pricing-api`, MCP tools) is as described below.
 
 The pricing model (tiers + features, product-roadmap timelines only) is the single
@@ -74,7 +74,7 @@ dump, so concurrent edits in different places do not collide.
 A few decisions that are not obvious:
 
 - **A cell gets a popover, not a click cycle**
-  ([`src/kinds/product-roadmap/cellEditor.ts`](../src/kinds/product-roadmap/cellEditor.ts)).
+  ([`src/plugins/product-roadmap/cellEditor.ts`](../src/plugins/product-roadmap/cellEditor.ts)).
   A cell carries two dimensions (`value` and availability from a version) and the
   value itself has three shapes (`true` / free text / empty). Cycling through
   clicks cannot express that. „Wert" with empty text deliberately saves as *empty*:
@@ -95,7 +95,7 @@ A few decisions that are not obvious:
   tooltip): the table wrapper carries `overflow-x`, which clips `overflow-y` as
   well, so an embedded layer would be cut off at the row's edge.
 - **New ids are slugs of the name** (`slugId` in
-  [`pricing.ts`](../src/kinds/product-roadmap/pricing.ts), transliterating umlauts and
+  [`pricing.ts`](../src/plugins/product-roadmap/pricing.ts), transliterating umlauts and
   adding a counter suffix on collision), which keeps the model readable in SQL and
   in MCP output.
 
@@ -123,7 +123,7 @@ Shape (assembled):
     `description`. Unlike `nameByVersion` these are **additive**, not overrides: the
     base `description` stays and each note appears as its own line, „ab
     \<version\>: …", in version order — `resolveFeatureDescription`
-    ([`src/pricing.ts`](../src/kinds/product-roadmap/pricing.ts)). It shows as a matrix tooltip behind an
+    ([`src/pricing.ts`](../src/plugins/product-roadmap/pricing.ts)). It shows as a matrix tooltip behind an
     **info icon**, and is editable in the feature form via „+ Versionsbeschreibung".
   - `rowVersion` is the server-managed lock counter: do not edit it, and it is
     stripped from the public output.
@@ -134,7 +134,7 @@ Shape (assembled):
   `pricing_tier_values.available_from`) is the optional **cell availability from a
   version**: the cell only counts as included from that label on and shows „–"
   before it (cumulative, `cellActiveForVersion` in
-  [`src/pricing.ts`](../src/kinds/product-roadmap/pricing.ts)). `values` remains the end state and the map
+  [`src/pricing.ts`](../src/plugins/product-roadmap/pricing.ts)). `values` remains the end state and the map
   only gates *when* it appears (a sibling of `values`, additive). Under „Alle" the
   matrix shows the end state plus a subtle „ab \<version\>" chip in the cell; with a
   pinned version, the cell appearing or showing „–" carries that information by
@@ -172,12 +172,12 @@ express „feature X is in Enterprise right away, in Scale only from v4" without
 gating the entire feature row.
 
 - **Resolution** — `cellActiveForVersion(availableFrom, versions, selected)` in
-  [`src/pricing.ts`](../src/kinds/product-roadmap/pricing.ts), cumulative and shaped like
+  [`src/pricing.ts`](../src/plugins/product-roadmap/pricing.ts), cumulative and shaped like
   `featureVisibleForVersion`: under „Alle" it is always active; with no
   `availableFrom` it is active from the start; otherwise it becomes active as soon
   as the pinned version is ≥ `availableFrom`. Before that version the cell renders
   as „–", while the stored `value` stays the end state.
-- **Matrix** ([`src/kinds/product-roadmap/pricingMatrix.ts`](../src/kinds/product-roadmap/pricingMatrix.ts)):
+- **Matrix** ([`src/plugins/product-roadmap/pricingMatrix.ts`](../src/plugins/product-roadmap/pricingMatrix.ts)):
   pinned → the cell either appears or shows „–", which carries the information
   itself; „Alle" → the end state plus a subtle „ab \<version\>" chip
   (`.pm-cell-ver`) in the cell.
@@ -188,8 +188,8 @@ gating the entire feature row.
 - **Writing** — `set_tier_value(..., availableFrom)` via MCP, or
   `PUT …/tier-value {availableFrom}`. Deleting the cell removes the gate with it.
   The round-trip is tested in
-  [`src/pricingNormalize.test.ts`](../src/kinds/product-roadmap/pricingNormalize.test.ts) and the gating
-  logic in [`src/pricing.test.ts`](../src/kinds/product-roadmap/pricing.test.ts).
+  [`src/pricingNormalize.test.ts`](../src/plugins/product-roadmap/pricingNormalize.test.ts) and the gating
+  logic in [`src/pricing.test.ts`](../src/plugins/product-roadmap/pricing.test.ts).
 
 ## Open extensions: pricing model / cards
 

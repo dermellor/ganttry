@@ -53,61 +53,85 @@ the driver. The adapter's `capabilities` declare `editable` and a `live` mode
 without touching the middleware/edge glue. File sources are static and never
 reach this seam.
 
-### Timeline kinds (`src/kinds/`)
+### Plugins (`src/pluginHost/`, `src/plugins/<id>/`)
 
-A **timeline kind** is the *orthogonal* axis to source kinds: it's the timeline's
-*flavour* (what extra views/renderers and extra item fields it carries), not where
-its data comes from. The generic timeline+list core knows nothing kind-specific; a
-kind plugs into a registration seam ([`src/kinds/registry.ts`](../src/kinds/registry.ts)):
+A **plugin** is the *orthogonal* axis to source kinds: it decides what a timeline
+carries beyond items and groups (extra item fields, and optionally extra views),
+not where its data comes from. The generic timeline+list core knows nothing
+plugin-specific; a plugin plugs into a registration seam
+([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)).
 
-- **`generic`** — the default: just timeline + list, no extra code.
-- **`product-roadmap`** — the pricing matrix/cards plus the matrix's own editors,
-  living entirely under [`src/kinds/product-roadmap/`](../src/kinds/product-roadmap/)
-  (`pricing.ts`, `pricingCards.ts`, `pricingMatrix.ts`, `pricingWork.ts`,
-  `featureForm.ts`, `tierForm.ts`, `cellEditor.ts`, `popover.ts`, `fields.ts`,
-  `index.ts`).
+The split in the file tree says which half is which. `src/pluginHost/` is core and
+permanent: the registry, the view-mode encoding, the DOM a plugin view gets.
+`src/plugins/<id>/` holds the plugins themselves, in-tree only for as long as they
+have to be — when one moves out to its own repository, nothing in `pluginHost/`
+notices. Today one plugin lives there, `product-roadmap` (the pricing matrix and
+cards, its editors, its fields and its stylesheet). A timeline with no plugin is
+just timeline + list.
 
-A `KindDescriptor` exposes a cheap synchronous `matches(file)` predicate, a
-`label` (its display name), the extra `viewModes` it adds and the extra item
-`fields(file)` it contributes, plus a **`load()` that is a dynamic `import()`**.
-The core (`main.ts`, `render.ts`) only ever touches the descriptor's data
-(`activeKind`, `ensureKindLoaded`, `loadedKindView`) — it has **no static import
-of any pricing *view* module**, so Rollup code-splits the kind into its own chunk
-and a **generic build downloads no pricing code** (the acceptance check: the entry
-chunk referenced by `dist/index.html` contains no `pm-cell-ver`/pricing strings;
-they live only in the lazily-loaded chunk). The chunk loads only when a product
-timeline enters the pricing view.
+A `PluginDescriptor` exposes a cheap synchronous `matches(file)` predicate, a
+`label` (its display name), the `views` it declares, the item `fields(file)` it
+contributes, and a **`load()` that is a dynamic `import()`**. The core
+(`main.ts`, `render.ts`) only ever touches the descriptor's data, so it has **no
+static import of any plugin *view* module**: Rollup code-splits each plugin into
+its own chunk, and a generic build downloads none of it. The plugin imports its own
+CSS inside that chunk, so a deploy without the plugin ships neither its code nor its
+stylesheet. Both halves are asserted by
+[`scripts/ci/check-bundle-split.sh`](../scripts/ci/check-bundle-split.sh).
 
-**Kinds contribute item fields** through `fields(file)` — synchronous,
+**A plugin declares its views; the host builds the chrome.** `PluginView` carries
+an id, a label and the icon markup for the header toggle. The host creates one
+button and one `.plugin-view` section per declared view
+([`src/pluginHost/views.ts`](../src/pluginHost/views.ts)) and hands the section to
+`renderView(container, viewId)`. Nothing plugin-shaped is in `index.html`, which is
+what makes a second view possible without touching the core.
+
+**A view is addressable.** `ViewMode` is `timeline`, `list`, or
+`plugin:<pluginId>:<viewId>`, and that one scalar is what `state.viewMode`, the
+`?mode=` hash parameter and the persisted `timelines.viewMode` key all carry
+([`src/pluginHost/viewMode.ts`](../src/pluginHost/viewMode.ts)). Modes from before
+plugin views were addressable (`mode=pricing`) resolve through the descriptor's
+`legacyModeIds`, so old deep links and every user's stored preference keep working;
+dropping that mapping would silently reset both.
+
+**`matches` and `applies` are deliberately different questions.** `matches` decides
+whether a view is *offered* and may demand a populated model; `applies` decides
+whether the user *stays* in a view and only asks whether the plugin is enabled. A
+DB-backed source assembles its plugin model a tick after the first paint, so
+deciding both with `matches` kicked a restored view back to the timeline on every
+load.
+
+**Plugins contribute item fields** through `fields(file)` — synchronous,
 data-derived `CustomFieldDef[]`, gated internally on the plugin being enabled and
-therefore independent of `matches` (which additionally demands a populated pricing
-model before offering the *view*). `pluginFieldDefs(file)` collects every enabled
-kind's fields and stamps each with the kind's `label` as its `group`, which is
+therefore independent of `matches`. `pluginFieldDefs(file)` collects every enabled
+plugin's fields and stamps each with the plugin's `label` as its `group`, which is
 what sections them under a plugin heading in the item form (see „Custom fields →
 Plugin-contributed fields"). The product-roadmap implementation lives in
-[`src/kinds/product-roadmap/fields.ts`](../src/kinds/product-roadmap/fields.ts): it
-imports only `types` + `plugins`, so it is statically importable from the registry
-**without** adding an edge into the pricing chunk — the acceptance check above
-still passes. `customFields.ts` reads plugin fields through that one seam and
-knows no plugin ids.
+[`src/plugins/product-roadmap/fields.ts`](../src/plugins/product-roadmap/fields.ts):
+it imports only types plus the plugin helper, so it is statically importable from
+the registry **without** adding an edge into the plugin's chunk. `customFields.ts`
+reads plugin fields through that one seam and knows no plugin ids.
 
-Adding a third kind is a new `KINDS[]` entry + a `src/kinds/<name>/` folder — no
-core-file change.
+Adding a plugin is a `register()` call plus a `src/plugins/<id>/` folder, and no
+core-file change. The step-by-step is
+[`docs/plugin-playbook.md`](plugin-playbook.md); the endgame, where a plugin is
+installed at runtime instead of registered at build time, is
+<https://github.com/dermellor/ganttry/issues/9>.
 
-**Enablement is pure data (the plugin registry).** Which kind a timeline carries
-is **not** a column on a core table. It lives in the generic `timeline_plugins`
-table (one row per `(timeline_id, plugin_id)` + a `config` jsonb bag; see „Schema" (docs/database.md)
-→ `timeline_plugins`), surfaced to the client as `TimelineFile.plugins`
-(`PluginRef[]`). So enabling a plugin on a timeline is an INSERT, never an
-`ALTER TABLE`. The single place that knows plugin ids and reads/writes this off a
-file is [`src/plugins.ts`](../src/plugins.ts) (`PRODUCT_ROADMAP_PLUGIN`, `hasPlugin`,
-`pluginConfig`, `versionsFromConfig`, `resolveWritePlugins`); client gates
-(`kinds/registry.ts` `matches`, `customFields.ts`) and both DB drivers import from
-there instead of testing a `type === 'product'` literal. A populated `file.pricing`
+**Enablement is pure data (the plugin registry table).** Which plugins a timeline
+carries is **not** a column on a core table. It lives in the generic
+`timeline_plugins` table (one row per `(timeline_id, plugin_id)` + a `config` jsonb
+bag; see „Schema" (docs/database.md) → `timeline_plugins`), surfaced to the client as
+`TimelineFile.plugins` (`PluginRef[]`). So enabling a plugin on a timeline is an
+INSERT, never an `ALTER TABLE`. How enablement is read off a file lives in
+[`src/pluginHost/plugins.ts`](../src/pluginHost/plugins.ts) (`hasPlugin`,
+`pluginConfig`), which knows no plugin ids; a plugin's own ids, metadata keys and
+write rules live with the plugin (for product-roadmap:
+[`src/plugins/product-roadmap/plugin.ts`](../src/plugins/product-roadmap/plugin.ts),
+imported by the client gates and by both DB drivers). A populated `file.pricing`
 auto-enables `product-roadmap` on write (`resolveWritePlugins`), and its ordered
-version list lives in that plugin's `config.versions` (was the dropped
-`timelines.pricing_versions` column). Adding a further plugin needs (at most) its
-own data/tables — never a new core column or discriminator value.
+version list lives in that plugin's `config.versions`. Adding a further plugin needs
+(at most) its own data — never a new core column or discriminator value.
 
 **Accepted first-cut deviations (documented, not blockers):**
 - The pricing `api*` wrappers stay in [`src/editor.ts`](../src/editor.ts) —
@@ -117,8 +141,11 @@ own data/tables — never a new core column or discriminator value.
   (`/feature/`, `/tier/`, `/tier-value`) and nothing else. The acceptance check is
   about the pricing *view* code — `pm-cell-ver`, `pm-cell-editable`,
   `pricing-badge-new`, `pc-card` are all absent from the entry chunk.
-- The **server side** of the kind (the `pricing-api` edge function, the pricing MCP
-  tools, the `pricing_*` tables + `assemblePricing` in `timeline-repo.ts`) stays in
-  place — DoD is about the *client* generic bundle, and the Deno edge import graph
-  (with its explicit `.ts` extensions) must not be disturbed. Co-locating the
-  server pieces under the kind is a possible follow-up.
+- The **server side** of the plugin (the `pricing-api` edge function, the pricing
+  MCP tools, the `pricing_*` tables + `assemblePricing` in `timeline-repo.ts`)
+  stays in place, and so does `TimelineFile.pricing` in the core types: a plugin
+  has no data channel of its own until the generic store lands
+  (<https://github.com/dermellor/ganttry/issues/12>), so moving them now would mean
+  either breaking the pricing path or inventing a placeholder indirection. Tracked
+  as <https://github.com/dermellor/ganttry/issues/17>, which also removes the
+  option of leaving it that way.

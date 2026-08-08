@@ -296,17 +296,17 @@ no `ALTER TABLE`. The only place that knows plugin ids is
   `enable_/disable_plugin`.)
 - **Behaviour is code-coupled.** `resolveWritePlugins` / `updateVersions` /
   `getPublicPricing` are hard-wired to `product-roadmap`, and client-side
-  `KINDS[]` ([`src/kinds/registry.ts`](../src/kinds/registry.ts)) lists only
+  the plugin registry ([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)) lists only
   `product-roadmap`. A row with an unknown `plugin_id` is stored and served, but
   **nothing consumes it** until code interprets it.
 
 **Adding a new plugin:**
 
 1. **Enabling is a data row** (`replace_timeline`/SQL). Needs no schema change.
-2. **Its own view?** → a new `KINDS[]` entry plus a `src/kinds/<name>/` folder
-   (lazily loaded, see „Timeline kinds" (docs/architecture.md)). No core file changes.
-3. **Its own item fields?** → `fields(file)` on the `KINDS[]` entry, implemented
-   in `src/kinds/<name>/fields.ts` (import only `types` and `plugins`, or the
+2. **Its own view?** → a new the plugin registry entry plus a `src/plugins/<name>/` folder
+   (lazily loaded, see „Plugins" (docs/architecture.md)). No core file changes.
+3. **Its own item fields?** → `fields(file)` on the the plugin registry entry, implemented
+   in `src/plugins/<name>/fields.ts` (import only `types` and `plugins`, or the
    seam pulls the view chunk into the generic build). They appear automatically as
    a section under the plugin's `label`, and as a grouping/filter dimension — see
    „Custom fields → Plugin-contributed fields" (docs/items.md). No core file changes.

@@ -9,7 +9,7 @@ Read [`docs/plugin-playbook.md`](../../../docs/plugin-playbook.md) first and fol
 it. This file only carries what an agent has to be told on top of it: where to stop,
 and what not to do.
 
-Copy [`src/kinds/_template/`](../../../src/kinds/_template/) to start.
+Copy [`src/plugins/_template/`](../../../src/plugins/_template/) to start.
 
 ## Stop points
 

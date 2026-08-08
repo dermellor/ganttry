@@ -12,7 +12,7 @@ import { state, els, setStatus, clearFormSlots } from '../../state';
 import { apiAddFeature, apiUpdateFeature, apiDeleteFeature, apiMoveFeature, ConflictError } from '../../editor';
 import { slugId } from './pricing';
 import { hideDetail, setDetailTitle } from '../../detailPanel';
-import { renderPricingView } from './pricingMatrix';
+import { repaintPricingView } from './pricingMatrix';
 import { renderTimeline } from '../../render';
 
 function findFeature(featureId: string): PricingFeature | undefined {
@@ -226,7 +226,7 @@ async function saveFeatureFromForm(featureId: string, form: HTMLFormElement): Pr
       { group: undefined, version: undefined, description: undefined, descriptionByVersion: undefined },
       saved,
     );
-    renderPricingView();
+    repaintPricingView();
     setStatus(`Feature „${feature.name}" aktualisiert`);
     showFeatureForm(featureId);
   } catch (err) {
@@ -264,7 +264,7 @@ async function deleteFeature(featureId: string): Promise<void> {
   }
 
   state.activeFormFeatureId = null;
-  renderPricingView();
+  repaintPricingView();
   hideDetail();
 }
 
@@ -296,7 +296,7 @@ export async function addFeature(group?: string): Promise<void> {
   try {
     const saved = await apiAddFeature(sourceId, { id, name, ...(group ? { group } : {}) });
     pricing.features.push(saved);
-    renderPricingView();
+    repaintPricingView();
     showFeatureForm(saved.id ?? id);
     setStatus(`Feature „${name}" angelegt`);
   } catch (err) {
@@ -325,7 +325,7 @@ export async function moveFeature(featureId: string, anchor: { after?: string; b
     const ranked = order.map((fid) => byId.get(fid)).filter((f): f is PricingFeature => !!f);
     const seen = new Set(order);
     pricing.features = [...ranked, ...pricing.features.filter((f) => !seen.has(f.id))];
-    renderPricingView();
+    repaintPricingView();
   } catch (err) {
     setStatus(`Umsortieren fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
   }

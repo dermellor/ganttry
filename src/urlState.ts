@@ -4,7 +4,10 @@ export type UrlState = {
   from?: string;
   to?: string;
   milestones?: boolean;
-  mode?: 'timeline' | 'list' | 'pricing';
+  // Kept as a raw string on purpose: a plugin view mode is `plugin:<id>:<view>`,
+  // and this module stays free of the registry that knows which of those exist.
+  // The caller normalises (see readViewMode) and drops what does not resolve.
+  mode?: string;
 };
 
 const ORDER = ['view', 'item', 'from', 'to', 'm', 'mode'] as const;
@@ -27,7 +30,7 @@ export function readUrlState(): UrlState {
   if (to) state.to = to;
   if (p.get('m') === '1') state.milestones = true;
   const mode = p.get('mode');
-  if (mode === 'list' || mode === 'timeline' || mode === 'pricing') state.mode = mode;
+  if (mode) state.mode = mode;
   return state;
 }
 
@@ -38,7 +41,9 @@ function buildHash(state: UrlState): string {
   if (state.from) map.from = state.from;
   if (state.to) map.to = state.to;
   if (state.milestones) map.m = '1';
-  if (state.mode === 'list' || state.mode === 'pricing') map.mode = state.mode;
+  // 'timeline' is the default and stays out of the hash, so a plain link keeps
+  // looking plain. Everything else (list, or a plugin view) is written verbatim.
+  if (state.mode && state.mode !== 'timeline') map.mode = state.mode;
   return ORDER.flatMap((k) =>
     map[k] != null ? [`${encodeURIComponent(k)}=${encodeURIComponent(map[k])}`] : [],
   ).join('&');

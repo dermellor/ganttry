@@ -2,15 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { mergeFieldDefs, pluginFieldDefs } from './registry';
-import { PRODUCT_ROADMAP_PLUGIN } from '../plugins';
 import {
   PRICING_FEATURE_META_KEY,
   PRICING_ITEM_VERSION_META_KEY,
   PRICING_TIER_META_KEY,
-  type CustomFieldDef,
-  type Pricing,
-  type TimelineFile,
-} from '../types';
+  PRODUCT_ROADMAP_PLUGIN,
+} from '../plugins/product-roadmap/plugin';
+import type { CustomFieldDef, Pricing, TimelineFile } from '../types';
 
 // pluginFieldDefs is the seam the generic custom-field machinery reads plugin
 // fields through: each enabled kind's `fields(file)`, stamped with the kind's
