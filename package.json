@@ -22,6 +22,8 @@
     "typecheck": "tsc --noEmit",
     "schema": "tsx scripts/schema/build.ts",
     "schema:check": "tsx scripts/schema/build.ts --check",
+    "openapi": "tsx scripts/schema/openapi.ts",
+    "openapi:check": "tsx scripts/schema/openapi.ts --check",
     "mcp": "tsx scripts/mcp/server.ts"
   },
   "engines": {

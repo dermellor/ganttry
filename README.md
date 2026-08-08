@@ -101,6 +101,10 @@ static Vite + TypeScript viewer (`src/`) renders it. The extension seams:
   (Supabase WebSocket) or `poll` (watermark endpoint), chosen per source; file
   sources are static.
 
+The HTTP API is described in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1, generated
+from the TypeScript types), including the public, unauthenticated pricing endpoint
+and the optimistic-locking contract.
+
 For the full data model, schema, MCP server, pricing model, auth gate and deploy
 details, see [`AGENTS.md`](AGENTS.md).
 

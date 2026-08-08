@@ -36,6 +36,7 @@ it before running a single test. Node 20 has also been EOL since April 2026.
 ```bash
 npm test             # unit tests (Node's test runner, TZ-pinned to Europe/Berlin)
 npm run schema:check # schemas match src/types.ts, examples still validate
+npm run openapi:check # openapi.yaml matches the routes and types
 npm run build        # must succeed with no credentials configured
 npm run typecheck    # see the caveat below
 ```
@@ -55,11 +56,15 @@ bundle-split check (below). What the checks expect:
   mismatches). The step is non-blocking in CI for that reason. Do not add new
   ones: check that the count has not grown. Fixing the remaining seven so the
   step can be made blocking is a welcome standalone contribution.
-- **If you change a type in `src/types.ts`, run `npm run schema`** and commit the
-  regenerated `schema/*.json`. The schemas are derived from those types, and CI
-  fails when the committed copy no longer matches. Do not hand-edit them, and do
-  not document a field list in prose: add it to the type and it appears in the
-  schema.
+- **If you change a type in `src/types.ts`, run `npm run schema && npm run
+  openapi`** and commit the regenerated `schema/*.json` and `openapi.yaml`. Both
+  are derived from those types, and CI fails when a committed copy no longer
+  matches. Do not hand-edit them, and do not document a field list in prose: add it
+  to the type and it appears in both.
+- **If you add an endpoint**, add it to `scripts/schema/openapi-routes.ts` as well.
+  Unit tests assert that every sub-resource in `SUB_KINDS` is documented and that no
+  documented path names an unknown one, so an undocumented endpoint fails the
+  build.
 - **The generic bundle must carry no pricing view code**
   (`bash scripts/ci/check-bundle-split.sh` after a build). A timeline kind is
   loaded via dynamic `import()`; a static import from core code into a kind's

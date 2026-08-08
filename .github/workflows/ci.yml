@@ -44,6 +44,13 @@ jobs:
       - name: JSON Schemas match the types, examples validate
         run: npm run schema:check
 
+      # The route table is hand-written (the dispatcher has no per-route types),
+      # so unit tests assert it covers every SUB_KIND in both directions. This
+      # step additionally catches a committed openapi.yaml that was not
+      # regenerated after a route or type change.
+      - name: openapi.yaml matches the routes and types
+        run: npm run openapi:check
+
       # No credentials are configured here on purpose: this is the path a
       # contributor takes after a plain `git clone`. The build discovers no DB
       # timelines and warns about the missing notes directory, both non-fatal.

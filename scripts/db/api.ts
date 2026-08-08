@@ -33,18 +33,27 @@ import { makePostgresRepo } from './timeline-repo.ts';
 import { makeSupabaseRepo } from './timeline-repo-supabase.ts';
 
 /** Sub-resource kinds addressable under /api/source/<id>/. */
-export type SubKind =
-  | 'item'
-  | 'group'
-  | 'phases'
-  | 'watermark'
-  | 'pricing'
-  | 'feature'
-  | 'feature-move'
-  | 'tier'
-  | 'tier-value'
-  | 'highlight'
-  | 'pversion';
+/**
+ * The sub-resources under /api/source/<id>/. One list, used both as the type and
+ * as the runtime matcher in parseSourcePath — those used to be two hand-kept
+ * copies of the same names. It is exported so the OpenAPI coverage test can
+ * assert the spec documents every one of them.
+ */
+export const SUB_KINDS = [
+  'item',
+  'group',
+  'phases',
+  'watermark',
+  'pricing',
+  'feature',
+  'feature-move',
+  'tier',
+  'tier-value',
+  'highlight',
+  'pversion',
+] as const;
+
+export type SubKind = (typeof SUB_KINDS)[number];
 
 export type ApiRequest = {
   method: string;
@@ -404,10 +413,9 @@ export function resolveAdapter(conns: DbConnections, id: string, live: SourceLiv
 export function parseSourcePath(path: string): { id: string; sub?: ApiRequest['sub'] } | null {
   const clean = path.replace(/^\/+|\/+$/g, '');
   const segs = clean.split('/').filter(Boolean);
-  const subKinds = ['item', 'group', 'phases', 'watermark', 'pricing', 'feature', 'feature-move', 'tier', 'tier-value', 'highlight', 'pversion'] as const;
   // find a trailing sub-resource marker
   for (let i = segs.length - 1; i >= 0; i--) {
-    if ((subKinds as readonly string[]).includes(segs[i])) {
+    if ((SUB_KINDS as readonly string[]).includes(segs[i])) {
       const kind = segs[i] as SubKind;
       const idParts = segs.slice(0, i);
       const childParts = segs.slice(i + 1);
