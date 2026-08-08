@@ -1,9 +1,10 @@
 # Contributing to Ganttry
 
 Thanks for considering a contribution. This file covers what you need to get a
-change running and reviewed. [`AGENTS.md`](AGENTS.md) is the single source of
-truth for the data model, schema and extension seams; read the relevant section
-before a larger change, and keep it in sync when behaviour changes.
+change running and reviewed. [`AGENTS.md`](AGENTS.md) holds the conventions, the
+commands and an index into [`docs/`](docs/), where each subsystem is documented
+with the reasoning behind it; read the relevant chapter before a larger change,
+and keep it in sync when behaviour changes.
 
 ## You do not need a database
 
@@ -16,8 +17,11 @@ npm run dev
 ```
 
 Drop a `*.json` into `data/` and it registers itself as a read-only view
-(`src:<name>`). The file shape is documented in AGENTS.md → „Standalone JSON
-timelines"; `data/example-projektplan.json` and `data/launch-roadmap.json` are
+(`src:<name>`). The file shape is generated into
+[`schema/timeline.schema.json`](schema/timeline.schema.json), so add
+`"$schema": "../schema/timeline.schema.json"` and your editor guides you;
+[`docs/data-model.md`](docs/data-model.md) covers the constraints a schema cannot
+express. `data/example-projektplan.json` and `data/launch-roadmap.json` are
 reference files.
 
 Only DB-backed timelines are editable, so changes to the editing paths (drag,
@@ -80,8 +84,9 @@ bundle-split check (below). What the checks expect:
   need goes in a shared module (`src/itemExtent.ts`, `src/phaseOverlap.ts`,
   `src/status.ts`) and is imported by both, rather than being restated.
 - **No fallback data.** DB-backed timelines load live and fail loudly; there is
-  deliberately no cached or committed snapshot of live content. AGENTS.md →
-  „Principle: no emergency or fallback data" explains why, and it is a hard rule.
+  deliberately no cached or committed snapshot of live content.
+  [`docs/database.md`](docs/database.md) → „Principle: no emergency or fallback
+  data" explains why, and it is a hard rule.
 - **Never commit credentials.** `.env.local` is gitignored; `TIMELINES_ENV_FILE`
   points at files outside the repo if your keys live elsewhere. Do not commit
   timeline data that is not yours to publish.

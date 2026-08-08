@@ -1,4 +1,8 @@
-Single Source of Truth lies in `AGENTS.md`.
+`AGENTS.md` holds the conventions, the commands and an index. It is imported here
+because it is small enough to carry in every session; the per-subsystem chapters in
+`docs/` are deliberately **not** imported — read the one you need when a task
+touches it.
+
 @AGENTS.md
 
 ## Claude-Code-specific overrides

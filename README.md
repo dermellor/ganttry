@@ -105,8 +105,9 @@ The HTTP API is described in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1, genera
 from the TypeScript types), including the public, unauthenticated pricing endpoint
 and the optimistic-locking contract.
 
-For the full data model, schema, MCP server, pricing model, auth gate and deploy
-details, see [`AGENTS.md`](AGENTS.md).
+Each subsystem is documented with its reasoning in [`docs/`](docs/) — data model,
+items, editing, database, MCP, deploy, pricing — and [`AGENTS.md`](AGENTS.md) is the
+index plus the conventions that apply everywhere.
 
 ## Theming
 

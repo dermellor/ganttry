@@ -1,0 +1,124 @@
+# Architecture
+
+The extension seams: where data comes from, and what a timeline renders.
+
+Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+the conventions and the commands. References in „quotes" name a section, with
+its file when it lives in another chapter.
+
+## Architecture
+
+Two-step:
+
+1. **Build script** (`scripts/build-data.ts`) walks the notes directory, parses YAML frontmatter (`gray-matter`), extracts dates, writes `public/data/notes.json` + a copy of the config.
+2. **Static viewer** (Vite + TypeScript, `src/`) loads the JSON, applies the active view's filter, renders a vis-timeline, styled through the CSS custom properties in `src/styles/theme.css`.
+
+Electron wrapper can later embed the same `dist/` build.
+
+### Source kinds (adapters)
+
+A source-backed view carries an explicit **kind** on `view.source`
+(`{ kind, id }`, `SourceKind` in [`src/types.ts`](../src/types.ts)) that drives how
+its data is loaded. This is deliberately **not** a "try the API, then fall back
+to a static file" guess — that conflated a live DB timeline with a stale
+snapshot (see „Principle: no emergency or fallback data"). The kind is set at build
+time and flows through the built config to the client:
+
+- **`db`** — live from the DB via `GET /api/source/<id>`, editable, **no** static
+  fallback (a DB failure surfaces loudly). `build-data.ts` discovers these by
+  querying the DB at build time (`collectDbSources`) and marks each view's source
+  `kind: "db"`; the registration stub it writes (metadata only) goes to the
+  gitignored build output, never to the committed tree.
+- **`file`** — read-only from the static `/data/sources/<id>.json` (`editable:
+  false`). The file genuinely *is* the source here (not a snapshot of something
+  live), so loading it is correct. Any `data/**/*.json` without the `db` marker
+  is a file source.
+
+`loadSource(source)` ([`src/editor.ts`](../src/editor.ts)) routes on `kind`;
+`render.ts` renders a view whenever it has a `source` (notes-backed views have
+none). Adding a further API-served kind later (e.g. `gsheet`, external `pg`) is a
+new `SourceKind` value plus its loader — the routing seam already exists.
+
+**Server-side adapter seam:** the runtime glue (Vite middleware +
+`timelines-api` edge function) no longer calls the DB dispatcher directly. It
+resolves a `SourceAdapter` via `resolveAdapter(conns, id, live)`
+([`scripts/db/api.ts`](../scripts/db/api.ts)) and dispatches through
+`adapter.handle(req)`. The DB-backed source has **two interchangeable drivers**
+behind that one adapter, selected by env (see „Postgres as the data source →
+Drivers"): supabase-js (the Netlify default) and native postgres.js (opt-in).
+Both satisfy the same `TimelineRepo` seam ([`scripts/db/repo.ts`](../scripts/db/repo.ts));
+`handleTimelineApi(repo, req)` dispatches through the bound repo and never sees
+the driver. The adapter's `capabilities` declare `editable` and a `live` mode
+(`realtime` by default). Future API-served kinds register in `resolveAdapter`
+without touching the middleware/edge glue. File sources are static and never
+reach this seam.
+
+### Timeline kinds (`src/kinds/`)
+
+A **timeline kind** is the *orthogonal* axis to source kinds: it's the timeline's
+*flavour* (what extra views/renderers and extra item fields it carries), not where
+its data comes from. The generic timeline+list core knows nothing kind-specific; a
+kind plugs into a registration seam ([`src/kinds/registry.ts`](../src/kinds/registry.ts)):
+
+- **`generic`** — the default: just timeline + list, no extra code.
+- **`product-roadmap`** — the pricing matrix/cards plus the matrix's own editors,
+  living entirely under [`src/kinds/product-roadmap/`](../src/kinds/product-roadmap/)
+  (`pricing.ts`, `pricingCards.ts`, `pricingMatrix.ts`, `pricingWork.ts`,
+  `featureForm.ts`, `tierForm.ts`, `cellEditor.ts`, `popover.ts`, `fields.ts`,
+  `index.ts`).
+
+A `KindDescriptor` exposes a cheap synchronous `matches(file)` predicate, a
+`label` (its display name), the extra `viewModes` it adds and the extra item
+`fields(file)` it contributes, plus a **`load()` that is a dynamic `import()`**.
+The core (`main.ts`, `render.ts`) only ever touches the descriptor's data
+(`activeKind`, `ensureKindLoaded`, `loadedKindView`) — it has **no static import
+of any pricing *view* module**, so Rollup code-splits the kind into its own chunk
+and a **generic build downloads no pricing code** (the acceptance check: the entry
+chunk referenced by `dist/index.html` contains no `pm-cell-ver`/pricing strings;
+they live only in the lazily-loaded chunk). The chunk loads only when a product
+timeline enters the pricing view.
+
+**Kinds contribute item fields** through `fields(file)` — synchronous,
+data-derived `CustomFieldDef[]`, gated internally on the plugin being enabled and
+therefore independent of `matches` (which additionally demands a populated pricing
+model before offering the *view*). `pluginFieldDefs(file)` collects every enabled
+kind's fields and stamps each with the kind's `label` as its `group`, which is
+what sections them under a plugin heading in the item form (see „Custom fields →
+Plugin-contributed fields"). The product-roadmap implementation lives in
+[`src/kinds/product-roadmap/fields.ts`](../src/kinds/product-roadmap/fields.ts): it
+imports only `types` + `plugins`, so it is statically importable from the registry
+**without** adding an edge into the pricing chunk — the acceptance check above
+still passes. `customFields.ts` reads plugin fields through that one seam and
+knows no plugin ids.
+
+Adding a third kind is a new `KINDS[]` entry + a `src/kinds/<name>/` folder — no
+core-file change.
+
+**Enablement is pure data (the plugin registry).** Which kind a timeline carries
+is **not** a column on a core table. It lives in the generic `timeline_plugins`
+table (one row per `(timeline_id, plugin_id)` + a `config` jsonb bag; see „Schema" (docs/database.md)
+→ `timeline_plugins`), surfaced to the client as `TimelineFile.plugins`
+(`PluginRef[]`). So enabling a plugin on a timeline is an INSERT, never an
+`ALTER TABLE`. The single place that knows plugin ids and reads/writes this off a
+file is [`src/plugins.ts`](../src/plugins.ts) (`PRODUCT_ROADMAP_PLUGIN`, `hasPlugin`,
+`pluginConfig`, `versionsFromConfig`, `resolveWritePlugins`); client gates
+(`kinds/registry.ts` `matches`, `customFields.ts`) and both DB drivers import from
+there instead of testing a `type === 'product'` literal. A populated `file.pricing`
+auto-enables `product-roadmap` on write (`resolveWritePlugins`), and its ordered
+version list lives in that plugin's `config.versions` (was the dropped
+`timelines.pricing_versions` column). Adding a further plugin needs (at most) its
+own data/tables — never a new core column or discriminator value.
+
+**Accepted first-cut deviations (documented, not blockers):**
+- The pricing `api*` wrappers stay in [`src/editor.ts`](../src/editor.ts) —
+  `apiAddFeature`/`apiUpdateFeature`/`apiDeleteFeature`/`apiMoveFeature`,
+  `apiAddTier`/`apiUpdateTier`/`apiDeleteTier`, `apiSetTierValue`: type-only-typed
+  fetch wrappers, so the generic entry chunk carries their URL fragments
+  (`/feature/`, `/tier/`, `/tier-value`) and nothing else. The acceptance check is
+  about the pricing *view* code — `pm-cell-ver`, `pm-cell-editable`,
+  `pricing-badge-new`, `pc-card` are all absent from the entry chunk.
+- The **server side** of the kind (the `pricing-api` edge function, the pricing MCP
+  tools, the `pricing_*` tables + `assemblePricing` in `timeline-repo.ts`) stays in
+  place — DoD is about the *client* generic bundle, and the Deno edge import graph
+  (with its explicit `.ts` extensions) must not be disturbed. Co-locating the
+  server pieces under the kind is a possible follow-up.

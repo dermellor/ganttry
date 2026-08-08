@@ -1,0 +1,515 @@
+# Database
+
+Postgres as the data source: schema, drivers, locking, realtime, presence.
+
+Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+the conventions and the commands. References in „quotes" name a section, with
+its file when it lives in another chapter.
+
+## Postgres as the data source
+
+Editable timelines live in **Postgres** (hosted Supabase, or any Postgres of your
+own). Writes are **per-item with optimistic locking** (a `version` column on each
+item): concurrent edits to different items no longer overwrite each other, and a
+stale write gets a `409` instead of silently winning.
+
+File-based timelines (`data/*.json`, e.g. the examples) stay **read-only static
+sources** — they are *not* in the DB. Only DB timelines are editable.
+
+The local middleware (`vite.config.ts`) and the Netlify edge function
+(`netlify/edge-functions/timelines-api.ts`) share one dispatcher
+(`scripts/db/api.ts`, `handleTimelineApi(repo, req)`) and the `TimelineRepo` seam
+(`scripts/db/repo.ts`): a single implementation of the storage and locking
+semantics for both runtimes, independent of the chosen driver (see „Drivers").
+
+> **Drivers: an additive dual adapter — `supabase-js` (default) OR `postgres.js`
+> (opt-in).** Both implement the same `TimelineRepo` seam
+> ([`scripts/db/repo.ts`](../scripts/db/repo.ts); every storage method takes a bound
+> client rather than a leading client parameter):
+> - **`supabase-js`** ([`scripts/db/timeline-repo-supabase.ts`](../scripts/db/timeline-repo-supabase.ts),
+>   factory `makeSupabaseRepo(db)`) speaks HTTP/PostgREST, runs in the Deno edge
+>   without raw TCP, and is **the default the Netlify deploy runs on**. Node
+>   client: `getServiceClient()` ([`scripts/db/client.ts`](../scripts/db/client.ts)).
+> - **`postgres.js`** ([`scripts/db/timeline-repo.ts`](../scripts/db/timeline-repo.ts),
+>   factory `makePostgresRepo(sql)`) is **opt-in** for self-hosters with their own
+>   Postgres, reached through a connection string (`TIMELINES_DATABASE_URL`). Node
+>   factory: `getSql()` ([`scripts/db/sql.ts`](../scripts/db/sql.ts), with
+>   `prepare:false` for the Supavisor transaction pooler). The edge functions open
+>   a **module-scoped handle reused across invocations** — never call `sql.end()`
+>   in a handler, a Deno teardown quirk.
+>
+> **Selected by env** (identically in every runtime): if `TIMELINES_DATABASE_URL`
+> is set → postgres.js, otherwise `TIMELINES_SUPABASE_URL` +
+> `TIMELINES_SUPABASE_SERVICE_KEY` → supabase-js. The glue builds both possible
+> handles and passes them as `{ sql, supabase }` to `resolveAdapter`/`resolveRepo`;
+> postgres.js wins whenever an `sql` handle is present. **Netlify sets only the
+> Supabase vars, so it keeps running supabase-js** unchanged. Optimistic locking
+> (`update … where version=$` plus 0-rows→`ConflictError`), jsonb handling and the
+> DB trigger's `version` bump are identical in both drivers, and
+> **schema, triggers and migrations are untouched** by the choice.
+> `@supabase/supabase-js` additionally lives client-side in
+> [`src/realtime.ts`](../src/realtime.ts) for browser realtime, which is unaffected.
+>
+> **Production deploy (Netlify):** set the Supabase vars
+> (`TIMELINES_SUPABASE_URL` + `TIMELINES_SUPABASE_SERVICE_KEY`); no
+> `TIMELINES_DATABASE_URL` is needed. Only someone who deliberately wants native
+> Postgres instead of PostgREST sets it, and then the Deno deploy's outbound TCP
+> to the pooler is the one thing verifiable only live (proven locally with Node
+> plus a Docker Postgres).
+
+### Principle: no emergency or fallback data, ever
+
+**No content snapshot of a DB timeline is kept anywhere. No data beats wrong
+data.** A committed or cached dump of a live timeline is visually
+indistinguishable from real data and reliably gets mistaken for it — during a DB
+outage, on an id mismatch, or when it is simply stale. So this holds strictly:
+
+- The viewer loads DB timelines **exclusively** live from the DB
+  (`GET /api/source/<id>`). If that fails (`404`, no network) it **fails loudly**
+  with an error message and shows *no* static content
+  ([`src/editor.ts`](../src/editor.ts), `loadSource`).
+- DB timelines are **not** registered through committed files. `build-data`
+  queries the DB at build time (`collectDbSources` in
+  [`scripts/build-data.ts`](../scripts/build-data.ts)) and writes one
+  **registration stub** per timeline (`name`, optionally `description`/`groupBy`,
+  `items: []`) exclusively into the **gitignored build output**
+  (`public/data/sources/`), so the timeline appears in the view list. The stub
+  **never** contains items, groups or phases; the viewer loads content live. That
+  way the repo carries **no** tenant files, and a deploy still lists its DB
+  timelines because it has DB access and asks at build time. Scope it with
+  `TIMELINES_SOURCES_SUBDIR` as an id namespace prefix.
+
+Do **not** introduce new sync, cache or fallback mechanisms that mirror DB
+timeline content into files, a CDN, or anywhere else. (File-based sources — the
+examples — are not a contradiction: there the file *is* the source, not a dump of
+something else.)
+
+### Schema
+
+Migrations live in `supabase/migrations/` (the directory name is historical; the
+runner works against any Postgres).
+
+- `timelines` — id, name, description, group_by, `phases` (jsonb),
+  `custom_fields` (jsonb). **No plugin-specific columns any more:** the former
+  `type` column (gating on `'product'`) and `pricing_versions` (ordered version
+  labels) moved into the generic `timeline_plugins` registry in migrations
+  `0012`/`0013` (see below and „Plugin registry"). The pricing model itself has
+  been normalised into its own tables since migration `0009`.
+- `timeline_plugins` — the **generic plugin registry** (migration `0012`): one
+  row per (timeline_id, plugin_id) plus a `config` (jsonb). A plugin (a.k.a. a
+  timeline kind, e.g. `'product-roadmap'`) is **enabled on a timeline as soon as
+  a row exists here** — pure data, no `ALTER TABLE`, no core column. For
+  `product-roadmap` the `config` carries the version list
+  (`{ versions: [...] }`, formerly the `pricing_versions` column). FK cascade on
+  `timelines`, anon SELECT plus realtime like the `pricing_*` tables. A new
+  plugin needs (at most) its own data and tables, never a column on the core.
+  See „Plugin registry".
+- `timeline_items` — columns for start/end/duration/content/group/type/title/
+  body/icon/status/class_name (`status` is `NOT NULL DEFAULT 'Open'` with a CHECK
+  for `Open|Doing|Done`, see „Item status" (docs/items.md)), `metadata` (jsonb: `dependsOn`,
+  `owner` — the linked user's e-mail, see „Item owner" (docs/items.md) — `jira`, and free-form
+  extras), `version` (bumped by trigger on UPDATE), `sort`, `updated_by`. Only
+  `content` is required; `start` is nullable since migration
+  `0006_start_nullable` (an entry created through the list may be date-less and
+  then appears only in the list view, not on the timeline). `end` and `duration`
+  are mutually exclusive (extent is either/or, `end` wins), enforced in the write
+  layer for every path (`enforceExtentExclusivity` plus patch-aware clearing of
+  the counterpart in [`scripts/db/timeline-repo.ts`](../scripts/db/timeline-repo.ts),
+  the MCP `add_item`/`update_item`, and the client form). When `end` is set it
+  must lie **after** `start`; reversed or zero-length extents are rejected with
+  `400` (the rule lives in [`src/itemExtent.ts`](../src/itemExtent.ts), see
+  „Standalone JSON timelines" (docs/data-model.md)). There is no DB CHECK for it, because `start` and
+  `end` are `text` columns.
+- `timeline_groups` — id, content, nested_groups, show_nested, sort.
+- `app_users` — the **user directory** an item owner points at (migration
+  `0015`): `email` as PK, optional `name`, `first_seen_at`, `last_seen_at`. Not
+  timeline-scoped (a collection-level concept, like `listTimelines`), with no
+  `version` column and no optimistic locking: a row carries no user-written
+  content, only the identity the auth provider asserts anyway. No anon SELECT —
+  it is read through the server-gated `/api/users` endpoint (service key) and
+  never subscribed to. It fills itself (see „Item owner" (docs/items.md)).
+- **Pricing tables** (migration `0009`, only relevant to product-roadmap
+  timelines): `pricing_features`, `pricing_tiers`, `pricing_highlights`, one row
+  per entity with its own `version` column (trigger bump, optimistic locking like
+  `timeline_items`; the client sees it as `rowVersion`). The feature's domain
+  field „ab Version" is called `available_from` in the DB, not `version`, to
+  avoid colliding with the locking column. `pricing_tier_values` is the matrix:
+  **one row per (tier_id, feature_id)** with a `value` (jsonb: `true` or a
+  string) and an optional `available_from` (migration `0011`, a text version
+  label); FK cascade from features and tiers, and no locking, since a cell is
+  atomic. Two people therefore edit different matrix cells without colliding.
+  `available_from` makes **cell availability version-dependent** — the same
+  semantics as `pricing_features.available_from`, one level deeper (per
+  tier×feature): the cell only counts as included from that version on and
+  renders „–" before it, while `value` stays the end state. That is what lets you
+  express „in Enterprise now, in Scale only from v4" (see „Pricing → Cell
+  versioning").
+
+RLS is on; server access uses the service key, which bypasses it. The anon SELECT
+policies exist only for the realtime subscription (see below).
+
+**Applying migrations: a portable runner (`npm run db:migrate`).** It works
+against *any* Postgres through `TIMELINES_DATABASE_URL`, with no Supabase CLI
+needed. [`scripts/db/migrate.ts`](../scripts/db/migrate.ts) (postgres.js) creates a
+`schema_migrations` tracking table and applies `supabase/migrations/*.sql` in
+filename order, each in **one transaction**, with a checksum (which warns on
+drift). Re-runs apply only what is pending.
+
+```bash
+npm run db:migrate               # apply pending migrations
+npm run db:migrate -- --status   # list applied / pending
+npm run db:migrate -- --baseline # record ALL current files as "applied" WITHOUT
+                                 # running them — for a DB already migrated by
+                                 # hand (see below)
+```
+
+`0000_prereq_roles.sql` creates the `anon` role and the `supabase_realtime`
+publication idempotently, so `0003`/`0009` also run on a **vanilla Postgres** (on
+Supabase they already exist, so it is a no-op). A fresh Postgres is therefore
+schema-complete without manual preparation.
+
+> **Adopting an existing, hand-migrated DB (one-time):** a database that was
+> migrated **manually** carries no tracking table, so the runner would try to
+> re-apply everything and fail on `0001`. Run
+> `npm run db:migrate -- --baseline` **once** there (with that database's env
+> vars) to record the existing migrations as applied without executing them.
+> New migrations then run normally through `db:migrate`.
+
+Alternatively, on Supabase only, through its CLI:
+
+```bash
+supabase link --project-ref <ref>
+supabase db query --linked -f supabase/migrations/<file>.sql
+```
+
+### Plugin registry
+
+A **plugin** (a.k.a. a timeline kind) is enabled on a timeline as soon as a
+`(timeline_id, plugin_id, config)` row exists in `timeline_plugins` — pure data,
+no `ALTER TABLE`. The only place that knows plugin ids is
+[`src/plugins.ts`](../src/plugins.ts) (`PRODUCT_ROADMAP_PLUGIN`, `hasPlugin`,
+`pluginConfig`, `versionsFromConfig`, `resolveWritePlugins`).
+
+**What is generic today:**
+
+- **Storing and reading.** `timeline_plugins` accepts any `plugin_id`/`config`;
+  `getTimeline` reads **every** row into `file.plugins` (`PluginRef[]`),
+  regardless of plugin. It round-trips through both drivers.
+- **Enabling (bulk).** Through the MCP `replace_timeline` with
+  `plugins: [{ id, config }]`, or direct SQL/PATCH. Identical locally and in
+  production (same `api.ts` dispatcher, same DB).
+
+**What is NOT generic (yet):**
+
+- **No granular enable path.** The API sub-kinds carry no `plugin`, and the MCP
+  has no `enable_plugin`. Turning a single plugin on or off without the rest of
+  the timeline only works via SQL or a bulk `replace_timeline`. (Open follow-up:
+  `PUT/DELETE /api/source/<id>/plugin/<pluginId>` plus MCP
+  `enable_/disable_plugin`.)
+- **Behaviour is code-coupled.** `resolveWritePlugins` / `updateVersions` /
+  `getPublicPricing` are hard-wired to `product-roadmap`, and client-side
+  `KINDS[]` ([`src/kinds/registry.ts`](../src/kinds/registry.ts)) lists only
+  `product-roadmap`. A row with an unknown `plugin_id` is stored and served, but
+  **nothing consumes it** until code interprets it.
+
+**Adding a new plugin:**
+
+1. **Enabling is a data row** (`replace_timeline`/SQL). Needs no schema change.
+2. **Its own view?** → a new `KINDS[]` entry plus a `src/kinds/<name>/` folder
+   (lazily loaded, see „Timeline kinds" (docs/architecture.md)). No core file changes.
+3. **Its own item fields?** → `fields(file)` on the `KINDS[]` entry, implemented
+   in `src/kinds/<name>/fields.ts` (import only `types` and `plugins`, or the
+   seam pulls the view chunk into the generic build). They appear automatically as
+   a section under the plugin's `label`, and as a grouping/filter dimension — see
+   „Custom fields → Plugin-contributed fields" (docs/items.md). No core file changes.
+4. **Its own persisted data?** → its own tables plus a write path (model:
+   `pricing_*` and `assemblePricing`). Never a column on the core.
+5. Reads through `file.plugins` already work. The product-specific auto-enable
+   behaviour (`resolveWritePlugins`) is a model to copy, not an obligation.
+
+### Setup (one-time)
+
+Credentials go in `.env.local`, read through the cascade in
+[`scripts/db/env.ts`](../scripts/db/env.ts) (`process.env` → `.env.local` → the files
+named by `TIMELINES_ENV_FILE`, see „Credential cascade" below). Depending on the
+chosen driver (see „Drivers"): supabase-js through `getServiceClient()`
+([`scripts/db/client.ts`](../scripts/db/client.ts)), postgres.js through `getSql()`
+([`scripts/db/sql.ts`](../scripts/db/sql.ts)):
+
+| Var                              | Driver       | Meaning                                                                   |
+| -------------------------------- | ------------ | ------------------------------------------------------------------------- |
+| `TIMELINES_SUPABASE_URL`         | supabase-js  | `https://<ref>.supabase.co` (the default path)                            |
+| `TIMELINES_SUPABASE_SERVICE_KEY` | supabase-js  | Service-role key (server-side only, never in the client)                  |
+| `TIMELINES_DATABASE_URL`         | postgres.js  | Postgres connection string (`postgresql://…`); when set, it wins over supabase-js. On Supabase use the Supavisor transaction pooler (port 6543). Any Postgres works. |
+
+Ist `TIMELINES_DATABASE_URL` gesetzt, läuft alles über postgres.js; sonst über
+supabase-js.
+
+**Your own Postgres in 3 steps** (no Supabase needed):
+
+```bash
+docker run -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16   # 1. Postgres
+export TIMELINES_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/postgres  # 2. target
+npm run db:migrate                                                     # 3. schema
+```
+
+Then run the server with `TIMELINES_DATABASE_URL` (live updates via
+`TIMELINES_DB_LIVE=poll`, without an anon key or realtime — see „Live-update
+seam"). `0000_prereq_roles.sql` handles the previously manual `anon`/publication
+setup, so nothing has to be prepared by hand.
+
+#### Credential cascade (`TIMELINES_ENV_FILE`)
+
+Every Node entry point reads configuration through **one** implementation:
+`envValue()` in [`scripts/db/env.ts`](../scripts/db/env.ts). The order is
+`process.env` → `<repo>/.env.local` → the files named by `TIMELINES_ENV_FILE`,
+and precedence runs in exactly that direction: `process.env` wins over
+`.env.local`, which wins over the external files. The edge functions use
+`Deno.env` instead.
+
+`TIMELINES_ENV_FILE` is the **opt-in seam for credentials kept outside the repo**
+(e.g. a file holding keys shared across projects): one or more paths separated by
+`:`, each optionally starting with `~/`. Missing files are ignored, so setting it
+is always safe. **Without the variable a checkout reads nothing outside the
+repo**, which is precisely why no fixed path appears in the code any more. A
+hard-wired `~/_AGENTS/.env` used to sit in four files; it does not exist on anyone
+else's machine, and its error messages sent contributors into a directory only the
+author has.
+
+The repo root is derived from `import.meta.url`, **not** from `process.cwd()`:
+the MCP server is registered user-global and runs from arbitrary directories, so
+it would otherwise fail to find `.env.local`. The spec's splitting rules live as
+the pure, DOM- and FS-free function `envFilePaths` and are tested in
+[`scripts/db/env.test.ts`](../scripts/db/env.test.ts). `envSourcesHint()` phrases the
+hint for error messages out of the active configuration, so no message names a
+path that does not exist for its reader.
+
+#### Per-source connections (phase 4, #30)
+
+Different timelines can live in **different Postgres instances**, chosen by the
+**namespace** of the source id (its first path segment). Set named connections
+alongside the default `TIMELINES_DATABASE_URL`:
+
+```bash
+export TIMELINES_DATABASE_URL=postgresql://…/default              # default for everything
+export TIMELINES_DATABASE_URL_WAREHOUSE=postgresql://…/warehouse  # only warehouse/*
+```
+
+`warehouse/plan` resolves to `TIMELINES_DATABASE_URL_WAREHOUSE`; anything without
+a matching named variable uses the default. The name is derived by uppercasing
+the namespace and replacing non-alphanumerics with `_`
+(`getSqlForSource`/`connectionEnvKey` in [`scripts/db/sql.ts`](../scripts/db/sql.ts)).
+**Opt-in and backward-compatible:** without a `TIMELINES_DATABASE_URL_<NS>` every
+source uses the default as before. Connection strings stay in the environment,
+never in committed config. Only the **Node path** routes per source (the glue sets
+`DbConnections.sqlFor`); the edge function stays single-connection. A default must
+be set, because the `/api/sources` collection endpoint lists from it.
+
+### Import / migration
+
+`scripts/db/import.ts` loads the configured timelines from their `data/<id>.json`
+into the DB (`replaceTimeline`). Repeatable.
+
+```bash
+npm run db:import                # all
+npm run db:import -- acme/my-plan # one, by id
+```
+
+### Sync behaviour
+
+- **Read:** the client loads `GET /api/source/<id>` from the DB. If that fails
+  (`404`, no network) it is a **loud error with no static fallback** (see
+  „Principle: no emergency or fallback data"). Genuine file-based sources (the
+  examples) exist as files and are read-only (`editable:false`).
+- **Write:** UI edits (drag, form, add, delete) send **per-item** calls:
+  `POST/PATCH/DELETE /api/source/<id>/item[/<itemId>]`, `PUT …/phases`. A `PATCH`
+  carries the known `version` in the `If-Match` header; if it no longer matches
+  the response is `409` and the client reloads that item. A `PATCH` touches a
+  column **only when the key is present in the body** (`updateItem`,
+  [`scripts/db/timeline-repo.ts`](../scripts/db/timeline-repo.ts)), so a cleared
+  optional field — for instance the last `metadata.dependsOn` being removed, which
+  makes `metadata` disappear from the item entirely — has to be sent as an
+  **explicit `null`**, or the old DB value survives and reappears on reload. The
+  client therefore builds the patch through `buildItemPatch`
+  ([`src/persistence.ts`](../src/persistence.ts)), which sets every missing clearable
+  field to `null`.
+- **Registration stubs:** `npm run build:data` (part of `dev`/`build`) queries the
+  DB and writes one stub per DB timeline (`name` plus `items: []`, no content) into
+  the **gitignored build output** `public/data/sources/<id>.json`. Its only job is
+  to keep the timeline in the view list; it is **not** a data fallback and
+  **nothing is committed**. Nothing lands in the tracked `data/`.
+- **Live collaboration:** see „Realtime", which replaced an earlier 60-second poll.
+
+### Production setup (Netlify)
+
+In addition to the auth env vars:
+
+| Var                              | Where              | Notes                                          |
+| -------------------------------- | ------------------ | ---------------------------------------------- |
+| `TIMELINES_SUPABASE_URL`         | dashboard          | **The default path (supabase-js).** Activates the `timelines-api`/`pricing-api` edge functions over HTTP/PostgREST. |
+| `TIMELINES_SUPABASE_SERVICE_KEY` | dashboard (secret) | Service-role key for server-side access        |
+| `TIMELINES_DATABASE_URL`         | dashboard (secret) | **Optional, opt-in.** Set it only to deliberately run native Postgres (postgres.js over TCP, Supavisor transaction pooler on port 6543) instead of supabase-js; it then wins over the Supabase vars. |
+| `VITE_SUPABASE_URL`              | dashboard          | Build-time; **only** for client-side realtime (see „Realtime"). Without both, other people's edits appear on reload only. |
+| `VITE_SUPABASE_ANON_KEY`         | dashboard          | Build-time and public in the bundle; **needs a redeploy**, since Vite bakes it in at build time. |
+
+The edge function gates on the session cookie (or the MCP token) and attributes
+edits through `updated_by` to the signed-in user's e-mail. If **neither** the
+Supabase access **nor** `TIMELINES_DATABASE_URL` is configured, the edge function
+cannot reach the DB and the source fails loudly (no static fallback).
+
+> **Deploy note:** the Netlify deploy runs on supabase-js, for which
+> `TIMELINES_SUPABASE_URL` + `TIMELINES_SUPABASE_SERVICE_KEY` are enough.
+> `TIMELINES_DATABASE_URL` is an **opt-in** for self-hosters with their own
+> Postgres; setting it makes the postgres.js path win, and the Deno deploy's
+> outbound TCP to the pooler is then the one thing only verifiable live.
+
+### Live-update seam (realtime **or** polling)
+
+How other people's changes reach an open viewer is a **seam** with two
+implementations behind one signature: `watchTimeline(id, onChange, { live,
+isBusy })` in [`src/realtime.ts`](../src/realtime.ts). Which one applies is declared
+by the source through `capabilities.live` (`SourceLive` in
+[`src/types.ts`](../src/types.ts)):
+
+- **`realtime`** — Supabase Realtime pushes row changes over a WebSocket
+  (`subscribeTimeline`, fine-grained item events with echo suppression). Needs the
+  anon key (`VITE_SUPABASE_*`); without it nothing happens and updates are
+  reload-only.
+- **`poll`** — the client polls a cheap **watermark endpoint**
+  (`GET /api/source/<id>/watermark` → `{ v, n, t }`: max item `version`, item
+  count, and max `updated_at` across items plus the `timelines` row) on an
+  interval (`src/poll.ts`: ~8 s while visible, ~60 s while hidden, backing off on
+  `visibilitychange`). When the watermark changes it triggers a **full reload**
+  through the existing `loadSource` path; timelines are small, and a delta fetch is
+  a later optimisation. This needs **no** anon key, because the endpoint is
+  server-gated, which is what makes a Postgres **without** realtime live. The poll
+  pauses while an edit form is open (`isBusy`), and a change detected meanwhile is
+  not discarded but applied afterwards.
+- **`none`** — no live updates (file sources).
+
+The server tells the client which mode applies through the **`X-Source-Live`
+response header** on `GET /api/source/<id>`, set by the runtime glue from
+`adapter.capabilities.live`; `loadSource` reads it and stores it in
+`state.activeSourceLive`. The DB adapter reports `realtime` by default, and the env
+var **`TIMELINES_DB_LIVE=poll`** (`process.env` locally, `Deno.env` on Netlify)
+switches DB sources to polling — useful for a Postgres without realtime enabled,
+and for testing the poll path end to end.
+
+> **Scope:** the watermark covers items plus timeline metadata (including
+> phases), but **not** the pricing tables. No poll source is a product timeline
+> today, and realtime still covers pricing; folding pricing into the watermark is a
+> follow-up (`getWatermark` in
+> [`scripts/db/timeline-repo.ts`](../scripts/db/timeline-repo.ts)).
+
+#### Presence under polling
+
+Presence (see below) is **realtime-only**, because it hangs off the Supabase
+presence channel. Poll sources show no presence badge and no per-item markers; a
+heartbeat table would be an optional sub-feature and is not implemented.
+
+### Realtime (live collaboration)
+
+Other people's edits appear live without a reload: Supabase Realtime pushes row
+changes over a WebSocket and the client (`src/realtime.ts`) patches the view.
+
+**Opt-in per environment** through client env vars (Vite, build-time):
+
+| Var                       | Meaning                                              |
+| ------------------------- | ---------------------------------------------------- |
+| `VITE_SUPABASE_URL`       | Supabase URL (embedded in the client bundle)         |
+| `VITE_SUPABASE_ANON_KEY`  | Anon key — **public in the browser**                 |
+
+Note that the anon key is visible in the shipped bundle, and together with the
+anon SELECT policies that makes timeline *reads* available to anyone holding it.
+Hence it is deliberately opt-in: set it on a gated site only if that is
+acceptable. Writes stay server-side (service key). Without these vars everything
+still works, and other people's changes simply appear on reload.
+
+**Remote changes are applied in place, never through a full rebuild.**
+`scheduleRemoteRefresh` reloads the source and feeds it into the live vis instance
+via `refreshActiveSourceInPlace` ([`src/render.ts`](../src/render.ts), through
+`rebuildAndApply` and a DataSet diff). Going through `renderTimeline` destroys the
+timeline along with the arrow and phase overlays and rebuilds them, leaving the
+container briefly empty, so the view flickers on *every* remote edit. Since a
+colleague who is typing writes every `PERSIST_THROTTLE_MS`, that added up to
+constant flicker. `renderTimeline` remains the fallback for what cannot be
+expressed in place: a changed view, or the first/last phase or dependency overlay
+appearing or disappearing.
+
+#### Presence (who is online)
+
+The header shows avatars, top right, of everyone who currently has the same
+**editable DB timeline** open. It runs over a Supabase **presence** channel
+(`presence:<timelineId>`, `joinPresence` in
+[`src/realtime.ts`](../src/realtime.ts)), so it needs no DB table access and no RLS
+policy. [`src/presence.ts`](../src/presence.ts) renders it into the `#presence`
+element, with a colour and initials per e-mail; your own avatar gets a ring.
+Multiple tabs belonging to one person are deduplicated by e-mail, and from the
+sixth user on the rest collapses into „+N".
+
+Its lifecycle hangs off `setupRealtime`
+([`src/persistence.ts`](../src/persistence.ts)): switching views unsubscribes the old
+presence and clears the badge, then joins again for editable sources. Same opt-in
+condition as realtime (`VITE_SUPABASE_*`); without those vars the badge stays
+empty.
+
+Your own identity comes from the `GET /api/me` endpoint, because the session
+cookie is HttpOnly and the client otherwise does not know who it is: the Netlify
+edge function [`netlify/edge-functions/me.ts`](../netlify/edge-functions/me.ts) reads
+the session (`{ email, name }`) behind the auth gate, while the Vite middleware
+serves `{ email: 'local' }` locally. When no identity is known (an ungated site)
+the client tracks anonymously as „Gast".
+
+**Testing it locally:** a `dev_user` cookie overrides the dev identity (`/api/me`
+in [`vite.config.ts`](../vite.config.ts)); without it every tab is the same „local"
+user and therefore invisible to itself. Per tab, in the console:
+`document.cookie = 'dev_user=alice'; location.reload()`. Cookies are per origin,
+not per tab, so two identities at once need two browser profiles or windows, or a
+second client such as a Node script that joins the presence channel. Dev server
+only; the deploy derives the identity from the session cookie.
+
+#### Per-item presence (who is on what)
+
+Beyond the header badge, the **timeline** marks the item another user currently
+has selected or is editing, so a double edit becomes visible *before* the
+`409`/„extern geändert" notice arrives. It rides on the **same** presence channel
+(no second channel, no table, no migration): alongside the identity, the payload
+carries a `PresenceActivity` (`itemId` plus `editing`,
+[`src/presenceModel.ts`](../src/presenceModel.ts)).
+
+- **Sending:** `joinPresence` returns a `PresenceHandle`, and
+  `publishSelfPresence` ([`src/persistence.ts`](../src/persistence.ts)) reports through
+  `setActivity` which item we occupy (the open form, otherwise the timeline
+  selection). Unchanged activity is not put on the channel.
+- **`editing` vs. selected:** on an editable source a click opens the form
+  immediately, so „clicked" and „editing" would mean the same thing. Therefore
+  `markSelfEditing` only reports `editing` on an actual change (a form keystroke
+  via `scheduleLiveEdit`, a drag or resize via `handleMove`) and lets it fall back
+  to „selected" after `EDITING_LINGER_MS` of quiet.
+- **Rendering:** [`src/itemPresence.ts`](../src/itemPresence.ts) writes the ring
+  (`.has-remote-presence` / `.is-remote-editing`, pulsed) plus an avatar cluster
+  directly onto the vis item element. A child of `.vis-item` moves, scrolls and
+  zooms with its item, so unlike an absolutely positioned overlay (arrows.ts /
+  phaseBand.ts) it needs no recomputation per frame. What it does need is a
+  re-apply whenever vis mounts item DOM afresh, hence the `'changed'` hook in
+  `attachItemPresence`. Clone ids of a regrouped view resolve through `realIdOf`.
+  The cluster hangs off the **left** edge, because on long bars the right one is
+  often outside the window.
+- **Your own activity** is never marked (your selection already *is* the vis
+  selection). Multiple entries per e-mail collapse in `dedupeRoster` to the
+  **most recent** one (the `at` stamp in the payload), not to the „most specific"
+  one. That is not a detail but the correctness condition: a presence channel holds
+  several metas per key — one per tab, but also the *superseded* metas of the same
+  tab, because calling `track()` again adds a meta instead of replacing it. Sorted
+  by specificity the stale one then wins (`editing` beats the fresh „selected" that
+  replaced it) and the marker sticks on „currently editing" forever.
+- **Repaints run on a timer, not on `requestAnimationFrame`.** A backgrounded tab
+  stops firing rAF; an outstanding frame callback leaves the „already scheduled"
+  flag set, and every later sync then discards its repaint, so the tab freezes on
+  the last state it saw in the foreground. Timers keep running in the background,
+  merely throttled.
+- **Scope:** the timeline view only (the list view has no markers), under the same
+  opt-in condition as presence generally: realtime-only, `VITE_SUPABASE_*`. The
+  pure logic (ranking, dedupe, per-item bucketing) sits DOM-free in
+  `presenceModel.ts` and is tested in
+  [`src/presenceModel.test.ts`](../src/presenceModel.test.ts).
