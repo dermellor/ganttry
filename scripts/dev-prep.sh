@@ -26,7 +26,10 @@ sync_main_with_origin() {
 }
 sync_main_with_origin
 
-PORTS="3120"
+# Only this instance's own port. A second instance running from the same
+# checkout listens elsewhere (its profile sets TIMELINES_PORT) and must not be
+# killed by a `npm run dev` for the first one.
+PORTS="${TIMELINES_PORT:-3120}"
 # Only a real *listener* blocks binding to the port. Match `-sTCP:LISTEN` so we
 # don't trip over leftover client sockets in CLOSED/TIME_WAIT state (e.g. a
 # browser or the Claude app that connected to a now-dead dev server) — those

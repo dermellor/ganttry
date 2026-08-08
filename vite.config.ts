@@ -1,10 +1,25 @@
 import { defineConfig, type Plugin } from 'vite';
 import { resolve } from 'node:path';
-import { envSourcesHint, envValue } from './scripts/db/env';
+import { envSourcesHint, envValue, hydrateProcessEnv } from './scripts/db/env';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
 import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
 import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
+
+// Runs while Vite loads this config, before it resolves `import.meta.env`.
+// Vite reads VITE_* from repo-local .env files and from process.env only, so
+// this is what lets an instance profile outside the repo supply them.
+hydrateProcessEnv();
+
+// Where this instance's build output lives. `scripts/build-data.ts` writes to
+// public/<TIMELINES_DATA_DIR>/; the client needs the matching URL prefix, and
+// deriving it here keeps the two from drifting apart. Default '/data'.
+const DATA_DIR = (envValue('TIMELINES_DATA_DIR') || 'data').replace(/^\/+|\/+$/g, '');
+process.env.VITE_DATA_BASE ??= `/${DATA_DIR}`;
+
+// The port is the environment's business, not the project's (see AGENTS.md), so
+// it comes from the cascade and an instance profile can carry its own.
+const PORT = Number(envValue('TIMELINES_PORT')) || 3120;
 
 // Additive dual-adapter: prefer native postgres.js (TIMELINES_DATABASE_URL),
 // else supabase-js (TIMELINES_SUPABASE_URL + SERVICE_KEY). Both factories cache,
@@ -238,7 +253,7 @@ function timelinesApi(): Plugin {
 
 export default defineConfig({
   server: {
-    port: 3120,
+    port: PORT,
     strictPort: true,
   },
   plugins: [timelinesApi()],

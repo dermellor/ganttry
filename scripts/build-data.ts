@@ -5,12 +5,20 @@ import { join, relative, basename, dirname, extname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
+import { envValue } from './db/env.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CONFIG_PATH = join(ROOT, 'timelines.config.json');
-const OUT_DIR = join(ROOT, 'public', 'data');
+// Build output lives under public/ so Vite serves it. The directory name is
+// per-instance (`TIMELINES_DATA_DIR`), which is what lets two instances run
+// from one checkout without overwriting each other's build. The client reads
+// the matching base path, derived from the same value in vite.config.ts.
+const DATA_DIR = (envValue('TIMELINES_DATA_DIR') || 'data').replace(/^\/+|\/+$/g, '');
+const OUT_DIR = join(ROOT, 'public', DATA_DIR);
 const OUT_FILE = join(OUT_DIR, 'notes.json');
-const SOURCES_SUBDIR = (process.env.TIMELINES_SOURCES_SUBDIR ?? '').replace(/^\/+|\/+$/g, '');
+// Via the shared cascade, so which data an instance builds is part of its
+// profile rather than something the shell has to export.
+const SOURCES_SUBDIR = envValue('TIMELINES_SOURCES_SUBDIR').replace(/^\/+|\/+$/g, '');
 const SOURCES_DIR_IN = SOURCES_SUBDIR ? join(ROOT, 'data', SOURCES_SUBDIR) : join(ROOT, 'data');
 const SOURCES_DIR_OUT = join(OUT_DIR, 'sources');
 
@@ -39,12 +47,13 @@ function expandHome(p: string): string {
 }
 
 /**
- * Directory to scan for Markdown notes. `TIMELINES_NOTES_DIR` (env) overrides the
- * committed `notesDir` in the config, so a checkout can point at its own notes
- * without editing the tracked file.
+ * Directory to scan for Markdown notes. `TIMELINES_NOTES_DIR` (from the env
+ * cascade, so an instance profile can set it) overrides the committed
+ * `notesDir` in the config, so a checkout can point at its own notes without
+ * editing the tracked file.
  */
 function resolveNotesDir(config: Config): string {
-  return expandHome(process.env.TIMELINES_NOTES_DIR ?? config.notesDir);
+  return expandHome(envValue('TIMELINES_NOTES_DIR') || config.notesDir);
 }
 
 async function loadConfig(): Promise<Config> {
@@ -165,7 +174,7 @@ function unitToMs(unit: string): number {
   }
 }
 
-const STATIC_ONLY = /^(1|true|yes)$/i.test(process.env.TIMELINES_STATIC_ONLY ?? '');
+const STATIC_ONLY = /^(1|true|yes)$/i.test(envValue('TIMELINES_STATIC_ONLY'));
 
 // Discover DB-backed timelines from the DB at build time and register them as
 // views. The registration stub (name/description/groupBy + empty items —

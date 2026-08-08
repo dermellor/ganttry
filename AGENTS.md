@@ -193,6 +193,69 @@ The same rule governs a **second repository**: do not keep one around as a priva
 tracker. Two trackers in parallel is overhead that goes stale within weeks, and a
 stale tracker misleads.
 
+## Instances
+
+A checkout is not bound to one deployment. An **instance** is a named set of
+values pointing at one: its database, the `data/` subfolder it builds, the notes
+directory it scans, its JIRA account, its host site. Development against a
+production instance, a staging instance and a throwaway test database is the
+normal case, so switching between them has to be one line rather than an edit
+pass over several files.
+
+Instance values live **outside the repo**, one file per instance:
+
+```
+~/.config/ganttry/instances/<name>.env
+```
+
+`.env.local` then carries only the name:
+
+```bash
+TIMELINES_INSTANCE=staging
+```
+
+Nothing about a deployment becomes a tracked file this way, and no `.env.local`
+in the repo has to be rewritten to move between instances. `TIMELINES_INSTANCE_DIR`
+moves the profile directory. A name is a single path segment of `[A-Za-z0-9._-]`;
+anything else resolves to no profile rather than to a file elsewhere on disk.
+
+The full cascade is `process.env` → `.env.local` → the instance profile → the
+files named by `TIMELINES_ENV_FILE`, earlier winning. The profile outranks
+`TIMELINES_ENV_FILE` because that seam is for keys shared across *projects*,
+which is the coarser statement. All of it is implemented once in
+[`scripts/db/env.ts`](scripts/db/env.ts); entry points call `envValue()` rather
+than reading `process.env` directly. `hydrateProcessEnv()` exists for the two
+consumers that cannot: Vite's own `loadEnv`, which fills `import.meta.env` from
+repo-local files and prefixed `process.env` keys only, and any child process.
+
+**Instance data files** go in `data/<name>/`, selected by
+`TIMELINES_SOURCES_SUBDIR`. Every subdirectory of `data/` is gitignored; the
+top-level `data/*.json` are the shipped examples. That way a stray `git add data`
+cannot pull a deployment's roadmap into the public history. See „Issues are
+public" above for the same rule applied to the tracker.
+
+### Two instances from one checkout
+
+Running two instances side by side (a test one and one pointing at production)
+is the normal local setup, so nothing about an instance may live in shared repo
+state. Two values make that work, both belonging in the profile:
+
+| Variable             | Default | Why it has to be per-instance                        |
+| -------------------- | ------- | ---------------------------------------------------- |
+| `TIMELINES_DATA_DIR` | `data`  | build output under `public/`; a shared directory means the two builds overwrite each other |
+| `TIMELINES_PORT`     | `3120`  | `vite.config.ts` and `scripts/dev-prep.sh` both read it, so starting one instance never kills the other |
+
+`build:data` writes to `public/<TIMELINES_DATA_DIR>/`; `vite.config.ts` derives
+the client's fetch prefix from the same value and passes it as `VITE_DATA_BASE`,
+so the two cannot drift apart. The client reads it through
+[`src/data-base.ts`](src/data-base.ts) rather than hardcoding `/data`.
+`public/data-*/` is gitignored.
+
+One consequence worth knowing: `vite build` copies all of `public/`, so a local
+build carries every instance's data directory into `dist/`. Host builds run from
+a fresh clone where those directories do not exist, so this only matters if you
+deploy a locally produced `dist/`.
+
 ## Dev server and ports
 
 The port is set in [`vite.config.ts`](vite.config.ts) with `strictPort: true`, so

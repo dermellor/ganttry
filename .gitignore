@@ -3,6 +3,8 @@ dist
 public/data/notes.json
 public/data/config.json
 public/data/sources/
+# Build output of a second instance in the same checkout (TIMELINES_DATA_DIR).
+public/data-*/
 .vite
 .netlify
 .env
@@ -22,3 +24,9 @@ deno.lock
 # Host-specific development setup (ports, process manager, reverse proxy).
 # Not part of the project — see AGENTS.md for the project-level rules.
 .claude/local-setup.md
+
+# Instance source data. data/*.json at the top level are the shipped examples;
+# every subdirectory belongs to one deployment (TIMELINES_SOURCES_SUBDIR picks
+# it) and stays local. Ignored as a directory so a stray `git add data` cannot
+# pull a customer roadmap into the public history.
+data/*/

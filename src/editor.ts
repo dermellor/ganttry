@@ -1,3 +1,4 @@
+import { dataUrl } from './data-base';
 import type {
   PricingFeature,
   PricingTier,
@@ -228,7 +229,7 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
     // Genuine file source: the static file IS the source of truth, not a
     // snapshot of something live. Loading it read-only is therefore correct and
     // does not conflict with the "no fallback for DB timelines" principle below.
-    const res = await fetch(`/data/sources/${id}.json`).catch(() => null);
+    const res = await fetch(dataUrl(`sources/${id}.json`)).catch(() => null);
     if (res && res.ok) {
       return { file: await res.json(), editable: false, live: 'none' };
     }

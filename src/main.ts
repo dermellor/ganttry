@@ -57,6 +57,7 @@ import {
   pluginViewSection,
   showOnlyPluginSection,
 } from './pluginHost/views';
+import { dataUrl } from './data-base';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -69,13 +70,13 @@ function isTypingTarget(el: EventTarget | null): boolean {
 }
 
 async function loadConfig(): Promise<Config> {
-  const res = await fetch('/data/config.json');
+  const res = await fetch(dataUrl('config.json'));
   if (!res.ok) throw new Error(`Could not load config: ${res.status}`);
   return res.json();
 }
 
 async function loadNotes(): Promise<NotesData> {
-  const res = await fetch('/data/notes.json');
+  const res = await fetch(dataUrl('notes.json'));
   if (!res.ok) throw new Error(`Could not load notes data: ${res.status}`);
   return res.json();
 }
