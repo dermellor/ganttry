@@ -255,6 +255,14 @@ export default defineConfig({
   server: {
     port: PORT,
     strictPort: true,
+    watch: {
+      // Worktrees live inside the checkout (`.claude/worktrees/<name>`), so the
+      // dev server's watcher reaches into them and reloads the page whenever
+      // another branch's working copy changes — down to its built `dist/`. That
+      // is another branch's code, never what this server serves, so the reload
+      // is always noise and makes a preview look like it moved on its own.
+      ignored: ['**/.claude/worktrees/**'],
+    },
   },
   plugins: [timelinesApi()],
 });
