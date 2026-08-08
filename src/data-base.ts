@@ -6,7 +6,10 @@
  * instances can run from one checkout without overwriting each other. A plain
  * single-instance setup leaves both unset and stays on `/data`.
  */
-export const DATA_BASE = (import.meta.env.VITE_DATA_BASE || '/data').replace(/\/+$/, '');
+// `import.meta.env` only exists once Vite has transformed the module. Optional
+// chaining keeps the module importable from plain Node (the test runner, and any
+// script that wants the same path rules) instead of throwing on load.
+export const DATA_BASE = (import.meta.env?.VITE_DATA_BASE || '/data').replace(/\/+$/, '');
 
 /** URL of a file inside this instance's build output. */
 export function dataUrl(path: string): string {

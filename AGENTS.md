@@ -258,10 +258,14 @@ deploy a locally produced `dist/`.
 
 ## Dev server and ports
 
-The port is set in [`vite.config.ts`](vite.config.ts) with `strictPort: true`, so
-a conflict is a hard failure rather than a silent move to another port. Which port
-that is, and how the server is supervised, is your environment's business and not
-a property of the project.
+The port comes from `TIMELINES_PORT` through the env cascade (3120 if unset), so
+an instance profile carries its own and two instances never collide.
+[`vite.config.ts`](vite.config.ts) reads it and sets `strictPort: true`, so a
+conflict is a hard failure rather than a silent move to another port.
+[`scripts/dev-prep.sh`](scripts/dev-prep.sh) reads the same variable, which is
+what keeps it from killing the other instance's server. Which port an instance
+gets, and how the server is supervised, is your environment's business and not a
+property of the project.
 
 A second server for a worktree runs through `npm run dev:worktree`, which listens
 on `WT_PORT` and skips the pre-flight script, so it does not disturb a server
