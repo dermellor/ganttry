@@ -58,12 +58,12 @@ left alone, and a sweep that "finishes the rename" breaks all three:
   `timelines` / `timeline_items`, types like `TimelineFile`, `vis-timeline`, the
   Timeline view. That is the noun the product operates on, so renaming it would
   cost a schema migration and buy nothing.
-- **Deployment identity.** An instance carries its own name. Acme runs one at
-  `timelines.example.com`, so the Netlify site, the `timelines-api` /
-  `pricing-api` edge functions, the `TIMELINES_*` env vars and the MCP URL keep
-  saying `timelines`. Renaming the env vars means editing the Netlify dashboard
-  and every `.env` in lockstep; a half-applied rename takes DB access down (it
-  fails loudly by design, see „Principle: no emergency or fallback data").
+- **Deployment identity.** A deployment carries the name it was set up under: the
+  host's site name, the `timelines-api` / `pricing-api` edge functions, the
+  `TIMELINES_*` env vars and the MCP URL all keep saying `timelines`. Renaming the
+  env vars means editing the host's dashboard and every `.env` in lockstep, and a
+  half-applied rename takes DB access down (loudly, by design — see „Principle: no
+  emergency or fallback data").
 - **Applied migrations.** `supabase/migrations/*.sql` are checksummed by
   `db:migrate`; editing even a comment in one raises a drift warning.
 
