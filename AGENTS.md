@@ -19,6 +19,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server and its tools. |
 | [`docs/deploy.md`](docs/deploy.md) | The Netlify deploy, the auth gate, JIRA linking. |
 | [`docs/pricing.md`](docs/pricing.md) | The pricing model of a product-roadmap timeline. |
+| [`docs/plugin-playbook.md`](docs/plugin-playbook.md) | How a new plugin gets built: the gate, the reach research, implementation, verification, publication. |
 | [`openapi.yaml`](openapi.yaml) | The HTTP API, generated. Read this before writing a client. |
 | [`schema/`](schema/) | JSON Schemas for the data files, generated from `src/types.ts`. |
 

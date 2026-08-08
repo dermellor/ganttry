@@ -38,6 +38,10 @@ touches it.
   Task-Änderungen beenden: „done" = committed + gepusht + Deploy verifiziert
   (Netlify grün). Vor Session-Ende muss `git status` sauber sein (außer bewusst
   ge-`.gitignore`-ten Artefakten).
+- **Neues Plugin:** immer den `/new-plugin` Skill aufrufen, nie direkt lospatchen.
+  Er fährt [`docs/plugin-playbook.md`](docs/plugin-playbook.md) ab und hält die
+  Stopps ein (Eignungs-Gate, Reichweiten-Recherche vor der Benennung, Spec,
+  Testanleitung). Der Skill ist bewusst dünn: die Inhalte stehen im Playbook.
 - **Push ist immer ein separater, expliziter Schritt.** Committen und Pushen
   niemals als eine Aktion bündeln, niemals automatisch mit dem Commit pushen
   (globale Regel „Never git push without asking"). Erst committen; der Push

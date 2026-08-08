@@ -111,6 +111,19 @@ Each subsystem is documented with its reasoning in [`docs/`](docs/) — data mod
 items, editing, database, MCP, deploy, pricing — and [`AGENTS.md`](AGENTS.md) is the
 index plus the conventions that apply everywhere.
 
+## Plugins
+
+A plugin contributes item fields, and optionally a view, to any timeline. It is
+enabled per timeline as data, and its code is loaded lazily, so a build carries only
+what the timelines in front of you actually use.
+
+| Plugin | What it adds |
+| --- | --- |
+| [`product-roadmap`](src/kinds/product-roadmap/) | A pricing matrix and pricing cards, plus Version, Tier and Features fields derived from the pricing model. See [`docs/pricing.md`](docs/pricing.md). |
+
+Building one: [`docs/plugin-playbook.md`](docs/plugin-playbook.md), starting from
+[`src/kinds/_template/`](src/kinds/_template/).
+
 ## Theming
 
 The viewer ships a single neutral theme defined as CSS custom properties in the
