@@ -3,12 +3,14 @@
   publish = "dist"
 
 [build.environment]
-  # 22+ so the MCP Function's supabase-js has a native WebSocket (realtime-js).
+  # 22+ so the MCP Function's supabase-js has a native WebSocket (realtime-js),
+  # and because the test script's glob needs Node 22 (see engines.node).
   NODE_VERSION = "22"
-  # Skip the Markdown notes scan on the deploy (serve only JSON + DB sources).
-  TIMELINES_STATIC_ONLY = "true"
   # Instance-specific values are NOT committed here — set them per site in the
   # Netlify dashboard (Site settings → Environment variables):
+  #   TIMELINES_STATIC_ONLY    — "true" to skip the Markdown notes scan and drop
+  #                              notes-driven views. A policy choice per deploy:
+  #                              an instance that serves notes wants it unset.
   #   TIMELINES_SOURCES_SUBDIR — scope the file-source scan to data/<subdir>/
   #   VITE_JIRA_BASE_URL       — public base URL for JIRA browse links (not a secret)
   #   ALLOWED_EMAIL_DOMAINS    — comma-separated allowed sign-in domains for the

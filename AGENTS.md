@@ -2035,7 +2035,10 @@ Netlify dashboard (Site settings → Environment variables).
   scoped by the same `TIMELINES_SOURCES_SUBDIR` used as an **id namespace prefix**
   (e.g. subdir `acme` → all `acme/…` timelines). No committed stubs; if the build
   can reach the DB but the list query fails, the build fails loudly.
-- Notes scan disabled (`TIMELINES_STATIC_ONLY=true`); no Markdown-driven views.
+- **Notes scan:** off when `TIMELINES_STATIC_ONLY=true`, which then also drops the
+  notes-driven views. It is a per-deploy policy choice and therefore a dashboard
+  variable, not committed in `netlify.toml`: an instance that does serve notes
+  leaves it unset.
 - **Editing** is live when the Supabase env vars are set (see „Postgres as the
   data source → Production setup"): the `timelines-api` edge function serves
   DB-backed timelines editable. Without those vars, the DB read fails and the
