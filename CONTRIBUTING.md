@@ -70,12 +70,14 @@ bundle-split check (below). What the checks expect:
   `src/status.ts`) and is imported by both, rather than being restated.
 - **No fallback data.** DB-backed timelines load live and fail loudly; there is
   deliberately no cached or committed snapshot of live content. AGENTS.md →
-  „Prinzip: keine Notfall-/Fallback-Daten" explains why, and it is a hard rule.
+  „Principle: no emergency or fallback data" explains why, and it is a hard rule.
 - **Never commit credentials.** `.env.local` is gitignored; `TIMELINES_ENV_FILE`
   points at files outside the repo if your keys live elsewhere. Do not commit
   timeline data that is not yours to publish.
-- Parts of AGENTS.md are still German, a leftover from the project's history.
-  English is preferred for new documentation.
+- **Documentation is English, the UI is German.** That split is deliberate, so
+  quoted UI strings stay German in the docs („Neu", „kein Wert", „Gespeichert")
+  even in otherwise English prose. Some `data/` examples and a few identifiers
+  also carry German words; that is history, not a convention to extend.
 
 ## Pull requests
 

@@ -10,7 +10,7 @@ Der Vite-Dev-Server auf **3120** läuft unter PM2 aus dem **Main-Checkout** und
 sieht Worktree-Edits nicht. Worktree-Previews laufen auf dem fünfstelligen Pool
 **31200–31209**, PM2 bleibt parallel auf 3120. Niemals PM2 stoppen, um 3120
 freizumachen: das reißt `ganttry.localhost` für alle anderen Sessions weg.
-Ableitung des Pools: `AGENTS.md` → „Ports → Worktree-Live-Preview".
+Ableitung des Pools: `AGENTS.md` → „Ports → Worktree live preview".
 
 ## Ablauf
 

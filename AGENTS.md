@@ -17,7 +17,7 @@ alone, and a sweep that "finishes the rename" breaks all three:
   `pricing-api` edge functions, the `TIMELINES_*` env vars and the MCP URL keep
   saying `timelines`. Renaming the env vars means editing the Netlify dashboard
   and every `.env` in lockstep; a half-applied rename takes DB access down (it
-  fails loudly by design, see „Prinzip: keine Notfall-/Fallback-Daten").
+  fails loudly by design, see „Principle: no emergency or fallback data").
 - **Applied migrations.** `supabase/migrations/*.sql` are checksummed by
   `db:migrate`; editing even a comment in one raises a drift warning.
 
@@ -86,7 +86,7 @@ does **not** see edits made in a worktree. When a task needs live visual
 verification, start the worktree server on a five-digit preview port from the
 **31200–31209** pool (`npm run dev:worktree`, default 31200) so PM2 keeps serving
 3120 — **never stop PM2** to free 3120 (that tears down `ganttry.localhost` for
-every other session). Details: „Ports → Worktree-Live-Preview". Alternatively
+every other session). Details: „Ports → Worktree live preview". Alternatively
 merge to `main` and verify there.
 Never assume the running app reflects worktree edits — that mismatch is a known
 trap.
@@ -126,43 +126,45 @@ or coordinate before touching shared files.
 
 ## Ports
 
-Belegt im 3120er-Block (siehe [`~/Development/PORTS.md`](../PORTS.md)).
+This project owns the 3120 block. The port convention itself is a local
+development-environment concern, not a property of the project: it exists so
+several projects can run side by side on one machine.
 
-| Port          | Service                                            |
-| ------------- | -------------------------------------------------- |
-| 3120          | Vite dev server (Timeline UI) — PM2, Main-Checkout |
-| 31200–31209   | Vite dev server für Worktree-Live-Previews (Pool)  |
+| Port          | Service                                                    |
+| ------------- | ---------------------------------------------------------- |
+| 3120          | Vite dev server (timeline UI) — main checkout, run by PM2   |
+| 31200–31209   | Vite dev server for worktree live previews (pool)          |
 
 URLs:
 
-- `https://ganttry.localhost` — primärer Zugang über Caddy (HTTPS, von PM2 verwaltet)
-- `http://localhost:3120` — direkt auf Vite (Main-Checkout, von PM2)
-- `http://localhost:31200` … `31209` — Worktree-Previews (siehe unten)
+- `https://ganttry.localhost` — primary entry through Caddy (HTTPS, managed by PM2)
+- `http://localhost:3120` — Vite directly (main checkout, run by PM2)
+- `http://localhost:31200` … `31209` — worktree previews (see below)
 
-Crasht bei Port-Konflikt (`strictPort: true`), kein Auto-Fallback.
+Crashes on a port conflict (`strictPort: true`); there is no auto-fallback.
 
-### Worktree-Live-Preview (Pool 31200–31209) — PM2 nie stoppen
+### Worktree live preview (pool 31200–31209): never stop PM2
 
-Der PM2-Dev-Server auf 3120 läuft aus dem **Main-Checkout** und sieht
-Worktree-Edits nicht (siehe „Live-preview caveat" oben). Um Änderungen aus einem
-Worktree live zu sehen, **niemals PM2 stoppen** (das reißt `ganttry.localhost`
-für alle anderen Sessions weg). Stattdessen den Worktree-Server auf einem eigenen
-fünfstelligen Preview-Port starten — PM2 bleibt parallel auf 3120:
+The PM2-managed dev server on 3120 runs from the **main checkout** and does not
+see worktree edits (see the „Live-preview caveat" above). To watch changes from a
+worktree, **never stop PM2** — that tears down `ganttry.localhost` for every
+other session. Start the worktree's own server on a five-digit preview port
+instead, so PM2 keeps serving 3120 alongside it:
 
 ```bash
-npm run dev:worktree              # Default-Port 31200
-WT_PORT=31201 npm run dev:worktree  # zweite Worktree parallel, usw.
+npm run dev:worktree                # default port 31200
+WT_PORT=31201 npm run dev:worktree  # a second worktree in parallel, and so on
 ```
 
-Die Preview-Ports leben bewusst **außerhalb** des engen 3120er-Blocks in einem
-fünfstelligen Pool **31200–31209** (abgeleitet: `3120` → `31200` + Index), damit
-beliebig viele Worktrees gleichzeitig laufen können, ohne sich oder andere
-Services zu blockieren. Default ist 31200; für weitere parallele Previews den
-`WT_PORT` hochzählen. Das Script lässt `dev-prep.sh` bewusst aus (killt also nicht
-den 3120-Prozess). In Claude Code entsprechen die Launch-Configs `vite-worktree`
-(31200), `vite-worktree-2` (31201), `vite-worktree-3` (31202) in
-`.claude/launch.json`. Regel: **Worktree-Previews immer auf 31200+, PM2 auf 3120
-laufen lassen — nie umgekehrt.**
+The preview ports live deliberately **outside** the narrow 3120 block, in a
+five-digit pool **31200–31209** (derived: `3120` → `31200` + index), so any
+number of worktrees can run at once without blocking each other or other
+services. The default is 31200; count `WT_PORT` up for further parallel
+previews. The script deliberately skips `dev-prep.sh`, so it does not kill the
+process on 3120. In Claude Code the matching launch configs are `vite-worktree`
+(31200), `vite-worktree-2` (31201) and `vite-worktree-3` (31202) in
+`.claude/launch.json`. The rule: **worktree previews always on 31200+, PM2 on
+3120, never the other way around.**
 
 ## Architecture
 
@@ -179,7 +181,7 @@ A source-backed view carries an explicit **kind** on `view.source`
 (`{ kind, id }`, `SourceKind` in [`src/types.ts`](src/types.ts)) that drives how
 its data is loaded. This is deliberately **not** a "try the API, then fall back
 to a static file" guess — that conflated a live DB timeline with a stale
-snapshot (see „Prinzip: keine Notfall-/Fallback-Daten"). The kind is set at build
+snapshot (see „Principle: no emergency or fallback data"). The kind is set at build
 time and flows through the built config to the client:
 
 - **`db`** — live from the DB via `GET /api/source/<id>`, editable, **no** static
@@ -202,8 +204,8 @@ new `SourceKind` value plus its loader — the routing seam already exists.
 resolves a `SourceAdapter` via `resolveAdapter(conns, id, live)`
 ([`scripts/db/api.ts`](scripts/db/api.ts)) and dispatches through
 `adapter.handle(req)`. The DB-backed source has **two interchangeable drivers**
-behind that one adapter, selected by env (see „Supabase als Datenquelle →
-Treiber"): supabase-js (the Netlify default) and native postgres.js (opt-in).
+behind that one adapter, selected by env (see „Postgres as the data source →
+Drivers"): supabase-js (the Netlify default) and native postgres.js (opt-in).
 Both satisfy the same `TimelineRepo` seam ([`scripts/db/repo.ts`](scripts/db/repo.ts));
 `handleTimelineApi(repo, req)` dispatches through the bound repo and never sees
 the driver. The adapter's `capabilities` declare `editable` and a `live` mode
@@ -1074,590 +1076,593 @@ stays untouched.
 > recursive key-sort — **not** a `JSON.stringify` array replacer, which silently
 > drops nested keys and made metadata-only edits look unchanged.
 
-## Supabase als Datenquelle
+## Postgres as the data source
 
-Editierbare Timelines liegen in **Supabase (Postgres)**, nicht mehr in Google
-Sheets. Geschrieben wird **item-genau mit optimistischem Locking** (`version`-
-Spalte pro Item): parallele Edits an verschiedenen Items überschreiben sich nicht
-mehr, und ein veralteter Schreibversuch bekommt `409` statt still zu verlieren.
+Editable timelines live in **Postgres** (hosted Supabase, or any Postgres of your
+own). Writes are **per-item with optimistic locking** (a `version` column on each
+item): concurrent edits to different items no longer overwrite each other, and a
+stale write gets a `409` instead of silently winning.
 
-Datei-basierte Timelines (`data/*.json`, z.B. die Beispiele) bleiben **read-only
-statische Quellen** — sie sind *nicht* in der DB. Nur DB-Timelines sind editierbar.
+File-based timelines (`data/*.json`, e.g. the examples) stay **read-only static
+sources** — they are *not* in the DB. Only DB timelines are editable.
 
-Lokale Middleware (`vite.config.ts`) und Netlify-Edge-Function
-(`netlify/edge-functions/timelines-api.ts`) teilen sich denselben Dispatcher
-(`scripts/db/api.ts`, `handleTimelineApi(repo, req)`) und den `TimelineRepo`-Seam
-(`scripts/db/repo.ts`) — eine Implementierung der Storage- und Locking-Semantik
-für beide Runtimes, unabhängig vom gewählten Treiber (siehe „Treiber").
+The local middleware (`vite.config.ts`) and the Netlify edge function
+(`netlify/edge-functions/timelines-api.ts`) share one dispatcher
+(`scripts/db/api.ts`, `handleTimelineApi(repo, req)`) and the `TimelineRepo` seam
+(`scripts/db/repo.ts`): a single implementation of the storage and locking
+semantics for both runtimes, independent of the chosen driver (see „Drivers").
 
-> **Treiber (seit Phase 3, #28): additiver Dual-Adapter — `supabase-js` (Default)
-> ODER `postgres.js` (opt-in).** Beide Treiber implementieren denselben
-> `TimelineRepo`-Seam ([`scripts/db/repo.ts`](scripts/db/repo.ts), jede
-> Storage-Methode mit gebundenem Client, ohne führenden Client-Parameter):
+> **Drivers: an additive dual adapter — `supabase-js` (default) OR `postgres.js`
+> (opt-in).** Both implement the same `TimelineRepo` seam
+> ([`scripts/db/repo.ts`](scripts/db/repo.ts); every storage method takes a bound
+> client rather than a leading client parameter):
 > - **`supabase-js`** ([`scripts/db/timeline-repo-supabase.ts`](scripts/db/timeline-repo-supabase.ts),
->   Factory `makeSupabaseRepo(db)`) — spricht HTTP/PostgREST, läuft ohne rohes TCP
->   im Deno-Edge und ist **der Default, auf dem der Netlify-Deploy läuft**.
->   Node-Client `getServiceClient()` ([`scripts/db/client.ts`](scripts/db/client.ts)).
+>   factory `makeSupabaseRepo(db)`) speaks HTTP/PostgREST, runs in the Deno edge
+>   without raw TCP, and is **the default the Netlify deploy runs on**. Node
+>   client: `getServiceClient()` ([`scripts/db/client.ts`](scripts/db/client.ts)).
 > - **`postgres.js`** ([`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts),
->   Factory `makePostgresRepo(sql)`) — **opt-in** für Self-Hoster mit eigenem
->   Postgres über einen Connection-String (`TIMELINES_DATABASE_URL`). Node-Factory
->   `getSql()` ([`scripts/db/sql.ts`](scripts/db/sql.ts), `prepare:false` für den
->   Supavisor-Transaction-Pooler); die Edge-Functions öffnen einen **modul-scoped,
->   über Invocations wiederverwendeten** Handle (nie `sql.end()` im Handler —
->   Deno-Teardown-Quirk).
+>   factory `makePostgresRepo(sql)`) is **opt-in** for self-hosters with their own
+>   Postgres, reached through a connection string (`TIMELINES_DATABASE_URL`). Node
+>   factory: `getSql()` ([`scripts/db/sql.ts`](scripts/db/sql.ts), with
+>   `prepare:false` for the Supavisor transaction pooler). The edge functions open
+>   a **module-scoped handle reused across invocations** — never call `sql.end()`
+>   in a handler, a Deno teardown quirk.
 >
-> **Auswahl per Env** (identisch in jeder Runtime): ist `TIMELINES_DATABASE_URL`
-> gesetzt → postgres.js, sonst `TIMELINES_SUPABASE_URL` + `TIMELINES_SUPABASE_SERVICE_KEY`
-> → supabase-js. Die Glue baut beide möglichen Handles und übergibt sie als
-> `{ sql, supabase }` an `resolveAdapter`/`resolveRepo`; postgres.js gewinnt, wenn
-> ein `sql`-Handle da ist. **Netlify setzt nur die Supabase-Vars → dort läuft
-> unverändert supabase-js**, null Verhaltens-/Risiko-Änderung. Optimistisches
-> Locking (`update … where version=$` + 0-Rows→`ConflictError`), jsonb-Handling
-> und der DB-Trigger-`version`-Bump sind in beiden Treibern identisch;
-> **Schema/Trigger/Migrationen unverändert**. `@supabase/supabase-js` lebt zusätzlich
-> client-seitig in [`src/realtime.ts`](src/realtime.ts) (Browser-Realtime) —
-> davon unberührt.
+> **Selected by env** (identically in every runtime): if `TIMELINES_DATABASE_URL`
+> is set → postgres.js, otherwise `TIMELINES_SUPABASE_URL` +
+> `TIMELINES_SUPABASE_SERVICE_KEY` → supabase-js. The glue builds both possible
+> handles and passes them as `{ sql, supabase }` to `resolveAdapter`/`resolveRepo`;
+> postgres.js wins whenever an `sql` handle is present. **Netlify sets only the
+> Supabase vars, so it keeps running supabase-js** unchanged. Optimistic locking
+> (`update … where version=$` plus 0-rows→`ConflictError`), jsonb handling and the
+> DB trigger's `version` bump are identical in both drivers, and
+> **schema, triggers and migrations are untouched** by the choice.
+> `@supabase/supabase-js` additionally lives client-side in
+> [`src/realtime.ts`](src/realtime.ts) for browser realtime, which is unaffected.
 >
-> **Prod-Deploy (Netlify):** unverändert die Supabase-Vars setzen (`TIMELINES_SUPABASE_URL`
-> + `TIMELINES_SUPABASE_SERVICE_KEY`) — kein `TIMELINES_DATABASE_URL` nötig. Nur wer
-> bewusst nativen Postgres statt PostgREST fahren will, setzt `TIMELINES_DATABASE_URL`;
-> der Deno-Deploy-Outbound-TCP zum Pooler ist dann der einzige erst live
-> verifizierbare Punkt (lokal Node + Docker-Postgres bewiesen).
+> **Production deploy (Netlify):** set the Supabase vars
+> (`TIMELINES_SUPABASE_URL` + `TIMELINES_SUPABASE_SERVICE_KEY`); no
+> `TIMELINES_DATABASE_URL` is needed. Only someone who deliberately wants native
+> Postgres instead of PostgREST sets it, and then the Deno deploy's outbound TCP
+> to the pooler is the one thing verifiable only live (proven locally with Node
+> plus a Docker Postgres).
 
-### Prinzip: keine Notfall-/Fallback-Daten — niemals
+### Principle: no emergency or fallback data, ever
 
-**Für DB-Timelines wird nirgends ein Inhalts-Snapshot vorgehalten. Lieber gar
-keine Daten als falsche.** Ein committeter oder gecachter Abzug einer
-Live-Timeline ist optisch nicht von echten Daten zu unterscheiden und wird
-zuverlässig damit verwechselt (bei DB-Ausfall, id-Mismatch, veraltetem Stand).
-Deshalb gilt hart:
+**No content snapshot of a DB timeline is kept anywhere. No data beats wrong
+data.** A committed or cached dump of a live timeline is visually
+indistinguishable from real data and reliably gets mistaken for it — during a DB
+outage, on an id mismatch, or when it is simply stale. So this holds strictly:
 
-- Der Viewer lädt DB-Timelines **ausschließlich** live aus der DB
-  (`GET /api/source/<id>`). Schlägt das fehl (`404`, kein Netz), **failt er laut**
-  mit einer Fehlermeldung — es wird *kein* statischer Inhalt angezeigt
+- The viewer loads DB timelines **exclusively** live from the DB
+  (`GET /api/source/<id>`). If that fails (`404`, no network) it **fails loudly**
+  with an error message and shows *no* static content
   ([`src/editor.ts`](src/editor.ts), `loadSource`).
-- DB-Timelines werden **nicht** über committete Dateien registriert. `build-data`
-  fragt beim Bauen die DB ab (`collectDbSources` in
-  [`scripts/build-data.ts`](scripts/build-data.ts)) und erzeugt pro Timeline einen
-  **Registrierungs-Stub** (`name`, optional `description`/`groupBy`, `items: []`)
-  ausschließlich im **gitignorierten Build-Output** (`public/data/sources/`), damit
-  sie in der View-Liste auftaucht. Der Stub enthält **nie** items/groups/phases;
-  Inhalte lädt der Viewer live. So trägt das Repo **keine** Mandanten-Dateien, und
-  der Deploy listet seine DB-Timelines trotzdem (er hat DB-Zugriff und fragt sie
-  beim Bauen ab). Scope über `TIMELINES_SOURCES_SUBDIR` als id-Namespace-Präfix.
+- DB timelines are **not** registered through committed files. `build-data`
+  queries the DB at build time (`collectDbSources` in
+  [`scripts/build-data.ts`](scripts/build-data.ts)) and writes one
+  **registration stub** per timeline (`name`, optionally `description`/`groupBy`,
+  `items: []`) exclusively into the **gitignored build output**
+  (`public/data/sources/`), so the timeline appears in the view list. The stub
+  **never** contains items, groups or phases; the viewer loads content live. That
+  way the repo carries **no** tenant files, and a deploy still lists its DB
+  timelines because it has DB access and asks at build time. Scope it with
+  `TIMELINES_SOURCES_SUBDIR` as an id namespace prefix.
 
-Neue Sync-/Cache-/Fallback-Mechanismen für DB-Timelines, die Inhalte in Dateien,
-CDN oder sonstwo spiegeln, sind **nicht** einzuführen. (Datei-basierte Quellen —
-die Beispiele — sind kein Widerspruch: dort *ist* die Datei die Quelle, kein
-Abzug von etwas anderem.)
+Do **not** introduce new sync, cache or fallback mechanisms that mirror DB
+timeline content into files, a CDN, or anywhere else. (File-based sources — the
+examples — are not a contradiction: there the file *is* the source, not a dump of
+something else.)
 
 ### Schema
 
-Drei Tabellen (Migrationen in `supabase/migrations/`):
+Migrations live in `supabase/migrations/` (the directory name is historical; the
+runner works against any Postgres).
 
 - `timelines` — id, name, description, group_by, `phases` (jsonb),
-  `custom_fields` (jsonb). **Keine plugin-spezifischen Spalten mehr:** die frühere
-  `type`-Spalte (Gate `'product'`) und `pricing_versions` (geordnete Versions-
-  Labels) sind seit Migration `0012`/`0013` in die generische
-  `timeline_plugins`-Registry gewandert (siehe unten + „Plugin-Registry"). Das
-  Preismodell selbst liegt seit Migration `0009` normalisiert in eigenen Tabellen.
-- `timeline_plugins` — die **generische Plugin-Registry** (Migration `0012`):
-  eine Zeile pro (timeline_id, plugin_id) plus `config` (jsonb). Ein Plugin (a.k.a.
-  Timeline-Kind, z.B. `'product-roadmap'`) ist auf einer Timeline **aktiviert,
-  sobald hier eine Zeile existiert** — reine Daten, kein `ALTER TABLE`, keine
-  Core-Spalte. Für `product-roadmap` trägt `config` die Versionsliste
-  (`{ versions: [...] }`, früher die `pricing_versions`-Spalte). FK-Cascade auf
-  `timelines`, anon-SELECT + Realtime wie die pricing_*-Tabellen. Ein neues Plugin
-  braucht (nur) seine eigenen Daten-/Tabellen, nie eine Spalte am Core. Siehe
-  „Plugin-Registry".
-- `timeline_items` — Spalten für start/end/duration/content/group/type/title/
-  body/icon/status/class_name (`status` `NOT NULL DEFAULT 'Open'` + CHECK
-  `Open|Doing|Done`, siehe „Item status"), `metadata` (jsonb: `dependsOn`, `owner`
-  — die E-Mail des verknüpften Benutzers, siehe „Item owner" —, `jira`, freie
-  Extras), `version` (Trigger-Bump bei UPDATE), `sort`, `updated_by`. Nur
-  `content` ist Pflicht; `start` ist seit Migration `0006_start_nullable` nullable (ein über die
-  Liste angelegter Eintrag darf datumslos sein und erscheint dann nur in der
-  Listenansicht, nicht auf der Timeline). `end` und
-  `duration` schließen sich aus (Ausdehnung entweder/oder, `end` gewinnt) —
-  erzwungen im Write-Layer für alle Pfade (`enforceExtentExclusivity` +
-  patch-bewusstes Gegenstück-Löschen in [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts),
-  MCP `add_item`/`update_item`, Client-Form). Ist `end` gesetzt, muss es **nach**
-  `start` liegen — verdrehte oder null-lange Extents werden mit `400` abgelehnt
-  (Regel in [`src/itemExtent.ts`](src/itemExtent.ts), siehe „Standalone JSON
-  timelines"); kein DB-CHECK, weil `start`/`end` `text` sind.
+  `custom_fields` (jsonb). **No plugin-specific columns any more:** the former
+  `type` column (gating on `'product'`) and `pricing_versions` (ordered version
+  labels) moved into the generic `timeline_plugins` registry in migrations
+  `0012`/`0013` (see below and „Plugin registry"). The pricing model itself has
+  been normalised into its own tables since migration `0009`.
+- `timeline_plugins` — the **generic plugin registry** (migration `0012`): one
+  row per (timeline_id, plugin_id) plus a `config` (jsonb). A plugin (a.k.a. a
+  timeline kind, e.g. `'product-roadmap'`) is **enabled on a timeline as soon as
+  a row exists here** — pure data, no `ALTER TABLE`, no core column. For
+  `product-roadmap` the `config` carries the version list
+  (`{ versions: [...] }`, formerly the `pricing_versions` column). FK cascade on
+  `timelines`, anon SELECT plus realtime like the `pricing_*` tables. A new
+  plugin needs (at most) its own data and tables, never a column on the core.
+  See „Plugin registry".
+- `timeline_items` — columns for start/end/duration/content/group/type/title/
+  body/icon/status/class_name (`status` is `NOT NULL DEFAULT 'Open'` with a CHECK
+  for `Open|Doing|Done`, see „Item status"), `metadata` (jsonb: `dependsOn`,
+  `owner` — the linked user's e-mail, see „Item owner" — `jira`, and free-form
+  extras), `version` (bumped by trigger on UPDATE), `sort`, `updated_by`. Only
+  `content` is required; `start` is nullable since migration
+  `0006_start_nullable` (an entry created through the list may be date-less and
+  then appears only in the list view, not on the timeline). `end` and `duration`
+  are mutually exclusive (extent is either/or, `end` wins), enforced in the write
+  layer for every path (`enforceExtentExclusivity` plus patch-aware clearing of
+  the counterpart in [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts),
+  the MCP `add_item`/`update_item`, and the client form). When `end` is set it
+  must lie **after** `start`; reversed or zero-length extents are rejected with
+  `400` (the rule lives in [`src/itemExtent.ts`](src/itemExtent.ts), see
+  „Standalone JSON timelines"). There is no DB CHECK for it, because `start` and
+  `end` are `text` columns.
 - `timeline_groups` — id, content, nested_groups, show_nested, sort.
-- `app_users` — das **Benutzerverzeichnis** (Migration `0015`), auf das ein
-  Item-Owner verweist: `email` PK, optional `name`, `first_seen_at`,
-  `last_seen_at`. Nicht timeline-scoped (wie `listTimelines` ein
-  Collection-Level-Konzept), keine `version`-Spalte und kein optimistisches
-  Locking — eine Zeile trägt keinen nutzergeschriebenen Inhalt, nur die Identität,
-  die der Auth-Provider ohnehin behauptet. Kein anon-SELECT: gelesen wird über den
-  server-gateten `/api/users`-Endpoint (Service-Key), subscribed wird nie. Füllt
-  sich selbst (siehe „Item owner").
-- **Pricing-Tabellen** (Migration `0009`, nur relevant für product-roadmap-Timelines):
-  `pricing_features`, `pricing_tiers`, `pricing_highlights` — je Zeile pro
-  Entität mit eigener `version`-Spalte (Trigger-Bump, optimistisches Locking wie
-  `timeline_items`; der Client sieht sie als `rowVersion`). Das Feature-Domänen-
-  feld „ab Version" heißt in der DB `available_from` (nicht `version`, um die
-  Kollision mit der Locking-Spalte zu vermeiden). `pricing_tier_values` — die
-  Matrix, **eine Zeile pro (tier_id, feature_id)** mit `value` (jsonb: `true`
-  oder String) und optionalem `available_from` (Migration `0011`, Text-Version-
-  Label); FK-Cascade von Features/Tiers, kein Locking (eine Zelle ist atomar).
-  Damit editieren zwei Leute verschiedene Matrix-Zellen kollisionsfrei.
-  `available_from` macht die **Zell-Verfügbarkeit versionsabhängig** — dieselbe
-  Semantik wie `pricing_features.available_from`, nur eine Ebene tiefer (pro
-  Tarif×Feature): die Zelle zählt erst ab dieser Version als enthalten, davor
-  rendert sie „–". `value` bleibt der Endzustand. So lässt sich „in Enterprise
-  jetzt, in Scale erst ab v4" abbilden (siehe „Pricing → Zell-Versionierung").
+- `app_users` — the **user directory** an item owner points at (migration
+  `0015`): `email` as PK, optional `name`, `first_seen_at`, `last_seen_at`. Not
+  timeline-scoped (a collection-level concept, like `listTimelines`), with no
+  `version` column and no optimistic locking: a row carries no user-written
+  content, only the identity the auth provider asserts anyway. No anon SELECT —
+  it is read through the server-gated `/api/users` endpoint (service key) and
+  never subscribed to. It fills itself (see „Item owner").
+- **Pricing tables** (migration `0009`, only relevant to product-roadmap
+  timelines): `pricing_features`, `pricing_tiers`, `pricing_highlights`, one row
+  per entity with its own `version` column (trigger bump, optimistic locking like
+  `timeline_items`; the client sees it as `rowVersion`). The feature's domain
+  field „ab Version" is called `available_from` in the DB, not `version`, to
+  avoid colliding with the locking column. `pricing_tier_values` is the matrix:
+  **one row per (tier_id, feature_id)** with a `value` (jsonb: `true` or a
+  string) and an optional `available_from` (migration `0011`, a text version
+  label); FK cascade from features and tiers, and no locking, since a cell is
+  atomic. Two people therefore edit different matrix cells without colliding.
+  `available_from` makes **cell availability version-dependent** — the same
+  semantics as `pricing_features.available_from`, one level deeper (per
+  tier×feature): the cell only counts as included from that version on and
+  renders „–" before it, while `value` stays the end state. That is what lets you
+  express „in Enterprise now, in Scale only from v4" (see „Pricing → Cell
+  versioning").
 
-RLS ist an; Server-Zugriff läuft über den Service-Key (bypassed RLS). Anon-
-SELECT-Policies existieren nur für die Realtime-Subscription (siehe unten).
+RLS is on; server access uses the service key, which bypasses it. The anon SELECT
+policies exist only for the realtime subscription (see below).
 
-**Migrationen anwenden — portabler Runner (`npm run db:migrate`).** Gegen
-*beliebiges* Postgres über `TIMELINES_DATABASE_URL`, kein Supabase-CLI nötig.
-[`scripts/db/migrate.ts`](scripts/db/migrate.ts) (postgres.js) legt eine
-`schema_migrations`-Tracking-Tabelle an und wendet die `supabase/migrations/*.sql`
-in Dateinamen-Reihenfolge an, jede in **einer Transaktion**, mit Checksumme
-(Drift-Warnung). Re-runs wenden nur Ausstehendes an.
+**Applying migrations: a portable runner (`npm run db:migrate`).** It works
+against *any* Postgres through `TIMELINES_DATABASE_URL`, with no Supabase CLI
+needed. [`scripts/db/migrate.ts`](scripts/db/migrate.ts) (postgres.js) creates a
+`schema_migrations` tracking table and applies `supabase/migrations/*.sql` in
+filename order, each in **one transaction**, with a checksum (which warns on
+drift). Re-runs apply only what is pending.
 
 ```bash
-npm run db:migrate               # ausstehende Migrationen anwenden
-npm run db:migrate -- --status   # applied/pending auflisten
-npm run db:migrate -- --baseline # ALLE aktuellen Files als "angewandt" eintragen,
-                                 # OHNE sie auszuführen — für eine DB, die schon
-                                 # von Hand migriert wurde (siehe unten)
+npm run db:migrate               # apply pending migrations
+npm run db:migrate -- --status   # list applied / pending
+npm run db:migrate -- --baseline # record ALL current files as "applied" WITHOUT
+                                 # running them — for a DB already migrated by
+                                 # hand (see below)
 ```
 
-`0000_prereq_roles.sql` legt die `anon`-Rolle + `supabase_realtime`-Publication
-idempotent an, damit `0003`/`0009` auch auf einem **Vanilla-Postgres** laufen
-(auf Supabase existieren sie schon → no-op). Ein frisches Postgres ist damit
-ohne manuelle Vorbereitung schema-komplett.
+`0000_prereq_roles.sql` creates the `anon` role and the `supabase_realtime`
+publication idempotently, so `0003`/`0009` also run on a **vanilla Postgres** (on
+Supabase they already exist, so it is a no-op). A fresh Postgres is therefore
+schema-complete without manual preparation.
 
-> **Bestehende Supabase-DB adoptieren (einmalig):** die Live-DB wurde früher
-> **manuell** migriert (kein Tracking). Der Runner würde dort sonst alles
-> re-applyen und an `0001` scheitern. Deshalb dort **einmal**
-> `npm run db:migrate -- --baseline` (mit den Supabase-Env-Vars bzw. dem
-> Pooler-`TIMELINES_DATABASE_URL`) — trägt `0000–0011` als angewandt ein, ohne
-> sie auszuführen. Danach laufen neue Migrationen normal über `db:migrate`.
+> **Adopting an existing, hand-migrated DB (one-time):** a database that was
+> migrated **manually** carries no tracking table, so the runner would try to
+> re-apply everything and fail on `0001`. Run
+> `npm run db:migrate -- --baseline` **once** there (with that database's env
+> vars) to record the existing migrations as applied without executing them.
+> New migrations then run normally through `db:migrate`.
 
-Alternativ (nur Supabase, altes Verfahren) über die CLI:
+Alternatively, on Supabase only, through its CLI:
 
 ```bash
 supabase link --project-ref <ref>
-supabase db query --linked -f supabase/migrations/<datei>.sql
+supabase db query --linked -f supabase/migrations/<file>.sql
 ```
 
-### Plugin-Registry
+### Plugin registry
 
-Ein **Plugin** (a.k.a. Timeline-Kind) ist auf einer Timeline aktiviert, sobald in
-`timeline_plugins` eine `(timeline_id, plugin_id, config)`-Zeile existiert — reine
-Daten, kein `ALTER TABLE`. Die einzige Stelle, die Plugin-ids kennt, ist
+A **plugin** (a.k.a. a timeline kind) is enabled on a timeline as soon as a
+`(timeline_id, plugin_id, config)` row exists in `timeline_plugins` — pure data,
+no `ALTER TABLE`. The only place that knows plugin ids is
 [`src/plugins.ts`](src/plugins.ts) (`PRODUCT_ROADMAP_PLUGIN`, `hasPlugin`,
 `pluginConfig`, `versionsFromConfig`, `resolveWritePlugins`).
 
-**Was heute generisch ist:**
+**What is generic today:**
 
-- **Speichern + Lesen.** `timeline_plugins` nimmt jede `plugin_id`/`config`;
-  `getTimeline` liest **alle** Zeilen in `file.plugins` (`PluginRef[]`), unabhängig
-  vom Plugin. Round-trippt durch beide Treiber.
-- **Aktivieren (Bulk).** Über MCP `replace_timeline` mit `plugins: [{ id, config }]`
-  oder direktes SQL/PATCH. Lokal identisch zu Prod (gleicher `api.ts`-Dispatcher,
-  gleiche DB).
+- **Storing and reading.** `timeline_plugins` accepts any `plugin_id`/`config`;
+  `getTimeline` reads **every** row into `file.plugins` (`PluginRef[]`),
+  regardless of plugin. It round-trips through both drivers.
+- **Enabling (bulk).** Through the MCP `replace_timeline` with
+  `plugins: [{ id, config }]`, or direct SQL/PATCH. Identical locally and in
+  production (same `api.ts` dispatcher, same DB).
 
-**Was (noch) NICHT generisch ist:**
+**What is NOT generic (yet):**
 
-- **Kein granularer Enable-Weg.** Die API-SubKinds enthalten kein `plugin`, MCP hat
-  kein `enable_plugin`. Ein einzelnes Plugin an-/abschalten ohne den Rest der
-  Timeline geht nur per SQL oder Bulk-`replace_timeline`. (Offener Follow-up:
-  `PUT/DELETE /api/source/<id>/plugin/<pluginId>` + MCP `enable_/disable_plugin`.)
-- **Verhalten ist code-gekoppelt.** `resolveWritePlugins` / `updateVersions` /
-  `getPublicPricing` sind hart auf `product-roadmap` verdrahtet, und client-seitig
-  listet `KINDS[]` ([`src/kinds/registry.ts`](src/kinds/registry.ts)) nur
-  `product-roadmap`. Eine Zeile mit unbekanntem `plugin_id` wird gespeichert und
-  ausgeliefert, aber **nichts konsumiert sie**, bis Code sie interpretiert.
+- **No granular enable path.** The API sub-kinds carry no `plugin`, and the MCP
+  has no `enable_plugin`. Turning a single plugin on or off without the rest of
+  the timeline only works via SQL or a bulk `replace_timeline`. (Open follow-up:
+  `PUT/DELETE /api/source/<id>/plugin/<pluginId>` plus MCP
+  `enable_/disable_plugin`.)
+- **Behaviour is code-coupled.** `resolveWritePlugins` / `updateVersions` /
+  `getPublicPricing` are hard-wired to `product-roadmap`, and client-side
+  `KINDS[]` ([`src/kinds/registry.ts`](src/kinds/registry.ts)) lists only
+  `product-roadmap`. A row with an unknown `plugin_id` is stored and served, but
+  **nothing consumes it** until code interprets it.
 
-**Ein neues Plugin hinzufügen:**
+**Adding a new plugin:**
 
-1. **Aktivieren = Datenzeile** (`replace_timeline`/SQL). Braucht kein Schema.
-2. **Eigene Ansicht?** → neuer `KINDS[]`-Eintrag + `src/kinds/<name>/`-Ordner
-   (lazy-geladen, siehe „Timeline kinds"). Kein Core-Datei-Change.
-3. **Eigene Item-Felder?** → `fields(file)` am `KINDS[]`-Eintrag, Implementierung
-   in `src/kinds/<name>/fields.ts` (nur `types` + `plugins` importieren, sonst
-   zieht die Naht den View-Chunk in den generischen Build). Sie erscheinen
-   automatisch als Abschnitt unter dem `label` des Plugins, plus als Gruppieren-/
-   Filter-Dimension — siehe „Custom fields → Plugin-contributed fields". Kein
-   Core-Datei-Change.
-4. **Eigene persistierte Daten?** → eigene Tabellen + Write-Pfad (Vorbild:
-   `pricing_*` + `assemblePricing`). Nie eine Spalte am Core.
-5. Reads über `file.plugins` stehen schon; das product-spezifische
-   Auto-Enable-Verhalten (`resolveWritePlugins`) ist Vorbild, kein Zwang.
+1. **Enabling is a data row** (`replace_timeline`/SQL). Needs no schema change.
+2. **Its own view?** → a new `KINDS[]` entry plus a `src/kinds/<name>/` folder
+   (lazily loaded, see „Timeline kinds"). No core file changes.
+3. **Its own item fields?** → `fields(file)` on the `KINDS[]` entry, implemented
+   in `src/kinds/<name>/fields.ts` (import only `types` and `plugins`, or the
+   seam pulls the view chunk into the generic build). They appear automatically as
+   a section under the plugin's `label`, and as a grouping/filter dimension — see
+   „Custom fields → Plugin-contributed fields". No core file changes.
+4. **Its own persisted data?** → its own tables plus a write path (model:
+   `pricing_*` and `assemblePricing`). Never a column on the core.
+5. Reads through `file.plugins` already work. The product-specific auto-enable
+   behaviour (`resolveWritePlugins`) is a model to copy, not an obligation.
 
-### Setup (einmalig)
+### Setup (one-time)
 
-Credentials in `.env.local`, gelesen über die Kaskade in
-[`scripts/db/env.ts`](scripts/db/env.ts) (`process.env` → `.env.local` → die
-Dateien aus `TIMELINES_ENV_FILE`, siehe „Credential-Kaskade" unten). Je nach
-gewähltem Treiber (siehe „Treiber"): supabase-js über
-`getServiceClient()` ([`scripts/db/client.ts`](scripts/db/client.ts)), postgres.js
-über `getSql()` ([`scripts/db/sql.ts`](scripts/db/sql.ts)):
+Credentials go in `.env.local`, read through the cascade in
+[`scripts/db/env.ts`](scripts/db/env.ts) (`process.env` → `.env.local` → the files
+named by `TIMELINES_ENV_FILE`, see „Credential cascade" below). Depending on the
+chosen driver (see „Drivers"): supabase-js through `getServiceClient()`
+([`scripts/db/client.ts`](scripts/db/client.ts)), postgres.js through `getSql()`
+([`scripts/db/sql.ts`](scripts/db/sql.ts)):
 
-| Var                              | Treiber      | Bedeutung                                                                 |
+| Var                              | Driver       | Meaning                                                                   |
 | -------------------------------- | ------------ | ------------------------------------------------------------------------- |
-| `TIMELINES_SUPABASE_URL`         | supabase-js  | `https://<ref>.supabase.co` (Default-Pfad)                                |
-| `TIMELINES_SUPABASE_SERVICE_KEY` | supabase-js  | Service-Role-Key (Server-seitig, nie in den Client)                       |
-| `TIMELINES_DATABASE_URL`         | postgres.js  | Postgres-Connection-String (`postgresql://…`); gesetzt → gewinnt vor supabase-js. Supabase: Supavisor-Transaction-Pooler (Port 6543). Beliebiges Postgres möglich. |
+| `TIMELINES_SUPABASE_URL`         | supabase-js  | `https://<ref>.supabase.co` (the default path)                            |
+| `TIMELINES_SUPABASE_SERVICE_KEY` | supabase-js  | Service-role key (server-side only, never in the client)                  |
+| `TIMELINES_DATABASE_URL`         | postgres.js  | Postgres connection string (`postgresql://…`); when set, it wins over supabase-js. On Supabase use the Supavisor transaction pooler (port 6543). Any Postgres works. |
 
 Ist `TIMELINES_DATABASE_URL` gesetzt, läuft alles über postgres.js; sonst über
 supabase-js.
 
-**Eigenes Postgres in 3 Schritten** (kein Supabase nötig):
+**Your own Postgres in 3 steps** (no Supabase needed):
 
 ```bash
 docker run -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16   # 1. Postgres
-export TIMELINES_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/postgres  # 2. Ziel
-npm run db:migrate                                                     # 3. Schema
+export TIMELINES_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/postgres  # 2. target
+npm run db:migrate                                                     # 3. schema
 ```
 
-Danach den Server mit `TIMELINES_DATABASE_URL` fahren (Live-Updates via
-`TIMELINES_DB_LIVE=poll`, ohne anon-Key/Realtime — siehe „Live-Update-Naht").
-`0000_prereq_roles.sql` erledigt die früher manuelle `anon`/Publication-Anlage,
-also ist kein Handanlegen mehr nötig.
+Then run the server with `TIMELINES_DATABASE_URL` (live updates via
+`TIMELINES_DB_LIVE=poll`, without an anon key or realtime — see „Live-update
+seam"). `0000_prereq_roles.sql` handles the previously manual `anon`/publication
+setup, so nothing has to be prepared by hand.
 
-#### Credential-Kaskade (`TIMELINES_ENV_FILE`)
+#### Credential cascade (`TIMELINES_ENV_FILE`)
 
-Jeder Node-Einstiegspunkt liest Konfiguration über **eine** Implementierung:
-`envValue()` in [`scripts/db/env.ts`](scripts/db/env.ts). Die Reihenfolge ist
-`process.env` → `<repo>/.env.local` → die Dateien aus `TIMELINES_ENV_FILE`
-(Präzedenz in genau dieser Richtung: `process.env` gewinnt über `.env.local`,
-das über die externen Dateien). Die Edge-Functions nutzen stattdessen `Deno.env`.
+Every Node entry point reads configuration through **one** implementation:
+`envValue()` in [`scripts/db/env.ts`](scripts/db/env.ts). The order is
+`process.env` → `<repo>/.env.local` → the files named by `TIMELINES_ENV_FILE`,
+and precedence runs in exactly that direction: `process.env` wins over
+`.env.local`, which wins over the external files. The edge functions use
+`Deno.env` instead.
 
-`TIMELINES_ENV_FILE` ist die **Opt-in-Naht für Credentials außerhalb des Repos**
-(z.B. eine Datei mit projektübergreifenden Keys): ein oder mehrere Pfade, per
-`:` getrennt, jeder optional mit `~/` beginnend; fehlende Dateien werden
-ignoriert, Setzen ist also immer gefahrlos. **Ohne die Var liest ein Checkout
-nichts außerhalb des Repos** — genau deshalb steht hier kein fester Pfad mehr im
-Code. Früher war `~/_AGENTS/.env` in vier Dateien fest verdrahtet, was auf
-fremden Rechnern nicht existiert und dessen Fehlermeldungen Beitragende in ein
-Verzeichnis schickten, das nur der Autor hat.
+`TIMELINES_ENV_FILE` is the **opt-in seam for credentials kept outside the repo**
+(e.g. a file holding keys shared across projects): one or more paths separated by
+`:`, each optionally starting with `~/`. Missing files are ignored, so setting it
+is always safe. **Without the variable a checkout reads nothing outside the
+repo**, which is precisely why no fixed path appears in the code any more. A
+hard-wired `~/_AGENTS/.env` used to sit in four files; it does not exist on anyone
+else's machine, and its error messages sent contributors into a directory only the
+author has.
 
-Der Repo-Root wird aus `import.meta.url` abgeleitet, **nicht** aus
-`process.cwd()`: der MCP-Server ist user-global registriert und läuft aus
-beliebigen Verzeichnissen, hätte `.env.local` also sonst nicht gefunden. Die
-Aufteilungsregeln des Specs sind als reine Funktion `envFilePaths` DOM-/FS-frei
-und in [`scripts/db/env.test.ts`](scripts/db/env.test.ts) getestet.
-`envSourcesHint()` formuliert daraus den Hinweis für Fehlermeldungen, damit
-keine Meldung einen Pfad nennt, der beim Leser nicht existiert.
+The repo root is derived from `import.meta.url`, **not** from `process.cwd()`:
+the MCP server is registered user-global and runs from arbitrary directories, so
+it would otherwise fail to find `.env.local`. The spec's splitting rules live as
+the pure, DOM- and FS-free function `envFilePaths` and are tested in
+[`scripts/db/env.test.ts`](scripts/db/env.test.ts). `envSourcesHint()` phrases the
+hint for error messages out of the active configuration, so no message names a
+path that does not exist for its reader.
 
-#### Per-Source-Connections (Phase 4, #30)
+#### Per-source connections (phase 4, #30)
 
-Verschiedene Timelines können in **verschiedenen Postgres-Instanzen** liegen —
-gewählt über den **Namespace** der Source-id (erstes Pfadsegment). Zusätzlich zur
-Default-`TIMELINES_DATABASE_URL` benannte Connections setzen:
+Different timelines can live in **different Postgres instances**, chosen by the
+**namespace** of the source id (its first path segment). Set named connections
+alongside the default `TIMELINES_DATABASE_URL`:
 
 ```bash
-export TIMELINES_DATABASE_URL=postgresql://…/default        # Default für alles
-export TIMELINES_DATABASE_URL_WAREHOUSE=postgresql://…/warehouse  # nur warehouse/*
+export TIMELINES_DATABASE_URL=postgresql://…/default              # default for everything
+export TIMELINES_DATABASE_URL_WAREHOUSE=postgresql://…/warehouse  # only warehouse/*
 ```
 
-`warehouse/plan` → `TIMELINES_DATABASE_URL_WAREHOUSE`; alles ohne passende
-benannte Var → Default. Ableitung: Namespace uppercased, Nicht-Alphanumerisches
-zu `_` (`getSqlForSource`/`connectionEnvKey` in [`scripts/db/sql.ts`](scripts/db/sql.ts)).
-**Opt-in & backward-kompatibel:** ohne eine `TIMELINES_DATABASE_URL_<NS>` nutzt
-jede Source den Default wie bisher. Connection-Strings bleiben in Env, nie in
-committeter Config. Nur der **Node-Pfad** routet per Source (die Glue setzt
-`DbConnections.sqlFor`); die Edge-Function (Supabase) bleibt Single-Connection.
-Ein Default muss gesetzt sein (der `/api/sources`-Collection-Endpoint listet aus
-der Default-Connection).
+`warehouse/plan` resolves to `TIMELINES_DATABASE_URL_WAREHOUSE`; anything without
+a matching named variable uses the default. The name is derived by uppercasing
+the namespace and replacing non-alphanumerics with `_`
+(`getSqlForSource`/`connectionEnvKey` in [`scripts/db/sql.ts`](scripts/db/sql.ts)).
+**Opt-in and backward-compatible:** without a `TIMELINES_DATABASE_URL_<NS>` every
+source uses the default as before. Connection strings stay in the environment,
+never in committed config. Only the **Node path** routes per source (the glue sets
+`DbConnections.sqlFor`); the edge function stays single-connection. A default must
+be set, because the `/api/sources` collection endpoint lists from it.
 
-### Import / Migration
+### Import / migration
 
-`scripts/db/import.ts` lädt die konfigurierten Timelines aus ihren
-`data/<id>.json` in die DB (`replaceTimeline`). Wiederholbar.
+`scripts/db/import.ts` loads the configured timelines from their `data/<id>.json`
+into the DB (`replaceTimeline`). Repeatable.
 
 ```bash
-npm run db:import                         # alle
-npm run db:import -- acme/my-plan          # gezielt
+npm run db:import                # all
+npm run db:import -- acme/my-plan # one, by id
 ```
 
-### Sync-Verhalten
+### Sync behaviour
 
-- **Read:** Client lädt `GET /api/source/<id>` → DB. Schlägt das fehl (`404`,
-  kein Netz) → **lauter Fehler, kein statischer Fallback** (siehe „Prinzip: keine
-  Notfall-/Fallback-Daten"). Echte datei-basierte Quellen (die Beispiele) liegen
-  als Datei vor und sind read-only (`editable:false`).
-- **Write:** UI-Edits (Drag, Form, Add, Delete) schicken **item-genaue** Calls:
-  `POST/PATCH/DELETE /api/source/<id>/item[/<itemId>]`, `PUT …/phases`. `PATCH`
-  trägt die bekannte `version` im `If-Match`-Header; passt sie nicht mehr → `409`
-  → der Client lädt das Item neu. Ein `PATCH` rührt eine Spalte **nur an, wenn
-  der Key im Body steht** (`updateItem`, [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts)) —
-  ein geleertes optionales Feld (z.B. die letzte `metadata.dependsOn` entfernt,
-  wodurch `metadata` ganz vom Item verschwindet) muss daher als **explizites
-  `null`** gesendet werden, sonst bleibt der alte DB-Wert stehen und taucht beim
-  Reload wieder auf. Der Client baut den Patch deshalb über `buildItemPatch`
-  ([`src/persistence.ts`](src/persistence.ts)), das jedes fehlende clearable Feld
-  auf `null` setzt.
-- **Registrierungs-Stubs:** `npm run build:data` (Teil von `dev`/`build`) fragt die
-  DB ab und schreibt pro DB-Timeline einen Stub (`name` + `items: []`, kein Inhalt)
-  in den **gitignorierten Build-Output** `public/data/sources/<id>.json` — nur um
-  die Timeline in der View-Liste zu halten, **kein** Daten-Fallback und **nichts
-  Committetes**. Nichts landet im getrackten `data/`.
-- **Live-Kollaboration:** siehe „Realtime" — ersetzt das frühere 60-s-Polling.
+- **Read:** the client loads `GET /api/source/<id>` from the DB. If that fails
+  (`404`, no network) it is a **loud error with no static fallback** (see
+  „Principle: no emergency or fallback data"). Genuine file-based sources (the
+  examples) exist as files and are read-only (`editable:false`).
+- **Write:** UI edits (drag, form, add, delete) send **per-item** calls:
+  `POST/PATCH/DELETE /api/source/<id>/item[/<itemId>]`, `PUT …/phases`. A `PATCH`
+  carries the known `version` in the `If-Match` header; if it no longer matches
+  the response is `409` and the client reloads that item. A `PATCH` touches a
+  column **only when the key is present in the body** (`updateItem`,
+  [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts)), so a cleared
+  optional field — for instance the last `metadata.dependsOn` being removed, which
+  makes `metadata` disappear from the item entirely — has to be sent as an
+  **explicit `null`**, or the old DB value survives and reappears on reload. The
+  client therefore builds the patch through `buildItemPatch`
+  ([`src/persistence.ts`](src/persistence.ts)), which sets every missing clearable
+  field to `null`.
+- **Registration stubs:** `npm run build:data` (part of `dev`/`build`) queries the
+  DB and writes one stub per DB timeline (`name` plus `items: []`, no content) into
+  the **gitignored build output** `public/data/sources/<id>.json`. Its only job is
+  to keep the timeline in the view list; it is **not** a data fallback and
+  **nothing is committed**. Nothing lands in the tracked `data/`.
+- **Live collaboration:** see „Realtime", which replaced an earlier 60-second poll.
 
-### Production-Setup (Netlify)
+### Production setup (Netlify)
 
-Zusätzlich zu den Auth-Env-Vars:
+In addition to the auth env vars:
 
 | Var                              | Where              | Notes                                          |
 | -------------------------------- | ------------------ | ---------------------------------------------- |
-| `TIMELINES_SUPABASE_URL`         | dashboard          | **Default-Pfad (supabase-js).** Aktiviert die `timelines-api`/`pricing-api` Edge Functions über HTTP/PostgREST. |
-| `TIMELINES_SUPABASE_SERVICE_KEY` | dashboard (secret) | Service-Role-Key für den serverseitigen Zugriff |
-| `TIMELINES_DATABASE_URL`         | dashboard (secret) | **Optional/opt-in.** Nur setzen, um bewusst nativen Postgres (postgres.js/TCP, Supavisor-Transaction-Pooler Port 6543) statt supabase-js zu fahren — gewinnt dann vor den Supabase-Vars. |
-| `VITE_SUPABASE_URL`              | dashboard          | build-time; **nur** für client-seitiges Realtime (siehe „Realtime"). Ohne beide erscheinen fremde Edits erst beim Reload |
-| `VITE_SUPABASE_ANON_KEY`         | dashboard          | build-time, public im Bundle; **Redeploy nötig** (Vite backt sie beim Build ein) |
+| `TIMELINES_SUPABASE_URL`         | dashboard          | **The default path (supabase-js).** Activates the `timelines-api`/`pricing-api` edge functions over HTTP/PostgREST. |
+| `TIMELINES_SUPABASE_SERVICE_KEY` | dashboard (secret) | Service-role key for server-side access        |
+| `TIMELINES_DATABASE_URL`         | dashboard (secret) | **Optional, opt-in.** Set it only to deliberately run native Postgres (postgres.js over TCP, Supavisor transaction pooler on port 6543) instead of supabase-js; it then wins over the Supabase vars. |
+| `VITE_SUPABASE_URL`              | dashboard          | Build-time; **only** for client-side realtime (see „Realtime"). Without both, other people's edits appear on reload only. |
+| `VITE_SUPABASE_ANON_KEY`         | dashboard          | Build-time and public in the bundle; **needs a redeploy**, since Vite bakes it in at build time. |
 
-Die Edge Function gated per Session-Cookie (bzw. MCP-Token) und attribuiert
-Edits über `updated_by` an die E-Mail des eingeloggten Users. Ist **weder** der
-Supabase- **noch** der `TIMELINES_DATABASE_URL`-Zugriff konfiguriert, kann die
-Edge Function nicht auf die DB zugreifen und die Source failt laut (kein
-statischer Fallback).
+The edge function gates on the session cookie (or the MCP token) and attributes
+edits through `updated_by` to the signed-in user's e-mail. If **neither** the
+Supabase access **nor** `TIMELINES_DATABASE_URL` is configured, the edge function
+cannot reach the DB and the source fails loudly (no static fallback).
 
-> **Deploy-Hinweis (Phase 3, additiver Dual-Adapter):** Der Netlify-Deploy läuft
-> **unverändert auf supabase-js** — es genügen `TIMELINES_SUPABASE_URL` +
-> `TIMELINES_SUPABASE_SERVICE_KEY` (exakt wie vor Phase 3), null Verhaltens-/
-> Risiko-Änderung. `TIMELINES_DATABASE_URL` ist ein **opt-in** für Self-Hoster mit
-> eigenem Postgres; setzt man es, gewinnt der postgres.js-Pfad und der
-> Deno-Deploy-Outbound-TCP zum Pooler ist der einzige erst live verifizierbare
-> Punkt.
+> **Deploy note:** the Netlify deploy runs on supabase-js, for which
+> `TIMELINES_SUPABASE_URL` + `TIMELINES_SUPABASE_SERVICE_KEY` are enough.
+> `TIMELINES_DATABASE_URL` is an **opt-in** for self-hosters with their own
+> Postgres; setting it makes the postgres.js path win, and the Deno deploy's
+> outbound TCP to the pooler is then the one thing only verifiable live.
 
-### Live-Update-Naht (Realtime **oder** Polling)
+### Live-update seam (realtime **or** polling)
 
-Wie fremde Änderungen in einen offenen Viewer kommen, ist eine **Naht** mit zwei
-Implementierungen hinter einer Signatur — `watchTimeline(id, onChange, { live,
-isBusy })` in [`src/realtime.ts`](src/realtime.ts). Welche Impl greift, sagt die
-Quelle über `capabilities.live` (`SourceLive` in [`src/types.ts`](src/types.ts)):
+How other people's changes reach an open viewer is a **seam** with two
+implementations behind one signature: `watchTimeline(id, onChange, { live,
+isBusy })` in [`src/realtime.ts`](src/realtime.ts). Which one applies is declared
+by the source through `capabilities.live` (`SourceLive` in
+[`src/types.ts`](src/types.ts)):
 
-- **`realtime`** — Supabase Realtime schiebt Zeilenänderungen per WebSocket
-  (`subscribeTimeline`, feingranulare Item-Events mit Echo-Suppression). Braucht
-  den anon-Key (`VITE_SUPABASE_*`); ohne ihn passiert nichts (Reload-only).
-- **`poll`** — der Client pollt einen billigen **Watermark-Endpoint**
-  (`GET /api/source/<id>/watermark` → `{ v, n, t }` = max Item-`version` /
-  Item-Count / max `updated_at` über Items + `timelines`-Row) im Intervall
-  (`src/poll.ts`: ~8 s sichtbar, ~60 s versteckt, `visibilitychange`-Backoff).
-  Ändert sich die Watermark → **Full-Reload** über den bestehenden
-  `loadSource`-Pfad (Timelines sind klein; Delta-Fetch ist eine spätere
-  Optimierung). Braucht **keinen** anon-Key (Endpoint ist server-gated) — so wird
-  ein Postgres **ohne** Realtime live. Der Poll pausiert, solange ein Edit-Form
-  offen ist (`isBusy`); die erkannte Änderung wird nicht verworfen, sondern
-  nachgeholt.
-- **`none`** — keine Live-Updates (Datei-Quellen).
+- **`realtime`** — Supabase Realtime pushes row changes over a WebSocket
+  (`subscribeTimeline`, fine-grained item events with echo suppression). Needs the
+  anon key (`VITE_SUPABASE_*`); without it nothing happens and updates are
+  reload-only.
+- **`poll`** — the client polls a cheap **watermark endpoint**
+  (`GET /api/source/<id>/watermark` → `{ v, n, t }`: max item `version`, item
+  count, and max `updated_at` across items plus the `timelines` row) on an
+  interval (`src/poll.ts`: ~8 s while visible, ~60 s while hidden, backing off on
+  `visibilitychange`). When the watermark changes it triggers a **full reload**
+  through the existing `loadSource` path; timelines are small, and a delta fetch is
+  a later optimisation. This needs **no** anon key, because the endpoint is
+  server-gated, which is what makes a Postgres **without** realtime live. The poll
+  pauses while an edit form is open (`isBusy`), and a change detected meanwhile is
+  not discarded but applied afterwards.
+- **`none`** — no live updates (file sources).
 
-Der Server sagt dem Client den Modus über den **`X-Source-Live`-Response-Header**
-auf `GET /api/source/<id>` (gesetzt von der Runtime-Glue aus
-`adapter.capabilities.live`); `loadSource` liest ihn und legt ihn in
-`state.activeSourceLive` ab. Der DB-Adapter meldet standardmäßig `realtime`; die
-Env-Var **`TIMELINES_DB_LIVE=poll`** (lokal `process.env`, Netlify `Deno.env`)
-schaltet DB-Quellen auf Polling — nützlich für ein Postgres ohne aktiviertes
-Realtime und zum End-to-End-Test des Poll-Pfades.
+The server tells the client which mode applies through the **`X-Source-Live`
+response header** on `GET /api/source/<id>`, set by the runtime glue from
+`adapter.capabilities.live`; `loadSource` reads it and stores it in
+`state.activeSourceLive`. The DB adapter reports `realtime` by default, and the env
+var **`TIMELINES_DB_LIVE=poll`** (`process.env` locally, `Deno.env` on Netlify)
+switches DB sources to polling — useful for a Postgres without realtime enabled,
+and for testing the poll path end to end.
 
-> **Scope:** Die Watermark deckt Items + Timeline-Meta (inkl. Phasen) ab —
-> **nicht** die Pricing-Tabellen. Kein Poll-Source ist heute eine
-> Produkt-Timeline, und Realtime deckt Pricing weiter ab; Pricing in die
-> Watermark zu falten ist ein Follow-up (`getWatermark` in
+> **Scope:** the watermark covers items plus timeline metadata (including
+> phases), but **not** the pricing tables. No poll source is a product timeline
+> today, and realtime still covers pricing; folding pricing into the watermark is a
+> follow-up (`getWatermark` in
 > [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts)).
 
-#### Presence unter Polling
+#### Presence under polling
 
-Presence (siehe unten) ist **realtime-only** — sie hängt am Supabase-Presence-
-Channel. Poll-Quellen zeigen kein Presence-Badge und keine Item-Marker (eine
-Heartbeat-Tabelle wäre ein optionales, nicht umgesetztes Sub-Feature).
+Presence (see below) is **realtime-only**, because it hangs off the Supabase
+presence channel. Poll sources show no presence badge and no per-item markers; a
+heartbeat table would be an optional sub-feature and is not implemented.
 
-### Realtime (Live-Kollaboration)
+### Realtime (live collaboration)
 
-Fremde Edits erscheinen live ohne Reload — Supabase Realtime schiebt Zeilen-
-änderungen per WebSocket, der Client (`src/realtime.ts`) patcht die Ansicht.
+Other people's edits appear live without a reload: Supabase Realtime pushes row
+changes over a WebSocket and the client (`src/realtime.ts`) patches the view.
 
-**Opt-in pro Environment** über Client-Env-Vars (Vite, build-time):
+**Opt-in per environment** through client env vars (Vite, build-time):
 
-| Var                       | Bedeutung                                            |
+| Var                       | Meaning                                              |
 | ------------------------- | ---------------------------------------------------- |
-| `VITE_SUPABASE_URL`       | Supabase-URL (in den Client-Bundle eingebettet)      |
-| `VITE_SUPABASE_ANON_KEY`  | anon-Key — **public im Browser**                     |
+| `VITE_SUPABASE_URL`       | Supabase URL (embedded in the client bundle)         |
+| `VITE_SUPABASE_ANON_KEY`  | Anon key — **public in the browser**                 |
 
-Achtung: der anon-Key ist im ausgelieferten Bundle sichtbar; mit den
-anon-SELECT-Policies sind Timeline-*Reads* damit für jeden lesbar, der den Key
-hat. Daher bewusst opt-in — auf der gated Netlify-Site nur setzen, wenn das
-akzeptabel ist. Writes bleiben serverseitig (Service-Key). Ohne diese Vars
-funktioniert alles weiter, fremde Änderungen erscheinen dann erst beim Reload.
+Note that the anon key is visible in the shipped bundle, and together with the
+anon SELECT policies that makes timeline *reads* available to anyone holding it.
+Hence it is deliberately opt-in: set it on a gated site only if that is
+acceptable. Writes stay server-side (service key). Without these vars everything
+still works, and other people's changes simply appear on reload.
 
-**Fremde Änderungen werden in-place angewendet, nie über den Vollaufbau.**
-`scheduleRemoteRefresh` lädt die Quelle neu und gibt sie über
-`refreshActiveSourceInPlace` ([`src/render.ts`](src/render.ts)) in die lebende
-vis-Instanz (`rebuildAndApply` → DataSet-Diff). Der Weg über `renderTimeline`
-zerstört Timeline plus Pfeil- und Phasen-Overlay und baut sie neu — der Container
-ist dabei kurz leer, die Ansicht flackert also bei *jedem* Fremd-Edit; da ein
-tippender Kollege alle `PERSIST_THROTTLE_MS` schreibt, ergab das ein
-Dauerflackern. `renderTimeline` bleibt Fallback für das, was in-place nicht
-darstellbar ist (View gewechselt, erstes/letztes Phase- oder Dependency-Overlay
-kommt hinzu bzw. fällt weg).
+**Remote changes are applied in place, never through a full rebuild.**
+`scheduleRemoteRefresh` reloads the source and feeds it into the live vis instance
+via `refreshActiveSourceInPlace` ([`src/render.ts`](src/render.ts), through
+`rebuildAndApply` and a DataSet diff). Going through `renderTimeline` destroys the
+timeline along with the arrow and phase overlays and rebuilds them, leaving the
+container briefly empty, so the view flickers on *every* remote edit. Since a
+colleague who is typing writes every `PERSIST_THROTTLE_MS`, that added up to
+constant flicker. `renderTimeline` remains the fallback for what cannot be
+expressed in place: a changed view, or the first/last phase or dependency overlay
+appearing or disappearing.
 
-#### Presence (wer ist online)
+#### Presence (who is online)
 
-Der Header zeigt oben rechts Avatare aller, die dieselbe **editierbare
-DB-Timeline** gerade offen haben. Umgesetzt über einen Supabase-**Presence**-
-Channel (`presence:<timelineId>`, `joinPresence` in [`src/realtime.ts`](src/realtime.ts)) —
-kein DB-Tabellen-Zugriff, keine RLS-Policy nötig. Gerendert von
-[`src/presence.ts`](src/presence.ts) ins `#presence`-Element, per Farbe/Initialen
-pro E-Mail; der eigene Avatar bekommt einen Ring. Mehrfach-Tabs derselben Person
-werden per E-Mail dedupliziert, ab dem 6. User klappt der Rest zu „+N".
+The header shows avatars, top right, of everyone who currently has the same
+**editable DB timeline** open. It runs over a Supabase **presence** channel
+(`presence:<timelineId>`, `joinPresence` in
+[`src/realtime.ts`](src/realtime.ts)), so it needs no DB table access and no RLS
+policy. [`src/presence.ts`](src/presence.ts) renders it into the `#presence`
+element, with a colour and initials per e-mail; your own avatar gets a ring.
+Multiple tabs belonging to one person are deduplicated by e-mail, and from the
+sixth user on the rest collapses into „+N".
 
-Lebenszyklus hängt an `setupRealtime` ([`src/persistence.ts`](src/persistence.ts)):
-Beim View-Wechsel wird die alte Presence abgemeldet und der Badge geleert, für
-editierbare Quellen neu beigetreten. Gleiche Opt-in-Bedingung wie Realtime
-(`VITE_SUPABASE_*`) — ohne die Vars bleibt der Badge aus.
+Its lifecycle hangs off `setupRealtime`
+([`src/persistence.ts`](src/persistence.ts)): switching views unsubscribes the old
+presence and clears the badge, then joins again for editable sources. Same opt-in
+condition as realtime (`VITE_SUPABASE_*`); without those vars the badge stays
+empty.
 
-Die eigene Identität kommt vom `GET /api/me`-Endpoint (das Session-Cookie ist
-HttpOnly, der Client kennt sich sonst nicht): Netlify-Edge-Function
-[`netlify/edge-functions/me.ts`](netlify/edge-functions/me.ts) liest die Session
-(`{ email, name }`) hinter dem Auth-Gate; die Vite-Middleware liefert lokal
-`{ email: 'local' }`. Ist keine Identität bekannt (ungegatete Site), trackt der
-Client anonym als „Gast".
+Your own identity comes from the `GET /api/me` endpoint, because the session
+cookie is HttpOnly and the client otherwise does not know who it is: the Netlify
+edge function [`netlify/edge-functions/me.ts`](netlify/edge-functions/me.ts) reads
+the session (`{ email, name }`) behind the auth gate, while the Vite middleware
+serves `{ email: 'local' }` locally. When no identity is known (an ungated site)
+the client tracks anonymously as „Gast".
 
-**Lokal testen:** ein `dev_user`-Cookie überschreibt die Dev-Identität
-(`/api/me` in [`vite.config.ts`](vite.config.ts)) — sonst ist jeder Tab derselbe
-„local"-User und damit für sich selbst unsichtbar. Pro Tab in der Konsole:
-`document.cookie = 'dev_user=alice'; location.reload()`. Cookies gelten pro
-Origin, nicht pro Tab, also zwei Browser-Profile/Fenster oder ein zweiter Client
-(z.B. ein Node-Skript, das dem Presence-Channel beitritt) für zwei Identitäten
-gleichzeitig. Nur Dev-Server; der Deploy leitet die Identität aus dem Session-
-Cookie ab.
+**Testing it locally:** a `dev_user` cookie overrides the dev identity (`/api/me`
+in [`vite.config.ts`](vite.config.ts)); without it every tab is the same „local"
+user and therefore invisible to itself. Per tab, in the console:
+`document.cookie = 'dev_user=alice'; location.reload()`. Cookies are per origin,
+not per tab, so two identities at once need two browser profiles or windows, or a
+second client such as a Node script that joins the presence channel. Dev server
+only; the deploy derives the identity from the session cookie.
 
-#### Presence pro Item (wer ist woran)
+#### Per-item presence (who is on what)
 
-Zusätzlich zum Header-Badge markiert die **Timeline** das Item, das ein anderer
-Nutzer gerade ausgewählt hat oder editiert — damit ein Doppel-Edit auffällt,
-*bevor* der `409`/„extern geändert"-Hinweis kommt. Getragen wird das vom
-**gleichen** Presence-Channel (kein zweiter Kanal, keine Tabelle, keine
-Migration): der Payload trägt neben der Identität eine `PresenceActivity`
-(`itemId` + `editing`, [`src/presenceModel.ts`](src/presenceModel.ts)).
+Beyond the header badge, the **timeline** marks the item another user currently
+has selected or is editing, so a double edit becomes visible *before* the
+`409`/„extern geändert" notice arrives. It rides on the **same** presence channel
+(no second channel, no table, no migration): alongside the identity, the payload
+carries a `PresenceActivity` (`itemId` plus `editing`,
+[`src/presenceModel.ts`](src/presenceModel.ts)).
 
-- **Senden:** `joinPresence` gibt ein `PresenceHandle` zurück; `publishSelfPresence`
-  ([`src/persistence.ts`](src/persistence.ts)) trägt über `setActivity` nach, welches
-  Item wir belegen (offenes Formular, sonst die Timeline-Auswahl). Unveränderte
-  Aktivität geht nicht auf den Kanal.
-- **`editing` vs. ausgewählt:** auf einer editierbaren Quelle öffnet ein Klick
-  sofort das Formular, „angeklickt" und „editiert" wären also dasselbe. Deshalb
-  meldet `markSelfEditing` `editing` erst bei einer echten Änderung (Formular-
-  Keystroke via `scheduleLiveEdit`, Drag/Resize via `handleMove`) und lässt es
-  nach `EDITING_LINGER_MS` Ruhe wieder auf „ausgewählt" zurückfallen.
-- **Rendern:** [`src/itemPresence.ts`](src/itemPresence.ts) schreibt Ring
-  (`.has-remote-presence` / `.is-remote-editing`, gepulst) plus Avatar-Cluster
-  direkt auf das vis-Item-Element — ein Kind von `.vis-item` wandert, scrollt und
-  zoomt mit seinem Item mit, anders als ein absolut positioniertes Overlay
-  (arrows.ts / phaseBand.ts) braucht es also kein Nachrechnen pro Frame. Was es
-  braucht, ist ein Re-Apply, wenn vis Item-DOM neu mountet → `'changed'`-Hook in
-  `attachItemPresence`. Clone-Ids einer umgruppierten Ansicht laufen über
-  `realIdOf`. Der Cluster hängt an der **linken** Kante: die rechte liegt bei
-  langen Balken oft außerhalb des Fensters.
-- **Eigene Aktivität** wird nie markiert (die eigene Auswahl ist schon die
-  vis-Selektion). Mehrere Einträge pro E-Mail kollabieren in `dedupeRoster` auf
-  den **jüngsten** (`at`-Stempel im Payload), nicht auf den „spezifischsten".
-  Das ist kein Detail, sondern die Korrektheitsbedingung: ein Presence-Channel
-  hält pro Key mehrere Metas — eine pro Tab, aber auch die *überholten* Metas
-  desselben Tabs, weil ein erneutes `track()` eine Meta hinzufügt statt sie zu
-  ersetzen. Nach Spezifität sortiert gewinnt dann die veraltete (`editing`
-  schlägt das frische `ausgewählt`, das sie ersetzt hat) und der Marker klebt für
-  immer auf „editiert gerade".
-- **Repaints laufen über einen Timer, nicht über `requestAnimationFrame`.** Ein
-  Tab im Hintergrund feuert kein rAF mehr; eine noch offene Frame-Callback lässt
-  das „ist schon geplant"-Flag stehen, und danach verwirft jeder weitere Sync
-  seinen Repaint — der Tab friert auf dem letzten Stand ein, den er im
-  Vordergrund gesehen hat. Timer laufen im Hintergrund weiter (nur gedrosselt).
-- **Scope:** nur der Timeline-View (die Listenansicht hat keine Marker) und
-  gleiche Opt-in-Bedingung wie Presence generell — realtime-only, `VITE_SUPABASE_*`.
-  Die reine Logik (Rang, Dedupe, Bucketing pro Item) liegt DOM-frei in
-  `presenceModel.ts` und ist in
-  [`src/presenceModel.test.ts`](src/presenceModel.test.ts) getestet.
+- **Sending:** `joinPresence` returns a `PresenceHandle`, and
+  `publishSelfPresence` ([`src/persistence.ts`](src/persistence.ts)) reports through
+  `setActivity` which item we occupy (the open form, otherwise the timeline
+  selection). Unchanged activity is not put on the channel.
+- **`editing` vs. selected:** on an editable source a click opens the form
+  immediately, so „clicked" and „editing" would mean the same thing. Therefore
+  `markSelfEditing` only reports `editing` on an actual change (a form keystroke
+  via `scheduleLiveEdit`, a drag or resize via `handleMove`) and lets it fall back
+  to „selected" after `EDITING_LINGER_MS` of quiet.
+- **Rendering:** [`src/itemPresence.ts`](src/itemPresence.ts) writes the ring
+  (`.has-remote-presence` / `.is-remote-editing`, pulsed) plus an avatar cluster
+  directly onto the vis item element. A child of `.vis-item` moves, scrolls and
+  zooms with its item, so unlike an absolutely positioned overlay (arrows.ts /
+  phaseBand.ts) it needs no recomputation per frame. What it does need is a
+  re-apply whenever vis mounts item DOM afresh, hence the `'changed'` hook in
+  `attachItemPresence`. Clone ids of a regrouped view resolve through `realIdOf`.
+  The cluster hangs off the **left** edge, because on long bars the right one is
+  often outside the window.
+- **Your own activity** is never marked (your selection already *is* the vis
+  selection). Multiple entries per e-mail collapse in `dedupeRoster` to the
+  **most recent** one (the `at` stamp in the payload), not to the „most specific"
+  one. That is not a detail but the correctness condition: a presence channel holds
+  several metas per key — one per tab, but also the *superseded* metas of the same
+  tab, because calling `track()` again adds a meta instead of replacing it. Sorted
+  by specificity the stale one then wins (`editing` beats the fresh „selected" that
+  replaced it) and the marker sticks on „currently editing" forever.
+- **Repaints run on a timer, not on `requestAnimationFrame`.** A backgrounded tab
+  stops firing rAF; an outstanding frame callback leaves the „already scheduled"
+  flag set, and every later sync then discards its repaint, so the tab freezes on
+  the last state it saw in the foreground. Timers keep running in the background,
+  merely throttled.
+- **Scope:** the timeline view only (the list view has no markers), under the same
+  opt-in condition as presence generally: realtime-only, `VITE_SUPABASE_*`. The
+  pure logic (ranking, dedupe, per-item bucketing) sits DOM-free in
+  `presenceModel.ts` and is tested in
+  [`src/presenceModel.test.ts`](src/presenceModel.test.ts).
 
 ## MCP server (Claude Code)
 
-Ein stdio-MCP-Server (`scripts/mcp/server.ts`) erlaubt Claude Code, die
-DB-basierten Timelines auszulesen und zu manipulieren. Er arbeitet **immer
-gegen die Live-Site** (`TIMELINES_LIVE_URL`, **erforderlich** — kein Default;
-der Server bricht mit klarer Fehlermeldung ab, wenn die Var fehlt): jeder
-Read/Write geht durch `/api/source(s)` → `timelines-api` Edge Function →
-Supabase. Damit bleibt die DB Single Source of Truth und Änderungen sind sofort
-live.
+A stdio MCP server (`scripts/mcp/server.ts`) lets Claude Code read and
+manipulate DB-backed timelines. It **always works against the live site**
+(`TIMELINES_LIVE_URL`, **required**, with no default; the server aborts with a
+clear message if the variable is missing): every read and write goes through
+`/api/source(s)` → the `timelines-api` edge function → the DB. That keeps the DB
+the single source of truth and makes changes immediately live.
 
-**Nur DB-basierte Timelines** sind exponiert. Datei-basierte Sources sind
-auf der Live-Site read-only und daher nicht manipulierbar.
+**Only DB-backed timelines** are exposed. File-based sources are read-only on the
+live site and therefore not manipulable here.
 
 ### Tools
 
-| Tool                | Wirkung                                                        |
+| Tool                | Effect                                                        |
 | ------------------- | ------------------------------------------------------------- |
-| `list_timelines`    | listet alle DB-Timelines (id, name, description)              |
-| `list_users`        | listet die verknüpfbaren Benutzer (email, name) für `metadata.owner` |
-| `get_timeline`      | komplette Timeline (items + groups) per id                    |
-| `add_item`          | Item anhängen (Pflicht: `start`, `content`)                   |
-| `update_item`       | Item patchen (nur übergebene Felder; `metadata` wird gemergt) |
-| `delete_item`       | Item per id entfernen                                         |
-| `add_group`         | Group hinzufügen                                              |
-| `update_group`      | Group patchen                                                 |
-| `delete_group`      | Group entfernen                                               |
-| `replace_timeline`  | ganze Timeline ersetzen (Bulk)                               |
-| `set_pricing`       | Preismodell komplett ersetzen (Bulk-Seed; aktiviert automatisch das `product-roadmap`-Plugin) |
-| `add_/update_/delete_feature` | einzelnes Pricing-Feature (granular)               |
-| `move_feature`      | Feature umsortieren (nach/vor einem anderen Feature)         |
-| `add_/update_/delete_tier`    | einzelnen Tarif (granular)                         |
-| `set_tier_value`    | eine Matrix-Zelle (tier × feature); `false`/`null` löscht; opt. `availableFrom` (Zell-Verfügbarkeit ab Version) |
-| `add_/update_/delete_highlight` | eine Card-Kachel (granular)                      |
-| `set_versions`      | geordnete Versionsliste ersetzen                             |
+| `list_timelines`    | Lists all DB timelines (id, name, description)                |
+| `list_users`        | Lists the linkable users (email, name) for `metadata.owner`   |
+| `get_timeline`      | A complete timeline (items + groups) by id                    |
+| `add_item`          | Appends an item (required: `start`, `content`)                 |
+| `update_item`       | Patches an item (only the given fields; `metadata` is merged) |
+| `delete_item`       | Removes an item by id                                         |
+| `add_group`         | Adds a group                                                  |
+| `update_group`      | Patches a group                                               |
+| `delete_group`      | Removes a group                                               |
+| `replace_timeline`  | Replaces a whole timeline (bulk)                              |
+| `set_pricing`       | Replaces the pricing model wholesale (bulk seed; automatically enables the `product-roadmap` plugin) |
+| `add_/update_/delete_feature` | A single pricing feature (granular)                  |
+| `move_feature`      | Reorders a feature (after/before another one)                 |
+| `add_/update_/delete_tier`    | A single tier (granular)                            |
+| `set_tier_value`    | One matrix cell (tier × feature); `false`/`null` deletes it; optional `availableFrom` (cell availability from a version) |
+| `add_/update_/delete_highlight` | One card tile (granular)                          |
+| `set_versions`      | Replaces the ordered version list                             |
 
-Die granularen Item-/Group-Tools laufen read-modify-write: der Server holt die
-Timeline, mutiert im Speicher und schreibt sie per PUT (Bulk-Replace) zurück.
-`dependsOn` und `owner` liegen unter `metadata`; `owner` trägt die E-Mail eines
-Benutzers aus `list_users` (siehe „Item owner") — ein Freitext-Name wird zwar
-gespeichert, erscheint aber als nicht verknüpft. Die granularen **Pricing**-Tools
-dagegen treffen direkt den jeweiligen Zeilen-Endpoint (kein read-modify-write,
-kein Komplett-Dump) — Details unter „Pricing".
+The granular item and group tools run read-modify-write: the server fetches the
+timeline, mutates it in memory and writes it back with a PUT (bulk replace).
+`dependsOn` and `owner` live under `metadata`; `owner` carries the e-mail of a
+user from `list_users` (see „Item owner"), and a free-text name is stored but
+renders as unlinked. The granular **pricing** tools instead hit their row's
+endpoint directly, with no read-modify-write and no full dump — details under
+„Pricing".
 
-### Auth: Service-Token-Bypass
+### Auth: service-token bypass
 
-Der Server hängt an jeden Request den Header `X-MCP-Token: <MCP_API_TOKEN>`.
-Die `timelines-api`-Edge-Function lässt Requests mit gültigem Token ohne
-Google-Login durch (konstant-zeit-Vergleich) und greift serverseitig mit dem
-Supabase-Service-Key auf die DB zu. MCP-Edits werden über `updated_by` als
-`mcp` attribuiert.
+The server attaches an `X-MCP-Token: <MCP_API_TOKEN>` header to every request.
+The `timelines-api` edge function lets requests carrying a valid token through
+without a Google login (comparing in constant time) and reaches the DB
+server-side with the service key. MCP edits are attributed as `mcp` through
+`updated_by`.
 
-### Konfiguration
+### Configuration
 
-Server-seitig (lokal, gelesen über die Kaskade `process.env` → `.env.local` →
-`TIMELINES_ENV_FILE`, siehe „Credential-Kaskade"):
+Server-side (locally, read through the cascade `process.env` → `.env.local` →
+`TIMELINES_ENV_FILE`, see „Credential cascade"):
 
-| Var                  | Bedeutung                                                    |
-| -------------------- | ----------------------------------------------------------- |
-| `MCP_API_TOKEN`      | Bypass-Token, muss der Netlify-Env-Var entsprechen          |
-| `TIMELINES_LIVE_URL` | Ziel-Site (**erforderlich**, z.B. `https://<site>.netlify.app`; kein Default) |
+| Var                  | Meaning                                                      |
+| -------------------- | ------------------------------------------------------------ |
+| `MCP_API_TOKEN`      | Bypass token; must match the env var of the same name on the deploy |
+| `TIMELINES_LIVE_URL` | Target site (**required**, e.g. `https://<site>.netlify.app`; no default) |
 
-Registrierung als user-global MCP (aus jedem Verzeichnis nutzbar):
+Registering it as a user-global MCP server (usable from any directory):
 
 ```bash
 claude mcp add -s user timelines -- \
   <repo>/node_modules/.bin/tsx <repo>/scripts/mcp/server.ts
 ```
 
-(oder direkt als `mcpServers.timelines`-Eintrag in `~/.claude.json`.)
+(Or directly as an `mcpServers.timelines` entry in `~/.claude.json`.)
 
-### Netlify-Env (zusätzlich zu den Supabase-Vars)
+### Netlify env (in addition to the Supabase vars)
 
 | Var             | Where              | Notes                                                        |
 | --------------- | ------------------ | ------------------------------------------------------------ |
-| `MCP_API_TOKEN` | dashboard (secret) | aktiviert den Bypass; identisch mit dem lokalen Server-Token |
+| `MCP_API_TOKEN` | dashboard (secret) | Activates the bypass; identical to the local server's token   |
 
-Voraussetzung: `TIMELINES_SUPABASE_URL` / `TIMELINES_SUPABASE_SERVICE_KEY` **und**
-`AUTH_REQUIRED=true` müssen gesetzt sein (sonst greift `timelines-api` nicht). Ist
-`MCP_API_TOKEN` nicht gesetzt, ist der Bypass inaktiv und der Server bleibt für
-Menschen per Google-Login gated.
+Prerequisites: `TIMELINES_SUPABASE_URL` / `TIMELINES_SUPABASE_SERVICE_KEY` **and**
+`AUTH_REQUIRED=true` must be set, or `timelines-api` does not take effect. If
+`MCP_API_TOKEN` is unset the bypass is inactive and the site stays gated behind
+the Google login for everyone.
 
 ## Editing JSON timelines
 
@@ -1766,7 +1771,7 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
 - **Tags** is a chip editor with autosuggest: type to match tags already used in the timeline, or type a new label and press Enter to create one. Each chip carries its resolved colour and a remove button. Stored as `metadata.tags` (string[]); saving migrates any legacy singular `metadata.tag` into the array.
 - **Phases** render as a ribbon along the top. Drag a segment to move it, drag either edge to resize (snaps to whole days, min. 1 day), and click it (without dragging) to open the phase form in the side panel: title, start/end, duration, icon, colour. Persists on drop / Save; Delete removes the phase.
 
-Persistence path: viewer → item-level calls (`POST/PATCH/DELETE /api/source/<id>/item`, `PUT …/phases`) → middleware (`vite.config.ts`) → Supabase via `scripts/db/api.ts`. `PATCH` carries the item `version` in `If-Match`; a stale version returns `409` and the client reloads that item. Only DB-backed sources are editable; genuine file-based sources (the examples) load read-only from their static `/data/sources/<id>.json`. Builds (`npm run build`) and exported HTML have no edit endpoint. DB-backed timelines are discovered from the DB at build time (`collectDbSources`); the registration **stub** (`name` + `items: []`, no content) is written only to the gitignored build output `public/data/sources/<id>.json` — nothing DB-backed is committed, and there is deliberately no committed content cache (see „Prinzip: keine Notfall-/Fallback-Daten").
+Persistence path: viewer → item-level calls (`POST/PATCH/DELETE /api/source/<id>/item`, `PUT …/phases`) → middleware (`vite.config.ts`) → Supabase via `scripts/db/api.ts`. `PATCH` carries the item `version` in `If-Match`; a stale version returns `409` and the client reloads that item. Only DB-backed sources are editable; genuine file-based sources (the examples) load read-only from their static `/data/sources/<id>.json`. Builds (`npm run build`) and exported HTML have no edit endpoint. DB-backed timelines are discovered from the DB at build time (`collectDbSources`); the registration **stub** (`name` + `items: []`, no content) is written only to the gitignored build output `public/data/sources/<id>.json` — nothing DB-backed is committed, and there is deliberately no committed content cache (see „Principle: no emergency or fallback data").
 
 ## JIRA linking
 
@@ -1785,7 +1790,7 @@ JIRA call. Because it lives in `metadata`, it round-trips through the
 
 - **Locally:** Vite dev middleware `GET /api/jira/search?q=` (in `vite.config.ts`)
   proxies the issue picker. Credentials come from the shared cascade
-  (`process.env` → `.env.local` → `TIMELINES_ENV_FILE`, see „Credential-Kaskade"):
+  (`process.env` → `.env.local` → `TIMELINES_ENV_FILE`, see „Credential cascade"):
   `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` (Atlassian API token). Without them the field
   still works for pasting raw keys — only the live search is disabled.
 - **Production (Netlify):** the `jira-api` Edge Function
@@ -1959,7 +1964,7 @@ instead of leaving it to the runtime.
 **The build step runs with no credentials on purpose** — that is the path a
 contributor takes after a plain `git clone`. It has to stay non-fatal: the build
 discovers no DB timelines and warns about the missing notes directory rather
-than failing (see „Configuration" and „Prinzip: keine Notfall-/Fallback-Daten").
+than failing (see „Configuration" and „Principle: no emergency or fallback data").
 A change that makes a missing DB or notes dir fatal breaks CI for everyone
 without a deploy's env vars.
 
@@ -2007,11 +2012,11 @@ Netlify dashboard (Site settings → Environment variables).
   (e.g. subdir `acme` → all `acme/…` timelines). No committed stubs; if the build
   can reach the DB but the list query fails, the build fails loudly.
 - Notes scan disabled (`TIMELINES_STATIC_ONLY=true`); no Markdown-driven views.
-- **Editing** is live when the Supabase env vars are set (see „Supabase als
-  Datenquelle → Production-Setup"): the `timelines-api` edge function serves
+- **Editing** is live when the Supabase env vars are set (see „Postgres as the
+  data source → Production setup"): the `timelines-api` edge function serves
   DB-backed timelines editable. Without those vars, the DB read fails and the
-  viewer surfaces an error — there is no static content fallback (see „Prinzip:
-  keine Notfall-/Fallback-Daten").
+  viewer surfaces an error — there is no static content fallback (see „Principle:
+  no emergency or fallback data").
 
 To add a deploy-visible file source: drop the JSON into the scanned `data/`
 folder, commit, push. DB timelines appear automatically once they exist in the DB
@@ -2066,192 +2071,197 @@ Cloud Console — otherwise the callback returns `redirect_uri_mismatch`.
 
 ## Pricing
 
-> Der **Client**-Code des Preismodells (Matrix, Cards, Matrix-Editoren) lebt als
-> Timeline-Kind unter [`src/kinds/product-roadmap/`](src/kinds/product-roadmap/)
-> und wird lazy geladen (siehe „Timeline kinds"). Der Server-Teil (Tabellen,
-> `assemblePricing`, `pricing-api`, MCP-Tools) bleibt wie unten beschrieben.
+> The pricing model's **client** code (matrix, cards, matrix editors) lives as a
+> timeline kind under [`src/kinds/product-roadmap/`](src/kinds/product-roadmap/)
+> and is lazily loaded (see „Timeline kinds"). The server side (tables,
+> `assemblePricing`, `pricing-api`, MCP tools) is as described below.
 
-Das Preismodell (Tarife + Features, nur product-roadmap-Timelines) ist die SSOT
-für externe Preisseiten. Es liegt **normalisiert** in eigenen Tabellen (Migration
-`0009`, siehe „Schema"): `pricing_features`, `pricing_tiers`,
-`pricing_tier_values` (die Matrix, zell-granular), `pricing_highlights`, plus die
-geordnete Versionsliste in `timeline_plugins.config.versions` des
-`product-roadmap`-Eintrags (früher die `timelines.pricing_versions`-Spalte, seit
-Migration `0012`/`0013`, siehe „Plugin-Registry"). Der Server assembliert daraus
-die unten beschriebene `Pricing`-Shape
-(`assemblePricing` in [`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts)) —
-der Viewer und der Markdown-Export sehen sie unverändert.
+The pricing model (tiers + features, product-roadmap timelines only) is the single
+source of truth for external pricing pages. It is stored **normalised** in its own
+tables (migration `0009`, see „Schema"): `pricing_features`, `pricing_tiers`,
+`pricing_tier_values` (the matrix, per cell), `pricing_highlights`, plus the
+ordered version list in `timeline_plugins.config.versions` of the
+`product-roadmap` entry (formerly the `timelines.pricing_versions` column, moved
+in migrations `0012`/`0013`, see „Plugin registry"). The server assembles the
+`Pricing` shape described below out of those (`assemblePricing` in
+[`scripts/db/timeline-repo.ts`](scripts/db/timeline-repo.ts)), and the viewer and
+the Markdown export see it unchanged.
 
-Lesen: Viewer über `GET /api/source/<id>` (assembliert, inkl. `rowVersion` je
-Entität), externe Seiten über `GET /api/pricing/<id>` (öffentlich, `rowVersion`
-gestrippt). Markdown-Spiegel: `npm run export:pricing`.
+Reading: the viewer uses `GET /api/source/<id>` (assembled, including a
+`rowVersion` per entity), external pages use `GET /api/pricing/<id>` (public, with
+`rowVersion` stripped). Markdown mirror: `npm run export:pricing`.
 
-**Schreiben — granular, kollisionsfrei** (die alte „ganzes Modell ersetzen"-
-Semantik ist weg; genau sie führte zu Überschreibungen bei parallelen Edits):
-- Endpoints unter `/api/source/<id>/`: `feature[/<id>]`, `tier[/<id>]`,
-  `tier-value` (PUT `{tierId, featureId, value, availableFrom?}`; `value=false/null`
-  löscht die Zelle; `availableFrom` = Version-Label ab dem die Zelle gilt, sonst
-  ab Start), `highlight[/<id>]` (je POST/PATCH/DELETE), `pversion` (PUT der ganzen
-  Versionsliste, wie `phases`), und `pricing` (PUT — Bulk-Ersatz zum Seeden).
-  PATCH trägt die `rowVersion` im `If-Match`-Header → `409` bei Stale.
-  **Wichtig:** die Lock-Version kommt bei Features **nur** aus `If-Match`, nie aus
-  `body.version` (dort ist `version` das Domänenfeld „ab Version").
-- MCP: granulare Tools `add_/update_/delete_feature`, `move_feature`, `…_tier`,
-  `set_tier_value`, `…_highlight`, `set_versions` (je ein Call, kein
-  read-modify-write, kein Komplett-Dump im Kontext). `set_pricing` bleibt als
-  Bulk-Seed/Rewrite.
-- **Feature-Reihenfolge** (`sort`-Spalte): `add_feature` hängt immer ans
-  Gruppenende. Zum präzisen Platzieren `POST …/feature-move {featureId, after? |
-  before?}` (MCP: `move_feature`) — genau ein Anker, `after` gewinnt bei beidem.
-  Der Server lädt die aktuelle Reihenfolge, positioniert relativ zum Anker um
-  (`reorderIds`, rein + getestet) und nummeriert `sort` neu (nur geänderte
-  Zeilen). `sort` ist sonst über keinen anderen Schreibpfad exponiert; ein
-  Feature behält dabei seine `group` (Gruppe wechseln → `update_feature`).
-- Client: die **Matrix-Ansicht ist im Interface editierbar** (siehe „Matrix im
-  Interface bearbeiten"), und zwar über dieselben granularen Endpoints — pro
-  Zelle, pro Tarif, pro Feature. **Highlights** (Kacheln) und die
-  **Versionsliste** werden weiterhin über MCP gepflegt.
+**Writing is granular and collision-free.** The old „replace the whole model"
+semantics are gone, because they were exactly what caused overwrites on concurrent
+edits:
+- Endpoints under `/api/source/<id>/`: `feature[/<id>]`, `tier[/<id>]`,
+  `tier-value` (PUT `{tierId, featureId, value, availableFrom?}`, where
+  `value=false/null` deletes the cell and `availableFrom` is the version label from
+  which the cell applies, otherwise from the start), `highlight[/<id>]` (each with
+  POST/PATCH/DELETE), `pversion` (PUT of the whole version list, like `phases`),
+  and `pricing` (PUT, a bulk replace for seeding). A PATCH carries the `rowVersion`
+  in the `If-Match` header and returns `409` when stale. **Important:** for
+  features the lock version comes **only** from `If-Match`, never from
+  `body.version`, where `version` is the domain field „ab Version".
+- MCP: the granular tools `add_/update_/delete_feature`, `move_feature`,
+  `…_tier`, `set_tier_value`, `…_highlight`, `set_versions` (one call each, no
+  read-modify-write, no full dump in the context). `set_pricing` remains as the
+  bulk seed/rewrite.
+- **Feature order** (the `sort` column): `add_feature` always appends to the end
+  of its group. To place one precisely, `POST …/feature-move {featureId, after? |
+  before?}` (MCP: `move_feature`) — exactly one anchor, and `after` wins if both
+  are given. The server loads the current order, repositions relative to the anchor
+  (`reorderIds`, pure and tested) and renumbers `sort`, writing only changed rows.
+  `sort` is exposed through no other write path, and a moved feature keeps its
+  `group` (to change groups, use `update_feature`).
+- Client: the **matrix view is editable in the interface** (see „Editing the
+  matrix in the interface"), through those same granular endpoints — per cell, per
+  tier, per feature. **Highlights** (the card tiles) and the **version list** are
+  still maintained through the MCP.
 
-### Matrix im Interface bearbeiten
+### Editing the matrix in the interface
 
-Auf einer editierbaren (DB-gestützten) Produkt-Timeline trägt die Matrix ihre
-eigenen Schreibpfade. Jeder schreibt genau die eine Zeile bzw. Zelle, die
-bearbeitet wurde — kein Modell-Dump, also kollidieren parallele Edits an
-verschiedenen Stellen nicht.
+On an editable (DB-backed) product timeline the matrix carries its own write
+paths. Each one writes exactly the row or cell that was edited, with no model
+dump, so concurrent edits in different places do not collide.
 
-| Was | Affordance | Endpoint | Locking |
+| What | Affordance | Endpoint | Locking |
 | --- | --- | --- | --- |
-| **Zelle** (Tarif × Feature) | Klick (oder Enter) auf die Zelle → Popover | `PUT …/tier-value` | keins — eine Zelle ist atomar |
-| **Tarif** (Spalte) | Klick auf den Spaltenkopf → Drawer-Formular | `PATCH/DELETE …/tier/<id>` | `If-Match` auf `rowVersion` |
-| **Tarif anlegen** | „+ Tarif" in der Kopfzeile | `POST …/tier` | — |
-| **Feature** (Zeile) | Klick auf den Zeilenkopf → Drawer-Formular | `PATCH/DELETE …/feature/<id>` | `If-Match` auf `rowVersion` |
-| **Feature anlegen** | „+ Feature" (Kopfzeile = ohne Gruppe, pro Abschnitt = in dieser Gruppe) | `POST …/feature` | — |
-| **Zeile umsortieren** | ↑/↓ auf der Zeile (bei Hover) | `POST …/feature-move` | — |
+| **Cell** (tier × feature) | Click (or Enter) on the cell → popover | `PUT …/tier-value` | none; a cell is atomic |
+| **Tier** (column) | Click the column header → drawer form | `PATCH/DELETE …/tier/<id>` | `If-Match` on `rowVersion` |
+| **Add a tier** | „+ Tarif" in the header row | `POST …/tier` | — |
+| **Feature** (row) | Click the row header → drawer form | `PATCH/DELETE …/feature/<id>` | `If-Match` on `rowVersion` |
+| **Add a feature** | „+ Feature" (header row = no group, per section = in that group) | `POST …/feature` | — |
+| **Reorder a row** | ↑/↓ on the row (on hover) | `POST …/feature-move` | — |
 
-Ein paar Entscheidungen, die nicht offensichtlich sind:
+A few decisions that are not obvious:
 
-- **Die Zelle bekommt ein Popover, keinen Klick-Zyklus**
+- **A cell gets a popover, not a click cycle**
   ([`src/kinds/product-roadmap/cellEditor.ts`](src/kinds/product-roadmap/cellEditor.ts)).
-  Eine Zelle trägt zwei Dimensionen (`value` und die Verfügbarkeit ab Version) und
-  der Wert selbst hat drei Gestalten (`true` / Freitext / leer). Durchklicken kann
-  das nicht ausdrücken. „Wert" mit leerem Text speichert bewusst als *leer*: beides
-  rendert als „–", und der Server löscht bei falsy — die zwei Zustände zu trennen
-  wäre eine Unterscheidung ohne Unterschied.
-- **Auch eine leere Zelle ist klickbar.** Ein Feature für einen Tarif
-  einzuschalten ist genau der Edit, der beim Gedankenstrich anfängt.
-- **Umsortieren ankert am *sichtbaren* Nachbarn innerhalb des Abschnitts.**
-  `moveFeature` sortiert global über alle Features, und der Versions-Switcher kann
-  Zeilen ausblenden; am sichtbaren Nachbarn verankert bewegt sich die Zeile genau
-  einen Schritt in die Richtung, die der Nutzer sieht. Der Client übernimmt danach
-  die vom Server zurückgegebene Reihenfolge, statt den Zug lokal nachzuspielen —
-  die `sort`-Spalte gehört dem Server.
-- **Das Tarif-Formular fasst keine Zellen an.** `updateTier` liest die Zellzeilen
-  neu und gibt sie vollständig zurück, also übernimmt der Client die Antwort
-  unverändert; die Spaltenwerte bleiben dabei erhalten.
-- **Popover-Layer liegen `fixed` am `<body>`** (`popover.ts`, geteilt mit dem
-  Feature-Tooltip): der Tabellen-Wrap trägt `overflow-x`, und das clippt auch
-  `overflow-y` — ein eingebetteter Layer würde an der Zeilenkante abgeschnitten.
-- **Neue ids sind Slugs aus dem Namen** (`slugId` in
-  [`pricing.ts`](src/kinds/product-roadmap/pricing.ts), Umlaute transliteriert,
-  Zähler-Suffix bei Kollision), damit das Modell in SQL und MCP-Output lesbar
-  bleibt.
+  A cell carries two dimensions (`value` and availability from a version) and the
+  value itself has three shapes (`true` / free text / empty). Cycling through
+  clicks cannot express that. „Wert" with empty text deliberately saves as *empty*:
+  both render as „–" and the server deletes on a falsy value, so separating the two
+  states would be a distinction without a difference.
+- **An empty cell is clickable too.** Switching a feature on for a tier is exactly
+  the edit that starts at the dash.
+- **Reordering anchors on the *visible* neighbour within the section.**
+  `moveFeature` sorts globally across all features, and the version switcher can
+  hide rows; anchored on the visible neighbour, the row moves exactly one step in
+  the direction the user sees. The client then adopts the order the server returns
+  rather than replaying the move locally, because the `sort` column belongs to the
+  server.
+- **The tier form touches no cells.** `updateTier` re-reads the cell rows and
+  returns them in full, so the client adopts the response unchanged and the column's
+  values survive.
+- **Popover layers are `fixed` on `<body>`** (`popover.ts`, shared with the feature
+  tooltip): the table wrapper carries `overflow-x`, which clips `overflow-y` as
+  well, so an embedded layer would be cut off at the row's edge.
+- **New ids are slugs of the name** (`slugId` in
+  [`pricing.ts`](src/kinds/product-roadmap/pricing.ts), transliterating umlauts and
+  adding a counter suffix on collision), which keeps the model readable in SQL and
+  in MCP output.
 
-**Noch nicht im Interface:** Highlights (Kacheln) und der Versions-Editor. Bei den
-Versionen ist das kein Zufall — `updateVersions` schreibt nur die Plugin-Config und
-migriert **keine** Referenzen. Da die Gates „unbekannte Version versteckt nie"
-implementieren (`featureVisibleForVersion`), würde ein Umbenennen von `3.0` alle
-3.0-gegateten Features in *jeder* gepinnten Version sichtbar machen — still und
-falsch. Ein Versions-Editor muss `feature.version`, `tier.valueVersions`,
-`descriptionByVersion`, `nameByVersion` und `labelByVersion` mitmigrieren.
+**Not in the interface yet:** highlights (the card tiles) and a version editor. For
+versions that is no accident: `updateVersions` writes only the plugin config and
+migrates **no** references. Since the gates implement „an unknown version never
+hides" (`featureVisibleForVersion`), renaming `3.0` would make every 3.0-gated
+feature visible in *every* pinned version, silently and wrongly. A version editor
+has to migrate `feature.version`, `tier.valueVersions`, `descriptionByVersion`,
+`nameByVersion` and `labelByVersion` along with it.
 
-Shape (assembliert):
+Shape (assembled):
 - `features[]`: `{ id, name, group, version?, description?, nameByVersion?, descriptionByVersion?, rowVersion? }`.
-  `version` = ab welcher getrackten Version verfügbar (DB-Spalte `available_from`).
-  **Kein `version` = pre-existing** (existierte vor der ersten Version) → immer
-  sichtbar, nie „Neu", aber „Modified"-fähig. `feature.version` auf die Baseline
-  (`versions[0]`) zu setzen bedeutet „in dieser Version eingeführt" — NICHT „schon
-  immer da"; dafür `version` weglassen.
-  - `nameByVersion` (`Record<version, string>`, DB-Spalte `name_by_version`):
-    versionsabhängige Namens-*Überschreibung*, **kumulativ** aufgelöst (neuester
-    Override ≤ gewählte Version gewinnt) — `resolveFeatureName`.
-  - `descriptionByVersion` (`Record<version, string>`, DB-Spalte
-    `description_by_version`): zusätzliche, versionsgebundene Beschreibungen **on
-    top of** `description`. Im Gegensatz zu `nameByVersion` **additiv** (kein
-    Override): die Basis-`description` bleibt, jede Notiz erscheint als eigene
-    Zeile „ab \<version\>: …" in Versionsreihenfolge — `resolveFeatureDescription`
-    ([`src/pricing.ts`](src/pricing.ts)). Matrix-Tooltip hinter einem **Info-Icon**,
-    editierbar im Feature-Formular über „+ Versionsbeschreibung".
-  - `rowVersion` = server-verwalteter Lock-Zähler (nicht editieren; im
-    Public-Output gestrippt).
+  `version` is the tracked version a feature is available from (DB column
+  `available_from`). **No `version` means pre-existing** (it existed before the
+  first tracked version), so it is always visible, never badged „Neu", but still
+  eligible for „Modified". Setting `feature.version` to the baseline
+  (`versions[0]`) means „introduced in this version", NOT „always been there" —
+  for that, leave `version` out.
+  - `nameByVersion` (`Record<version, string>`, DB column `name_by_version`): a
+    version-dependent name *override*, resolved **cumulatively** (the newest
+    override ≤ the selected version wins) — `resolveFeatureName`.
+  - `descriptionByVersion` (`Record<version, string>`, DB column
+    `description_by_version`): additional version-bound descriptions **on top of**
+    `description`. Unlike `nameByVersion` these are **additive**, not overrides: the
+    base `description` stays and each note appears as its own line, „ab
+    \<version\>: …", in version order — `resolveFeatureDescription`
+    ([`src/pricing.ts`](src/kinds/product-roadmap/pricing.ts)). It shows as a matrix tooltip behind an
+    **info icon**, and is editable in the feature form via „+ Versionsbeschreibung".
+  - `rowVersion` is the server-managed lock counter: do not edit it, and it is
+    stripped from the public output.
 - `tiers[]`: `{ id, name, tagline?, useCase?, targetGroup?, price, values, valueVersions?, rowVersion? }`.
-  `values[featureId]` = `true` (✓) / fehlt|false (–) / String (Wert je Tarif).
-  Falsy/leere Zellen werden nicht gespeichert (rendern ohnehin als „–").
-  `valueVersions[featureId]` (DB-Spalte `pricing_tier_values.available_from`) =
-  optionale Zell-**Verfügbarkeit ab Version**: die Zelle zählt erst ab diesem
-  Label als enthalten, davor „–" (kumulativ, `cellActiveForVersion` in
-  [`src/pricing.ts`](src/pricing.ts)). `values` bleibt der Endzustand — die Map
-  gated nur *wann* er erscheint (Geschwister von `values`, additiv). In „Alle"
-  zeigt die Matrix den Endzustand + dezenten „ab \<version\>"-Chip in der Zelle;
-  bei gepinnter Version trägt das Erscheinen/„–" selbst die Info. Kein Key =
-  ab Start (unverändertes Verhalten). Siehe „Zell-Versionierung" unten.
-- `highlights[]`: `{ id, label, section?, featureIds, rowVersion? }` — kuratierte
-  Kacheln der Card-Ansicht (bündeln Features); nur was hier referenziert wird,
-  erscheint auf den Karten. Matrix zeigt alle Features.
-- `versions[]`: geordnete Labels; Switcher filtert Feature-Zeilen kumulativ.
+  `values[featureId]` is `true` (✓), missing or `false` (–), or a string (a
+  per-tier value). Falsy and empty cells are not stored, since they render as „–"
+  anyway. `valueVersions[featureId]` (DB column
+  `pricing_tier_values.available_from`) is the optional **cell availability from a
+  version**: the cell only counts as included from that label on and shows „–"
+  before it (cumulative, `cellActiveForVersion` in
+  [`src/pricing.ts`](src/kinds/product-roadmap/pricing.ts)). `values` remains the end state and the map
+  only gates *when* it appears (a sibling of `values`, additive). Under „Alle" the
+  matrix shows the end state plus a subtle „ab \<version\>" chip in the cell; with a
+  pinned version, the cell appearing or showing „–" carries that information by
+  itself. No key means available from the start. See „Cell versioning" below.
+- `highlights[]`: `{ id, label, section?, featureIds, rowVersion? }` — the curated
+  tiles of the card view, bundling features. Only what is referenced here appears
+  on the cards; the matrix shows every feature.
+- `versions[]`: ordered labels; the switcher filters feature rows cumulatively.
 
-Item↔Feature: `metadata.featureIds` (n:m) + `metadata.featureVersion` (die Version,
-für die gearbeitet wird) + `status` (Open/Doing/Done) → speisen den Arbeits-Punkt
-und die Zeilen-Badges:
-- **„Neu"**: `feature.version` == gepinnte Version (nicht „Alle"). Gilt auch für
-  die Baseline (`versions[0]`): ein dort eingeführtes Feature badged „Neu", wenn
-  die Baseline gepinnt ist — pre-existing (kein `version`) badged nie.
-- **„Modified"**: Feature ist älter als die gepinnte Version (inkl. pre-existing)
-  UND diese Version brachte eine Änderung — entweder ein Item mit diesem Feature +
-  `featureVersion` == gepinnte Version, ODER eine Versionsbeschreibung für die
-  gepinnte Version (`descriptionByVersion[gepinnte Version]`). Letzteres badged
-  auch ohne Work-Item. Schließt „Neu" aus; nur bei gepinnter Version.
-- **„ab \<Version\>"**: nur in der „Alle"-Ansicht (keine Version gepinnt, wo „Neu"/
-  „Modified" nie feuern). Neutrale Chip, die angibt, ab welcher Version das Feature
-  bzw. Highlight dazukam. Matrix: pro Feature mit `version`. Kacheln: pro Highlight
-  die früheste `version` seiner beitragenden Features (`introducedVersion` in
-  `resolveHighlight`); ein pre-existing Feature im Bündel unterdrückt die Chip.
-  Pre-existing Features (kein `version`) bekommen nie eine Chip.
+Item↔feature: `metadata.featureIds` (n:m) plus `metadata.featureVersion` (the
+version being worked on) plus `status` (Open/Doing/Done) feed the work dot and the
+row badges:
+- **„Neu"**: `feature.version` equals the pinned version (not „Alle"). This
+  includes the baseline (`versions[0]`): a feature introduced there badges „Neu"
+  when the baseline is pinned, while pre-existing features (no `version`) never do.
+- **„Modified"**: the feature is older than the pinned version (including
+  pre-existing) AND that version brought a change — either an item carrying this
+  feature with `featureVersion` equal to the pinned version, OR a version
+  description for the pinned version (`descriptionByVersion[pinned]`). The latter
+  badges even without a work item. It excludes „Neu", and only applies with a
+  pinned version.
+- **„ab \<Version\>"**: only in the „Alle" view, where „Neu"/„Modified" never
+  fire. A neutral chip stating which version the feature or highlight arrived in.
+  In the matrix: per feature that has a `version`. On the cards: per highlight, the
+  earliest `version` among its contributing features (`introducedVersion` in
+  `resolveHighlight`); a single pre-existing feature in the bundle suppresses the
+  chip. Pre-existing features (no `version`) never get one.
 
-### Zell-Versionierung (Tarif×Feature-Verfügbarkeit ab Version)
+### Cell versioning (tier×feature availability from a version)
 
-Während `feature.version` steuert, ab wann ein Feature (die ganze Zeile)
-existiert, steuert `tier.valueVersions[featureId]` (DB:
-`pricing_tier_values.available_from`), ab wann eine **einzelne Zelle** als
-enthalten gilt. Damit lässt sich „Feature X ist in Enterprise sofort, in Scale
-erst ab v4" abbilden, ohne die ganze Feature-Zeile zu gaten.
+Where `feature.version` controls when a feature (the whole row) starts to exist,
+`tier.valueVersions[featureId]` (DB: `pricing_tier_values.available_from`)
+controls when an **individual cell** counts as included. That is what lets you
+express „feature X is in Enterprise right away, in Scale only from v4" without
+gating the entire feature row.
 
-- **Auflösung** — `cellActiveForVersion(availableFrom, versions, selected)` in
-  [`src/pricing.ts`](src/pricing.ts), kumulativ und formgleich zu
-  `featureVisibleForVersion`: „Alle" → immer aktiv; kein `availableFrom` → ab
-  Start aktiv; sonst aktiv sobald die gepinnte Version ≥ `availableFrom`. Vor der
-  Version rendert die Zelle als „–", der gespeicherte `value` bleibt der
-  Endzustand.
-- **Matrix** ([`src/pricingMatrix.ts`](src/pricingMatrix.ts)): gepinnt → Zelle
-  erscheint/„–" (das trägt die Info selbst); „Alle" → Endzustand + dezenter
-  „ab \<version\>"-Chip (`.pm-cell-ver`) in der Zelle.
-- **Kacheln** (`resolveHighlight`): eine noch nicht verfügbare Zelle zählt für
-  den Tarif nicht als enthalten; die effektive Einführungsversion des Highlights
-  je Tarif ist `valueVersions[fid] ?? feature.version` (die Zell-Gate gewinnt),
-  speist `isNew` und die „ab"-Chip.
-- **Schreiben** — `set_tier_value(..., availableFrom)` (MCP) bzw.
-  `PUT …/tier-value {availableFrom}`; beim Löschen der Zelle verschwindet die
-  Gate mit. Round-Trip getestet in
-  [`src/pricingNormalize.test.ts`](src/pricingNormalize.test.ts), Gating-Logik in
-  [`src/pricing.test.ts`](src/pricing.test.ts).
+- **Resolution** — `cellActiveForVersion(availableFrom, versions, selected)` in
+  [`src/pricing.ts`](src/kinds/product-roadmap/pricing.ts), cumulative and shaped like
+  `featureVisibleForVersion`: under „Alle" it is always active; with no
+  `availableFrom` it is active from the start; otherwise it becomes active as soon
+  as the pinned version is ≥ `availableFrom`. Before that version the cell renders
+  as „–", while the stored `value` stays the end state.
+- **Matrix** ([`src/kinds/product-roadmap/pricingMatrix.ts`](src/kinds/product-roadmap/pricingMatrix.ts)):
+  pinned → the cell either appears or shows „–", which carries the information
+  itself; „Alle" → the end state plus a subtle „ab \<version\>" chip
+  (`.pm-cell-ver`) in the cell.
+- **Cards** (`resolveHighlight`): a cell that is not yet available does not count
+  as included for that tier. The highlight's effective introduction version per
+  tier is `valueVersions[fid] ?? feature.version` (the cell gate wins), which feeds
+  `isNew` and the „ab" chip.
+- **Writing** — `set_tier_value(..., availableFrom)` via MCP, or
+  `PUT …/tier-value {availableFrom}`. Deleting the cell removes the gate with it.
+  The round-trip is tested in
+  [`src/pricingNormalize.test.ts`](src/kinds/product-roadmap/pricingNormalize.test.ts) and the gating
+  logic in [`src/pricing.test.ts`](src/kinds/product-roadmap/pricing.test.ts).
 
-## Offene Ausbaustufen – Preismodell / Kacheln
+## Open extensions: pricing model / cards
 
-Noch nicht im Datenmodell abgebildet (aus dem Original-Preismodell), als Backlog:
+Not yet represented in the data model, as a backlog:
 
-- Minutenpreis (€/Min) je Tarif als eigenes Feld — aktuell nur `Overage` als Feature-Wert.
-- Enterprise-Minutenpakete (S/M/L/Custom mit Staffelpreisen).
-- GTM-/Strategie-Daten (a competitor-Äquivalent, Ersparnis vs. a competitor, GTM Product-/Sales-Led, Upgrade-Trigger).
-- `highlight.icon` ist im Schema vorhanden, aber ungenutzt (keine Icons je Kachel).
+- A dedicated per-tier unit-price field. Today such a value can only be expressed
+  as an ordinary feature value.
+- Tiered volume packages per tier (e.g. S/M/L/custom with graduated prices).
+- `highlight.icon` exists in the schema but is unused (no per-tile icons).
 
 Bekanntes Verhalten: Wert-Highlights (z.B. „Charaktere") erscheinen auf jeder
 Tarif-Karte (Wert variiert je Tarif) → der Arbeits-Punkt wiederholt sich dort.
