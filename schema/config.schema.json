@@ -182,19 +182,23 @@
         },
         "id": {
           "type": "string"
+        },
+        "editable": {
+          "type": "boolean"
         }
       },
       "required": [
         "kind",
         "id"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "description": "`editable` is stamped at BUILD time for local sources, because the build is what knows which of the two runtimes it is producing for. Deciding it at runtime would mean probing (\"try the API, fall back to the static file\"), which is the pattern that made a stale copy indistinguishable from live data (AGENTS.md → „No fallback data, ever\"). Absent = not editable.\n\nDB sources leave it unset and learn their capabilities from the response header instead: theirs depend on the server's env, not on the build's."
     },
     "SourceKind": {
       "type": "string",
       "enum": [
         "db",
-        "file"
+        "local"
       ]
     }
   }

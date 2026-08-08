@@ -1,10 +1,12 @@
 import { defineConfig, type Plugin } from 'vite';
 import { resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { envSourcesHint, envValue, hydrateProcessEnv } from './scripts/db/env';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
 import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
 import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
+import { hasLocalTimeline, makeFileRepo } from './scripts/local/file-repo';
 
 // Runs while Vite loads this config, before it resolves `import.meta.env`.
 // Vite reads VITE_* from repo-local .env files and from process.env only, so
@@ -27,7 +29,22 @@ const PORT = Number(envValue('TIMELINES_PORT')) || 3120;
 // `sqlFor` adds per-source routing on the postgres.js path (a source's namespace
 // picks its own TIMELINES_DATABASE_URL_<NS>, else the default); no-op unless
 // such a named var is set, so single-DB setups are unaffected.
-const dbConns = (): DbConnections => ({ sql: getSql(), supabase: getServiceClient(), sqlFor: getSqlForSource });
+// The dev server is a process WITH a filesystem, so it is the runtime that can
+// serve local file sources editable. `data/` anchors the ids (always relative to
+// it, so they match across environments and against a DB timeline id);
+// TIMELINES_SOURCES_SUBDIR bounds the scan the same way build-data.ts does.
+const localDirs = {
+  root: resolve(__dirname, 'data'),
+  scope: resolve(__dirname, 'data', (process.env.TIMELINES_SOURCES_SUBDIR ?? '').replace(/^\/+|\/+$/g, '')),
+};
+const localSource = { has: (id: string) => hasLocalTimeline(localDirs, id), repo: makeFileRepo(localDirs) };
+
+const dbConns = (): DbConnections => ({
+  sql: getSql(),
+  supabase: getServiceClient(),
+  sqlFor: getSqlForSource,
+  local: localSource,
+});
 const hasDb = (c: DbConnections): boolean => Boolean(c.sql || c.supabase);
 
 const ID_SEGMENT = /^[a-zA-Z0-9_-]+$/;
@@ -155,11 +172,47 @@ function timelinesApi(): Plugin {
         send(res, result.status, result.json);
       });
 
+      // GET /<data dir>/config.json — the built viewer config, with one field
+      // corrected for THIS runtime: local sources are editable here, because
+      // this process has a filesystem and serves /api/source/<id> writes.
+      //
+      // The path is derived from DATA_DIR rather than hardcoded to `/data`,
+      // because it is per-instance (`public/data-<instance>/`) and the client
+      // asks for the matching prefix. Hardcoding it means the override silently
+      // never fires on any instance that sets TIMELINES_DATA_DIR, and its local
+      // sources stay read-only for no visible reason.
+      //
+      // The build stamps `editable: false` (right for a static deploy) and the
+      // runtime that can do better says so, exactly as the DB adapter declares
+      // its own `live` mode through X-Source-Live. That is a server stating its
+      // capability, not the client probing for one — the client still routes on
+      // a single value it is given, so there is no „try the API, fall back to
+      // the file" guess (AGENTS.md → „No fallback data, ever").
+      //
+      // Doing it here rather than at build time is what survives `npm run build`
+      // being run in the same checkout: both commands write the same config
+      // file, so a build would otherwise turn the running dev server read-only
+      // without a word.
+      server.middlewares.use(`/${DATA_DIR}/config.json`, async (req, res, next) => {
+        if (req.method !== 'GET') return next();
+        try {
+          const built = JSON.parse(await readFile(resolve(__dirname, 'public', DATA_DIR, 'config.json'), 'utf8'));
+          for (const view of built.views ?? []) {
+            if (view?.source?.kind === 'local') view.source.editable = true;
+          }
+          send(res, 200, built);
+        } catch {
+          next(); // not built yet — let the static handler produce its own 404
+        }
+      });
+
       // GET /api/sources — list timelines
       server.middlewares.use('/api/sources', async (req, res, next) => {
         if (req.method !== 'GET') return next();
         const conns = dbConns();
-        if (!hasDb(conns)) return send(res, 200, { sources: [] });
+        // Without a DB the collection is still answerable from the filesystem:
+        // the local timelines ARE sources, and returning [] would hide them.
+        if (!hasDb(conns) && !conns.local) return send(res, 200, { sources: [] });
         try {
           const result = await resolveAdapter(conns, '').handle({ method: 'GET', id: '' });
           send(res, result.status, result.json);
@@ -198,7 +251,11 @@ function timelinesApi(): Plugin {
         }
 
         const conns = dbConns();
-        if (!hasDb(conns)) {
+        // A local file answers for its own id whether or not a DB exists, so the
+        // "no DB" refusal below must not intercept it — that gate predates local
+        // sources and would otherwise 404 every JSON timeline on a checkout
+        // without credentials, which is the common contributor setup.
+        if (!hasDb(conns) && !conns.local?.has(parsed.id)) {
           // No DB configured: 404 on GET (nothing to read). The client surfaces
           // the error loudly — there is no static content fallback. Writes 503.
           if (method === 'GET') return send(res, 404, { error: 'db_not_configured' });

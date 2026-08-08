@@ -1,10 +1,12 @@
 # Local sources (design proposal)
 
-**Status: proposal. None of this is built.** It describes a single `local` source
-adapter that would replace today's `file` kind and the separate notes pipeline,
-and would make editability a property of the runtime rather than of the file
-format. Read it as a decision record with an implementation plan attached, not as
-documentation of behaviour you can observe.
+**Status: stage 1 is built; stages 2 and 3 are not.** A single `local` source
+adapter replaces the former `file` kind and makes editability a property of the
+runtime rather than of the file format. What exists today is the single-file JSON
+half: a `data/*.json` timeline is editable under `npm run dev` and read-only on a
+static deploy. Markdown directories, the notes pipeline and everything that
+writes to a file the tool did not create are still a proposal. Each section below
+says which it is.
 
 Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
@@ -251,10 +253,21 @@ Worth stating, because it is the argument for the change beyond consistency:
 
 Three stages, each shippable on its own, in increasing order of risk:
 
-1. **`local` adapter for single-file JSON, editable in dev.** No Markdown, no
-   directories, no frontmatter patcher. It removes the largest inconsistency (a
-   JSON file you own but cannot edit) and proves the capability-stamping and the
-   mtime-based locking against the simplest possible store.
+1. ~~**`local` adapter for single-file JSON, editable in dev.**~~ **Done.**
+   [`scripts/local/file-repo.ts`](../scripts/local/file-repo.ts) implements
+   `TimelineRepo` over one JSON file, injected through `DbConnections.local` so
+   `api.ts` stays free of `node:fs`. Two things came out differently than
+   written here:
+   - **The version has to be forced forward.** Plain mtime was not enough: the
+     repo's own tests hit a millisecond collision on the first run, and two
+     writes sharing a version means a client passes an `If-Match` it should have
+     failed. `save()` now bumps the mtime explicitly whenever the new value
+     would not exceed the old one, which keeps the numeric contract intact and
+     made the widening to a content hash unnecessary.
+   - **The pricing sub-resources needed a status code of their own.** They
+     answer `501` via a new `NotSupportedError`, because a 500 reads as „we are
+     broken" and a silent success would report „Gespeichert" for a write that
+     never happened.
 2. **Directory sources on the read path.** `scripts/local/scan.ts`, `timeline.json`,
    `items` optional on `TimelineFile`, Markdown views served as sources. Deletes
    `buildFromNotes` and `notes.json`. Read-only throughout, so no user file is
