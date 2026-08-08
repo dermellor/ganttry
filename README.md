@@ -10,10 +10,10 @@ Two orthogonal extension axes keep it flexible:
 - **Source adapters** decide *where* a timeline's data comes from: a static JSON
   file, or Postgres (via either supabase-js or native postgres.js, with optional
   per-source connections).
-- **Timeline kinds** decide *what* extra rendering a timeline carries: the
-  default `generic` kind is just timeline + list; the `product-roadmap` kind adds
-  a pricing matrix and cards, loaded lazily so a generic build ships no pricing
-  code.
+- **Plugins** decide *what* a timeline carries beyond items and groups: a timeline
+  with no plugin is just timeline + list; the `product-roadmap` plugin adds a
+  pricing matrix and cards plus its own item fields, loaded lazily so a build
+  without it ships neither its code nor its stylesheet.
 
 ## Features
 
@@ -96,9 +96,10 @@ static Vite + TypeScript viewer (`src/`) renders it. The extension seams:
   drivers, supabase-js (HTTP/PostgREST) or postgres.js (native TCP), selected by
   env. The same dispatcher backs both the local Vite middleware and the Netlify
   edge function.
-- **Timeline kinds** (`src/kinds/registry.ts`): `generic` (timeline + list) and
-  `product-roadmap` (pricing). A kind is lazily `import()`-ed, so a generic build
-  ships no pricing code.
+- **Plugins** (`src/pluginHost/registry.ts`, plugins under `src/plugins/<id>/`):
+  a plugin declares item fields and optionally views, which the host renders into
+  chrome it creates itself. Lazily `import()`-ed, so a generic build ships no
+  plugin code and no plugin CSS.
 - **Live-update seam** (`watchTimeline` in `src/realtime.ts`): `realtime`
   (Supabase WebSocket) or `poll` (watermark endpoint), chosen per source; file
   sources are static.
@@ -119,10 +120,10 @@ what the timelines in front of you actually use.
 
 | Plugin | What it adds |
 | --- | --- |
-| [`product-roadmap`](src/kinds/product-roadmap/) | A pricing matrix and pricing cards, plus Version, Tier and Features fields derived from the pricing model. See [`docs/pricing.md`](docs/pricing.md). |
+| [`product-roadmap`](src/plugins/product-roadmap/) | A pricing matrix and pricing cards, plus Version, Tier and Features fields derived from the pricing model. See [`docs/pricing.md`](docs/pricing.md). |
 
 Building one: [`docs/plugin-playbook.md`](docs/plugin-playbook.md), starting from
-[`src/kinds/_template/`](src/kinds/_template/).
+[`src/plugins/_template/`](src/plugins/_template/).
 
 ## Theming
 

@@ -34,7 +34,7 @@ import type {
 import { statusOrDefault } from '../../src/status.ts';
 import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
 import { describeReversedExtent, findReversedExtent, hasReversedExtent } from '../../src/itemExtent.ts';
-import { PRODUCT_ROADMAP_PLUGIN, resolveWritePlugins, versionsFromConfig } from '../../src/plugins.ts';
+import { PRODUCT_ROADMAP_PLUGIN, resolveWritePlugins, versionsFromConfig } from '../../src/plugins/product-roadmap/plugin.ts';
 import {
   ConflictError,
   NotFoundError,

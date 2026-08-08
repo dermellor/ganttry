@@ -1,15 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { hasPlugin, pluginConfig } from './plugins';
 import {
   PRODUCT_ROADMAP_PLUGIN,
-  hasPlugin,
-  pluginConfig,
   productRoadmapRef,
   resolveWritePlugins,
   versionsFromConfig,
-} from './plugins';
-import type { TimelineFile } from './types';
+} from '../plugins/product-roadmap/plugin';
+import type { TimelineFile } from '../types';
 
 const base = (over: Partial<TimelineFile> = {}): TimelineFile => ({ items: [], ...over });
 

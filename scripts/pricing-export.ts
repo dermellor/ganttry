@@ -19,8 +19,9 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TimelineFile } from '../src/types.ts';
-import { PRODUCT_ROADMAP_PLUGIN, hasPlugin } from '../src/plugins.ts';
-import { pricingToMarkdown } from '../src/kinds/product-roadmap/pricing.ts';
+import { PRODUCT_ROADMAP_PLUGIN } from '../src/plugins/product-roadmap/plugin.ts';
+import { hasPlugin } from '../src/pluginHost/plugins.ts';
+import { pricingToMarkdown } from '../src/plugins/product-roadmap/pricing.ts';
 import { envSourcesHint, envValue } from './db/env.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

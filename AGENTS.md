@@ -11,7 +11,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 | Where | What |
 | --- | --- |
-| [`docs/architecture.md`](docs/architecture.md) | The two extension seams: source adapters (where data comes from) and timeline kinds (what a timeline renders). Start here. |
+| [`docs/architecture.md`](docs/architecture.md) | The two extension seams: source adapters (where data comes from) and plugins (what a timeline carries beyond items). Start here. |
 | [`docs/data-model.md`](docs/data-model.md) | The timeline file format, date extraction, and `timelines.config.json`. |
 | [`docs/items.md`](docs/items.md) | What an item carries beyond dates: icons, status, owner, custom fields. |
 | [`docs/editing.md`](docs/editing.md) | Editing in the interface: the item rail, the context menu, drag and form behaviour, the two view modes, URL state. |
@@ -323,7 +323,7 @@ reaches zero.
 
 **Bundle-split acceptance check**
 ([`scripts/ci/check-bundle-split.sh`](scripts/ci/check-bundle-split.sh)) enforces
-the promise from „Timeline kinds" (docs/architecture.md): a generic build downloads no pricing *view*
+the promise from „Plugins" (docs/architecture.md): a generic build downloads no pricing *view*
 code. It asserts the pricing markers are absent from the entry chunk **and
 present in some lazy chunk** — the second half is what keeps it honest, since
 testing only absence turns the check into a silent pass the day those CSS class

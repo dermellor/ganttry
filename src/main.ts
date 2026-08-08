@@ -41,7 +41,21 @@ import { deleteItem } from './itemForm';
 import { hideDetail, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
 import { setupFilterControl } from './filterControl';
-import { activeKind, ensureKindLoaded } from './kinds/registry';
+import {
+  activePlugins,
+  ensurePluginLoaded,
+  legacyViewMode,
+  pluginAppliesTo,
+  resolveViewMode,
+  type PluginView,
+} from './pluginHost/registry';
+import { parsePluginViewMode, pluginViewMode, readViewMode } from './pluginHost/viewMode';
+import {
+  pluginViewButton,
+  pluginViewButtons,
+  pluginViewSection,
+  showOnlyPluginSection,
+} from './pluginHost/views';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -91,7 +105,7 @@ async function applyView(viewId: string) {
   els.viewSelect.value = viewId;
   hideDetail();
   await renderTimeline(view);
-  updatePricingAvailability();
+  updatePluginViews();
   syncUrl();
 }
 
@@ -100,21 +114,53 @@ async function applyView(viewId: string) {
 function setModeButtons(mode: ViewMode) {
   els.modeTimelineBtn.setAttribute('aria-pressed', String(mode === 'timeline'));
   els.modeListBtn.setAttribute('aria-pressed', String(mode === 'list'));
-  els.modePricingBtn.setAttribute('aria-pressed', String(mode === 'pricing'));
+  for (const [btnMode, btn] of pluginViewButtons()) {
+    btn.setAttribute('aria-pressed', String(mode === btnMode));
+  }
 }
 
-// Show the "Preise" mode button only for product timelines that carry a pricing
-// model. If the current mode is 'pricing' but the active timeline has none (e.g.
+// Show a plugin's view button only while its plugin applies to the active
+// timeline. If the current mode belongs to a plugin that no longer applies (e.g.
 // after switching views), fall back to 'timeline' so the user isn't stuck on an
 // empty section.
-export function updatePricingAvailability(): void {
-  // The pricing button belongs to the product-roadmap kind. `activeKind` is a
-  // cheap data check — it pulls in no pricing code (that only loads when the
-  // view is entered), so a generic timeline never downloads the kind's chunk.
-  const available = !!activeKind(state.activeSourceFile)?.viewModes.includes('pricing');
-  els.modePricingBtn.hidden = !available;
-  if (!available && state.viewMode === 'pricing') {
-    applyViewMode('timeline');
+export function updatePluginViews(): void {
+  // `activePlugins` is a cheap data check — it pulls in no plugin view code (that
+  // only loads when a view is entered), so a generic timeline never downloads a
+  // plugin's chunk.
+  const available = new Set<string>();
+  for (const plugin of activePlugins(state.activeSourceFile)) {
+    for (const view of plugin.views) {
+      available.add(pluginViewMode(plugin.id, view.id));
+      pluginViewButton(els.modeToggle, plugin.id, view, (m) => applyViewMode(m as ViewMode)).hidden = false;
+      pluginViewSection(els.contentArea, plugin.id, view);
+    }
+  }
+  for (const [mode, btn] of pluginViewButtons()) {
+    if (!available.has(mode)) btn.hidden = true;
+  }
+  const current = parsePluginViewMode(state.viewMode);
+  if (!current) return;
+  if (available.has(state.viewMode)) {
+    // The plugin applies (again): enter the view the user last chose. A DB source
+    // assembles its plugin model after the first paint, so this is the moment a
+    // restored mode actually becomes renderable.
+    applyViewMode(state.viewMode, { persist: false });
+    return;
+  }
+  // Not available. Two different situations, and conflating them is what made a
+  // restored view flicker away on load:
+  //   - the plugin is still enabled here, its model just hasn't been assembled
+  //     yet (DB sources do that a tick after the first paint) → wait, keep the
+  //     mode, and this function renders it on the next call;
+  //   - the plugin is not on this timeline at all (the user switched to a generic
+  //     one) → leave the view for real, but without persisting: the stored choice
+  //     belongs to the timeline the user picked it on.
+  showOnlyPluginSection(null);
+  els.timeline.hidden = false;
+  els.viewToolbar.hidden = false;
+  setModeButtons('timeline');
+  if (!pluginAppliesTo(state.activeSourceFile, current.pluginId)) {
+    state.viewMode = 'timeline';
   }
 }
 
@@ -124,26 +170,30 @@ export function updatePricingAvailability(): void {
 // data. `persist` is false during bootstrap/external-URL application where the
 // caller drives localStorage + URL syncing itself.
 function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean } = {}) {
-  // Guard: 'pricing' is only valid for a kind that contributes that view mode.
-  const kind = activeKind(state.activeSourceFile);
-  if (mode === 'pricing' && !kind?.viewModes.includes('pricing')) mode = 'timeline';
+  // Guard: a plugin view is only valid while its plugin applies to this timeline.
+  // A stale deep link or a stored mode from another timeline lands here.
+  const parsed = parsePluginViewMode(mode);
+  const target = parsed ? resolveViewMode(state.activeSourceFile, parsed.pluginId, parsed.viewId) : null;
+  if (parsed && !target) mode = 'timeline';
   state.viewMode = mode;
   setModeButtons(mode);
   const list = mode === 'list';
-  const pricing = mode === 'pricing';
-  els.timeline.hidden = list || pricing;
+  const plugin = target ? mode : null;
+  els.timeline.hidden = list || !!plugin;
   els.list.hidden = !list;
-  els.pricing.hidden = !pricing;
-  // The grouping toolbar is shared by the timeline and list views; pricing has
-  // no grouping, so hide it there.
-  els.viewToolbar.hidden = pricing;
+  showOnlyPluginSection(plugin);
+  // The grouping toolbar is shared by the timeline and list views; a plugin view
+  // has to ask for it, because most of them render something other than the item
+  // list and an inert toolbar above it implies otherwise.
+  els.viewToolbar.hidden = !!plugin && !target?.view.toolbar;
   if (list) {
     renderListView();
-  } else if (pricing && kind) {
-    // Lazy-load the kind's chunk, then render — but only if we're still in
-    // pricing mode by the time it resolves (the user may have switched away).
-    void ensureKindLoaded(kind).then((m) => {
-      if (state.viewMode === 'pricing') m.renderView();
+  } else if (target && parsed) {
+    // Lazy-load the plugin's chunk, then render — but only if we're still in that
+    // mode by the time it resolves (the user may have switched away).
+    const container = pluginViewSection(els.contentArea, parsed.pluginId, target.view);
+    void ensurePluginLoaded(target.plugin).then((m) => {
+      if (state.viewMode === mode) m.renderView(container, target.view.id);
     });
   } else {
     // The timeline was display:none while the list showed, so vis-timeline
@@ -215,8 +265,10 @@ async function bootstrap() {
   }
 
   if (urlState.mode) {
-    state.viewMode = urlState.mode;
-    localStorage.setItem(VIEW_MODE_KEY, urlState.mode);
+    // A shared link may carry a pre-plugin mode id (`mode=pricing`), so it goes
+    // through the same legacy lookup as the stored value.
+    state.viewMode = readViewMode(urlState.mode, legacyViewMode);
+    localStorage.setItem(VIEW_MODE_KEY, state.viewMode);
   }
   setModeButtons(state.viewMode);
   setupListView();
@@ -264,7 +316,6 @@ async function bootstrap() {
   });
   els.modeTimelineBtn.addEventListener('click', () => applyViewMode('timeline'));
   els.modeListBtn.addEventListener('click', () => applyViewMode('list'));
-  els.modePricingBtn.addEventListener('click', () => applyViewMode('pricing'));
   // Shared grouping dropdown: drives both the timeline lanes and the list
   // sections. Persist the choice, then repaint whichever view is active.
   els.groupBy.addEventListener('change', () => {
@@ -314,7 +365,7 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
       }
     }
 
-    const wantMode: ViewMode = incoming.mode === 'list' ? 'list' : 'timeline';
+    const wantMode: ViewMode = readViewMode(incoming.mode, legacyViewMode);
 
     const targetViewId = incoming.view ?? state.config.defaultView;
     const targetWindow = incoming.from && incoming.to

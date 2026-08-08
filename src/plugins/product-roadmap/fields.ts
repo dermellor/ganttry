@@ -11,14 +11,14 @@
 // so it adds NO static edge into the pricing chunk. Everything pricing-heavy
 // stays behind the descriptor's dynamic `load()`.
 
-import { PRODUCT_ROADMAP_PLUGIN, hasPlugin } from '../../plugins';
+import { hasPlugin } from '../../pluginHost/plugins';
 import {
   PRICING_FEATURE_META_KEY,
   PRICING_ITEM_VERSION_META_KEY,
   PRICING_TIER_META_KEY,
-  type CustomFieldDef,
-  type TimelineFile,
-} from '../../types';
+  PRODUCT_ROADMAP_PLUGIN,
+} from './plugin';
+import type { CustomFieldDef, TimelineFile } from '../../types';
 
 // Chip colour for a derived tier option. A tier has no colour of its own in the
 // pricing model, and hand-picking one here would reintroduce exactly the

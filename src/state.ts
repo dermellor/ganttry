@@ -19,12 +19,17 @@ import type { PresenceUser } from './presence';
 import type { PresenceHandle } from './realtime';
 import { isoDateOnly } from './editor';
 import { writeUrlState, type UrlState } from './urlState';
+import { legacyViewMode } from './pluginHost/registry';
+import { readViewMode, type ViewMode } from './pluginHost/viewMode';
 
 export const els = {
   timeline: document.getElementById('timeline') as HTMLDivElement,
   list: document.getElementById('list') as HTMLElement,
   listBody: document.getElementById('list-body') as HTMLElement,
-  pricing: document.getElementById('pricing') as HTMLElement,
+  // Where plugin views mount: the host creates one section per declared view
+  // (see main.ts), instead of index.html carrying a container per plugin.
+  contentArea: document.getElementById('content-area') as HTMLElement,
+  modeToggle: document.getElementById('mode-toggle') as HTMLElement,
   viewToolbar: document.getElementById('view-toolbar') as HTMLDivElement,
   groupBy: document.getElementById('groupby') as HTMLSelectElement,
   filterControl: document.getElementById('filter-control') as HTMLDivElement,
@@ -34,7 +39,6 @@ export const els = {
   viewSelect: document.getElementById('view-select') as HTMLSelectElement,
   modeTimelineBtn: document.getElementById('mode-timeline') as HTMLButtonElement,
   modeListBtn: document.getElementById('mode-list') as HTMLButtonElement,
-  modePricingBtn: document.getElementById('mode-pricing') as HTMLButtonElement,
   milestonesOnly: document.getElementById('milestones-only') as HTMLInputElement,
   presence: document.getElementById('presence') as HTMLDivElement,
   addBtn: document.getElementById('add-btn') as HTMLButtonElement,
@@ -62,7 +66,10 @@ export const GROUP_BY_KEY = 'timelines.listGroupBy';
 export const FILTER_DIM_KEY = 'timelines.filterDim';
 export const FILTER_VALUES_KEY = 'timelines.filterValues';
 
-export type ViewMode = 'timeline' | 'list' | 'pricing';
+// Re-exported so the modules that already imported it from here keep working; the
+// encoding itself lives in the plugin host, next to the parser both the URL and
+// the persisted key go through.
+export type { ViewMode };
 
 // Tag pills collapse to plain coloured dots once the view gets too dense to
 // read their text: below this many pixels per day the label text is more
@@ -193,10 +200,10 @@ export const state: AppState = {
   pendingWindow: null,
   suppressUrlSync: false,
   milestonesOnly: localStorage.getItem(MILESTONES_ONLY_KEY) === 'true',
-  viewMode: (() => {
-    const m = localStorage.getItem(VIEW_MODE_KEY);
-    return m === 'list' || m === 'pricing' ? m : 'timeline';
-  })(),
+  // A stored mode may predate addressable plugin views (`pricing`), so it goes
+  // through the legacy lookup rather than a bare comparison: renaming the encoding
+  // without it would silently reset every user's saved view.
+  viewMode: readViewMode(localStorage.getItem(VIEW_MODE_KEY), legacyViewMode),
   groupBy: localStorage.getItem(GROUP_BY_KEY) || 'group',
   filterDim: localStorage.getItem(FILTER_DIM_KEY) || '',
   filterValues: (() => {
@@ -299,6 +306,6 @@ export function syncUrl(): void {
     urlState.to = isoDateOnly(state.userWindow.end);
   }
   if (state.milestonesOnly) urlState.milestones = true;
-  if (state.viewMode === 'list') urlState.mode = 'list';
+  if (state.viewMode !== 'timeline') urlState.mode = state.viewMode;
   writeUrlState(urlState);
 }

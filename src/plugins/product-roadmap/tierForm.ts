@@ -12,7 +12,7 @@ import type { PricingTier } from '../../types';
 import { state, els, setStatus, clearFormSlots } from '../../state';
 import { apiAddTier, apiUpdateTier, apiDeleteTier, ConflictError } from '../../editor';
 import { hideDetail, setDetailTitle } from '../../detailPanel';
-import { renderPricingView } from './pricingMatrix';
+import { repaintPricingView } from './pricingMatrix';
 import { slugId } from './pricing';
 import { renderTimeline } from '../../render';
 
@@ -102,7 +102,7 @@ async function saveTierFromForm(tierId: string, form: HTMLFormElement): Promise<
     // (updateTier in timeline-repo.ts), so `values`/`valueVersions` come back
     // whole and need no preserving.
     Object.assign(tier, { tagline: undefined, useCase: undefined, targetGroup: undefined }, saved);
-    renderPricingView();
+    repaintPricingView();
     setStatus(`Tarif „${tier.name}" aktualisiert`);
     showTierForm(tierId);
   } catch (err) {
@@ -136,7 +136,7 @@ async function deleteTier(tierId: string): Promise<void> {
   // immediate repaint.
   pricing.tiers = pricing.tiers.filter((t) => t.id !== tierId);
   state.activeFormTierId = null;
-  renderPricingView();
+  repaintPricingView();
   hideDetail();
   setStatus(`Tarif „${tier.name}" gelöscht`);
 }
@@ -164,7 +164,7 @@ export async function addTier(): Promise<void> {
     // afterwards — the form for the price, the matrix cells one click each.
     const saved = await apiAddTier(sourceId, { id, name, price: '', values: {} });
     pricing.tiers.push(saved);
-    renderPricingView();
+    repaintPricingView();
     showTierForm(saved.id ?? id);
     setStatus(`Tarif „${name}" angelegt`);
   } catch (err) {

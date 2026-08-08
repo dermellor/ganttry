@@ -239,7 +239,7 @@ worse way in than the form's searchable chip editor.
 
 The stored definitions above are not the only source of custom fields: an enabled
 **plugin** contributes its own, derived from the timeline's data rather than
-declared by hand (see „Timeline kinds" (docs/architecture.md)). `getCustomFields()` concatenates the
+declared by hand (see „Plugins" (docs/architecture.md)). `getCustomFields()` concatenates the
 timeline's stored defs with `pluginFieldDefs(file)`, and everything downstream —
 the form control, the managed-metadata rule, grouping and filtering — works off
 that one list, so a plugin field needs no parallel code path. Being derived, these
@@ -260,7 +260,7 @@ because its chips carry long feature names. Changing that layout is a change to
 `fields()`, not to the form.
 
 **One definition per key** — a contributed field *supersedes* a stored one with
-the same key (`mergeFieldDefs` in `kinds/registry.ts`). Two defs on one key would
+the same key (`mergeFieldDefs` in `pluginHost/registry.ts`). Two defs on one key would
 render two controls writing the same `metadata[key]` and sharing one multi-select
 state bucket (that state is keyed by the field key). So a stored definition a
 plugin has taken over is inert, and dropping it is a tidy-up rather than a fix.

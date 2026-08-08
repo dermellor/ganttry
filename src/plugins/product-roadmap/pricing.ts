@@ -5,9 +5,8 @@
 // caller stamps the date.
 
 import { statusOrDefault, type StatusKey } from '../../status';
+import { PRICING_FEATURE_META_KEY, PRICING_ITEM_VERSION_META_KEY } from './plugin';
 import {
-  PRICING_FEATURE_META_KEY,
-  PRICING_ITEM_VERSION_META_KEY,
   type Pricing,
   type PricingFeature,
   type PricingHighlight,

@@ -269,8 +269,25 @@ body {
   overflow: hidden;
 }
 
+/* The neutral box the host creates for a plugin view (main.ts). It only claims the
+   space; how the view fills it is the plugin's own stylesheet's business, which is
+   why nothing here styles its contents. min-height:0 is the same trap as everywhere
+   else in this flex column: without it a tall child resolves min-height:auto to
+   min-content and overflows the viewport instead of scrolling inside its section. */
+.plugin-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.plugin-view[hidden] {
+  display: none;
+}
+
 /* Grouping toolbar shared by the timeline and list views — identical header row
-   in both. Hidden in pricing mode (grouping doesn't apply there). */
+   in both. A plugin view has to opt in (PluginView.toolbar), so it is hidden
+   there by default. */
 .view-toolbar {
   display: flex;
   align-items: center;

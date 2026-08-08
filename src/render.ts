@@ -63,7 +63,7 @@ import { attachOverrunLines } from './overrun';
 import { deleteItem, setItemFieldValue, setItemStatus, showItemForm } from './itemForm';
 import { showDetailForId, hideDetail } from './detailPanel';
 import { renderListView } from './listView';
-import { loadedKindView } from './kinds/registry';
+import { repaintPluginView } from './pluginHost/views';
 import { showPhaseFormByIndex, handlePhaseEdit } from './phaseForm';
 
 // Render-internal handles. `timeline` mirrors state.timeline (kept in sync on
@@ -295,10 +295,10 @@ export function applyBuildToDataSets(): void {
   // Keep the list view in sync when it's the active display (edits, drags,
   // milestones-only toggle all funnel through here).
   if (state.viewMode === 'list') renderListView();
-  // Same for the pricing matrix (its Roadmap counts depend on item featureIds).
-  // The kind view (e.g. pricing) is loaded lazily; once entered it's cached, so
-  // this repaint no-ops during the brief pre-load window.
-  else if (state.viewMode === 'pricing') loadedKindView()?.renderView();
+  // Same for a plugin view (the pricing matrix's roadmap counts, say, depend on
+  // item metadata). A plugin's chunk is loaded lazily; once entered it is cached,
+  // so this repaint no-ops during the brief pre-load window.
+  else repaintPluginView(state.viewMode);
 }
 
 // Reconcile a vis DataSet to `next` without ever emptying it: drop rows that are
@@ -640,9 +640,9 @@ export async function renderTimeline(view: View) {
   // Fresh build → repaint the list too, so switching to it (or reloading a
   // deep-linked list URL) shows the current data without an extra edit.
   if (state.viewMode === 'list') renderListView();
-  // The kind view (e.g. pricing) is loaded lazily; once entered it's cached, so
-  // this repaint no-ops during the brief pre-load window.
-  else if (state.viewMode === 'pricing') loadedKindView()?.renderView();
+  // A plugin view is loaded lazily; once entered it is cached, so this repaint
+  // no-ops during the brief pre-load window.
+  else repaintPluginView(state.viewMode);
 }
 
 // Toggle the compact tag mode based on how much horizontal room a day of the

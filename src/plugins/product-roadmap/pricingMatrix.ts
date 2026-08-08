@@ -32,7 +32,8 @@ import { ensureLayer, positionLayer } from './popover';
 import { renderCardsHtml } from './pricingCards';
 import { workDotHtml } from './pricingWork';
 import { type TimelineFile, type PricingFeature } from '../../types';
-import { PRODUCT_ROADMAP_PLUGIN, hasPlugin } from '../../plugins';
+import { hasPlugin } from '../../pluginHost/plugins';
+import { PRODUCT_ROADMAP_PLUGIN } from './plugin';
 
 const PRICING_VERSION_KEY = 'timelines.pricingVersion';
 const PRICING_SUBVIEW_KEY = 'timelines.pricingSubview';
@@ -390,10 +391,21 @@ function wireWork(host: HTMLElement): void {
 
 // Entry point for the pricing section: header (title + view toggle + version
 // switcher) plus the chosen body (matrix grid or highlight cards).
-export function renderPricingView(): void {
+// The section the host handed us on the last render. Kept so this plugin's own
+// edit paths (cell editor, feature/tier forms) can repaint themselves without
+// threading the container through every callback — and so that the container
+// stays the host's to own rather than something the plugin looks up by id.
+let hostSection: HTMLElement | null = null;
+
+/** Repaint into the section of the last render. No-op before the first one. */
+export function repaintPricingView(): void {
+  if (hostSection) renderPricingView(hostSection);
+}
+
+export function renderPricingView(host: HTMLElement): void {
   const file = state.activeSourceFile;
-  const host = els.pricing;
   if (!host) return;
+  hostSection = host;
   // A repaint replaces the cell the editor is anchored to, so a still-open popover
   // would float over a stale position (or over a cell that no longer exists).
   closeCellEditor();
@@ -472,14 +484,14 @@ export function renderPricingView(): void {
     selectedVersion = sel.value || null;
     if (selectedVersion) localStorage.setItem(PRICING_VERSION_KEY, selectedVersion);
     else localStorage.removeItem(PRICING_VERSION_KEY);
-    renderPricingView();
+    repaintPricingView();
   });
 
   host.querySelectorAll<HTMLButtonElement>('.pm-subview-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       subView = (btn.dataset.sub as SubView) === 'cards' ? 'cards' : 'matrix';
       localStorage.setItem(PRICING_SUBVIEW_KEY, subView);
-      renderPricingView();
+      repaintPricingView();
     });
   });
 

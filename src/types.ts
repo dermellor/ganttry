@@ -270,19 +270,6 @@ export type Pricing = {
   versions?: string[];
 };
 
-// Item metadata key holding the feature ids an item is assigned to (string[]).
-export const PRICING_FEATURE_META_KEY = 'featureIds';
-
-// Item metadata key holding the pricing version an item's work targets (string,
-// one of Pricing.versions). Drives the version-dependent work indicator in the
-// matrix (an item is "work for version X on feature Y").
-export const PRICING_ITEM_VERSION_META_KEY = 'featureVersion';
-
-// Item metadata key holding the pricing tier ids an item concerns (string[]).
-// Keeps the historical key of the hand-seeded `tier` custom field it replaces —
-// the field is now derived from Pricing.tiers (see kinds/product-roadmap/fields).
-export const PRICING_TIER_META_KEY = 'tier';
-
 // A plugin (a.k.a. timeline kind) enabled on a timeline. Enablement is pure data
 // — a row in `timeline_plugins`, no core-schema change — so this array replaces
 // the old plugin-specific `type` column/field. `config` is the plugin's opaque

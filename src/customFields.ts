@@ -11,7 +11,7 @@
 import { escapeHtml } from './buildItems';
 import { state } from './state';
 import { scheduleLiveEdit } from './persistence';
-import { mergeFieldDefs, pluginFieldDefs } from './kinds/registry';
+import { mergeFieldDefs, pluginFieldDefs } from './pluginHost/registry';
 import { type CustomFieldDef, type CustomFieldOption } from './types';
 
 // metadata keys managed by their own dedicated form control (the reserved

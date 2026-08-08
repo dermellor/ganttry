@@ -14,6 +14,7 @@ import {
 } from './presenceModel';
 import type { SourceLive, Watermark } from './types';
 import { nextPollDelay, watermarkChanged } from './poll';
+import { pluginRealtimeTables } from './pluginHost/registry';
 
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -29,18 +30,10 @@ function getClient(): SupabaseClient | null {
   return client;
 }
 
-// Pricing child tables that carry their own rows (versions live on the
-// `timelines` row, so they arrive via the `timelines` UPDATE listener).
-export const PRICING_TABLES = [
-  'pricing_features',
-  'pricing_tiers',
-  'pricing_tier_values',
-  'pricing_highlights',
-] as const;
-export type PricingTable = (typeof PRICING_TABLES)[number];
-
 export type RemoteChange = {
-  table: 'timeline_items' | 'timelines' | PricingTable;
+  // A plugin-owned table name is just a string here: the host subscribes to what
+  // the registry declares, and knows nothing about what those tables mean.
+  table: 'timeline_items' | 'timelines' | (string & {});
   event: 'INSERT' | 'UPDATE' | 'DELETE';
   id: string; // item id (items) or timeline id (timelines); row id for pricing tables
   version?: number; // new row version for items (own-echo suppression)
@@ -76,8 +69,11 @@ export function subscribeTimeline(timelineId: string, onChange: (c: RemoteChange
       () => onChange({ table: 'timelines', event: 'UPDATE', id: timelineId }),
     );
 
-  // Pricing child tables: any row change re-reads the assembled model.
-  for (const table of PRICING_TABLES) {
+  // Plugin-owned tables: any row change re-reads that plugin's model. Declared
+  // per plugin (registry `realtimeTables`) rather than listed here, so a second
+  // plugin with its own rows needs no change to the core subscription. Goes away
+  // with the generic store (#12), where one table covers every plugin.
+  for (const table of pluginRealtimeTables()) {
     channel = channel.on(
       'postgres_changes',
       { event: '*', schema: 'public', table, filter: `timeline_id=eq.${timelineId}` },
