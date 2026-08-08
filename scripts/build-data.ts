@@ -1,11 +1,12 @@
 import { readdir, readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, relative, basename, dirname, extname } from 'node:path';
+import { join, relative, basename, dirname, extname, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
 import { envValue } from './db/env.ts';
+import { scanDirectory, timelineDirectories } from './local/scan.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CONFIG_PATH = join(ROOT, 'timelines.config.json');
@@ -339,7 +340,7 @@ async function buildOnce(): Promise<void> {
   // File sources (committed data/*.json) plus DB timelines discovered live from
   // the DB. On an id collision the DB timeline wins (it is the live source of
   // truth); file sources are listed first for a stable dropdown order.
-  const fileViews = await collectStandaloneSources();
+  const fileViews = await collectStandaloneSources(config);
   const dbViews = await collectDbSources();
   const dbIds = new Set(dbViews.map((v: any) => v.id));
   const autoViews = [...fileViews.filter((v: any) => !dbIds.has(v.id)), ...dbViews];
@@ -398,7 +399,7 @@ async function* walkJsonFiles(dir: string): AsyncGenerator<string> {
   }
 }
 
-async function collectStandaloneSources(): Promise<unknown[]> {
+async function collectStandaloneSources(config: Config): Promise<unknown[]> {
   if (!existsSync(SOURCES_DIR_IN)) return [];
   await mkdir(SOURCES_DIR_OUT, { recursive: true });
   const views: unknown[] = [];
@@ -408,7 +409,38 @@ async function collectStandaloneSources(): Promise<unknown[]> {
   // Otherwise TIMELINES_SOURCES_SUBDIR would strip the prefix on the deploy and
   // the client would request /api/source/<name> which the DB doesn't have.
   const DATA_ROOT = join(ROOT, 'data');
+
+  // Directory sources: a folder holding a container file, with one Markdown
+  // file per item. Materialized into the build output the same way a JSON
+  // source is copied, because a static deploy has no process to scan with —
+  // there the built copy IS what the client reads (read-only, see
+  // docs/local-sources.md → „How a local source is served").
+  const dirs = await timelineDirectories(SOURCES_DIR_IN);
+  for (const dir of dirs) {
+    const id = relative(DATA_ROOT, dir).replace(/\\/g, '/');
+    const file = await scanDirectory(dir, {
+      dateFields: config.dateFields,
+      filenameDatePatterns: config.filenameDatePatterns,
+    });
+    const outPath = join(SOURCES_DIR_OUT, `${id}.json`);
+    await mkdir(dirname(outPath), { recursive: true });
+    await writeIfChanged(outPath, `${JSON.stringify(file, null, 2)}\n`);
+    views.push({
+      id: `src:${id}`,
+      name: file.name || basename(id),
+      description: file.description ?? '',
+      filter: {},
+      groupBy: file.groupBy,
+      source: { kind: 'local', id, editable: LOCAL_EDITABLE },
+    });
+  }
+
   for await (const inPath of walkJsonFiles(SOURCES_DIR_IN)) {
+    // A directory source owns every file under it, its container file included.
+    // Without this the container is picked up as a malformed timeline (it has no
+    // `items` by design), and any JSON a user keeps next to their notes turns
+    // into a second, unintended source.
+    if (dirs.some((dir) => inPath.startsWith(dir + sep))) continue;
     const rel = relative(DATA_ROOT, inPath).replace(/\\/g, '/');
     const id = rel.slice(0, -extname(rel).length);
     let raw: string;

@@ -311,6 +311,19 @@ export type TimelineFile = {
   }[];
 };
 
+/**
+ * The `timeline.json` at the root of a **directory** source: everything a
+ * timeline carries above item level, for the case where the items are one
+ * Markdown file each (see docs/local-sources.md).
+ *
+ * A separate type rather than `TimelineFile` with an optional `items`. Making
+ * `items` optional would weaken it at the dozen call sites that iterate it, none
+ * of which a container file ever reaches — they all work on the *scanned*
+ * result, which always has items. The cost is one more generated schema; the
+ * benefit is that `file.items` stays something you can use without a guard.
+ */
+export type TimelineContainer = Omit<TimelineFile, 'items'>;
+
 export type Config = {
   /** Points editors at schema/config.schema.json for completion + validation. */
   $schema?: string;

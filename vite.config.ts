@@ -6,7 +6,7 @@ import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/
 import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
 import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
-import { hasLocalTimeline, makeFileRepo } from './scripts/local/file-repo';
+import { hasLocalTimeline, isLocalWritable, makeFileRepo } from './scripts/local/file-repo';
 
 // Runs while Vite loads this config, before it resolves `import.meta.env`.
 // Vite reads VITE_* from repo-local .env files and from process.env only, so
@@ -47,7 +47,21 @@ const dbConns = (): DbConnections => ({
 });
 const hasDb = (c: DbConnections): boolean => Boolean(c.sql || c.supabase);
 
-const ID_SEGMENT = /^[a-zA-Z0-9_-]+$/;
+/**
+ * A single path segment of a source or item id.
+ *
+ * Dots are allowed because an item in a Markdown directory source is identified
+ * by its file path, and file names carry dots. `.` and `..` are excluded
+ * separately: those are the only two that mean something to the filesystem, and
+ * excluding them by name is exact where a character blocklist is a guess.
+ *
+ * This is not the containment guard. That one lives in `scripts/local/file-repo.ts`
+ * and works on the RESOLVED path, which is what catches the encodings a
+ * character rule misses; this check only keeps obviously malformed ids out of
+ * the dispatcher.
+ */
+const ID_SEGMENT = /^[a-zA-Z0-9_.-]+$/;
+const isIdSegment = (s: string): boolean => s !== '.' && s !== '..' && ID_SEGMENT.test(s);
 
 type JiraCreds = { baseUrl: string; email: string; apiToken: string };
 
@@ -198,7 +212,11 @@ function timelinesApi(): Plugin {
         try {
           const built = JSON.parse(await readFile(resolve(__dirname, 'public', DATA_DIR, 'config.json'), 'utf8'));
           for (const view of built.views ?? []) {
-            if (view?.source?.kind === 'local') view.source.editable = true;
+            // Per source, not blanket: a Markdown directory is served here but
+            // is not writable yet, and claiming otherwise offers edits that 501.
+            if (view?.source?.kind === 'local') {
+              view.source.editable = isLocalWritable(localDirs, view.source.id);
+            }
           }
           send(res, 200, built);
         } catch {
@@ -246,7 +264,7 @@ function timelinesApi(): Plugin {
 
         // Validate id + childId segments.
         const segs = [...parsed.id.split('/'), parsed.sub?.childId].filter(Boolean) as string[];
-        if (!segs.every((s) => ID_SEGMENT.test(s))) {
+        if (!segs.every(isIdSegment)) {
           return send(res, 400, { error: `invalid id "${parsed.id}"` });
         }
 

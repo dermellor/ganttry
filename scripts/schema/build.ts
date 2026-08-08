@@ -39,6 +39,13 @@ const TARGETS: Target[] = [
     examples: ['data/example-projektplan.json', 'data/launch-roadmap.json'],
   },
   {
+    // The `timeline.json` of a directory source: a timeline without its items,
+    // because there the items are the directory's Markdown files.
+    type: 'TimelineContainer',
+    out: 'schema/container.schema.json',
+    examples: [],
+  },
+  {
     type: 'Config',
     out: 'schema/config.schema.json',
     examples: ['timelines.config.json'],

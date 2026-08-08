@@ -16,7 +16,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/items.md`](docs/items.md) | What an item carries beyond dates: icons, status, owner, custom fields. |
 | [`docs/editing.md`](docs/editing.md) | Editing in the interface: the item rail, the context menu, drag and form behaviour, the two view modes, URL state. |
 | [`docs/database.md`](docs/database.md) | Postgres as the data source: schema, the two drivers, optimistic locking, live updates, presence. |
-| [`docs/local-sources.md`](docs/local-sources.md) | Files the user owns as a source: editability decided by the runtime instead of the format. JSON is built; Markdown directories are still a proposal. |
+| [`docs/local-sources.md`](docs/local-sources.md) | Files the user owns as a source: a JSON file or a directory of Markdown. Editability is decided by the runtime, not by the format. |
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server and its tools. |
 | [`docs/deploy.md`](docs/deploy.md) | The Netlify deploy, the auth gate, JIRA linking. |
 | [`docs/pricing.md`](docs/pricing.md) | The pricing model of a product-roadmap timeline. |
@@ -301,8 +301,9 @@ npm run openapi:check # verify the committed spec matches routes + types (CI)
 
 The shape of the committed data files is **derived, not documented twice**:
 [`scripts/schema/build.ts`](scripts/schema/build.ts) generates
-`schema/timeline.schema.json` (from `TimelineFile`) and `schema/config.schema.json`
-(from `Config`) out of [`src/types.ts`](src/types.ts), which stays authoritative.
+`schema/timeline.schema.json` (from `TimelineFile`), `schema/container.schema.json`
+(from `TimelineContainer`, the `timeline.json` of a directory source) and
+`schema/config.schema.json` (from `Config`) out of [`src/types.ts`](src/types.ts), which stays authoritative.
 
 The output **is committed**, and that is the point rather than an oversight: it is
 what lets a data file carry `"$schema": "../schema/timeline.schema.json"` and get
