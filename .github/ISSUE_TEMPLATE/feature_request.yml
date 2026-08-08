@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a capability or an extension
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do that is currently awkward or impossible?
+      description: The situation matters more than the proposed solution; it often admits a simpler one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+    validations:
+      required: false
+
+  - type: dropdown
+    id: axis
+    attributes:
+      label: Which extension axis does this touch?
+      description: See AGENTS.md → „Source kinds" and „Timeline kinds". Both are designed to be extended without touching core files.
+      options:
+        - A new data source (source adapter)
+        - A new timeline flavour with its own views (timeline kind)
+        - Core timeline/list rendering
+        - Editing, persistence or collaboration
+        - Deploy, hosting or auth
+        - Something else / not sure
+    validations:
+      required: true

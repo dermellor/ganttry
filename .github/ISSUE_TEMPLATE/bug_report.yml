@@ -1,0 +1,62 @@
+name: Bug report
+description: Something renders, saves or loads incorrectly
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open view …
+        2. Right-click the bar …
+        3. The mark appears at …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Source kind
+      description: File sources are read-only; only DB-backed timelines are editable, so this narrows it down a lot.
+      options:
+        - file (a JSON in data/)
+        - db (Postgres, editable)
+        - notes (Markdown frontmatter)
+        - not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: driver
+    attributes:
+      label: DB driver, if a DB source
+      options:
+        - postgres.js (TIMELINES_DATABASE_URL set)
+        - supabase-js (TIMELINES_SUPABASE_* set)
+        - not applicable
+    validations:
+      required: false
+
+  - type: input
+    id: env
+    attributes:
+      label: Node version and browser
+      placeholder: node 22.x, Firefox 141
+    validations:
+      required: false
+
+  - type: textarea
+    id: data
+    attributes:
+      label: Minimal timeline JSON that triggers it
+      description: Optional, but the fastest route to a fix. Please remove anything confidential.
+      render: json
+    validations:
+      required: false

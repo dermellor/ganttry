@@ -139,13 +139,17 @@ server.
 ## Contributing
 
 Issues and pull requests are welcome at
-<https://github.com/dermellor/ganttry/issues>.
+<https://github.com/dermellor/ganttry/issues>. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, the checks CI runs, and the
+conventions worth knowing. Contributing needs **no database**: file sources run
+on a plain `npm install && npm run dev`. Requires Node 22 or newer.
 
-- Run the test suite with `npm test` (Node's built-in test runner over
-  `{src,scripts}/**/*.test.ts`).
-- [`AGENTS.md`](AGENTS.md) is the single source of truth for the data model,
-  schema, extension seams and conventions. Read it before larger changes and keep
-  it in sync when behaviour changes.
+[`AGENTS.md`](AGENTS.md) is the single source of truth for the data model, schema,
+extension seams and conventions. Read it before larger changes and keep it in
+sync when behaviour changes.
+
+Security reports go through a private advisory, not a public issue: see
+[`SECURITY.md`](SECURITY.md).
 
 ## License
 
