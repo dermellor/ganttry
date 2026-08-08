@@ -12,7 +12,11 @@
     "db:import": "tsx scripts/db/import.ts",
     "db:migrate": "tsx scripts/db/migrate.ts",
     "db:check": "tsx scripts/db/check-pending.ts",
+    "db:local:up": "docker run -d --rm --name ganttry-pg -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:16",
+    "db:local:down": "docker stop ganttry-pg",
+    "db:reset": "TIMELINES_DATABASE_URL=${TIMELINES_DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:55432/postgres} TIMELINES_MIGRATE_DATABASE_URL=${TIMELINES_MIGRATE_DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:55432/postgres} sh -c 'tsx scripts/db/reset.ts && tsx scripts/db/migrate.ts --allow-dirty && tsx scripts/db/import.ts example-projektplan launch-roadmap'",
     "dev": "bash scripts/dev-prep.sh && npm run db:check -- --quiet && npm run build:data && concurrently -n data,vite -c yellow,cyan \"npm run watch:data\" \"vite\"",
+    "dev:local": "TIMELINES_DATABASE_URL=${TIMELINES_DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:55432/postgres} TIMELINES_DB_LIVE=poll npm run dev",
     "dev:worktree": "npm run build:data && vite --strictPort --port ${WT_PORT:-31200}",
     "dev:notes": "bash scripts/dev-prep.sh && npm run db:check -- --quiet && npm run build:data && concurrently -n data,vite -c yellow,cyan \"npm run watch:data:notes\" \"vite\"",
     "build": "npm run build:data && vite build",
@@ -52,6 +56,7 @@
     "ts-json-schema-generator": "^2.9.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0",
+    "umzug": "^3.8.3",
     "vite": "^5.4.0"
   }
 }

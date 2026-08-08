@@ -149,11 +149,54 @@ RLS is on; server access uses the service key, which bypasses it. The anon SELEC
 policies exist only for the realtime subscription (see below).
 
 **Applying migrations: a portable runner (`npm run db:migrate`).** It works
-against *any* Postgres through `TIMELINES_DATABASE_URL`, with no Supabase CLI
-needed. [`scripts/db/migrate.ts`](../scripts/db/migrate.ts) (postgres.js) creates a
+against *any* Postgres, with no Supabase CLI needed.
+[`scripts/db/migrate.ts`](../scripts/db/migrate.ts) (postgres.js) creates a
 `schema_migrations` tracking table and applies `supabase/migrations/*.sql` in
 filename order, each in **one transaction**, with a checksum (which warns on
 drift). Re-runs apply only what is pending.
+
+**Orchestration is [umzug](https://github.com/sequelize/umzug), the semantics are
+ours.** umzug contributes the ordering, the pending loop and a storage seam; it has
+no database knowledge, so the three things that actually matter are explicitly
+*not* delegated: the **checksums** ([`pending.ts`](../scripts/db/pending.ts)), the
+**one transaction per file**, and the **guardrails** below. The reason to use a
+framework at all is shape rather than features: the same three hooks (context /
+resolve / storage) fit a SQLite store and, later, a writable notes directory, so
+those get this same process without a second runner to maintain. For Postgres
+alone it is a lateral move, and worth knowing as such before someone "simplifies"
+it back out.
+
+One trap it costs, documented because it wastes an afternoon otherwise: umzug
+accepts a context *or* a factory and decides with `typeof context === 'function'`.
+A postgres.js handle **is** callable (`sql(…)` interpolates an identifier), so
+passing it directly makes umzug invoke it and postgres.js answers
+`NOT_TAGGED_CALL` before a single migration runs. Hence `context: () => sql`.
+
+#### Guardrails on the set itself
+
+Pure rules over filenames in
+[`migration-rules.ts`](../scripts/db/migration-rules.ts), applied before anything
+runs and unit-tested directly. Each one exists because the failure is cheap to
+prevent at the name and expensive to untangle afterwards.
+
+| Rule | Why | On violation |
+| --- | --- | --- |
+| `NNNN_lower_snake_case.sql` | filename order *is* apply order; three digits or mixed case sort unpredictably | exit 2 |
+| Numbers unique | two branches each grabbing `0016_` merge cleanly, then apply in alphabetical order of their slugs — which neither author intended | exit 2 |
+| Migration files committed | applying an uncommitted file gives this database a schema nobody can reproduce, and amending it afterwards leaves a checksum drift that never clears | exit 2, or `--allow-dirty` |
+| `*_breaking.sql` applied alone | it removes a shape the *running* code may still read, so it is sequenced by hand: additive files first, deploy, then the breaking one | applies up to it, then stops with the command |
+
+Gaps in the numbering are deliberately fine: a reverted migration leaves one, and
+renumbering to close it renames a file other databases already record as applied,
+which then reads as pending to them forever.
+
+The breaking rule has one exception, and it is the reason `db:reset` works: a
+database with **nothing** applied yet has no running code to protect, so a fresh
+setup applies the whole set in one go.
+
+Pure data cleanups are **not** migrations — a one-off script belongs in
+`scripts/`, because a migration is a schema change every database must replay
+forever, while a cleanup is a thing that happened once to one dataset.
 
 ### The pending check (`npm run db:check`)
 
@@ -199,11 +242,13 @@ question cannot be answered from that connection, and pretending otherwise would
 worse than saying so.
 
 ```bash
-npm run db:migrate               # apply pending migrations
-npm run db:migrate -- --status   # list applied / pending
-npm run db:migrate -- --baseline # record ALL current files as "applied" WITHOUT
-                                 # running them — for a DB already migrated by
-                                 # hand (see below)
+npm run db:migrate                  # apply pending migrations
+npm run db:migrate -- --status      # list applied / pending
+npm run db:migrate -- --baseline    # record ALL current files as "applied" WITHOUT
+                                    # running them — for a DB already migrated by
+                                    # hand (see below)
+npm run db:migrate -- --breaking    # also apply the next *_breaking.sql
+npm run db:migrate -- --allow-dirty # apply with uncommitted migration files
 ```
 
 `0000_prereq_roles.sql` creates the `anon` role and the `supabase_realtime`
@@ -288,18 +333,47 @@ chosen driver (see „Drivers"): supabase-js through `getServiceClient()`
 Ist `TIMELINES_DATABASE_URL` gesetzt, läuft alles über postgres.js; sonst über
 supabase-js.
 
-**Your own Postgres in 3 steps** (no Supabase needed):
+#### A local database as the safe default (`dev:local`)
+
+Without this, whatever the credentials point at *is* your development target, and
+for a hosted instance that means `npm run dev` edits production data. Trying a
+migration out then has no safe place to happen, which is the friction the local
+tier removes. Three commands, no env setup and no Supabase:
 
 ```bash
-docker run -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16   # 1. Postgres
-export TIMELINES_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/postgres  # 2. target
-npm run db:migrate                                                     # 3. schema
+npm run db:local:up   # throwaway Postgres in Docker (port 55432)
+npm run db:reset      # drop schema → migrate → seed from data/*.json
+npm run dev:local     # dev server against that database
 ```
 
-Then run the server with `TIMELINES_DATABASE_URL` (live updates via
-`TIMELINES_DB_LIVE=poll`, without an anon key or realtime — see „Live-update
-seam"). `0000_prereq_roles.sql` handles the previously manual `anon`/publication
-setup, so nothing has to be prepared by hand.
+`db:local:down` stops it again; the container runs with `--rm`, so there is nothing
+to clean up. Port **55432** rather than 5432 on purpose, so it cannot collide with
+a Postgres already installed on the machine.
+
+`db:reset` is the destructive one, so it carries two safety properties worth
+knowing:
+
+- **It refuses any host that is not local, with no override flag.** A flag that
+  unlocks dropping a remote schema is a flag someone eventually passes from muscle
+  memory against production. Wiping a hosted database is a job for the provider's
+  own tooling, where the blast radius is on screen.
+- **The chain sets both connection variables.** The seed step
+  ([`import.ts`](../scripts/db/import.ts)) uses the *app* connection, not the
+  migration one, so setting only `TIMELINES_MIGRATE_DATABASE_URL` would let it fall
+  back to supabase-js and seed **the live database**. `db:reset` therefore sets
+  `TIMELINES_DATABASE_URL` as well; keep them together if you rewrite that chain.
+
+`dev:local` sets `TIMELINES_DB_LIVE=poll`, because a local Postgres has no
+realtime: without it the client would try the anon key from `.env.local`, which
+points at the hosted instance (see „Live-update seam").
+
+The migrate step inside `db:reset` passes `--allow-dirty`, since a throwaway target
+is exactly where iterating on an uncommitted migration is correct. The guardrail it
+waives protects *shared* databases, and `db:reset` cannot reach one.
+
+`0000_prereq_roles.sql` handles the `anon` role and the publication idempotently,
+so a vanilla Postgres needs no manual preparation. Verified: all 16 migrations
+apply to an empty `postgres:16`, and the seed lands two timelines.
 
 #### Credential cascade (`TIMELINES_ENV_FILE`)
 
