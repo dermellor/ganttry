@@ -18,3 +18,7 @@ supabase/.temp/
 
 # Netlify/Deno edge bundling artifact
 deno.lock
+
+# Host-specific development setup (ports, process manager, reverse proxy).
+# Not part of the project — see AGENTS.md for the project-level rules.
+.claude/local-setup.md

@@ -13,12 +13,17 @@ Single Source of Truth lies in `AGENTS.md`.
   verschränken. Die Frage entfällt nur, wenn der User den Modus in der Nachricht
   bereits explizit genannt hat. Begründung + Kriterien: `AGENTS.md` →
   „Branching, Commits & Session Isolation".
-- **Live-Preview aus Worktree:** PM2 serviert 3120 aus dem **Main-Checkout** und
-  sieht Worktree-Edits nicht; Worktree-Previews laufen auf dem Pool 31200–31209,
-  **PM2 nie stoppen**. Vor visueller Verifikation aus einem Worktree
-  `.claude/rules/worktree-preview.md` lesen — dort stehen der Ablauf und die zwei
-  Fallen (`preview_start` serviert den falschen Checkout; HMR lässt die
-  vis-Instanz stehen), die sonst eine Runde gegen fremden Code kosten.
+- **Live-Preview aus Worktree:** ein Dev-Server aus dem Main-Checkout sieht
+  Worktree-Edits nicht. Vor visueller Verifikation aus einem Worktree entweder
+  einen zweiten Server aus dem Worktree starten (`npm run dev:worktree`) oder
+  vorher mergen. Zwei Fallen kosten sonst eine Runde gegen fremden Code:
+  `preview_start` startet im Launch-Verzeichnis der Session (also im
+  Main-Checkout, ohne das zu sagen), und HMR lässt die laufende vis-Instanz
+  stehen, was wie ein Daten- oder Filterproblem aussieht.
+- **Lokales Setup:** falls `.claude/local-setup.md` existiert, sie lesen — dort
+  stehen die host-spezifischen Details (Ports, Prozessmanager, Reverse Proxy) und
+  der Verifikationsablauf für Worktree-Previews. Die Datei ist absichtlich nicht
+  eingecheckt; ohne sie gelten nur die Regeln aus `AGENTS.md`.
 - **Foreign-Work-Check:** Zu Beginn einer Änderungs-Session `git status` prüfen.
   Uncommittete Änderungen, die nicht von dieser Session stammen, NIEMALS blind
   mitcommitten — dem User melden und in einem frischen Worktree ab `HEAD`

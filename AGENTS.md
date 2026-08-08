@@ -4,9 +4,8 @@ Generic timeline viewer. Reads frontmatter dates from a notes directory of Markd
 
 ## The name covers the product, not its vocabulary or its instances
 
-**Ganttry** is the product (`ganttry.dev`, which forwards here; dev domain
-`ganttry.localhost`). Three families of `timeline(s)` are deliberately left
-alone, and a sweep that "finishes the rename" breaks all three:
+**Ganttry** is the product name. Three families of `timeline(s)` are deliberately
+left alone, and a sweep that "finishes the rename" breaks all three:
 
 - **Domain vocabulary.** A timeline is still called a timeline: the tables
   `timelines` / `timeline_items`, types like `TimelineFile`, `vis-timeline`, the
@@ -59,10 +58,10 @@ don't reconcile it after the fact:
   push before you end the session, before you cut a worktree, and before you step
   away. Unpushed local-`main` commits are the seed of every "same feature, two
   SHAs" conflict, especially once the same work also arrives through a PR.
-- **Re-sync the serving checkout after every merge.** PM2 serves 3120 from the
-  main checkout; merging a PR on GitHub does **not** update it. After a merge, in
-  the main checkout run `git fetch origin && git merge --ff-only origin/main`
-  (restart the PM2 service if it caches build output). Skip this and the live
+- **Re-sync the serving checkout after every merge.** Merging a PR on GitHub does
+  **not** update any local checkout, including the one a dev server is running
+  from. After a merge run `git fetch origin && git merge --ff-only origin/main`
+  there, and restart the server if it caches build output. Skip this and the live
   preview keeps showing stale code — the exact "I don't see my change" trap.
 
 ### 1. Isolate every change-session in its own git worktree
@@ -81,15 +80,13 @@ detached-HEAD leftovers are pure clutter. Claude Code's `isolation: "worktree"`
 auto-removes a worktree that ends unchanged, but any worktree you committed work
 in must be cleaned up explicitly.
 
-**Live-preview caveat:** the Vite dev server (PM2) runs from the main checkout and
-does **not** see edits made in a worktree. When a task needs live visual
-verification, start the worktree server on a five-digit preview port from the
-**31200–31209** pool (`npm run dev:worktree`, default 31200) so PM2 keeps serving
-3120 — **never stop PM2** to free 3120 (that tears down `ganttry.localhost` for
-every other session). Details: „Ports → Worktree live preview". Alternatively
-merge to `main` and verify there.
-Never assume the running app reflects worktree edits — that mismatch is a known
-trap.
+**Live-preview caveat:** a dev server started from the main checkout does **not**
+see edits made in a worktree. When a task needs live visual verification, start a
+second server from the worktree itself (`npm run dev:worktree`, which listens on
+`WT_PORT` and leaves an already-running server alone), or merge to `main` and
+verify there. Never assume the running app reflects worktree edits — that mismatch
+is a known trap, and it looks like a data or filter problem rather than what it
+is. See „Dev server and ports".
 
 ### 2. Done = committed + pushed + deploy-verified
 
@@ -148,47 +145,24 @@ top of or commit them blindly. Surface them and either work in a fresh worktree 
 `origin/main` (per the base invariant — never off a possibly-stale local `HEAD`)
 or coordinate before touching shared files.
 
-## Ports
+## Dev server and ports
 
-This project owns the 3120 block. The port convention itself is a local
-development-environment concern, not a property of the project: it exists so
-several projects can run side by side on one machine.
+The port is set in [`vite.config.ts`](vite.config.ts) with `strictPort: true`, so
+a conflict is a hard failure rather than a silent move to another port. Which port
+that is, and how the server is supervised, is your environment's business and not
+a property of the project.
 
-| Port          | Service                                                    |
-| ------------- | ---------------------------------------------------------- |
-| 3120          | Vite dev server (timeline UI) — main checkout, run by PM2   |
-| 31200–31209   | Vite dev server for worktree live previews (pool)          |
+A second server for a worktree runs through `npm run dev:worktree`, which listens
+on `WT_PORT` and skips the pre-flight script, so it does not disturb a server
+already running from the main checkout. Several worktrees can run at once by
+counting `WT_PORT` up.
 
-URLs:
-
-- `https://ganttry.localhost` — primary entry through Caddy (HTTPS, managed by PM2)
-- `http://localhost:3120` — Vite directly (main checkout, run by PM2)
-- `http://localhost:31200` … `31209` — worktree previews (see below)
-
-Crashes on a port conflict (`strictPort: true`); there is no auto-fallback.
-
-### Worktree live preview (pool 31200–31209): never stop PM2
-
-The PM2-managed dev server on 3120 runs from the **main checkout** and does not
-see worktree edits (see the „Live-preview caveat" above). To watch changes from a
-worktree, **never stop PM2** — that tears down `ganttry.localhost` for every
-other session. Start the worktree's own server on a five-digit preview port
-instead, so PM2 keeps serving 3120 alongside it:
-
-```bash
-npm run dev:worktree                # default port 31200
-WT_PORT=31201 npm run dev:worktree  # a second worktree in parallel, and so on
-```
-
-The preview ports live deliberately **outside** the narrow 3120 block, in a
-five-digit pool **31200–31209** (derived: `3120` → `31200` + index), so any
-number of worktrees can run at once without blocking each other or other
-services. The default is 31200; count `WT_PORT` up for further parallel
-previews. The script deliberately skips `dev-prep.sh`, so it does not kill the
-process on 3120. In Claude Code the matching launch configs are `vite-worktree`
-(31200), `vite-worktree-2` (31201) and `vite-worktree-3` (31202) in
-`.claude/launch.json`. The rule: **worktree previews always on 31200+, PM2 on
-3120, never the other way around.**
+**A dev server started from one checkout does not see another checkout's edits.**
+That includes a worktree: the running app keeps serving the code it was started
+from. Either start a second server from the worktree, or merge first and verify
+there. Never assume the running app reflects worktree edits, and re-check after a
+merge that the serving checkout was actually updated: a merge on GitHub does not
+touch a local checkout.
 
 ## Architecture
 
