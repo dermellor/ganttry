@@ -143,7 +143,7 @@ test('groupPresenceByItem: without a known self identity nobody is filtered out'
 });
 
 test('initials: from the name, else the email local part', () => {
-  assert.equal(initials(user('m@x', { name: 'Robin Fischer' })), 'MM');
+  assert.equal(initials(user('m@x', { name: 'Robin Fischer' })), 'RF');
   assert.equal(initials(user('m@x', { name: 'Prince' })), 'PR');
   assert.equal(initials(user('robin.fischer@x')), 'RF');
   assert.equal(initials(user('fischer@x')), 'FI');
