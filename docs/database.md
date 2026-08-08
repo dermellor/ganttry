@@ -275,7 +275,7 @@ supabase db query --linked -f supabase/migrations/<file>.sql
 A **plugin** (a.k.a. a timeline kind) is enabled on a timeline as soon as a
 `(timeline_id, plugin_id, config)` row exists in `timeline_plugins` — pure data,
 no `ALTER TABLE`. The only place that knows plugin ids is
-[`src/plugins.ts`](../src/plugins.ts) (`PRODUCT_ROADMAP_PLUGIN`, `hasPlugin`,
+[`src/pluginHost/plugins.ts`](../src/pluginHost/plugins.ts) (`PRODUCT_ROADMAP_PLUGIN`, `hasPlugin`,
 `pluginConfig`, `versionsFromConfig`, `resolveWritePlugins`).
 
 **What is generic today:**

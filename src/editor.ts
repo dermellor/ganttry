@@ -225,10 +225,23 @@ export async function apiSetTierValue(
 export async function loadSource(source: ViewSource): Promise<LoadResult> {
   const { kind, id } = source;
 
-  if (kind === 'file') {
-    // Genuine file source: the static file IS the source of truth, not a
-    // snapshot of something live. Loading it read-only is therefore correct and
-    // does not conflict with the "no fallback for DB timelines" principle below.
+  if (kind === 'local') {
+    // A file the user owns. Which of the two paths applies was decided by the
+    // build (see ViewSource.editable), so there is no probing here: an editable
+    // local source that cannot reach the API fails loudly rather than quietly
+    // dropping to the built copy. Falling back would show a stale snapshot that
+    // looks exactly like the live file, the same trap the DB path below avoids.
+    if (source.editable) {
+      const res = await fetch(`/api/source/${id}`).catch(() => null);
+      if (res && res.ok) {
+        return { file: await res.json(), editable: true, live: parseLive(res.headers.get('X-Source-Live')) };
+      }
+      const reason = res ? `HTTP ${res.status}` : 'keine Verbindung zur API';
+      throw new Error(`Lokale Quelle „${id}“ konnte nicht geladen werden (${reason}).`);
+    }
+    // Static deploy: no process to write with, so the built copy is served
+    // read-only. The file genuinely IS the source here, not a snapshot of
+    // something live, which is why loading it is correct rather than a fallback.
     const res = await fetch(dataUrl(`sources/${id}.json`)).catch(() => null);
     if (res && res.ok) {
       return { file: await res.json(), editable: false, live: 'none' };

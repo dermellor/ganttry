@@ -5,6 +5,7 @@ import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/
 import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
 import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
+import { hasLocalTimeline, makeFileRepo } from './scripts/local/file-repo';
 
 // Runs while Vite loads this config, before it resolves `import.meta.env`.
 // Vite reads VITE_* from repo-local .env files and from process.env only, so
@@ -27,7 +28,22 @@ const PORT = Number(envValue('TIMELINES_PORT')) || 3120;
 // `sqlFor` adds per-source routing on the postgres.js path (a source's namespace
 // picks its own TIMELINES_DATABASE_URL_<NS>, else the default); no-op unless
 // such a named var is set, so single-DB setups are unaffected.
-const dbConns = (): DbConnections => ({ sql: getSql(), supabase: getServiceClient(), sqlFor: getSqlForSource });
+// The dev server is a process WITH a filesystem, so it is the runtime that can
+// serve local file sources editable. `data/` anchors the ids (always relative to
+// it, so they match across environments and against a DB timeline id);
+// TIMELINES_SOURCES_SUBDIR bounds the scan the same way build-data.ts does.
+const localDirs = {
+  root: resolve(__dirname, 'data'),
+  scope: resolve(__dirname, 'data', (process.env.TIMELINES_SOURCES_SUBDIR ?? '').replace(/^\/+|\/+$/g, '')),
+};
+const localSource = { has: (id: string) => hasLocalTimeline(localDirs, id), repo: makeFileRepo(localDirs) };
+
+const dbConns = (): DbConnections => ({
+  sql: getSql(),
+  supabase: getServiceClient(),
+  sqlFor: getSqlForSource,
+  local: localSource,
+});
 const hasDb = (c: DbConnections): boolean => Boolean(c.sql || c.supabase);
 
 const ID_SEGMENT = /^[a-zA-Z0-9_-]+$/;
@@ -159,7 +175,9 @@ function timelinesApi(): Plugin {
       server.middlewares.use('/api/sources', async (req, res, next) => {
         if (req.method !== 'GET') return next();
         const conns = dbConns();
-        if (!hasDb(conns)) return send(res, 200, { sources: [] });
+        // Without a DB the collection is still answerable from the filesystem:
+        // the local timelines ARE sources, and returning [] would hide them.
+        if (!hasDb(conns) && !conns.local) return send(res, 200, { sources: [] });
         try {
           const result = await resolveAdapter(conns, '').handle({ method: 'GET', id: '' });
           send(res, result.status, result.json);
@@ -198,7 +216,11 @@ function timelinesApi(): Plugin {
         }
 
         const conns = dbConns();
-        if (!hasDb(conns)) {
+        // A local file answers for its own id whether or not a DB exists, so the
+        // "no DB" refusal below must not intercept it — that gate predates local
+        // sources and would otherwise 404 every JSON timeline on a checkout
+        // without credentials, which is the common contributor setup.
+        if (!hasDb(conns) && !conns.local?.has(parsed.id)) {
           // No DB configured: 404 on GET (nothing to read). The client surfaces
           // the error loudly — there is no static content fallback. Writes 503.
           if (method === 'GET') return send(res, 404, { error: 'db_not_configured' });

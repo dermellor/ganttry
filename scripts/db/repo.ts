@@ -54,6 +54,23 @@ export class NotFoundError extends Error {
     this.name = 'NotFoundError';
   }
 }
+/**
+ * A request this repo understands but does not implement. → HTTP 501.
+ *
+ * Distinct from ValidationError (the caller is wrong) and from a 500 (we are
+ * broken): the caller and the request are both fine, this backing store just
+ * cannot do it. The local file repo answers this for the pricing sub-resources.
+ * Returning a silent success instead would let the interface report
+ * „Gespeichert" for a write that never happened, which is the failure mode the
+ * extent-error handling in „Standalone JSON timelines" (docs/data-model.md)
+ * exists to prevent.
+ */
+export class NotSupportedError extends Error {
+  constructor(message = 'not supported by this source') {
+    super(message);
+    this.name = 'NotSupportedError';
+  }
+}
 /** A write that violates a data invariant (e.g. overlapping phases). → HTTP 400. */
 export class ValidationError extends Error {
   constructor(message = 'invalid request') {

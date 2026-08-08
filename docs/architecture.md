@@ -29,10 +29,27 @@ time and flows through the built config to the client:
   querying the DB at build time (`collectDbSources`) and marks each view's source
   `kind: "db"`; the registration stub it writes (metadata only) goes to the
   gitignored build output, never to the committed tree.
-- **`file`** — read-only from the static `/data/sources/<id>.json` (`editable:
-  false`). The file genuinely *is* the source here (not a snapshot of something
-  live), so loading it is correct. Any `data/**/*.json` without the `db` marker
-  is a file source.
+- **`local`** — a JSON file the user owns (any `data/**/*.json` without the `db`
+  marker). Whether it is editable is a property of the **runtime**, not of the
+  format: a process with filesystem access serves it through
+  `GET /api/source/<id>` and accepts writes, a static deploy has nothing to write
+  with and serves the built copy from `/data/sources/<id>.json` read-only. The
+  answer is stamped into `view.source.editable` **at build time**, so the client
+  routes deterministically instead of probing — probing is what conflated a live
+  source with a stale copy in the first place. See
+  [`docs/local-sources.md`](local-sources.md).
+
+The local source is served by a **third `TimelineRepo` implementation**
+([`scripts/local/file-repo.ts`](../scripts/local/file-repo.ts)) rather than by a
+dispatcher of its own, which is why every sub-resource, every status code and
+both shared validations (item extent, phase overlap) apply to it unchanged. It
+is injected into `DbConnections.local` by the Node glue instead of imported by
+`api.ts`, so the Deno edge bundle stays free of `node:fs` — and the edge
+functions leaving it unset is precisely what makes a static deploy read-only.
+Its version is the file's mtime in milliseconds, forced strictly forward on each
+write so two edits inside one millisecond cannot share a version. The pricing
+sub-resources answer `501` (`NotSupportedError`) rather than pretending to
+succeed.
 
 `loadSource(source)` ([`src/editor.ts`](../src/editor.ts)) routes on `kind`;
 `render.ts` renders a view whenever it has a `source` (notes-backed views have

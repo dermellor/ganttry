@@ -19,6 +19,7 @@ import type {
 import {
   ConflictError,
   NotFoundError,
+  NotSupportedError,
   ValidationError,
   type TimelineGroupDecl,
   type TimelineRepo,
@@ -322,6 +323,7 @@ export async function handleTimelineApi(repo: TimelineRepo, req: ApiRequest): Pr
     if (e instanceof ConflictError) return err(409, 'version_conflict', { message: e.message });
     if (e instanceof NotFoundError) return err(404, 'not found');
     if (e instanceof ValidationError) return err(400, 'invalid_request', { message: e.message });
+    if (e instanceof NotSupportedError) return err(501, 'not_supported', { message: e.message });
     return err(500, 'server_error', { message: e instanceof Error ? e.message : String(e) });
   }
 }
@@ -355,6 +357,16 @@ export type DbConnections = {
   // its namespace's dedicated pool, falling back to the default. Set by the
   // Node glue; the edge functions leave it unset (single global connection).
   sqlFor?: (id: string) => Sql | null;
+  /**
+   * File-backed local sources, supplied by a runtime that HAS a filesystem.
+   *
+   * Injected rather than imported so this module stays free of `node:fs`: it is
+   * bundled for the Deno edge functions too, and a filesystem import there is
+   * both meaningless and a bundle break. The Node glue constructs the repo and
+   * passes it; the edge functions leave this unset, which is exactly why a
+   * static deploy serves local sources read-only.
+   */
+  local?: { has(id: string): boolean; repo: TimelineRepo };
 };
 
 /**
@@ -390,6 +402,20 @@ export function createPostgresSource(sql: Sql, live: SourceLive = 'realtime'): S
   return dbAdapter(makePostgresRepo(sql), live);
 }
 
+/**
+ * A local file-backed source. `live: 'poll'` because the client learns about an
+ * external edit (an editor, a `git checkout`) through the watermark, which the
+ * file repo answers with the file's mtime. There is no push channel over a
+ * filesystem, so claiming 'realtime' would leave a stale view looking live.
+ */
+function localAdapter(repo: TimelineRepo): SourceAdapter {
+  return {
+    kind: 'local',
+    capabilities: { editable: true, live: 'poll' },
+    handle: (req) => handleTimelineApi(repo, req),
+  };
+}
+
 /** The DB-backed source via supabase-js / PostgREST (the Netlify default). */
 export function createSupabaseSource(db: SupabaseClient, live: SourceLive = 'realtime'): SourceAdapter {
   return dbAdapter(makeSupabaseRepo(db), live);
@@ -404,7 +430,17 @@ export function createSupabaseSource(db: SupabaseClient, live: SourceLive = 'rea
  * (TIMELINES_DB_LIVE) and threaded through so both runtimes agree on the mode.
  */
 export function resolveAdapter(conns: DbConnections, id: string, live: SourceLive = 'realtime'): SourceAdapter {
+  // A local file wins for its own id. It cannot shadow a DB timeline in
+  // practice, because `build-data.ts` already drops a file view whose id
+  // collides with a discovered DB timeline — so an id that reaches here as a
+  // local file is one the DB does not have. Checking the DB first instead would
+  // mean that configuring any database at all makes every local file read-only,
+  // which is the opposite of what an instance with both is for.
+  if (conns.local?.has(id)) return localAdapter(conns.local.repo);
   const repo = resolveRepo(conns, id);
+  // With no DB but a filesystem, the collection is still answerable: it is the
+  // list of local timelines. Without either there is nothing to serve.
+  if (!repo && conns.local && id === '') return localAdapter(conns.local.repo);
   if (!repo) throw new Error('resolveAdapter: no DB connection (set TIMELINES_DATABASE_URL, or TIMELINES_SUPABASE_URL + TIMELINES_SUPABASE_SERVICE_KEY)');
   return dbAdapter(repo, live);
 }

@@ -176,6 +176,20 @@ function unitToMs(unit: string): number {
 
 const STATIC_ONLY = /^(1|true|yes)$/i.test(envValue('TIMELINES_STATIC_ONLY'));
 
+/**
+ * Are local file sources editable in the runtime this build is for?
+ *
+ * Only a dev server has a process with filesystem access behind `/api/source`;
+ * `vite build` produces a static `dist/` that is served by a CDN, where no such
+ * process exists. So the answer is fixed at build time and stamped into each
+ * view's source descriptor, which is what lets the client route without probing
+ * (see „Capabilities are stamped at build time" in docs/local-sources.md).
+ *
+ * `npm run dev` sets TIMELINES_DEV=1 through the dev script; anything else,
+ * including a plain `npm run build`, is a static build.
+ */
+const LOCAL_EDITABLE = /^(1|true|yes)$/i.test(process.env.TIMELINES_DEV ?? '');
+
 // Discover DB-backed timelines from the DB at build time and register them as
 // views. The registration stub (name/description/groupBy + empty items —
 // deliberately never the item/group/phase content) is written to the BUILD
@@ -428,7 +442,7 @@ async function collectStandaloneSources(): Promise<unknown[]> {
       description: parsed.description ?? '',
       filter: {},
       groupBy: parsed.groupBy,
-      source: { kind: 'file', id },
+      source: { kind: 'local', id, editable: LOCAL_EDITABLE },
     });
   }
   return views;

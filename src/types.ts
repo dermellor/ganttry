@@ -37,12 +37,25 @@ export type FilterClause = {
 // fall back to a static file" guess, which conflates a live DB timeline with a
 // stale snapshot (see AGENTS.md „keine Notfall-Daten"). Extensible to further
 // API-served kinds (e.g. 'gsheet', external 'pg') later.
-//   - 'db'   → live from the DB via /api/source/<id> (editable, no fallback)
-//   - 'file' → read-only from the static /data/sources/<id>.json (the file IS
-//              the source, not a snapshot — so loading it is correct)
-export type SourceKind = 'db' | 'file';
+//   - 'db'    → live from the DB via /api/source/<id> (editable, no fallback)
+//   - 'local' → a file the user owns. Whether it is editable is a property of
+//               the RUNTIME, not of the format: a process with filesystem
+//               access serves it through /api/source/<id>, a static deploy has
+//               nothing to write with and serves the built copy read-only. See
+//               [`docs/local-sources.md`](../docs/local-sources.md).
+export type SourceKind = 'db' | 'local';
 
-export type ViewSource = { kind: SourceKind; id: string };
+/**
+ * `editable` is stamped at BUILD time for local sources, because the build is
+ * what knows which of the two runtimes it is producing for. Deciding it at
+ * runtime would mean probing ("try the API, fall back to the static file"),
+ * which is the pattern that made a stale copy indistinguishable from live data
+ * (AGENTS.md → „No fallback data, ever"). Absent = not editable.
+ *
+ * DB sources leave it unset and learn their capabilities from the response
+ * header instead: theirs depend on the server's env, not on the build's.
+ */
+export type ViewSource = { kind: SourceKind; id: string; editable?: boolean };
 
 // How a source delivers other people's changes to an open viewer:
 //   'realtime' — pushed over a WebSocket (Supabase Realtime)
