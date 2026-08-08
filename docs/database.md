@@ -155,6 +155,49 @@ needed. [`scripts/db/migrate.ts`](../scripts/db/migrate.ts) (postgres.js) create
 filename order, each in **one transaction**, with a checksum (which warns on
 drift). Re-runs apply only what is pending.
 
+### The pending check (`npm run db:check`)
+
+`npm run dev` runs this first, and refuses to start when migrations are pending.
+The failure it prevents: pull a branch that adds a migration, start the server, and
+the app talks to the old schema. It surfaces as
+`Could not find the table 'public.X' in the schema cache`, which reads like a code
+bug — so the search starts in the wrong file.
+
+It **verifies, it never applies.** Applying stays a deliberate `npm run db:migrate`,
+because a schema change should not happen as a side effect of starting a server.
+
+What each state does, all nine verified against a throwaway Postgres:
+
+| State | Result |
+| --- | --- |
+| Migrations pending | **exit 1**, names the files and the command |
+| No `schema_migrations` table | **exit 1**, offers `db:migrate` or `--baseline` |
+| Applied file edited afterwards (checksum drift) | warns, exit 0 — the schema *is* current, but the committed SQL no longer matches what ran |
+| Everything applied | exit 0 |
+| No database configured at all | silent, exit 0 |
+| Database unreachable | warns, exit 0 |
+| Only supabase-js configured | warns, exit 0 — see below |
+
+The last two never fail on purpose. A checkout serving only Markdown notes or
+`data/*.json` has no Postgres, and CI builds without credentials by design, so a
+hard gate there would block people on a database they never use. An unreachable
+database is an environment problem the developer notices through the app itself; a
+pending migration is a code/schema mismatch they cannot see.
+
+**Schema work needs its own connection: `TIMELINES_MIGRATE_DATABASE_URL`.**
+Migrations are DDL and the tracking table is deliberately not exposed through
+PostgREST, so neither the runner nor the check can work over supabase-js — a
+service key is not enough. That used to force `TIMELINES_DATABASE_URL`, which also
+**switches the app's driver** from supabase-js to postgres.js: a behaviour change
+nobody wants when all they need is to apply a migration. The separate variable
+decouples the two, and falls back to `TIMELINES_DATABASE_URL` so a setup already
+running postgres.js needs nothing new. On Supabase, the Supavisor pooler string
+works.
+
+Until it is set, an instance on supabase-js gets a warning rather than a check: the
+question cannot be answered from that connection, and pretending otherwise would be
+worse than saying so.
+
 ```bash
 npm run db:migrate               # apply pending migrations
 npm run db:migrate -- --status   # list applied / pending

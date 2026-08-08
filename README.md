@@ -52,7 +52,9 @@ npm run dev                                                            # start t
 ```
 
 `db:migrate` is a portable runner (no Supabase CLI needed): it applies
-`supabase/migrations/*.sql` in order and tracks what has run. To get live updates
+`supabase/migrations/*.sql` in order and tracks what has run. `npm run dev` checks
+first and refuses to start with migrations pending, so the app never quietly talks
+to an older schema. To get live updates
 without Supabase Realtime, run the server with `TIMELINES_DB_LIVE=poll` (the
 client then polls a cheap watermark endpoint). Import example data with
 `npm run db:import`.
@@ -128,6 +130,7 @@ are read from `process.env`, then `.env.local`, then any file named by
 | --- | --- |
 | `TIMELINES_ENV_FILE` | Optional. Extra `.env` file(s) to read, `:`-separated, `~/` allowed. Off by default, so a fresh checkout reads nothing outside the repo. Use it when your credentials live elsewhere. |
 | `TIMELINES_DATABASE_URL` | Postgres connection string. Set to use the native postgres.js driver. Also enables per-source connections via `TIMELINES_DATABASE_URL_<NAMESPACE>`. |
+| `TIMELINES_MIGRATE_DATABASE_URL` | Connection used **only** for schema work (`db:migrate`, `db:check`). Needed on a Supabase-backed instance, because migrations are DDL and cannot run over PostgREST. Setting it does not change which driver serves the app. |
 | `TIMELINES_SUPABASE_URL` / `TIMELINES_SUPABASE_SERVICE_KEY` | Supabase project URL + service-role key. Used when `TIMELINES_DATABASE_URL` is unset. |
 | `TIMELINES_DB_LIVE` | Set to `poll` to serve DB sources in polling mode (live updates without Supabase Realtime). |
 | `TIMELINES_NOTES_DIR` | Overrides `notesDir` for the Markdown notes scan. Missing directory is non-fatal. |

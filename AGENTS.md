@@ -218,6 +218,7 @@ npm run dev          # build data + Vite + chokidar watcher on the notes dir
 npm run build        # static dist
 npm test             # unit tests (node --test, TZ-pinned to Europe/Berlin)
 npm run typecheck    # tsc --noEmit
+npm run db:check     # migrations pending? (runs before `dev`; no-op without a DB)
 npm run schema       # regenerate the JSON Schemas from src/types.ts
 npm run schema:check # verify they match the types + the examples validate (CI)
 npm run openapi      # regenerate openapi.yaml

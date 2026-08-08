@@ -20,6 +20,34 @@ export function getSql(): Sql | null {
   return cached;
 }
 
+/** The env var carrying a connection used only for schema work. */
+export const MIGRATE_URL_VAR = 'TIMELINES_MIGRATE_DATABASE_URL';
+
+let migrateCached: Sql | null | undefined;
+
+/**
+ * Connection for **schema work only** — the migration runner and the pending
+ * check. It exists because migrating and serving are different concerns that were
+ * forced to share one variable: setting `TIMELINES_DATABASE_URL` to get a runner
+ * connection also switches the app's driver from supabase-js to postgres.js, which
+ * is a behaviour change nobody asked for when all they wanted was to apply a
+ * migration.
+ *
+ * A migration also cannot run over PostgREST at all: it is DDL, and the tracking
+ * table is deliberately not exposed through the API. So a Supabase-backed instance
+ * needs a direct connection string here (the Supavisor pooler works) even though
+ * the app itself never uses one.
+ *
+ * Falls back to `TIMELINES_DATABASE_URL`, so a setup that already runs
+ * postgres.js needs no second variable.
+ */
+export function getMigrationSql(): Sql | null {
+  if (migrateCached !== undefined) return migrateCached;
+  const url = envValue(MIGRATE_URL_VAR) || envValue('TIMELINES_DATABASE_URL');
+  migrateCached = url ? postgres(url, { prepare: false }) : null;
+  return migrateCached;
+}
+
 // ---------------------------------------------------------------------------
 // Per-source connections (Phase 4): a timeline id may be served by its own
 // Postgres, chosen by the id's namespace (first path segment). `warehouse/plan`

@@ -1,5 +1,8 @@
 // Portable schema-migration runner (postgres.js). Works against ANY Postgres
-// reachable via TIMELINES_DATABASE_URL — no Supabase CLI needed. Applies the
+// reachable via TIMELINES_MIGRATE_DATABASE_URL (falling back to
+// TIMELINES_DATABASE_URL) — no Supabase CLI needed. A migration is DDL and the
+// tracking table is not exposed through PostgREST, so this always needs a direct
+// connection string, even on an instance whose app runs on supabase-js. Applies the
 // SQL files in supabase/migrations/ in filename order, each in its own
 // transaction, and records them in a `schema_migrations` tracking table so
 // re-runs only apply what's pending.
@@ -12,16 +15,10 @@
 //                                    live Supabase). Run once, then use plain
 //                                    db:migrate going forward.
 
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
-import { getSql } from './sql.ts';
-
-const MIGRATIONS_DIR = join(process.cwd(), 'supabase', 'migrations');
-
-function sha256(s: string): string {
-  return createHash('sha256').update(s).digest('hex');
-}
+import { getMigrationSql, MIGRATE_URL_VAR } from './sql.ts';
+import { MIGRATIONS_DIR, migrationFiles, readMigrationState, sha256 } from './pending.ts';
 
 async function main() {
   const mode = process.argv.includes('--baseline')
@@ -30,9 +27,13 @@ async function main() {
       ? 'status'
       : 'apply';
 
-  const sql = getSql();
+  const sql = getMigrationSql();
   if (!sql) {
-    console.error('FAIL: TIMELINES_DATABASE_URL not set — point it at your Postgres.');
+    console.error(
+      `FAIL: no connection for schema work. Set ${MIGRATE_URL_VAR} (or TIMELINES_DATABASE_URL)\n` +
+        `      to a Postgres connection string. On Supabase use the Supavisor pooler; the\n` +
+        `      service key alone is not enough, because migrations are DDL.`,
+    );
     process.exit(2);
   }
 
@@ -44,14 +45,16 @@ async function main() {
         applied_at timestamptz not null default now()
       )`;
 
-    const files = (await readdir(MIGRATIONS_DIR)).filter((f) => f.endsWith('.sql')).sort();
-    const appliedRows = (await sql`select name, checksum from schema_migrations`) as { name: string; checksum: string }[];
-    const applied = new Map(appliedRows.map((r) => [r.name, r.checksum]));
+    const files = await migrationFiles();
+    const state = await readMigrationState(sql);
+    const applied = state.applied;
 
     if (mode === 'status') {
       for (const f of files) console.log(`${applied.has(f) ? 'applied ' : 'pending '}  ${f}`);
-      const pending = files.filter((f) => !applied.has(f)).length;
-      console.log(`\n${files.length} migrations, ${pending} pending`);
+      console.log(`\n${files.length} migrations, ${state.pending.length} pending`);
+      if (state.drifted.length) {
+        console.log(`${state.drifted.length} applied file(s) changed since they ran: ${state.drifted.join(', ')}`);
+      }
       return;
     }
 
