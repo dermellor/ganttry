@@ -21,7 +21,7 @@ body:
     id: axis
     attributes:
       label: Which extension axis does this touch?
-      description: See AGENTS.md → „Source kinds" and „Timeline kinds". Both are designed to be extended without touching core files.
+      description: See docs/architecture.md → „Source kinds" and „Timeline kinds". Both are designed to be extended without touching core files.
       options:
         - A new data source (source adapter)
         - A new timeline flavour with its own views (timeline kind)

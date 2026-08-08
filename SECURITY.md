@@ -35,7 +35,7 @@ configured, so it helps to name the configuration you tested.
   `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` are build-time variables baked
   into the browser bundle to drive live collaboration, and the anon SELECT
   policies make timeline *reads* available to anyone holding that key. This is a
-  documented trade-off (AGENTS.md → „Realtime"), which is why realtime is opt-in
+  documented trade-off ([`docs/database.md`](docs/database.md) → „Realtime"), which is why realtime is opt-in
   per environment. Finding the key in the bundle is expected; finding a *write*
   path through it is not.
 - **`MCP_API_TOKEN` bypasses the auth gate** by design, so that the MCP server
