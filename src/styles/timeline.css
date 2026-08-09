@@ -626,10 +626,12 @@
   overflow: hidden;
 }
 
-/* Phase ribbon — pinned to the top of the center panel */
+/* Phase ribbon — pinned to the top of the center panel, below the milestone
+   marks when those are present: they hang half their height past the axis line
+   into this panel, and a ribbon at `top: 0` would cover their lower halves. */
 .phase-band {
   position: absolute;
-  top: 0;
+  top: var(--milestone-rail-h, 0px);
   left: 0;
   right: 0;
   height: 28px;
@@ -651,13 +653,24 @@
    the first row behind it. `has-phase-band` is toggled in render.ts,
    `has-milestone-rail` by the rail itself (its count follows the filter). */
 .timeline.has-phase-band { --phase-band-h: 30px; }
-.timeline.has-milestone-rail { --milestone-rail-h: 22px; }
+/* Only the *lower* half of a milestone mark reaches into the content: the marks
+   are centred on the axis line, so that is all the room they take away from the
+   rows. The upper half is paid for by the axis instead — see the label shift. */
+.timeline.has-milestone-rail { --milestone-rail-h: 12px; }
 
+/* `.vis-itemset > .vis-foreground`, never a bare `.vis-foreground`: the time axis
+   carries that class too (`.vis-time-axis.vis-foreground`), so the unscoped
+   selector padded the axis panel by the same amount and left it reaching that far
+   past the line the date labels sit on. Invisible on its own — the panel is
+   transparent and its labels hang from the top — but vis derives the center
+   panel's offset from its own axis measurement, which does not include the
+   padding, so the line and the panel edge silently drift apart by exactly this
+   reserve. */
 .timeline.has-phase-band .vis-labelset,
-.timeline.has-phase-band .vis-foreground,
+.timeline.has-phase-band .vis-itemset > .vis-foreground,
 .timeline.has-phase-band .vis-itemset > .vis-background,
 .timeline.has-milestone-rail .vis-labelset,
-.timeline.has-milestone-rail .vis-foreground,
+.timeline.has-milestone-rail .vis-itemset > .vis-foreground,
 .timeline.has-milestone-rail .vis-itemset > .vis-background {
   box-sizing: content-box;
   padding-top: calc(var(--phase-band-h, 0px) + var(--milestone-rail-h, 0px));
@@ -724,37 +737,65 @@ body.phase-dragging {
   user-select: none;
 }
 
-/* ── Milestone rail — one row of marks at the head of the center panel ────────
-   Written by src/milestoneRail.ts. Sits directly under the phase ribbon when
-   there is one, hence `top` following the same variable the row reserve uses:
-   the rail and the padding below it can then never disagree about the ribbon's
-   height. */
+/* ── Milestone rail — marks sitting on the axis line ──────────────────────────
+   Written by src/milestoneRail.ts, into `.vis-panel.vis-top` rather than the
+   center panel it annotates (the center panel clips, so a mark centred on its
+   top edge would lose its upper half; the axis panel does not clip and paints
+   after it). Anchored to that panel's bottom edge, which *is* the line under the
+   date labels — the top border of `.vis-panel.vis-center`.
+
+   Zero height on purpose: the rail is an anchor, not a row. Its marks are
+   centred on its own edge and overflow it in both directions, so no box here has
+   to be kept in sync with the mark size. `top` is written per redraw from the
+   measured position of the line, rather than pinned to the panel's bottom — the
+   two are normally the same edge, but vis derives the center panel's offset from
+   its own axis measurement, and anything that nudges that measurement parts the
+   line from the panel edge without warning. */
 .milestone-rail {
   position: absolute;
-  top: var(--phase-band-h, 0px);
+  top: 0;
   left: 0;
   right: 0;
-  height: var(--milestone-rail-h, 22px);
+  height: 0;
   z-index: 4;
   pointer-events: none;
-  overflow: hidden;
+  overflow: visible;
 }
 
-/* A diamond, centred on its date: the rotation is what makes a plain square read
-   as a milestone, and `translate(-50%, -50%)` puts its centre — not its corner —
-   on the item's x, so the mark and the point in the lane line up. */
+/* Lift the date labels clear of the marks' upper halves, into the ~22px of empty
+   space vis leaves above the major label — so nothing is pushed out of the axis.
+
+   A transform, because it is the only shift vis cannot see: it derives the axis
+   height (and from it the center panel's offset) by measuring its label boxes,
+   and `offsetHeight` ignores transforms. `margin-top` was the first attempt and
+   fed straight back into that measurement — vis then placed the center panel 12px
+   higher than the axis panel actually ends, and the line the marks sit on parted
+   company with the panel edge. Padding fails the other way round: vis does not
+   re-measure it at all, so the box just grows down through the line.
+
+   Moving the foreground only leaves the background grid lines where they are. */
+.timeline.has-milestone-rail .vis-time-axis.vis-foreground {
+  transform: translateY(-8px);
+}
+
+/* A diamond, centred on its date *and* on the axis line: the rotation is what
+   makes a plain square read as a milestone, and `translate(-50%, -50%)` puts its
+   centre — not its corner — on both, so the mark sits on the line and lines up
+   with the point in the lane. */
 .milestone-mark {
   position: absolute;
-  top: 50%;
+  top: 0;
   width: 10px;
   height: 10px;
   padding: 0;
   transform: translate(-50%, -50%) rotate(45deg);
   background: var(--accent, #2f0d5b);
-  /* Milestones sharing a date are fanned apart by `spreadCoincident` until they
-     are MARK_PITCH_PX apart, which is this diamond plus its ring. The ring is
-     what keeps two fanned neighbours from reading as one wide blob, so its width
-     is part of that pitch — changing it means changing MARK_PITCH_PX with it. */
+  /* Milestones sharing a date are fanned apart by `spreadCoincident`, which
+     derives its spacing from this box (MARK_BOX_PX in milestoneRail.ts, 10px
+     border-box → ≈14.1px across once turned 45°). Changing the size here means
+     changing that constant with it, or fanned marks start intersecting again.
+     The ring separates a mark from whatever it overlaps — a neighbour, or the
+     axis line it sits on. */
   border: 1px solid var(--bg, #fff);
   border-radius: 2px;
   cursor: pointer;

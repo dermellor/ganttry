@@ -1,13 +1,22 @@
-// A one-line rail of milestone marks pinned to the top of the timeline's center
-// panel. It answers a question the lanes cannot: *which* milestones does this
-// plan have, and when? A point item lives in its track's lane, so reading the
-// full set means scanning vertically across every track — and with enough tracks
-// that means scrolling, at which point a milestone near the bottom is simply
-// missed. The rail collects them onto one row, at the same x as the item itself.
+// A one-line rail of milestone marks sitting *on* the timeline's axis line. It
+// answers a question the lanes cannot: *which* milestones does this plan have,
+// and when? A point item lives in its track's lane, so reading the full set means
+// scanning vertically across every track — and with enough tracks that means
+// scrolling, at which point a milestone near the bottom is simply missed. The
+// rail collects them onto one row, at the same x as the item itself.
 //
 // Each mark carries its item's lane colour, so a mark and the point it stands for
 // read as the same thing, and clicking one selects that item — the same path a
 // click on the point in its lane takes.
+//
+// The marks straddle the rule under the date labels, which is the top border of
+// `.vis-panel.vis-center`. That is why the rail mounts into `.vis-panel.vis-top`
+// (the axis panel) rather than into the center panel it annotates: the center
+// panel clips to its own box (`overflow: hidden`), so a mark centred on its top
+// edge would lose its upper half. The axis panel does not clip, and it comes
+// *after* the center panel in vis's DOM, so a mark hanging out of its bottom edge
+// paints over the content below the line. Both panels share the same left edge
+// and width, so the x from vis's own conversion carries over unchanged.
 
 import type { Timeline } from 'vis-timeline/standalone';
 import { decodeEntities, type TimelineItem } from './buildItems';
@@ -24,9 +33,20 @@ const RAIL_EVENTS = ['changed', 'rangechange', 'rangechanged'] as const;
 // than used whole.
 const LANE_CLASS = /(?:^|\s)(lane-\d+)(?:\s|$)/;
 
-// Horizontal room one mark needs to stay distinguishable from its neighbour:
-// the 10px diamond plus its 1px ring on each side. See `spreadCoincident`.
-const MARK_PITCH_PX = 12;
+// A mark is a 10px (border-box) square turned 45°, so on screen it is as wide as
+// that square's diagonal.
+const MARK_BOX_PX = 10;
+const MARK_WIDTH_PX = MARK_BOX_PX * Math.SQRT2; // ≈14.1
+
+// Horizontal room one mark needs to clear its neighbour: its own width plus a
+// hair, so two fanned marks touch at the corner rather than intersect. See
+// `spreadCoincident`.
+const MARK_PITCH_PX = Math.ceil(MARK_WIDTH_PX) + 1;
+
+// A mark closer than half its width to either edge is dropped rather than drawn:
+// the rail no longer sits in a clipping box (see the note at the top), so a
+// half-visible mark would hang over the group labels instead of being cut off.
+const MARK_HALF_PX = Math.ceil(MARK_WIDTH_PX / 2);
 
 /** One milestone as the rail draws it. `id` is the real item id, never a clone. */
 export type RailMark = {
@@ -102,7 +122,7 @@ export function spreadCoincident(xs: number[], pitch = MARK_PITCH_PX): number[] 
 }
 
 /**
- * Renders the rail into `.vis-panel.vis-center` and keeps it aligned while the
+ * Renders the rail into `.vis-panel.vis-top` and keeps it aligned while the
  * window pans and zooms. Construct once per timeline instance (the panel only
  * exists after vis has laid out, so the caller retries), then push new data with
  * `setItems` on every rebuild.
@@ -110,6 +130,9 @@ export function spreadCoincident(xs: number[], pitch = MARK_PITCH_PX): number[] 
 export class MilestoneRail {
   private rail: HTMLElement;
   private host: HTMLElement;
+  // The panel whose top border *is* the line the marks sit on. Kept so every
+  // redraw can measure where that line currently is (see `alignToLine`).
+  private center: HTMLElement;
   private container: HTMLElement;
   private timeline: Timeline;
   private marks: RailMark[] = [];
@@ -123,10 +146,18 @@ export class MilestoneRail {
   constructor(timeline: Timeline, container: HTMLElement) {
     this.timeline = timeline;
     this.container = container;
+    const axis = container.querySelector('.vis-panel.vis-top') as HTMLElement | null;
+    if (!axis) throw new Error('MilestoneRail: .vis-panel.vis-top not found');
     const center = container.querySelector('.vis-panel.vis-center') as HTMLElement | null;
     if (!center) throw new Error('MilestoneRail: .vis-panel.vis-center not found');
-    this.host = center;
-    if (!this.host.style.position) this.host.style.position = 'relative';
+    this.host = axis;
+    this.center = center;
+    // Only make the host a containing block if it is not one already, and decide
+    // that from the *computed* position rather than the inline one: vis styles
+    // this panel `absolute` from its stylesheet, so an inline-only check reads
+    // "unset" and overwrites it with `relative` — which drops the axis out of its
+    // absolute placement and parks it below the whole timeline.
+    if (getComputedStyle(this.host).position === 'static') this.host.style.position = 'relative';
 
     this.rail = document.createElement('div');
     this.rail.className = 'milestone-rail';
@@ -192,6 +223,22 @@ export class MilestoneRail {
     }
   }
 
+  /**
+   * Put the rail's zero-height box exactly on the line the marks sit on: the top
+   * border of the center panel, expressed in the axis panel's own coordinates.
+   *
+   * Measured rather than assumed. The axis panel normally ends where the center
+   * panel begins, so `bottom: 0` would do — but vis positions the center panel
+   * from its *own* measurement of the axis, and anything that nudges that
+   * measurement (a stylesheet touching the label boxes, say) moves the line off
+   * the panel edge and leaves the marks floating beside it.
+   */
+  private alignToLine(): void {
+    const line = this.center.getBoundingClientRect().top;
+    const origin = this.host.getBoundingClientRect().top;
+    this.rail.style.top = `${line - origin}px`;
+  }
+
   private redraw(): void {
     // A pending retry timer may fire after the rail was torn down.
     if (this.disposed) return;
@@ -207,6 +254,7 @@ export class MilestoneRail {
     const width = centerWidth(this.timeline);
     if (!(width > 0)) return;
 
+    this.alignToLine();
     this.rail.innerHTML = '';
     // Spread before clipping, so a run straddling the edge is laid out from the
     // whole run rather than from the part that happens to be on screen — the
@@ -214,7 +262,9 @@ export class MilestoneRail {
     const xs = spreadCoincident(this.marks.map((m) => timeToX(this.timeline, m.start)));
     this.marks.forEach((m, i) => {
       const x = xs[i];
-      if (x < 0 || x > width) return; // outside the visible window
+      // Drop a mark that would not fit whole, rather than let it hang past the
+      // panel — nothing clips it here (see MARK_HALF_PX).
+      if (x < MARK_HALF_PX || x > width - MARK_HALF_PX) return;
 
       const mark = document.createElement('button');
       mark.type = 'button';

@@ -143,10 +143,17 @@ first leaf group). The rule lives once in [`src/groupHierarchy.ts`](../src/group
 Items without `content` are skipped. `start` is optional: a date-less item is
 kept and shown in the **list view** (dates render as „—"), but the **timeline
 view** filters it out (vis-timeline needs a start to place an item) and the
-status line notes how many are hidden. Two reference files live in `data/`:
+status line notes how many are hidden. Three reference files live in `data/`, and
+`npm run schema:check` validates all three, so a change to the item shape that
+forgets one fails in CI:
 
 - `example-projektplan.json` — minimal 4-phase plan, single track per phase.
 - `launch-roadmap.json` — 5 parallel tracks with `dependsOn` cross-references in `metadata`.
+- `programm-2026.json` — 8 tracks whose strands run in parallel all year, plus
+  half-year phases and one milestone per track. Deliberately taller than the
+  viewport: the packed sub-lanes are what a change to lane layout, the sticky
+  head overlays or vertical scrolling has to be checked against, and the two
+  smaller files are too short to show any of it.
 
 ### Roadmap conventions
 

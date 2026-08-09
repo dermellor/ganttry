@@ -241,8 +241,8 @@ behaviour (a click), it needs a real element from JS — the pattern in
 
 ## Milestone rail (the head of the timeline)
 
-A one-line strip of diamonds at the top of the center panel, one per milestone
-(`type: "point"`), each at its own date
+A row of diamonds sitting **on the axis line**, one per milestone
+(`type: "point"`), each centred on its own date
 ([`src/milestoneRail.ts`](../src/milestoneRail.ts) + the milestone-rail block in
 `styles/timeline.css`).
 
@@ -284,20 +284,58 @@ them off their dates.
   re-deriving the time→pixel mapping from `getWindow()` and a border-box width
   drifts right of the items, further toward the right edge. It redraws on
   `changed` / `rangechange` / `rangechanged` plus a `ResizeObserver`.
+- **A mark that would not fit whole is dropped**, rather than cut off at the
+  panel edge. Nothing clips the rail any more (see „Where the rail is mounted"),
+  so a half-drawn mark would hang over the group labels instead.
 - **It is created with the timeline, not with the data.** The ribbon is built only
   when the source has phases; the rail cannot be, because its count changes with the
   *filter* — a view showing no milestones now may show some a moment later. So the
   rail always exists and hides itself while the count is 0, releasing the row
   reserve with it.
 
-**Vertical room.** The rail and the phase ribbon both sit inside
-`.vis-panel.vis-center`, above the items, so the group set has to be padded down by
-their combined height — `margin.axis` only offsets the first *item*, which leaves an
-empty parent/nested group header sitting behind the band. Each container class
-contributes its own height (`--phase-band-h`, `--milestone-rail-h`) and the padding
-is their sum, so the two stack instead of one landing on top of the other; the
-rail's `top` reads the same variable, which is what keeps it and the padding from
-disagreeing about the ribbon's height.
+### Where the rail is mounted, and why it is not in the center panel
+
+The line the marks sit on is the **top border of `.vis-panel.vis-center`**, the
+rule under the date labels. A mark centred on it is half above and half below,
+which decides three things:
+
+- **The rail lives in `.vis-panel.vis-top`**, the axis panel, not in the center
+  panel it annotates. The center panel clips to its own box (`overflow: hidden`),
+  so a mark centred on its top edge would lose its upper half. The axis panel does
+  not clip, and vis renders it *after* the center panel, so the lower halves paint
+  over the content below the line. Both panels share a left edge and a width, so
+  the x from vis's conversion carries over with no adjustment.
+- **`top` is measured, not assumed.** The axis panel normally ends exactly where
+  the center panel starts, so anchoring the rail to `bottom: 0` would do — but vis
+  positions the center panel from its *own* measurement of the axis, and anything
+  that nudges that measurement parts the line from the panel edge with no visible
+  symptom except marks floating beside the line. `alignToLine()` therefore reads
+  the line's position on every redraw.
+- **The date labels are lifted 8px by a `transform`.** They ended flush against
+  the line, so the marks' upper halves ran straight through them. A transform is
+  the only shift vis cannot see: it derives the axis height, and from it the center
+  panel's offset, by measuring the label boxes, and `offsetHeight` ignores
+  transforms. `margin-top` was tried first and fed straight back into that
+  measurement (the center panel then sat 12px above where the axis panel ends);
+  `padding` fails the other way, since vis never re-measures it and the box simply
+  grows down through the line. The lift fits in the ~22px vis already leaves above
+  the major label, so nothing is pushed out of the axis.
+
+**Vertical room below the line.** Only the marks' lower halves reach into the
+content, so the rail's row reserve is 12px, against the ribbon's 30px. Both are
+padded onto the group set — `margin.axis` only offsets the first *item*, which
+leaves an empty parent/nested group header sitting behind the band — and the
+padding is the **sum** of the two (`--phase-band-h` + `--milestone-rail-h`), so
+they stack instead of one landing on the other. The ribbon's own `top` reads
+`--milestone-rail-h` for the same reason.
+
+That padding goes on `.vis-itemset > .vis-foreground`, never a bare
+`.vis-foreground`: the time axis carries that class too
+(`.vis-time-axis.vis-foreground`). The unscoped selector padded the axis panel by
+the same amount, leaving it reaching that far past the line — invisible on its own,
+since the panel is transparent and its labels hang from the top, but vis's axis
+measurement does not include the padding, so the line and the panel edge drifted
+apart by exactly the reserve.
 
 ## Item context menu (right-click quick actions)
 

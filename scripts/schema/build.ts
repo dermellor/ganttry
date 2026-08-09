@@ -36,7 +36,11 @@ const TARGETS: Target[] = [
   {
     type: 'TimelineFile',
     out: 'schema/timeline.schema.json',
-    examples: ['data/example-projektplan.json', 'data/launch-roadmap.json'],
+    examples: [
+      'data/example-projektplan.json',
+      'data/launch-roadmap.json',
+      'data/programm-2026.json',
+    ],
   },
   {
     // The `timeline.json` of a directory source: a timeline without its items,
