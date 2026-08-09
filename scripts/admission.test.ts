@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decideAccess, isPublicPath, parseDomains, type AccessConfig } from './access.ts';
+import { decideAccess, isPublicPath, parseDomains, type AccessConfig } from './admission.ts';
 
 const GATED: AccessConfig = { identityHeader: 'x-forwarded-email' };
 

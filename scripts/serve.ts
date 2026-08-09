@@ -25,7 +25,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { toRequest, writeResponse } from './node-http.ts';
-import { decideAccess, parseDomains, type AccessConfig } from './access.ts';
+import { decideAccess, parseDomains, type AccessConfig } from './admission.ts';
 import { envValue, hydrateProcessEnv } from './db/env.ts';
 import { getSql, getSqlForSource } from './db/sql.ts';
 import { getServiceClient } from './db/client.ts';
@@ -46,7 +46,7 @@ const HOST = envValue('TIMELINES_SERVE_HOST') || '127.0.0.1';
  * verify that, so it stays an explicit statement by the operator rather than a
  * sniff for a well-known name.
  *
- * The decision itself is in `./access.ts`, pure and unit-tested.
+ * The decision itself is in `./admission.ts`, pure and unit-tested.
  */
 const ACCESS: AccessConfig = {
   identityHeader: envValue('TIMELINES_TRUSTED_IDENTITY_HEADER')?.toLowerCase() || undefined,

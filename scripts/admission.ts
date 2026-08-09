@@ -1,4 +1,13 @@
-// The access decision for a self-hosted deployment, as a pure function.
+// Admission to the self-hosted server: is there a trusted identity on this
+// request at all?
+//
+// Deliberately NOT named `access`, and deliberately not in `src/`. The role
+// model (#46) puts the *authorization* rules in `src/access.ts` — which
+// capability a request needs, whether a role has it, whether a membership
+// counts — shared by every runtime. This module answers the question one layer
+// below and only for `scripts/serve.ts`: may this caller in at all. Two modules
+// called "access" answering different questions is the confusion worth spending
+// a rename to avoid.
 //
 // `scripts/serve.ts` has no login of its own and is not going to grow one: the
 // deployments this serves already have an identity provider in front (oauth2-proxy,
