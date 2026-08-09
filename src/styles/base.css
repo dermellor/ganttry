@@ -630,3 +630,18 @@ body {
   opacity: 0.6;
   cursor: progress;
 }
+
+/* A source that could not be loaded says so where the timeline would have been.
+   The footer status line carries the same text, but on its own it leaves a blank
+   content area, and blank reads as „broken" rather than as „refused". */
+.load-failure {
+  margin: 2rem auto;
+  max-width: 42rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  line-height: 1.5;
+}
