@@ -16,7 +16,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/items.md`](docs/items.md) | What an item carries beyond dates: icons, status, owner, custom fields. |
 | [`docs/editing.md`](docs/editing.md) | Editing in the interface: the item rail, the context menu, drag and form behaviour, the two view modes, URL state. |
 | [`docs/database.md`](docs/database.md) | Postgres as the data source: schema, the two drivers, optimistic locking, live updates, presence. |
-| [`docs/local-sources.md`](docs/local-sources.md) | Files the user owns as a source: editability decided by the runtime instead of the format. JSON is built; Markdown directories are still a proposal. |
+| [`docs/local-sources.md`](docs/local-sources.md) | Files the user owns as a source: a JSON file or a directory of Markdown. Editability is decided by the runtime, not by the format. |
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server and its tools. |
 | [`docs/deploy.md`](docs/deploy.md) | The Netlify deploy, the auth gate, JIRA linking. |
 | [`docs/pricing.md`](docs/pricing.md) | The pricing model of a product-roadmap timeline. |
@@ -283,7 +283,7 @@ touch a local checkout.
 
 ```bash
 npm install
-npm run dev          # build data + Vite + chokidar watcher on the notes dir
+npm run dev          # build data + Vite + chokidar watcher on data/
 npm run build        # static dist
 npm test             # unit tests (node --test, TZ-pinned to Europe/Berlin)
 npm run typecheck    # tsc --noEmit
@@ -301,8 +301,9 @@ npm run openapi:check # verify the committed spec matches routes + types (CI)
 
 The shape of the committed data files is **derived, not documented twice**:
 [`scripts/schema/build.ts`](scripts/schema/build.ts) generates
-`schema/timeline.schema.json` (from `TimelineFile`) and `schema/config.schema.json`
-(from `Config`) out of [`src/types.ts`](src/types.ts), which stays authoritative.
+`schema/timeline.schema.json` (from `TimelineFile`), `schema/container.schema.json`
+(from `TimelineContainer`, the `timeline.json` of a directory source) and
+`schema/config.schema.json` (from `Config`) out of [`src/types.ts`](src/types.ts), which stays authoritative.
 
 The output **is committed**, and that is the point rather than an oversight: it is
 what lets a data file carry `"$schema": "../schema/timeline.schema.json"` and get
@@ -357,7 +358,7 @@ so „this one is public" is machine-readable rather than a sentence. Validated 
 large dependency for a file that already has unit tests plus a regeneration
 check).
 
-`npm run dev` rebuilds `notes.json` whenever a Markdown file changes.
+`npm run dev` rebuilds the discovered config and the materialized local sources whenever a file under `data/` changes, Markdown included.
 
 ### CI
 
@@ -376,14 +377,15 @@ instead of leaving it to the runtime.
 
 **The build step runs with no credentials on purpose** — that is the path a
 contributor takes after a plain `git clone`. It has to stay non-fatal: the build
-discovers no DB timelines and warns about the missing notes directory rather
-than failing (see „Configuration" (docs/mcp.md) and „Principle: no emergency or fallback data").
-A change that makes a missing DB or notes dir fatal breaks CI for everyone
-without a deploy's env vars.
+discovers no DB timelines and registers only the local sources rather than
+failing (see „Configuration" (docs/mcp.md) and „Principle: no emergency or fallback data").
+A change that makes a missing DB fatal breaks CI for everyone without a
+deploy's env vars.
 
 **`npm run typecheck` is deliberately non-blocking** (`continue-on-error`): the
-repo carries 7 pre-existing errors (`Dirent` typing in `build-data.ts`, missing
-`@types/ws`, two library signature mismatches). They are unrelated to any
+repo carries 3 pre-existing errors (missing `@types/ws`, two library signature
+mismatches). It was 7 until the notes pipeline went: the four `Dirent` ones lived
+in its directory walk. They are unrelated to any
 current change, so gating PRs on them would block contributions on a debt that
 predates them. The step still reports the count, which is what catches a
 regression — dropping `continue-on-error` is the one-line change once the count

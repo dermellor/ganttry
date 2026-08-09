@@ -10,9 +10,6 @@
           "type": "string",
           "description": "Points editors at schema/config.schema.json for completion + validation."
         },
-        "notesDir": {
-          "type": "string"
-        },
         "defaultView": {
           "type": "string"
         },
@@ -20,186 +17,22 @@
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "description": "Frontmatter keys tried in order for an item's start, and the filename patterns tried when none of them carries one. Both are read by the directory scanner (`scripts/local/scan.ts`); a JSON source states its dates outright and never consults them."
         },
         "filenameDatePatterns": {
           "type": "array",
           "items": {
             "type": "string"
           }
-        },
-        "views": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/View"
-          }
         }
       },
       "required": [
-        "notesDir",
         "defaultView",
         "dateFields",
-        "filenameDatePatterns",
-        "views"
+        "filenameDatePatterns"
       ],
       "additionalProperties": false
-    },
-    "View": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        },
-        "filter": {
-          "$ref": "#/definitions/FilterClause"
-        },
-        "dateFields": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "groupBy": {
-          "type": "string"
-        },
-        "colorBy": {
-          "type": "string"
-        },
-        "source": {
-          "$ref": "#/definitions/ViewSource"
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "filter"
-      ],
-      "additionalProperties": false
-    },
-    "FilterClause": {
-      "type": "object",
-      "properties": {
-        "filenameContains": {
-          "type": "string"
-        },
-        "folder": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
-        },
-        "status": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
-        },
-        "categories": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
-        },
-        "tags": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
-        },
-        "draft": {
-          "type": "boolean"
-        },
-        "has": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
-        },
-        "anyOf": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/FilterClause"
-          }
-        },
-        "allOf": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/FilterClause"
-          }
-        },
-        "not": {
-          "$ref": "#/definitions/FilterClause"
-        }
-      },
-      "additionalProperties": false
-    },
-    "ViewSource": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "$ref": "#/definitions/SourceKind"
-        },
-        "id": {
-          "type": "string"
-        },
-        "editable": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "kind",
-        "id"
-      ],
-      "additionalProperties": false,
-      "description": "`editable` is stamped at BUILD time for local sources, because the build is what knows which of the two runtimes it is producing for. Deciding it at runtime would mean probing (\"try the API, fall back to the static file\"), which is the pattern that made a stale copy indistinguishable from live data (AGENTS.md → „No fallback data, ever\"). Absent = not editable.\n\nDB sources leave it unset and learn their capabilities from the response header instead: theirs depend on the server's env, not on the build's."
-    },
-    "SourceKind": {
-      "type": "string",
-      "enum": [
-        "db",
-        "local"
-      ]
     }
   }
 }

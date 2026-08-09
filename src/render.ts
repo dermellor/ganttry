@@ -8,7 +8,6 @@ import {
   assignLaneSubgroups,
   assignLanes,
   buildFromJson,
-  buildFromNotes,
   tagPillsHtml,
   withStatusMarks,
   type BuildResult,
@@ -341,7 +340,7 @@ export async function renderTimeline(view: View) {
   let sourceEditable = false;
   let sourceLive: import('./types').SourceLive = 'none';
 
-  if (view.source) {
+  {
     try {
       const loaded = await loadSource(view.source);
       sourceFile = loaded.file;
@@ -356,8 +355,6 @@ export async function renderTimeline(view: View) {
       // assigned ids in memory only — saved on first edit
     }
     built = buildFromJson(view, sourceFile);
-  } else {
-    built = buildFromNotes(view, state.allNotes, state.config);
   }
   state.activeBuild = built;
   state.activeView = view;

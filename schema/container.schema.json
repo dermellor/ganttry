@@ -1,0 +1,354 @@
+{
+  "$id": "https://ganttry.dev/schema/container.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/TimelineContainer",
+  "definitions": {
+    "TimelineContainer": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string",
+          "description": "Points editors at schema/timeline.schema.json for completion + validation."
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "groupBy": {
+          "type": "string"
+        },
+        "plugins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PluginRef"
+          }
+        },
+        "phases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TimelinePhase"
+          }
+        },
+        "customFields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CustomFieldDef"
+          }
+        },
+        "pricing": {
+          "$ref": "#/definitions/Pricing"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              },
+              "nestedGroups": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "showNested": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "content"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "The `timeline.json` at the root of a **directory** source: everything a timeline carries above item level, for the case where the items are one Markdown file each (see docs/local-sources.md).\n\nA separate type rather than `TimelineFile` with an optional `items`. Making `items` optional would weaken it at the dozen call sites that iterate it, none of which a container file ever reaches — they all work on the *scanned* result, which always has items. The cost is one more generated schema; the benefit is that `file.items` stays something you can use without a guard."
+    },
+    "PluginRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "TimelinePhase": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "duration": {
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "color": {
+          "type": "string"
+        },
+        "icon": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "start"
+      ],
+      "additionalProperties": false
+    },
+    "CustomFieldDef": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/CustomFieldType"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CustomFieldOption"
+          }
+        },
+        "group": {
+          "type": "string"
+        },
+        "width": {
+          "type": "string",
+          "enum": [
+            "half",
+            "full"
+          ]
+        },
+        "contextMenu": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "CustomFieldType": {
+      "type": "string",
+      "enum": [
+        "text",
+        "select",
+        "multi-select"
+      ]
+    },
+    "CustomFieldOption": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "Pricing": {
+      "type": "object",
+      "properties": {
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PricingFeature"
+          }
+        },
+        "tiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PricingTier"
+          }
+        },
+        "highlights": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PricingHighlight"
+          }
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "features",
+        "tiers"
+      ],
+      "additionalProperties": false
+    },
+    "PricingFeature": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "group": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "nameByVersion": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "descriptionByVersion": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "rowVersion": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "PricingTier": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tagline": {
+          "type": "string"
+        },
+        "useCase": {
+          "type": "string"
+        },
+        "targetGroup": {
+          "type": "string"
+        },
+        "price": {
+          "type": "string"
+        },
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "boolean"
+            ]
+          }
+        },
+        "valueVersions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "rowVersion": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "price",
+        "values"
+      ],
+      "additionalProperties": false
+    },
+    "PricingHighlight": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "section": {
+          "type": "string"
+        },
+        "icon": {
+          "type": "string"
+        },
+        "featureIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "description": {
+          "type": "string"
+        },
+        "labelByVersion": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "rowVersion": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "featureIds"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

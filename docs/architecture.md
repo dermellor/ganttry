@@ -10,8 +10,8 @@ its file when it lives in another chapter.
 
 Two-step:
 
-1. **Build script** (`scripts/build-data.ts`) walks the notes directory, parses YAML frontmatter (`gray-matter`), extracts dates, writes `public/data/notes.json` + a copy of the config.
-2. **Static viewer** (Vite + TypeScript, `src/`) loads the JSON, applies the active view's filter, renders a vis-timeline, styled through the CSS custom properties in `src/styles/theme.css`.
+1. **Build script** (`scripts/build-data.ts`) discovers the sources — the local ones under `data/` (a JSON file, or a directory of Markdown scanned by `scripts/local/scan.ts`) and the timelines in the database — registers each as a view, and writes the merged config plus a materialized copy of every local source to `public/<data dir>/`.
+2. **Static viewer** (Vite + TypeScript, `src/`) loads that config, loads the active view's source (live from the API where the runtime allows it, otherwise the materialized copy), and renders a vis-timeline, styled through the CSS custom properties in `src/styles/theme.css`.
 
 Electron wrapper can later embed the same `dist/` build.
 
@@ -29,8 +29,12 @@ time and flows through the built config to the client:
   querying the DB at build time (`collectDbSources`) and marks each view's source
   `kind: "db"`; the registration stub it writes (metadata only) goes to the
   gitignored build output, never to the committed tree.
-- **`local`** — a JSON file the user owns (any `data/**/*.json` without the `db`
-  marker). Whether it is editable is a property of the **runtime**, not of the
+- **`local`** — a file the user owns, in one of two shapes: a **JSON file** (any
+  `data/**/*.json` without the `db` marker), or a **directory** holding a
+  `timeline.json` plus one Markdown file per item. Both produce the same
+  `TimelineFile` ([`scripts/local/scan.ts`](../scripts/local/scan.ts) does the
+  directory half), so nothing downstream knows which it is. A directory is
+  read-only for now; a write answers `501`. Whether it is editable is a property of the **runtime**, not of the
   format: a process with filesystem access serves it through
   `GET /api/source/<id>` and accepts writes, a static deploy has nothing to write
   with and serves the built copy from `/data/sources/<id>.json` read-only. The

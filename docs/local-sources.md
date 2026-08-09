@@ -1,12 +1,12 @@
 # Local sources (design proposal)
 
-**Status: stage 1 is built; stages 2 and 3 are not.** A single `local` source
-adapter replaces the former `file` kind and makes editability a property of the
-runtime rather than of the file format. What exists today is the single-file JSON
-half: a `data/*.json` timeline is editable under `npm run dev` and read-only on a
-static deploy. Markdown directories, the notes pipeline and everything that
-writes to a file the tool did not create are still a proposal. Each section below
-says which it is.
+**Status: stages 1 and 2 are built; stage 3 is not.** A single `local` source
+adapter replaced the former `file` kind and the separate Markdown notes pipeline,
+and made editability a property of the runtime rather than of the file format.
+What exists: a `data/*.json` timeline is editable under `npm run dev` and
+read-only on a static deploy, and a directory of Markdown files with a
+`timeline.json` in it is served as a source, read-only. Writing back into a note
+is still a proposal. Each section below says which it is.
 
 Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
@@ -14,8 +14,8 @@ its file when it lives in another chapter.
 
 ## The problem
 
-There are three places data comes from today, and they sit on two and a half
-axes rather than one:
+There used to be three places data came from, sitting on two and a half axes
+rather than one. This is the picture the change started from:
 
 | | Markdown notes | `file` | `db` |
 | --- | --- | --- | --- |
@@ -90,11 +90,16 @@ The two alternatives were considered and rejected:
   about a timeline would then live apart from the timeline, so a folder could not
   be moved, copied or shared without also editing a global config elsewhere.
 
-The chosen shape has a property the other two lack: `timeline.json` validates
-against the **existing** generated `schema/timeline.schema.json`, so it gets
-editor completion and CI validation for free (see „Generated schemas" (AGENTS.md)).
-The one change needed is that `items` becomes optional on `TimelineFile`, which is
-a one-line type change plus a regenerated schema.
+The chosen shape has a property the other two lack: `timeline.json` is a
+generated-schema file like every other data file here, so it gets editor
+completion and CI validation for free (see „Generated schemas" (AGENTS.md)).
+
+It gets its **own** type and schema (`TimelineContainer` →
+`schema/container.schema.json`) rather than reusing `TimelineFile` with an
+optional `items`. That was the plan and it was wrong: `items` optional weakens
+the type at the dozen call sites that iterate it, and not one of them ever sees a
+container file — they all work on the *scanned* result, which always has items.
+One extra generated schema is the cheaper price.
 
 ### How a local source is served
 
@@ -127,8 +132,8 @@ behind this) is fixed when the bundle is built.
 `live: 'poll'`, via the existing watermark sub-resource: the adapter answers with
 the newest mtime across the source's files, and the client polls it exactly as it
 does for a Postgres without Realtime. The dev server already runs a chokidar
-watcher over the notes directory, so pushing instead of polling is available later
-as an optimization rather than as a prerequisite.
+watcher over `data/`, so pushing instead of polling is available later as an
+optimization rather than as a prerequisite.
 
 ## The write path
 
@@ -219,18 +224,28 @@ Deleting an item deletes one of the user's files, so it moves the file to
 ignores) instead of unlinking it. An `unlink` here is unrecoverable data loss on
 data the tool did not create.
 
-## What this removes
+## What this removed
 
-Worth stating, because it is the argument for the change beyond consistency:
+Done, and the argument for the change beyond consistency:
 
-- `buildFromNotes` and the `if (view.source) … else` branch in `render.ts`.
+- `buildFromNotes` and the `if (view.source) … else` branch in `render.ts`. Every
+  view now names a source, so `View.source` is required rather than optional.
 - The `NotesData` / `notes.json` payload and its type, as a second thing the
-  client knows how to load.
-- The `TIMELINES_STATIC_ONLY` special case that hides Markdown views entirely
-  (`baseViews = []`). Under this design a static build materializes them read-only
-  like any other local source, which is a behaviour change and needs a deliberate
-  decision: **materialize them**, since „a deploy shows no notes at all" is
-  surprising, and read-only is the accurate representation of a static deploy.
+  client knows how to load — **and its second copy in
+  [`scripts/export-view.ts`](../scripts/export-view.ts)**, which carried its own
+  `buildFromNotes`. That duplicate is the clearest argument of the lot: it is
+  exactly what „A rule lives in exactly one place" (AGENTS.md) exists to prevent.
+- `src/filter.ts`, `FilterClause`, and the committed `views` array with a filter
+  clause per view. A directory is one timeline now, not a pool that several views
+  slice up; narrowing what you see is the interface's own Filter control, which
+  works on every source instead of only on notes.
+- `TIMELINES_STATIC_ONLY`, whose only job was hiding the notes-driven views.
+- Four of the repo's seven pre-existing typecheck errors, which lived in the
+  notes directory walk.
+
+**What it cost:** config-declared filter views. Nothing replaces them one-for-one.
+If a saved, named slice of one timeline turns out to be wanted, it is a feature
+on top of sources rather than a reason to keep a second data path alive.
 
 ## Constraints that must hold
 
@@ -268,10 +283,36 @@ Three stages, each shippable on its own, in increasing order of risk:
      answer `501` via a new `NotSupportedError`, because a 500 reads as „we are
      broken" and a silent success would report „Gespeichert" for a write that
      never happened.
-2. **Directory sources on the read path.** `scripts/local/scan.ts`, `timeline.json`,
-   `items` optional on `TimelineFile`, Markdown views served as sources. Deletes
-   `buildFromNotes` and `notes.json`. Read-only throughout, so no user file is
-   written yet.
+2. ~~**Directory sources on the read path.**~~ **Done, except the deletion.**
+   [`scripts/local/scan.ts`](../scripts/local/scan.ts) turns a directory into a
+   `TimelineFile`; the local adapter serves it live, `build-data.ts` materializes
+   it for a static build, and it is read-only throughout (every write answers
+   `501`, refused *before* the item lookup so the reason does not depend on
+   whether the item happened to exist). **`buildFromNotes` and `notes.json` are
+   still in place** — removing them takes the config-declared filter views with
+   them, which is a separate decision. Four things came out differently:
+   - **A separate `TimelineContainer` type, not `items` made optional.**
+     Optional `items` would weaken the type at the dozen call sites that iterate
+     it, none of which a container file ever reaches: they all work on the
+     *scanned* result, which always has items. The cost is one more generated
+     schema (`schema/container.schema.json`), and `file.items` stays usable
+     without a guard.
+   - **A day stays a day.** The old pipeline turned `date: 2026-04-15` into
+     `2026-04-14T22:00:00.000Z` — the same moment, but it reads as the wrong day
+     wherever it is shown as text, and a write path would put that timestamp
+     back into a file that said `2026-04-15`. Date-only values now stay
+     date-only, which also makes a Markdown item and a JSON item carry the same
+     shape.
+   - **The id check had to allow dots.** An item in a directory source is
+     identified by its file path, and the dispatcher's `ID_SEGMENT` rejected
+     every one of them. It now allows dots and excludes `.` and `..` by name.
+     The real containment guard was never that check — it is the resolved-path
+     test in the repo, which is what catches the encodings a character rule
+     misses.
+   - **`editable` is stamped per source, not per kind.** The dev server flipping
+     every local source to editable offered „+ Eintrag" and drag handles on a
+     Markdown timeline, each ending in a `501`. An edit that looks available and
+     then is not is worse than one that was never offered.
 3. **The Markdown write path.** The frontmatter patcher, promotion of date and id,
    filter-derived creation defaults, trash-on-delete.
 

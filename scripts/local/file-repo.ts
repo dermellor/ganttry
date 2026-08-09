@@ -18,6 +18,14 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 
+import {
+  CONTAINER_FILE,
+  directoryVersion,
+  isTimelineDirectory,
+  scanDirectory,
+  timelineDirectories,
+  type ScanOptions,
+} from './scan.ts';
 import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
 import { describeReversedExtent, findReversedExtent, hasReversedExtent } from '../../src/itemExtent.ts';
 import {
@@ -46,9 +54,9 @@ import type {
  * exactly when TIMELINES_SOURCES_SUBDIR is set; `build-data.ts` derives its two
  * paths the same way and for the same reason.
  */
-export type FileRepoDirs = { root: string; scope?: string };
+export type FileRepoDirs = { root: string; scope?: string; scanOptions?: ScanOptions };
 
-type Loaded = { file: TimelineFile; version: number; path: string };
+type Loaded = { file: TimelineFile; version: number; path: string; isDir?: boolean };
 
 // ---------------------------------------------------------------------------
 // paths + io
@@ -60,13 +68,30 @@ type Loaded = { file: TimelineFile; version: number; path: string };
  * the id, because that also catches the encodings a hand-written blocklist
  * misses.
  */
-function pathFor(dirs: FileRepoDirs, id: string): string {
-  const root = resolve(dirs.root);
-  const path = resolve(root, `${id}.json`);
+function contained(root: string, path: string, id: string): string {
   if (path !== root && !path.startsWith(root + sep)) {
     throw new ValidationError(`id „${id}" resolves outside the data directory`);
   }
   return path;
+}
+
+function pathFor(dirs: FileRepoDirs, id: string): string {
+  const root = resolve(dirs.root);
+  return contained(root, resolve(root, `${id}.json`), id);
+}
+
+/**
+ * The two shapes a local source can have. A directory wins when it holds a
+ * container file, because that marker is what distinguishes „a timeline made of
+ * Markdown files" from „some folder that happens to sit under data/".
+ */
+type Target = { kind: 'file' | 'dir'; path: string };
+
+function targetFor(dirs: FileRepoDirs, id: string): Target {
+  const root = resolve(dirs.root);
+  const asDir = contained(root, resolve(root, id), id);
+  if (isTimelineDirectory(asDir)) return { kind: 'dir', path: asDir };
+  return { kind: 'file', path: contained(root, resolve(root, `${id}.json`), id) };
 }
 
 function idFor(dirs: FileRepoDirs, path: string): string {
@@ -107,7 +132,16 @@ function nextVersion(path: string, mtimeMs: number, previous: number): number {
 }
 
 async function load(dirs: FileRepoDirs, id: string): Promise<Loaded> {
-  const path = pathFor(dirs, id);
+  const target = targetFor(dirs, id);
+  if (target.kind === 'dir') {
+    // The directory IS the timeline: its Markdown files are the items, its
+    // container file everything above item level. One scan per request, so an
+    // edit made in an editor shows on the next reload without a rebuild.
+    const file = await scanDirectory(target.path, dirs.scanOptions);
+    const mtime = await directoryVersion(target.path);
+    return { file, version: versionOf(target.path, mtime), path: target.path, isDir: true };
+  }
+  const path = target.path;
   let raw: string;
   let mtimeMs: number;
   try {
@@ -133,6 +167,24 @@ async function load(dirs: FileRepoDirs, id: string): Promise<Loaded> {
 }
 
 /**
+ * Load for a write, refusing a directory source up front.
+ *
+ * The refusal has to come BEFORE the item lookup. Guarding only in `save()`
+ * means a write to a directory reports whatever the lookup found first — a 404
+ * for an item id that does exist — so the caller learns the wrong thing about
+ * why it failed.
+ */
+async function loadForWrite(dirs: FileRepoDirs, id: string): Promise<Loaded> {
+  const loaded = await load(dirs, id);
+  if (loaded.isDir) {
+    throw new NotSupportedError(
+      `„${id}" is a Markdown directory: writing back into a note is not supported yet (stage 3 of docs/local-sources.md)`,
+    );
+  }
+  return loaded;
+}
+
+/**
  * Drop keys that carry no value.
  *
  * The viewer always sends a FULL item patch (`buildItemPatch`), so every field
@@ -155,6 +207,16 @@ function withoutEmpty<T extends Record<string, unknown>>(obj: T): T {
 }
 
 async function save(loaded: Loaded, file: TimelineFile): Promise<number> {
+  // Every write funnels through here, so one guard covers all of them. A
+  // directory source has no single document to rewrite: an item is a Markdown
+  // file whose frontmatter would have to be patched in place, which is stage 3.
+  // Refusing here rather than at each call site is what keeps a later write path
+  // from having to remember a dozen guards.
+  if (loaded.isDir) {
+    throw new NotSupportedError(
+      'writing to a Markdown directory is not supported yet (stage 3 of docs/local-sources.md)',
+    );
+  }
   const clean: TimelineFile = {
     ...file,
     items: file.items.map(({ version, ...rest }) => withoutEmpty(rest)),
@@ -252,6 +314,16 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       const scope = dirs.scope ?? dirs.root;
       if (!existsSync(scope)) return [];
       const out: TimelineMeta[] = [];
+      for (const dir of await timelineDirectories(scope)) {
+        const id = relative(resolve(dirs.root), dir).replace(/\\/g, '/');
+        let container: Partial<TimelineFile> = {};
+        try {
+          container = JSON.parse(await readFile(join(dir, CONTAINER_FILE), 'utf8'));
+        } catch {
+          /* a malformed container still leaves a listable directory */
+        }
+        out.push({ id, name: container.name || id, description: container.description, groupBy: container.groupBy });
+      }
       for await (const path of walkJson(scope)) {
         let file: TimelineFile;
         try {
@@ -301,17 +373,16 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
     async replaceTimeline(id: string, file: TimelineFile): Promise<void> {
       assertExtentsOrdered(file.items);
       assertPhasesDisjoint(file.phases);
-      const path = pathFor(dirs, id);
-      const existed = existsSync(path);
-      const loaded: Loaded = existed
-        ? await load(dirs, id)
-        : { file: { items: [] }, version: 0, path };
+      const target = targetFor(dirs, id);
+      const loaded: Loaded = existsSync(target.path)
+        ? await loadForWrite(dirs, id)
+        : { file: { items: [] }, version: 0, path: target.path };
       await save(loaded, file);
     },
 
     // ---- items ------------------------------------------------------------
     async addItem(id: string, item: TimelineFileItem): Promise<TimelineFileItem> {
-      const loaded = await load(dirs, id);
+      const loaded = await loadForWrite(dirs, id);
       assertExtent(item);
       const { version: _v, ...rest } = item;
       const added: TimelineFileItem = { ...rest, id: item.id || mintItemId(loaded.file) };
@@ -326,7 +397,7 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       patch: Partial<TimelineFileItem>,
       expectedVersion?: number,
     ): Promise<TimelineFileItem> {
-      const loaded = await load(dirs, id);
+      const loaded = await loadForWrite(dirs, id);
       assertVersion(loaded, expectedVersion, `„${id}"`);
       const idx = loaded.file.items.findIndex((it) => it.id === itemId);
       if (idx < 0) throw new NotFoundError(`item „${itemId}" not found in „${id}"`);
@@ -352,7 +423,7 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
     },
 
     async deleteItem(id: string, itemId: string): Promise<void> {
-      const loaded = await load(dirs, id);
+      const loaded = await loadForWrite(dirs, id);
       const items = loaded.file.items.filter((it) => it.id !== itemId);
       if (items.length === loaded.file.items.length) {
         throw new NotFoundError(`item „${itemId}" not found in „${id}"`);
@@ -362,7 +433,7 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
 
     // ---- groups -----------------------------------------------------------
     async upsertGroup(id: string, group: TimelineGroupDecl): Promise<TimelineGroupDecl> {
-      const loaded = await load(dirs, id);
+      const loaded = await loadForWrite(dirs, id);
       const groups = [...(loaded.file.groups ?? [])];
       const idx = groups.findIndex((g) => g.id === group.id);
       if (idx >= 0) groups[idx] = { ...groups[idx], ...group };
@@ -372,7 +443,7 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
     },
 
     async deleteGroup(id: string, groupId: string): Promise<void> {
-      const loaded = await load(dirs, id);
+      const loaded = await loadForWrite(dirs, id);
       const groups = (loaded.file.groups ?? []).filter((g) => g.id !== groupId);
       await save(loaded, { ...loaded.file, groups });
     },
@@ -380,7 +451,7 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
     // ---- timeline-level meta / phases -------------------------------------
     async updatePhases(id: string, phases: TimelinePhase[]): Promise<void> {
       assertPhasesDisjoint(phases);
-      const loaded = await load(dirs, id);
+      const loaded = await loadForWrite(dirs, id);
       await save(loaded, { ...loaded.file, phases });
     },
 
@@ -388,7 +459,7 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       id: string,
       meta: { name?: string; description?: string; groupBy?: string; customFields?: CustomFieldDef[] },
     ): Promise<void> {
-      const loaded = await load(dirs, id);
+      const loaded = await loadForWrite(dirs, id);
       const next = { ...loaded.file };
       // Only keys actually present in the patch are applied, so a PATCH that
       // carries `name` alone cannot blank out `description`.
@@ -447,8 +518,28 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
 /** Does this id resolve to a readable local timeline file? */
 export function hasLocalTimeline(dirs: FileRepoDirs, id: string): boolean {
   try {
-    return existsSync(pathFor(dirs, id));
+    const target = targetFor(dirs, id);
+    return target.kind === 'dir' || existsSync(target.path);
   } catch {
     return false; // a traversing id is not a local timeline
+  }
+}
+
+/**
+ * Can this source be written to by a runtime that has a filesystem?
+ *
+ * Separate from `hasLocalTimeline` because the two answers differ: a directory
+ * source is served but not yet writable. The dev server stamps `editable` from
+ * this rather than from „is it local at all", otherwise the interface offers
+ * „+ Eintrag" and drag handles on a Markdown timeline and every one of them
+ * ends in a 501 — an edit that looks available and then is not is worse than
+ * one that was never offered.
+ */
+export function isLocalWritable(dirs: FileRepoDirs, id: string): boolean {
+  try {
+    const target = targetFor(dirs, id);
+    return target.kind === 'file' && existsSync(target.path);
+  } catch {
+    return false;
   }
 }

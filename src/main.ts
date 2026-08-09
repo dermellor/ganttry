@@ -5,7 +5,7 @@
 
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
 import { escapeHtml } from './buildItems';
-import type { Config, NotesData } from './types';
+import type { BuiltConfig } from './types';
 import {
   onExternalUrlStateChange,
   parseUrlWindow,
@@ -70,15 +70,9 @@ function isTypingTarget(el: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
-async function loadConfig(): Promise<Config> {
+async function loadConfig(): Promise<BuiltConfig> {
   const res = await fetch(dataUrl('config.json'));
   if (!res.ok) throw new Error(`Could not load config: ${res.status}`);
-  return res.json();
-}
-
-async function loadNotes(): Promise<NotesData> {
-  const res = await fetch(dataUrl('notes.json'));
-  if (!res.ok) throw new Error(`Could not load notes data: ${res.status}`);
   return res.json();
 }
 
@@ -235,11 +229,10 @@ async function handleExport() {
 }
 
 async function bootstrap() {
-  setStatus('Lade Konfiguration & Notizen…');
+  setStatus('Lade Konfiguration…');
 
-  const [cfg, notesData, currentUser] = await Promise.all([
+  const [cfg, currentUser] = await Promise.all([
     loadConfig(),
-    loadNotes(),
     loadCurrentUser(),
     // The user directory an item's Owner resolves against. Loaded once, up front,
     // because both the list's Owner column and the item form's picker read it
@@ -247,7 +240,6 @@ async function bootstrap() {
     loadUserDirectory(),
   ]);
   state.config = cfg;
-  state.allNotes = notesData.notes;
   state.currentUser = currentUser;
 
   els.viewSelect.innerHTML = cfg.views
