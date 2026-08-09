@@ -57,8 +57,14 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Generic bundle carries no pricing view code
+      - name: Generic bundle carries no plugin view code
         run: bash scripts/ci/check-bundle-split.sh
+
+      # No plugin is special: no core import from a plugin folder, no plugin id
+      # as a literal outside it, no plugin-specific method on TimelineRepo, no
+      # plugin markup in the shell. Runs without a build, so it fails fast.
+      - name: No plugin has a privilege a third party lacks
+        run: node scripts/ci/check-plugin-isolation.mjs
 
       # Non-blocking for now: the repo carries 7 pre-existing type errors
       # (node Dirent typing in build-data.ts, missing @types/ws, two library

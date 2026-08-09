@@ -33,7 +33,6 @@ import type {
 import { statusOrDefault } from '../../src/status.ts';
 import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
 import { describeReversedExtent, findReversedExtent, hasReversedExtent } from '../../src/itemExtent.ts';
-import { PRODUCT_ROADMAP_PLUGIN, versionsFromConfig } from '../../src/plugins/product-roadmap/plugin.ts';
 import { pluginsForWrite } from '../../src/pluginHost/plugins.ts';
 import {
   ConflictError,
