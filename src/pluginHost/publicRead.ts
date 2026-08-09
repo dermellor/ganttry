@@ -102,6 +102,43 @@ export function projectCollections(
  * strips the plugin's data entirely — otherwise opting out would change nothing
  * about a file that is copied as it is.
  */
+/**
+ * A whole timeline file, made safe to serve verbatim.
+ *
+ * The build materializes a local source to `public/<data dir>/sources/<id>.json`,
+ * and a static deploy hands that file to anyone who asks. So every plugin's rows
+ * in it are published whether or not anybody decided that — which is why the
+ * per-timeline opt-in cannot be the only guard on a local source.
+ *
+ * Fail closed on an unknown plugin: if no manifest is available, its data is
+ * dropped. The alternative is publishing rows whose public projection nobody can
+ * evaluate, and „we could not check" must not resolve to „ship it".
+ *
+ * NOTE the one thing this does not touch: `file.pricing`. That is
+ * `product-roadmap`'s data in its pre-generic shape, and it has always been
+ * materialized as-is. It comes under this rule when that plugin moves onto the
+ * generic store (issue #17); until then, a local timeline's pricing model is as
+ * public as its file is.
+ */
+export function stripFileForPublication<T extends { plugins?: { id: string; public?: boolean }[]; pluginData?: Record<string, PluginCollectionData> }>(
+  file: T,
+  manifestFor: (pluginId: string) => PluginManifest | null,
+): T {
+  if (!file.pluginData) return file;
+  const out: Record<string, PluginCollectionData> = {};
+  for (const [pluginId, collections] of Object.entries(file.pluginData)) {
+    const manifest = manifestFor(pluginId);
+    if (!manifest) continue;
+    const publishing = (file.plugins ?? []).find((p) => p.id === pluginId)?.public === true;
+    const kept = stripForMaterialization(manifest, collections, publishing);
+    if (kept) out[pluginId] = kept;
+  }
+  const next = { ...file };
+  if (Object.keys(out).length) next.pluginData = out;
+  else delete next.pluginData;
+  return next;
+}
+
 export function stripForMaterialization(
   manifest: PluginManifest,
   stored: PluginCollectionData | undefined,

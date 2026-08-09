@@ -10,6 +10,7 @@ import {
   projectCollections,
   projectRow,
   publicCollections,
+  stripFileForPublication,
   stripForMaterialization,
 } from './publicRead.ts';
 import type { PluginManifest } from './manifest.ts';
@@ -159,5 +160,53 @@ describe('stripForMaterialization', () => {
 
   test('nothing stored stays nothing', () => {
     assert.equal(stripForMaterialization(base, undefined, true), undefined);
+  });
+});
+
+describe('stripFileForPublication', () => {
+  const manifestFor = (id: string) => (id === 'demo' ? base : null);
+
+  const file = {
+    plugins: [{ id: 'demo', public: true }],
+    pluginData: { demo: stored },
+    items: [],
+  } as any;
+
+  test('a consenting timeline keeps only what the plugin declared', () => {
+    const out = stripFileForPublication(file, manifestFor);
+    assert.deepEqual(Object.keys(out.pluginData.demo).sort(), ['features', 'tiers']);
+    assert.ok(!('secrets' in out.pluginData.demo));
+  });
+
+  test('without consent the plugin data leaves the materialized copy entirely', () => {
+    // The per-timeline opt-in cannot be the only guard on a file that is served
+    // verbatim: opting out has to REMOVE the rows, not merely decline to serve.
+    const out = stripFileForPublication({ ...file, plugins: [{ id: 'demo' }] }, manifestFor);
+    assert.equal(out.pluginData, undefined);
+  });
+
+  test('a plugin with no manifest is dropped rather than published', () => {
+    // „We could not check" must not resolve to „ship it".
+    const out = stripFileForPublication(
+      { ...file, plugins: [{ id: 'ghost', public: true }], pluginData: { ghost: stored } },
+      manifestFor,
+    );
+    assert.equal(out.pluginData, undefined);
+  });
+
+  test('host bookkeeping is gone from the copy', () => {
+    const out = stripFileForPublication(file, manifestFor);
+    assert.deepEqual(Object.keys(out.pluginData.demo.tiers[0]).sort(), ['data', 'id']);
+  });
+
+  test('a file with no plugin data is returned untouched', () => {
+    const plain = { items: [{ id: 'a' }] } as any;
+    assert.equal(stripFileForPublication(plain, manifestFor), plain);
+  });
+
+  test('the input file is not mutated', () => {
+    const before = JSON.stringify(file);
+    stripFileForPublication(file, manifestFor);
+    assert.equal(JSON.stringify(file), before);
   });
 });

@@ -63,8 +63,11 @@ test('openapi routes: each operation declares a success and the auth failure', (
         success.length > 0,
         `${op.method} ${route.path} declares no 2xx response`,
       );
-      // The public pricing endpoint is the deliberate exception: no auth gate.
-      if (route.path !== '/api/pricing/{id}') {
+      // A route that declares itself public is excluded from the auth gate on
+      // purpose, so it has no 401 to document. Read from the declaration rather
+      // than from a hardcoded path: there is more than one public endpoint now,
+      // and a list of exceptions in a test is a list that goes stale.
+      if (!route.public) {
         assert.ok(
           codes.includes('401'),
           `${op.method} ${route.path} is behind the auth gate but documents no 401`,

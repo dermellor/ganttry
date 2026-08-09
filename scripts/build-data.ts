@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { envValue } from './db/env.ts';
 import { scanDirectory, timelineDirectories } from './local/scan.ts';
 import { buildCsp, parseOrigins } from '../src/pluginHost/csp.ts';
+import { stripFileForPublication } from '../src/pluginHost/publicRead.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CONFIG_PATH = join(ROOT, 'timelines.config.json');
@@ -209,6 +210,32 @@ async function collectVendoredPlugins(): Promise<void> {
   if (copied) console.log(`[build-data] copied ${copied} vendored plugin file(s)`);
 }
 
+/**
+ * The manifests this build can evaluate a `publicRead` declaration against.
+ *
+ * Registry first, the shipped ones as the fallback — the same order the server
+ * uses, so what the build strips and what the API would serve agree. Resolved
+ * once per build rather than per file, and lazily, because a file-only deploy has
+ * no database to ask.
+ */
+async function manifestLookup(): Promise<(pluginId: string) => any> {
+  const byId = new Map<string, any>();
+  try {
+    const { builtInManifests, installedPluginStatuses } = (await import('./db/plugin-manifests.ts')) as any;
+    for (const m of builtInManifests()) byId.set(m.id, m);
+    const { resolveRepoFromEnv } = (await import('./db/repo-node.ts')) as any;
+    const repo = resolveRepoFromEnv();
+    if (repo) {
+      for (const status of await installedPluginStatuses(repo)) {
+        if (status?.manifest?.id) byId.set(status.manifest.id, status.manifest);
+      }
+    }
+  } catch (err) {
+    console.warn('[build-data] manifest lookup limited to the build:', err instanceof Error ? err.message : err);
+  }
+  return (pluginId: string) => byId.get(pluginId) ?? null;
+}
+
 async function buildOnce(): Promise<void> {
   const config = await loadConfig();
   await mkdir(OUT_DIR, { recursive: true });
@@ -216,7 +243,8 @@ async function buildOnce(): Promise<void> {
   // File sources (committed data/*.json) plus DB timelines discovered live from
   // the DB. On an id collision the DB timeline wins (it is the live source of
   // truth); file sources are listed first for a stable dropdown order.
-  const fileViews = await collectStandaloneSources(config);
+  const manifestFor = await manifestLookup();
+  const fileViews = await collectStandaloneSources(config, manifestFor);
   const dbViews = await collectDbSources();
   const dbIds = new Set(dbViews.map((v: any) => v.id));
   const views = [...fileViews.filter((v: any) => !dbIds.has(v.id)), ...dbViews];
@@ -279,7 +307,7 @@ async function* walkJsonFiles(dir: string): AsyncGenerator<string> {
   }
 }
 
-async function collectStandaloneSources(config: Config): Promise<unknown[]> {
+async function collectStandaloneSources(config: Config, manifestFor: (pluginId: string) => any): Promise<unknown[]> {
   if (!existsSync(SOURCES_DIR_IN)) return [];
   await mkdir(SOURCES_DIR_OUT, { recursive: true });
   const views: unknown[] = [];
@@ -304,7 +332,9 @@ async function collectStandaloneSources(config: Config): Promise<unknown[]> {
     });
     const outPath = join(SOURCES_DIR_OUT, `${id}.json`);
     await mkdir(dirname(outPath), { recursive: true });
-    await writeIfChanged(outPath, `${JSON.stringify(file, null, 2)}\n`);
+    // A static deploy hands this file to anyone who asks, so a plugin's rows in it
+    // are published unless the timeline said so. See stripFileForPublication.
+    await writeIfChanged(outPath, `${JSON.stringify(stripFileForPublication(file, manifestFor), null, 2)}\n`);
     views.push({
       id: `src:${id}`,
       name: file.name || basename(id),
@@ -350,7 +380,11 @@ async function collectStandaloneSources(config: Config): Promise<unknown[]> {
     }
     const outPath = join(SOURCES_DIR_OUT, `${id}.json`);
     await mkdir(dirname(outPath), { recursive: true });
-    await writeIfChanged(outPath, raw);
+    // Re-serialized rather than copied verbatim, which is the change that closes
+    // the leak: a byte-for-byte copy publishes every plugin row in the file
+    // regardless of whether the timeline consented.
+    const published = stripFileForPublication(parsed as any, manifestFor);
+    await writeIfChanged(outPath, `${JSON.stringify(published, null, 2)}\n`);
     views.push({
       id: `src:${id}`,
       name: parsed.name || basename(id),

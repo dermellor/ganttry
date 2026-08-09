@@ -186,6 +186,27 @@ export const ROUTES: RouteDef[] = [
     ],
   },
   {
+    path: '/api/public/plugin/{pluginId}/{timelineId}',
+    pathParams: [
+      { name: 'pluginId', description: 'Plugin id, percent-encoded.' },
+      { name: 'timelineId', description: 'Timeline id. May contain slashes; it is the whole remaining path.' },
+    ],
+    public: true,
+    operations: [
+      {
+        method: 'GET',
+        summary: "A plugin's published collections, without authentication",
+        description: 'The generic replacement for a per-plugin public endpoint. Three gates must all pass: the instance has the plugin installed and switched on, the plugin was granted `public:read` and declares `publicRead` collections, and THIS timeline consented (`public` on its plugin entry, off by default). Every failure answers 404 — one status for all of them, because the endpoint is reachable by anyone and distinguishing „no such timeline" from „exists but is not published" would turn it into a probe for which timelines exist.\n\nNarrow with `?collection=<id>`; an undeclared collection answers 404. A query parameter rather than a path segment because a timeline id may contain slashes, which would make a trailing segment ambiguous.\n\nThe host always removes `version`, `updatedAt` and `updatedBy` from every row, whatever the plugin declared — `updatedBy` is an e-mail address. A `fields` projection in the manifest narrows further, as an allowlist.\n\nCacheable (`max-age=300`) and `Access-Control-Allow-Origin: *`, the same contract the pricing endpoint offers.',
+        responses: {
+          '200': { description: 'The published collections.', schema: { type: 'object', required: ['id', 'plugin', 'collections'], properties: { id: { type: 'string' }, name: { type: 'string' }, plugin: { type: 'string' }, config: { type: 'object' }, collections: { type: 'object', additionalProperties: { type: 'array', items: { type: 'object', required: ['id', 'data'], properties: { id: { type: 'string' }, data: { type: 'object' } } } } } } } },
+          '404': { description: 'not found — unknown plugin, switched off, nothing declared public, or this timeline has not consented. Deliberately indistinguishable.', schema: ERROR },
+          '405': { description: 'method not allowed — this endpoint is read-only.', schema: ERROR },
+          '503': { description: 'db_not_configured.', schema: ERROR },
+        },
+      },
+    ],
+  },
+  {
     path: '/api/plugins',
     operations: [
       {
