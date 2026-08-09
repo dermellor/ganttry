@@ -112,6 +112,31 @@ describe('pricingFromCollections', () => {
     assert.deepEqual(back.tiers.find((t) => t.id === 'pro')!.valueVersions, { calls: '2.0' });
   });
 
+  test("the host's lock counter arrives as rowVersion, and the domain version stays put", () => {
+    // Both are called „version" and they are different things: `data.version` is
+    // the „ab Version" label the user typed, the envelope's is the counter the
+    // form has to send back as If-Match. Without this the first edit after a load
+    // is a blind write, and a concurrent change is overwritten instead of
+    // answering 409.
+    const back = pricingFromCollections({
+      [FEATURES]: [{ id: 'a', data: { name: 'A', version: '2.0' }, version: 11 }],
+      [TIERS]: [{ id: 't', data: { name: 'T', price: '' }, version: 4 }],
+      [HIGHLIGHTS]: [{ id: 'h', data: { label: 'H', featureIds: ['a'] }, version: 2 }],
+    });
+    assert.equal(back.features[0].rowVersion, 11);
+    assert.equal(back.features[0].version, '2.0', 'the domain label survives the envelope');
+    assert.equal(back.tiers[0].rowVersion, 4);
+    assert.equal(back.highlights![0].rowVersion, 2);
+  });
+
+  test('a row without a counter yields no rowVersion at all', () => {
+    // A local file source keeps one version for the whole file, so a row can
+    // legitimately have none. `rowVersion: undefined` would be sent as If-Match
+    // by a caller doing `!= null` wrong; leaving the key off cannot be.
+    const back = pricingFromCollections({ [FEATURES]: [{ id: 'a', data: { name: 'A' } }] });
+    assert.ok(!('rowVersion' in back.features[0]));
+  });
+
   test('versions come from the config, not from a collection', () => {
     const data = collectionsFromPricing(MODEL);
     assert.equal(pricingFromCollections(data, []).versions, undefined);

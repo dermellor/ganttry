@@ -12,7 +12,7 @@
 
 import { escapeHtml } from '../../buildItems';
 import { state, setStatus } from '../../state';
-import { apiSetTierValue } from '../../editor';
+import { apiSetTierValue } from './api';
 import { anchorRect, layerFor } from './popover';
 import type { PricingTier } from '../../types';
 import { currentPricing } from './compose';

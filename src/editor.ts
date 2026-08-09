@@ -1,7 +1,5 @@
 import { dataUrl } from './data-base';
 import type {
-  PricingFeature,
-  PricingTier,
   SourceLive,
   TimelineFile,
   TimelineFileItem,
@@ -44,7 +42,7 @@ function handleSessionExpired(): never {
 }
 let sessionRedirectStarted = false;
 
-async function apiJson(res: Response): Promise<any> {
+export async function apiJson(res: Response): Promise<any> {
   if (res.status === 401) handleSessionExpired();
   const data = await res.json().catch(() => ({}));
   if (res.status === 409) throw new ConflictError((data as any).message || 'version conflict');
@@ -95,129 +93,6 @@ export async function apiPutPhases(sourceId: string, phases: TimelinePhase[]): P
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phases }),
-    }),
-  );
-}
-
-// Pricing is edited row-by-row through the granular endpoints (like items), not
-// as a whole-model blob — so a single feature edit no longer clobbers concurrent
-// changes. The browser edits the matrix (features, tiers, cells); highlights and
-// the version list are still authored via MCP.
-//
-// The optimistic-lock counter for a pricing entity is ALWAYS sent as If-Match and
-// never in the body: on a feature, `version` is the domain "available from" label,
-// not the lock counter (see the same note in scripts/db/api.ts).
-function lockHeaders(rowVersion?: number): Record<string, string> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (rowVersion != null) headers['If-Match'] = String(rowVersion);
-  return headers;
-}
-
-/**
- * Patch a single pricing feature with optimistic locking. `rowVersion` is the
- * feature's server-managed lock counter (sent as If-Match). Throws ConflictError
- * on a stale version. Returns the stored feature (with the bumped rowVersion).
- */
-export async function apiUpdateFeature(
-  sourceId: string,
-  featureId: string,
-  patch: Partial<PricingFeature>,
-  rowVersion?: number,
-): Promise<PricingFeature> {
-  return apiJson(
-    await fetch(`/api/source/${sourceId}/feature/${featureId}`, {
-      method: 'PATCH',
-      headers: lockHeaders(rowVersion),
-      body: JSON.stringify(patch),
-    }),
-  );
-}
-
-export async function apiDeleteFeature(sourceId: string, featureId: string): Promise<void> {
-  await apiJson(await fetch(`/api/source/${sourceId}/feature/${featureId}`, { method: 'DELETE' }));
-}
-
-/** Create a pricing feature; returns the stored row (with its rowVersion). */
-export async function apiAddFeature(sourceId: string, feature: PricingFeature): Promise<PricingFeature> {
-  return apiJson(
-    await fetch(`/api/source/${sourceId}/feature`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(feature),
-    }),
-  );
-}
-
-/**
- * Reposition a feature relative to exactly one anchor feature. The server holds
- * the `sort` column and renumbers, returning the resulting full id order — so the
- * caller adopts that rather than guessing at the new order itself.
- */
-export async function apiMoveFeature(
-  sourceId: string,
-  featureId: string,
-  anchor: { after?: string; before?: string },
-): Promise<string[]> {
-  const res = await apiJson(
-    await fetch(`/api/source/${sourceId}/feature-move`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ featureId, ...anchor }),
-    }),
-  );
-  return (res?.order ?? []) as string[];
-}
-
-/** Create a pricing tier (matrix column); returns the stored row. */
-export async function apiAddTier(sourceId: string, tier: PricingTier): Promise<PricingTier> {
-  return apiJson(
-    await fetch(`/api/source/${sourceId}/tier`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(tier),
-    }),
-  );
-}
-
-/** Patch a tier's Stammdaten with optimistic locking on its `rowVersion`. */
-export async function apiUpdateTier(
-  sourceId: string,
-  tierId: string,
-  patch: Partial<PricingTier>,
-  rowVersion?: number,
-): Promise<PricingTier> {
-  return apiJson(
-    await fetch(`/api/source/${sourceId}/tier/${tierId}`, {
-      method: 'PATCH',
-      headers: lockHeaders(rowVersion),
-      body: JSON.stringify(patch),
-    }),
-  );
-}
-
-export async function apiDeleteTier(sourceId: string, tierId: string): Promise<void> {
-  await apiJson(await fetch(`/api/source/${sourceId}/tier/${tierId}`, { method: 'DELETE' }));
-}
-
-/**
- * Write one matrix cell (tier × feature). A `false`/`null` value clears it. There
- * is no locking here on purpose: a cell is a single atomic value, so the server
- * keeps no rowVersion for it and two people editing different cells never
- * collide. `availableFrom` gates from which version the cell counts as included
- * (null = from the start).
- */
-export async function apiSetTierValue(
-  sourceId: string,
-  tierId: string,
-  featureId: string,
-  value: string | boolean | null,
-  availableFrom: string | null,
-): Promise<void> {
-  await apiJson(
-    await fetch(`/api/source/${sourceId}/tier-value`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tierId, featureId, value, availableFrom }),
     }),
   );
 }

@@ -31,6 +31,23 @@ type CellData = { tierId: string; featureId: string; value?: string | boolean; a
 const rows = (data: PluginCollectionData | undefined, collection: string): PluginDataRow[] =>
   data?.[collection] ?? [];
 
+/**
+ * The entity of one row: its id, its stored `data`, and the host's lock counter.
+ *
+ * `rowVersion` has to come out of the ENVELOPE rather than out of `data` — it is
+ * the host's counter, and a feature's own `version` field is the domain „ab
+ * Version" label. Carrying it is what lets a form send `If-Match` on the first
+ * edit after a load; without it every edit would be a blind write and a
+ * concurrent change would be overwritten silently instead of answering 409.
+ * It never travels back into storage (`collectionsFromPricing` drops it), so the
+ * round trip stays a fixed point.
+ */
+function entity<T>(row: PluginDataRow): T {
+  const out = compact({ id: row.id, ...(row.data as object) }) as Record<string, unknown>;
+  if (row.version != null) out.rowVersion = row.version;
+  return out as T;
+}
+
 /** Drop keys the plugin does not set, so a round trip does not grow `undefined`s. */
 function compact<T extends Record<string, unknown>>(obj: T): T {
   const out = {} as Record<string, unknown>;
@@ -78,23 +95,21 @@ export function pricingFromCollections(
   }
 
   const pricing: Pricing = {
-    features: rows(data, FEATURES).map((row) => compact({ id: row.id, ...(row.data as object) }) as PricingFeature),
+    features: rows(data, FEATURES).map((row) => entity<PricingFeature>(row)),
     tiers: rows(data, TIERS).map((row) => {
       // `values` is assigned AFTER compacting, and that is not a style choice:
       // `compact` drops empty objects (so an unused `nameByVersion` does not grow
       // back on every round trip), but `values` is a required field of
       // `PricingTier` that the renderer reads. A tier with no cells still has an
       // empty one, or the round trip loses it and the type is a lie.
-      const tier = compact({ id: row.id, ...(row.data as object) }) as PricingTier;
+      const tier = entity<PricingTier>(row);
       tier.values = valuesByTier.get(row.id) ?? {};
       const valueVersions = versionsByTier.get(row.id);
       if (valueVersions) tier.valueVersions = valueVersions;
       return tier;
     }),
   };
-  const highlights = rows(data, HIGHLIGHTS).map(
-    (row) => compact({ id: row.id, ...(row.data as object) }) as PricingHighlight,
-  );
+  const highlights = rows(data, HIGHLIGHTS).map((row) => entity<PricingHighlight>(row));
   if (highlights.length) pricing.highlights = highlights;
   if (versions.length) pricing.versions = versions;
   return pricing;
