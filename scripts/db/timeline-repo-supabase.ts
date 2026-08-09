@@ -196,7 +196,7 @@ export async function touchUser(db: SupabaseClient, email: string, name?: string
 // The same rows the directory above serves, read through the columns that decide
 // what a person may do. One table on purpose: see the migration's header.
 
-const MEMBER_SELECT = 'email, name, role, status, invited_by, invited_at, accepted_at, last_seen_at';
+const MEMBER_SELECT = 'email, name, role, status, invited_by, invited_at, accepted_at, invite_expires_at, last_seen_at';
 
 /** Row → `Member`, dropping nulls so an absent field is absent rather than null. */
 function toMember(r: Record<string, any>): Member {
@@ -205,6 +205,7 @@ function toMember(r: Record<string, any>): Member {
   if (r.invited_by != null) out.invitedBy = r.invited_by;
   if (r.invited_at != null) out.invitedAt = r.invited_at;
   if (r.accepted_at != null) out.acceptedAt = r.accepted_at;
+  if (r.invite_expires_at != null) out.inviteExpiresAt = r.invite_expires_at;
   if (r.last_seen_at != null) out.lastSeenAt = r.last_seen_at;
   return out;
 }

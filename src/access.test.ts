@@ -5,6 +5,7 @@ import {
   MEMBER_ROLES,
   MEMBER_STATUSES,
   capabilityForMethod,
+  decideSignIn,
   isActiveMember,
   maySignIn,
   memberCan,
@@ -140,4 +141,65 @@ test('the value lists and the union types cannot drift apart', () => {
   const statuses: readonly MemberStatus[] = MEMBER_STATUSES;
   assert.deepEqual([...roles], ['admin', 'editor', 'viewer']);
   assert.deepEqual([...statuses], ['invited', 'active', 'suspended', 'removed']);
+});
+
+// ---- sign-in decision -------------------------------------------------------
+
+const HOUR = 3600_000;
+const NOW = Date.parse('2026-08-09T12:00:00Z');
+
+test('a stranger is refused at the door', () => {
+  for (const absent of [null, undefined]) {
+    assert.deepEqual(decideSignIn(absent, NOW), { allow: false, reason: 'not_a_member' });
+  }
+});
+
+test('an active member signs in without accepting anything', () => {
+  assert.deepEqual(decideSignIn({ status: 'active' }, NOW), { allow: true, accept: false });
+});
+
+test('an invited member signs in, and that sign-in is the acceptance', () => {
+  assert.deepEqual(
+    decideSignIn({ status: 'invited', inviteExpiresAt: new Date(NOW + HOUR).toISOString() }, NOW),
+    { allow: true, accept: true },
+  );
+});
+
+test('an expired invitation is refused with its own reason', () => {
+  assert.deepEqual(
+    decideSignIn({ status: 'invited', inviteExpiresAt: new Date(NOW - 1).toISOString() }, NOW),
+    { allow: false, reason: 'invitation_expired' },
+  );
+});
+
+test('an invitation without a readable expiry is open-ended, not expired', () => {
+  // Refusing on „I cannot read this date" would turn a storage quirk into a
+  // lockout, and an invite created without an expiry is open by choice.
+  for (const expiry of [undefined, null, '', 'not-a-date']) {
+    assert.deepEqual(
+      decideSignIn({ status: 'invited', inviteExpiresAt: expiry }, NOW),
+      { allow: true, accept: true },
+      String(expiry),
+    );
+  }
+});
+
+test('suspended and removed each refuse with their own reason', () => {
+  assert.deepEqual(decideSignIn({ status: 'suspended' }, NOW), {
+    allow: false,
+    reason: 'membership_suspended',
+  });
+  assert.deepEqual(decideSignIn({ status: 'removed' }, NOW), {
+    allow: false,
+    reason: 'membership_removed',
+  });
+});
+
+test('an expiry left on an active row never refuses them', () => {
+  // Accepting clears it, but a row that skipped that path (a hand-written SQL
+  // fix, an older invite) must not lock somebody out months later.
+  assert.deepEqual(
+    decideSignIn({ status: 'active', inviteExpiresAt: new Date(NOW - 99 * HOUR).toISOString() }, NOW),
+    { allow: true, accept: false },
+  );
 });

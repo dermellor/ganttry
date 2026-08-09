@@ -217,7 +217,10 @@ are read from `process.env`, then `.env.local`, then any file named by
 | `TIMELINES_ALLOWED_EMAIL_DOMAINS` | `npm start` only, and only with the above. Comma-separated e-mail domains allowed through the gate, matched exactly (`example.com` does not admit `evil-example.com` or `mail.example.com`). Empty means any identity the proxy vouches for. |
 | `TIMELINES_SOURCES_SUBDIR` | Scope the local-source scan to `data/<subdir>/`. |
 | `VITE_JIRA_BASE_URL` | Public base URL for JIRA browse links. Empty renders keys as plain text. |
-| `AUTH_REQUIRED` / `ALLOWED_EMAIL_DOMAINS` | Netlify edge auth gate: `true` enables it; comma-separated allowed sign-in domains (empty = nobody passes). |
+| `AUTH_REQUIRED` / `ALLOWED_EMAIL_DOMAINS` | Netlify edge auth gate: `true` enables it; comma-separated allowed sign-in domains (empty = nobody passes). The domain list only decides while `TIMELINES_ACCESS_CONTROL` is off. |
+| `TIMELINES_ACCESS_CONTROL` | `true` makes the member list decide, both at sign-in and on every `/api/*` call: roles (`admin` / `editor` / `viewer`) and an invitation become the way in, and the domain list stops being consulted. Off by default, because an instance whose member list is not yet populated would refuse everybody. Needs a database. |
+| `TIMELINES_BOOTSTRAP_ADMIN` | With the above: the one address that becomes an admin on first sign-in, even against an empty member list. Without it a fresh instance has nobody who can invite. Keep it set — it is the instance's master key. |
+| `MCP_TOKEN_ROLE` | With the above: the role the `X-MCP-Token` service identity acts with, default `editor`. Set `viewer` for a read-only agent. |
 
 ## Deploy (Netlify)
 

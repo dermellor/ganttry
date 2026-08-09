@@ -78,6 +78,12 @@ export type Member = DirectoryUser & {
   invitedAt?: string;
   /** When the invitation was accepted, which is the first successful sign-in. */
   acceptedAt?: string;
+  /**
+   * When an outstanding invitation stops being accepted at sign-in. Absent once
+   * accepted: `setMemberStatus` clears it, so a stale expiry cannot later refuse
+   * somebody who is long since active.
+   */
+  inviteExpiresAt?: string;
   lastSeenAt?: string;
 };
 

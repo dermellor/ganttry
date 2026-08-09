@@ -116,6 +116,65 @@ export function normalizeMemberStatus(value: unknown): MemberStatus | undefined 
 }
 
 /**
+ * `TIMELINES_ACCESS_CONTROL`, parsed once so no runtime invents its own reading.
+ *
+ * Only the exact string `true` enables it. Anything else — unset, `false`, `1`,
+ * `yes`, a typo — leaves it off, because a switch that silently interprets is a
+ * switch nobody can reason about, and the safe reading of „I do not understand
+ * this value" is „behave as before" rather than „refuse everybody".
+ *
+ * It lives here rather than in the HTTP layer because the auth gate needs the
+ * same answer, and importing that module would drag both database drivers into
+ * an edge function that runs on every single request.
+ */
+export function accessControlEnabled(raw: string | undefined | null): boolean {
+  return raw === 'true';
+}
+
+/** Why a sign-in was refused. Each maps to its own line on the gate's error page. */
+export type SignInRefusal =
+  | 'not_a_member'
+  | 'membership_suspended'
+  | 'membership_removed'
+  | 'invitation_expired';
+
+export type SignInVerdict =
+  | { allow: true; /** Flip `invited` → `active`: this sign-in IS the acceptance. */ accept: boolean }
+  | { allow: false; reason: SignInRefusal };
+
+/** What the gate needs to decide a sign-in: the lifecycle, plus the invitation's clock. */
+export type SignInCandidate = { status: MemberStatus; inviteExpiresAt?: string | null };
+
+/**
+ * May this address complete a sign-in, and does doing so accept an invitation?
+ *
+ * Pure, and separate from the OAuth plumbing, because these five outcomes are
+ * the whole policy and they deserve a test each rather than a walk through a
+ * redirect flow. The identity provider has already proved the address by the
+ * time this is asked; all that is left is what our own records say.
+ *
+ * An expiry is only consulted for an `invited` row. An active member carries
+ * none (accepting clears it), and treating a leftover value as binding would
+ * lock out somebody who joined months ago.
+ */
+export function decideSignIn(member: SignInCandidate | null | undefined, nowMs: number): SignInVerdict {
+  if (!member) return { allow: false, reason: 'not_a_member' };
+  if (member.status === 'suspended') return { allow: false, reason: 'membership_suspended' };
+  if (member.status === 'removed') return { allow: false, reason: 'membership_removed' };
+  if (member.status === 'active') return { allow: true, accept: false };
+
+  // invited: the only state where the clock matters.
+  const expiry = member.inviteExpiresAt ? Date.parse(member.inviteExpiresAt) : NaN;
+  // An unparseable or absent expiry does NOT expire the invitation. An invite
+  // created without one is open-ended by choice, and refusing on „I cannot read
+  // this date" would turn a storage quirk into a lockout.
+  if (Number.isFinite(expiry) && expiry <= nowMs) {
+    return { allow: false, reason: 'invitation_expired' };
+  }
+  return { allow: true, accept: true };
+}
+
+/**
  * Would removing or demoting this member leave the instance with no admin?
  *
  * An instance without an admin cannot invite anybody, cannot restore anybody,

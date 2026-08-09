@@ -18,6 +18,35 @@
 
 import type { Context, Config } from '@netlify/edge-functions';
 import { sign, verify, nowSec, mustEnv, isAllowedDomain, firstAllowedDomain } from './_shared/session.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
+import { accessControlEnabled, decideSignIn } from '../../src/access.ts';
+import { getMember } from '../../scripts/db/timeline-repo-supabase.ts';
+
+/**
+ * May this Google identity get an MCP token?
+ *
+ * The same question the browser gate asks, answered the same way: the member
+ * list decides once TIMELINES_ACCESS_CONTROL is on, the domain list while it is
+ * off. A second rule here would mean an address refused in the browser could
+ * still drive the API from an agent.
+ *
+ * Unlike the browser gate this never ACCEPTS an invitation. Turning `invited`
+ * into `active` is what a first sign-in means, and doing it from a headless
+ * client would consume the invitation without the person ever seeing the
+ * instance. An invited-but-not-yet-active address is told to sign in first.
+ */
+async function mayIssueToken(email: string): Promise<boolean> {
+  if (!accessControlEnabled(Deno.env.get('TIMELINES_ACCESS_CONTROL'))) {
+    return isAllowedDomain(email);
+  }
+  const url = Deno.env.get('TIMELINES_SUPABASE_URL');
+  const key = Deno.env.get('TIMELINES_SUPABASE_SERVICE_KEY');
+  if (!url || !key) return false;
+  const db = createClient(url, key, { auth: { persistSession: false } });
+  const member = await getMember(db, email);
+  const verdict = decideSignIn(member, Date.now());
+  return verdict.allow && !verdict.accept;
+}
 
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
@@ -118,7 +147,9 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
     g.searchParams.set('redirect_uri', `${origin}/mcp-oauth/google-callback`);
     g.searchParams.set('response_type', 'code');
     g.searchParams.set('scope', 'openid email profile');
-    g.searchParams.set('hd', firstAllowedDomain());
+    // Only while the domain is what decides — see the browser gate's `hd` note.
+    const hint = accessControlEnabled(Deno.env.get('TIMELINES_ACCESS_CONTROL')) ? '' : firstAllowedDomain();
+    if (hint) g.searchParams.set('hd', hint);
     g.searchParams.set('prompt', 'select_account');
     g.searchParams.set('state', state);
     return Response.redirect(g.toString(), 302);
@@ -150,8 +181,8 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
     const uiRes = await fetch(GOOGLE_USERINFO, { headers: { Authorization: `Bearer ${access_token}` } });
     if (!uiRes.ok) return htmlError('Google-Userinfo fehlgeschlagen.');
     const { email } = (await uiRes.json()) as { email?: string };
-    if (!email || !isAllowedDomain(email)) {
-      return htmlError('Diese E-Mail-Domain ist nicht freigegeben.');
+    if (!email || !(await mayIssueToken(email))) {
+      return htmlError('Diese Adresse ist für diese Instanz nicht freigeschaltet.');
     }
 
     const authCode = await sign({
