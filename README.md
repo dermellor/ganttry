@@ -1,4 +1,4 @@
-# Ganttry
+# Zeitlines
 
 A generic, self-hostable timeline and roadmap viewer built on
 [vis-timeline](https://visjs.github.io/vis-timeline/). It renders items, groups,
@@ -60,18 +60,29 @@ npm run build && npm start                                             # 4. serv
 an **editable** deployment. `npm run dev` is for development; it serves the same
 API but through Vite, with a file watcher and no build step.
 
-**It has no authentication.** Anyone who can reach the port can edit, and every
-write is attributed to `self-hosted`. Put an authenticating reverse proxy in
-front (oauth2-proxy, Authelia, an SSO ingress) and tell the server which header
-carries the identity:
+**It brings no login of its own.** Put an authenticating reverse proxy in front
+(oauth2-proxy, Authelia, an SSO ingress) and tell the server which header carries
+the identity:
 
 ```bash
-TIMELINES_TRUSTED_IDENTITY_HEADER=X-Forwarded-Email npm start
+TIMELINES_TRUSTED_IDENTITY_HEADER=X-Forwarded-Email \
+TIMELINES_ALLOWED_EMAIL_DOMAINS=example.com \
+npm start
 ```
 
+That switches the gate on: the header's value becomes the edit's `updated_by`,
+and an `/api/*` request arriving **without** it is refused with `401` — so an
+origin reached directly, bypassing the proxy, is not editable. Leave the variable
+unset and the API is open to anyone who can reach the port; the server says which
+of the two modes it is in on every start.
+
 The header is only trustworthy if the proxy strips it from incoming client
-requests; the server cannot check that, which is why it stays opt-in and the
-startup log says which mode it is in.
+requests. The server cannot verify that, which is why naming it is an explicit
+decision rather than a sniff for a well-known name.
+
+Static files stay ungated either way. The bundle carries no timeline data, so an
+unauthenticated visitor gets an empty shell whose every request the API just
+refused.
 
 `db:migrate` is a portable runner (no Supabase CLI needed): it applies
 `supabase/migrations/*.sql` in order and tracks what has run. `npm run dev` checks
@@ -197,7 +208,8 @@ are read from `process.env`, then `.env.local`, then any file named by
 | `TIMELINES_DB_LIVE` | Overrides the live-update mode of DB sources: `poll` (watermark polling, works against any Postgres) or `realtime` (Supabase Realtime). Unset derives it from the configured backend, so a plain Postgres already polls. |
 | `TIMELINES_SERVE_PORT` / `TIMELINES_SERVE_HOST` | `npm start` only. Where the self-hosted server listens; defaults to `TIMELINES_PORT` (3120) on `127.0.0.1`. Bind to `0.0.0.0` only behind a proxy — the server has no auth of its own. |
 | `TIMELINES_DIST_DIR` | `npm start` only. The built site to serve, default `dist/`. |
-| `TIMELINES_TRUSTED_IDENTITY_HEADER` | `npm start` only. Name of the request header an authenticating proxy sets (e.g. `X-Forwarded-Email`); its value becomes the edit's `updated_by` and registers in the user directory. Unset means no identity and every edit is attributed to `self-hosted`. Only set this when the proxy strips the header from client requests. |
+| `TIMELINES_TRUSTED_IDENTITY_HEADER` | `npm start` only. Name of the request header an authenticating proxy sets (e.g. `X-Forwarded-Email`). Setting it **switches the gate on**: its value becomes the edit's `updated_by` and registers in the user directory, and an `/api/*` request arriving without it is refused (`401`). Unset leaves the API open to anyone who reaches the port. Only set this when the proxy strips the header from client requests. |
+| `TIMELINES_ALLOWED_EMAIL_DOMAINS` | `npm start` only, and only with the above. Comma-separated e-mail domains allowed through the gate, matched exactly (`example.com` does not admit `evil-example.com` or `mail.example.com`). Empty means any identity the proxy vouches for. |
 | `TIMELINES_SOURCES_SUBDIR` | Scope the local-source scan to `data/<subdir>/`. |
 | `VITE_JIRA_BASE_URL` | Public base URL for JIRA browse links. Empty renders keys as plain text. |
 | `AUTH_REQUIRED` / `ALLOWED_EMAIL_DOMAINS` | Netlify edge auth gate: `true` enables it; comma-separated allowed sign-in domains (empty = nobody passes). |
@@ -213,7 +225,7 @@ server.
 ## Contributing
 
 Issues and pull requests are welcome at
-<https://github.com/dermellor/ganttry/issues>. See
+<https://github.com/dermellor/zeitlines/issues>. See
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, the checks CI runs, and the
 conventions worth knowing. Contributing needs **no database**: local sources run
 on a plain `npm install && npm run dev`. Requires Node 22 or newer.

@@ -9,7 +9,7 @@ static deploy. Item writes go back into the note, one frontmatter key at a time;
 what is deliberately still missing is listed with each stage below, and id
 promotion („Staging" → stage 3) is the one design decision that was dropped.
 
-Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
 its file when it lives in another chapter.
 

@@ -1,4 +1,4 @@
-// Remote Ganttry MCP server — Streamable HTTP (Web Standard) on a Netlify
+// Remote Zeitlines MCP server — Streamable HTTP (Web Standard) on a Netlify
 // Function (Node runtime; the MCP SDK uses node: builtins). Exposes the timeline
 // tools over HTTP so colleagues add it as a remote MCP by URL — no local server.
 //

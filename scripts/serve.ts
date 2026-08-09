@@ -25,6 +25,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { toRequest, writeResponse } from './node-http.ts';
+import { decideAccess, parseDomains, type AccessConfig } from './access.ts';
 import { envValue, hydrateProcessEnv } from './db/env.ts';
 import { getSql, getSqlForSource } from './db/sql.ts';
 import { getServiceClient } from './db/client.ts';
@@ -39,22 +40,23 @@ const PORT = Number(envValue('TIMELINES_SERVE_PORT') || envValue('TIMELINES_PORT
 const HOST = envValue('TIMELINES_SERVE_HOST') || '127.0.0.1';
 
 /**
- * The identity behind an edit, taken from a header a proxy in front of us set.
+ * The access policy, read once. Naming a header both switches the gate on and
+ * says which header carries the identity — a header is only trustworthy if
+ * something upstream strips it from client requests, and this process cannot
+ * verify that, so it stays an explicit statement by the operator rather than a
+ * sniff for a well-known name.
  *
- * Opt-in by naming the header, and that is the whole security model: a header is
- * only trustworthy if something upstream strips it from client requests, which
- * this process cannot verify. Unset means every write is attributed to
- * `self-hosted` rather than silently trusting whatever a client sends — the
- * failure mode of sniffing for a well-known header is that anyone can claim to
- * be anyone.
+ * The decision itself is in `./access.ts`, pure and unit-tested.
  */
-const IDENTITY_HEADER = envValue('TIMELINES_TRUSTED_IDENTITY_HEADER')?.toLowerCase();
+const ACCESS: AccessConfig = {
+  identityHeader: envValue('TIMELINES_TRUSTED_IDENTITY_HEADER')?.toLowerCase() || undefined,
+  allowedDomains: parseDomains(envValue('TIMELINES_ALLOWED_EMAIL_DOMAINS')),
+};
 
-function callerFrom(req: IncomingMessage): { email: string; name?: string | null } | undefined {
-  if (!IDENTITY_HEADER) return undefined;
-  const raw = req.headers[IDENTITY_HEADER];
-  const email = (Array.isArray(raw) ? raw[0] : raw)?.trim();
-  return email ? { email } : undefined;
+function identityOf(req: IncomingMessage): string | undefined {
+  if (!ACCESS.identityHeader) return undefined;
+  const raw = req.headers[ACCESS.identityHeader];
+  return Array.isArray(raw) ? raw[0] : raw;
 }
 
 const dbConns = (): DbConnections => ({
@@ -134,10 +136,19 @@ const server = createServer((req, res) => {
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
       if (url.pathname.startsWith('/api/')) {
+        const access = decideAccess(url.pathname, identityOf(req), ACCESS);
+        if (!access.allow) {
+          res.writeHead(access.status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+          return void res.end(JSON.stringify({ error: access.error, detail: access.detail }));
+        }
+        const email = access.email;
         const ctx: ApiContext = {
           conns: dbConns(),
-          caller: callerFrom(req),
-          updatedBy: callerFrom(req)?.email ?? 'self-hosted',
+          caller: email ? { email } : undefined,
+          // Without a gate there is no identity to attribute to, and inventing
+          // one per request would make the audit panel lie. One honest label for
+          // "this deployment does not know who edits".
+          updatedBy: email ?? 'self-hosted',
           live: liveOverride(envValue('TIMELINES_DB_LIVE')),
         };
         const out = await handleApiRequest(await toRequest(req), ctx);
@@ -146,6 +157,11 @@ const server = createServer((req, res) => {
         return void res.end(JSON.stringify({ error: 'not found' }));
       }
 
+      // Static files are served ungated on purpose, even with the gate on. The
+      // built bundle carries no timeline data — every read goes through the API,
+      // which just refused — so all an ungated visitor gets is an empty shell
+      // that immediately errors. Gating it would also break the redirect dance
+      // of some proxies, which fetch assets before a session exists.
       const file = resolveStatic(url.pathname);
       if (!file) {
         res.writeHead(400);
@@ -180,9 +196,17 @@ server.listen(PORT, HOST, () => {
   );
   // Said every time on purpose. An unauthenticated editable deployment is a
   // decision, and it should not be one somebody makes by not reading a document.
-  console.log(
-    IDENTITY_HEADER
-      ? `[serve] identity: ${IDENTITY_HEADER} (trusted — your proxy MUST strip it from client requests)`
-      : '[serve] identity: none — every visitor can edit, and every edit is attributed to "self-hosted". Put an authenticating proxy in front, or keep this port private.',
-  );
+  if (ACCESS.identityHeader) {
+    const domains = ACCESS.allowedDomains?.length ? ACCESS.allowedDomains.join(', ') : 'any';
+    console.log(
+      `[serve] access: gated on ${ACCESS.identityHeader} (domains: ${domains}) — your proxy MUST strip that header from client requests`,
+    );
+  } else {
+    console.log(
+      '[serve] access: OPEN — every visitor can edit, and every edit is attributed to "self-hosted".',
+    );
+    console.log(
+      '[serve]         Set TIMELINES_TRUSTED_IDENTITY_HEADER behind an authenticating proxy, or keep this port private.',
+    );
+  }
 });

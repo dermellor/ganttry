@@ -1,4 +1,4 @@
-# Contributing to Ganttry
+# Contributing to Zeitlines
 
 Thanks for considering a contribution. This file covers what you need to get a
 change running and reviewed. [`AGENTS.md`](AGENTS.md) holds the conventions, the
@@ -108,4 +108,4 @@ capture.
 By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md), which
 fits on one screen.
 
-Issues and questions: <https://github.com/dermellor/ganttry/issues>.
+Issues and questions: <https://github.com/dermellor/zeitlines/issues>.

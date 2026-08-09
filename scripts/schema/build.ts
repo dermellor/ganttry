@@ -63,7 +63,7 @@ function generate(type: string, out: string): string {
     additionalProperties: false,
     topRef: true,
   }).createSchema(type);
-  return JSON.stringify({ $id: `https://ganttry.dev/${out}`, ...schema }, null, 2) + '\n';
+  return JSON.stringify({ $id: `https://zeitlines.dev/${out}`, ...schema }, null, 2) + '\n';
 }
 
 let failed = false;

@@ -171,7 +171,7 @@ export function escapeHtml(s: string): string {
 
 // ---------- MCP service-token bypass ----------
 //
-// Allows a headless client (the Ganttry MCP server) to pass the auth gate and
+// Allows a headless client (the Zeitlines MCP server) to pass the auth gate and
 // read/write sheet sources without an interactive Google login. The request
 // carries `X-MCP-Token: <MCP_API_TOKEN>`; sheet access then uses a stored
 // service refresh token instead of a per-user session token.

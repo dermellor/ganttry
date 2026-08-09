@@ -2,7 +2,7 @@
 
 The extension seams: where data comes from, and what a timeline renders.
 
-Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
 its file when it lives in another chapter.
 
@@ -144,7 +144,7 @@ the first removed field fails somewhere in the middle of a render.
 **The host API is async and serializable throughout**
 ([`src/pluginHost/hostApi.ts`](../src/pluginHost/hostApi.ts)), even though plugins
 currently run in the app's own realm where a direct call would be cheaper. The
-isolation decision is still open (<https://github.com/dermellor/ganttry/issues/14>),
+isolation decision is still open (<https://github.com/dermellor/zeitlines/issues/14>),
 and an API shaped around shared objects cannot be moved behind an iframe or a
 worker afterwards without rewriting every plugin. `createHostApi` gates by
 capability structurally: without `items:write` there is no item-write method to
@@ -153,7 +153,7 @@ call, rather than a check that refuses at call time.
 The contract is re-exported as one import from
 [`src/pluginHost/api.ts`](../src/pluginHost/api.ts), which pulls in no runtime code
 from the app. Publishing it as a package belongs with distribution
-(<https://github.com/dermellor/ganttry/issues/15>).
+(<https://github.com/dermellor/zeitlines/issues/15>).
 
 **A plugin declares its views; the host builds the chrome.** `PluginView` carries
 an id, a label and the icon markup for the header toggle. The host creates one
@@ -192,7 +192,7 @@ Adding a plugin is a `register()` call plus a `src/plugins/<id>/` folder, and no
 core-file change. The step-by-step is
 [`docs/plugin-playbook.md`](plugin-playbook.md); the endgame, where a plugin is
 installed at runtime instead of registered at build time, is
-<https://github.com/dermellor/ganttry/issues/9>.
+<https://github.com/dermellor/zeitlines/issues/9>.
 
 **Enablement is pure data (the plugin registry table).** Which plugins a timeline
 carries is **not** a column on a core table. It lives in the generic
@@ -221,7 +221,7 @@ version list lives in that plugin's `config.versions`. Adding a further plugin n
   MCP tools, the `pricing_*` tables + `assemblePricing` in `timeline-repo.ts`)
   stays in place, and so does `TimelineFile.pricing` in the core types: a plugin
   has no data channel of its own until the generic store lands
-  (<https://github.com/dermellor/ganttry/issues/12>), so moving them now would mean
+  (<https://github.com/dermellor/zeitlines/issues/12>), so moving them now would mean
   either breaking the pricing path or inventing a placeholder indirection. Tracked
-  as <https://github.com/dermellor/ganttry/issues/17>, which also removes the
+  as <https://github.com/dermellor/zeitlines/issues/17>, which also removes the
   option of leaving it that way.

@@ -1,10 +1,10 @@
-# Ganttry
+# Zeitlines
 
 Working notes for whoever changes this code, human or agent. It carries the
 conventions that apply to every change, the commands, and an index into the
 chapters. The reasoning behind a subsystem lives with that subsystem, in `docs/`.
 
-For what Ganttry *is* and how to run it, see [`README.md`](README.md); for how to
+For what Zeitlines *is* and how to run it, see [`README.md`](README.md); for how to
 get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Documentation map
@@ -59,7 +59,7 @@ subsystem and documented there.
 
 ## The name covers the product, not its vocabulary or its instances
 
-**Ganttry** is the product name. Three families of `timeline(s)` are deliberately
+**Zeitlines** is the product name. Three families of `timeline(s)` are deliberately
 left alone, and a sweep that "finishes the rename" breaks all three:
 
 - **Domain vocabulary.** A timeline is still called a timeline: the tables
@@ -165,7 +165,7 @@ working tree.
 
 Either way, the done-gate (rule 2) applies. If a change is too risky for `main`,
 gate it with a feature flag, not a long-lived branch. Issues live in this repo's
-own tracker (<https://github.com/dermellor/ganttry/issues>); reference them from
+own tracker (<https://github.com/dermellor/zeitlines/issues>); reference them from
 the closing commit with `Closes #NN`.
 
 ### 4. Everything written into the history is English
@@ -227,7 +227,7 @@ pass over several files.
 Instance values live **outside the repo**, one file per instance:
 
 ```
-~/.config/ganttry/instances/<name>.env
+~/.config/zeitlines/instances/<name>.env
 ```
 
 `.env.local` then carries only the name:

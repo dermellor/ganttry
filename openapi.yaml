@@ -2,7 +2,7 @@
 # Run `npm run openapi` after changing routes or src/types.ts.
 openapi: "3.1.0"
 info:
-  title: "Ganttry HTTP API"
+  title: "Zeitlines HTTP API"
   version: "0.1.0"
   description: |-
       Read and write timelines. Served identically by the Vite dev middleware and the deployed edge function: both dispatch through handleTimelineApi in scripts/db/api.ts.

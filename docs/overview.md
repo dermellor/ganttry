@@ -3,7 +3,7 @@
 How the pieces fit together. Every other chapter is thorough about one subsystem;
 this one is the map between them, and it is the place to start.
 
-Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
 its file when it lives in another chapter.
 

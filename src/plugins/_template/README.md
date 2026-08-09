@@ -1,7 +1,7 @@
 # <Plugin name>
 
 TEMPLATE. This file is the plugin's public page: GitHub serves it today, and the
-same markdown becomes a page under `ganttry.dev` later. Keep it portable, and keep
+same markdown becomes a page under `zeitlines.dev` later. Keep it portable, and keep
 metadata (name, summary, keywords) in the manifest rather than in front matter.
 
 Write it so an engine can quote it. Headings ask a question, the first line of each
