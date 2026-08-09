@@ -91,6 +91,21 @@ test('a malformed id is rejected before it reaches the dispatcher', async () => 
   }
 });
 
+test('the plugin namespace is exempt from the id charset rule', async () => {
+  // A scoped plugin id carries `@` and `/`, and a composite row id carries `:`
+  // and percent escapes, so the charset rule that keeps malformed timeline ids
+  // out would reject every legitimate one of them. The exemption is not a hole:
+  // the plugin id and the collection are checked against the installed
+  // manifest — an allowlist — and the row id by the store that holds it, and
+  // none of those segments ever becomes a path.
+  //
+  // Pinned because it broke silently once: the exemption lived in the dev
+  // server's own middleware, and moving the route into this layer dropped it.
+  // Every plugin write answered „invalid id" while every core route was fine.
+  const res = (await call('/api/source/plan/plugin/@acme%2Fsprints/entries/a%3Ab', undefined, withLocal()))!;
+  assert.notEqual(res.status, 400, 'the charset rule must not see the plugin segments');
+});
+
 test('dot segments never reach the router — the URL parser resolves them first', async () => {
   // Worth pinning: `..` in a request line is normalised away before any handler
   // sees it, so the id check is not what stops traversal here and must not be

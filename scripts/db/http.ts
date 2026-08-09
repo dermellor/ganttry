@@ -358,7 +358,16 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
   const parsed = parseSourcePath(path.replace(/^\/api\/source/, ''));
   if (!parsed) return json({ error: 'invalid path' }, 400);
 
-  const segs = [...parsed.id.split('/'), parsed.sub?.childId].filter(Boolean) as string[];
+  // The `/plugin/…` parts are deliberately exempt, and the exemption is not a
+  // hole: none of them ever becomes a path, and each is checked against something
+  // stricter than a charset — the plugin id and the collection against the
+  // installed manifest (an allowlist), the row id by the store that holds it. A
+  // charset rule would meanwhile reject legitimate values: a scoped plugin id
+  // carries `@` and `/`, and a composite row id carries `:` and percent escapes.
+  const segs = [
+    ...parsed.id.split('/'),
+    ...(parsed.sub?.plugin ? [] : [parsed.sub?.childId]),
+  ].filter(Boolean) as string[];
   if (!segs.every(isIdSegment)) return json({ error: `invalid id "${parsed.id}"` }, 400);
 
   // A local file answers for its own id whether or not a DB exists, so the
