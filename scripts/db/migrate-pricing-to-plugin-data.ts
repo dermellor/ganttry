@@ -14,6 +14,12 @@
 //   tsx scripts/db/migrate-pricing-to-plugin-data.ts            # dry run
 //   tsx scripts/db/migrate-pricing-to-plugin-data.ts --apply
 //
+// It covers BOTH source kinds, and that is a requirement rather than a courtesy:
+// #12 put the plugin store on the repo seam, so „migrated" has to mean migrated
+// wherever a pricing model lives. A run that moved only the database would leave
+// every `data/*.json` timeline behind, still readable and still un-editable, which
+// is the plugin staying special in a different place.
+//
 // **It does not drop anything.** The `pricing_*` tables stay exactly as they are,
 // which is what keeps the way back open while the new path proves itself in
 // production. Dropping them is a later, separate migration (issue #17).
@@ -22,8 +28,14 @@ import { PRODUCT_ROADMAP_PLUGIN } from '../../src/plugins/product-roadmap/plugin
 import { collectionsFromPricing, pricingFromCollections } from '../../src/plugins/product-roadmap/compose.ts';
 import { versionsFromConfig } from '../../src/plugins/product-roadmap/plugin.ts';
 import { resolveRepoFromEnv } from './repo-node.ts';
+import { makeFileRepo } from '../local/file-repo.ts';
+import { envValue } from './env.ts';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Pricing } from '../../src/types.ts';
 import type { TimelineRepo } from './repo.ts';
+
+const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 const APPLY = process.argv.includes('--apply');
 
@@ -93,24 +105,49 @@ async function migrateOne(repo: TimelineRepo, id: string): Promise<Report | null
   return { id, rows: rowCount, ok: true };
 }
 
-async function main(): Promise<void> {
-  const repo = resolveRepoFromEnv();
-  if (!repo) {
-    console.error('[migrate-pricing] no database configured (TIMELINES_DATABASE_URL, or the Supabase pair).');
-    process.exit(1);
-  }
+/** Every store this instance has, labelled so the report says where a row went. */
+function stores(): { label: string; repo: TimelineRepo }[] {
+  const out: { label: string; repo: TimelineRepo }[] = [];
+  const db = resolveRepoFromEnv();
+  if (db) out.push({ label: 'db', repo: db });
 
-  const timelines = await repo.listTimelines();
+  // The same two paths the dev server derives: `data/` anchors the ids, and a
+  // scoped instance narrows the scan. Always included — a checkout with no
+  // database still has local timelines to move.
+  const root = resolve(ROOT, 'data');
+  const subdir = envValue('TIMELINES_SOURCES_SUBDIR').replace(/^\/+|\/+$/g, '');
+  out.push({ label: 'local', repo: makeFileRepo({ root, scope: subdir ? resolve(root, subdir) : root }) });
+  return out;
+}
+
+async function main(): Promise<void> {
   const reports: Report[] = [];
-  for (const { id } of timelines) {
-    const report = await migrateOne(repo, id);
-    if (!report) continue;
-    reports.push(report);
-    const mark = report.ok ? 'ok  ' : 'FAIL';
-    console.log(`[migrate-pricing] ${mark} ${id}  ${report.rows} row(s)${report.detail ? `  — ${report.detail}` : ''}`);
-    // Stop at the first mismatch: continuing would write more rows on a
-    // composition that has already been shown to lose something.
-    if (!report.ok) break;
+  let aborted = false;
+
+  for (const { label, repo } of stores()) {
+    if (aborted) break;
+    let timelines: { id: string }[];
+    try {
+      timelines = await repo.listTimelines();
+    } catch (e) {
+      console.error(`[migrate-pricing] ${label}: could not list timelines: ${e instanceof Error ? e.message : e}`);
+      process.exit(1);
+    }
+    for (const { id } of timelines) {
+      const report = await migrateOne(repo, id);
+      if (!report) continue;
+      reports.push(report);
+      const mark = report.ok ? 'ok  ' : 'FAIL';
+      console.log(
+        `[migrate-pricing] ${mark} ${label}:${id}  ${report.rows} row(s)${report.detail ? `  — ${report.detail}` : ''}`,
+      );
+      // Stop at the first mismatch: continuing would write more rows on a
+      // composition that has already been shown to lose something.
+      if (!report.ok) {
+        aborted = true;
+        break;
+      }
+    }
   }
 
   const failed = reports.filter((r) => !r.ok);
