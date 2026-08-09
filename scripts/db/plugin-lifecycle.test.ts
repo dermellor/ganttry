@@ -49,7 +49,13 @@ function arrange(opts: { install?: boolean } = { install: true }) {
 
   const registry = (
     method: string,
-    o: { pluginId?: string; body?: unknown; params?: Record<string, string>; caller?: { email?: string | null; mcp?: boolean } } = {},
+    o: {
+      pluginId?: string;
+      body?: unknown;
+      params?: Record<string, string>;
+      caller?: { email?: string | null; mcp?: boolean };
+      allowedOrigins?: string[];
+    } = {},
   ) =>
     handlePluginsApi(store.repo, {
       method,
@@ -58,6 +64,7 @@ function arrange(opts: { install?: boolean } = { install: true }) {
       params: o.params,
       caller: o.caller ?? { email: 'alice@example.com' },
       operators: OPERATORS,
+      allowedOrigins: o.allowedOrigins,
     });
 
   const lifecycle = (method: string, pluginId: string, body?: unknown) =>
@@ -134,6 +141,59 @@ describe('the install registry: what it refuses to store', () => {
     const res = await registry('POST', { body: { manifest: DEMO, artifact: { kind: 'vendored' } } });
     assert.equal(res.status, 400);
     assert.match((res.json as { message: string }).message, /needs a source/);
+  });
+
+  test('an artifact from an origin the CSP does not allow is refused at install', async () => {
+    // Otherwise the row stores fine and the plugin is guaranteed never to load:
+    // the only symptom is a CSP violation in the console of whoever opens the app
+    // next, which is a place nobody looks. Found by installing one.
+    const { registry } = arrange({ install: false });
+    const res = await registry('POST', {
+      allowedOrigins: ['https://plugins.example.com'],
+      body: {
+        manifest: DEMO,
+        artifact: { kind: 'url', source: 'https://elsewhere.example/p.js', integrity: 'sha384-x' },
+      },
+    });
+    assert.equal(res.status, 400);
+    assert.equal((res.json as { error: string }).error, 'origin_not_allowed');
+    // The message has to name the variable AND the origin: „not allowed" alone
+    // sends an operator looking for a bug instead of a missing line of config.
+    assert.match((res.json as { message: string }).message, /PLUGIN_ALLOWED_ORIGINS/);
+    assert.match((res.json as { message: string }).message, /elsewhere\.example/);
+  });
+
+  test('an allowed origin installs, and a vendored artifact is never asked', async () => {
+    const { registry } = arrange({ install: false });
+    const allowed = await registry('POST', {
+      allowedOrigins: ['https://plugins.example.com'],
+      body: {
+        manifest: DEMO,
+        artifact: { kind: 'url', source: 'https://plugins.example.com/p.js', integrity: 'sha384-x' },
+      },
+    });
+    assert.equal(allowed.status, 201);
+
+    // Same-origin by construction, so the list does not apply to it.
+    const vendored = await registry('POST', {
+      allowedOrigins: [],
+      body: { manifest: DEMO, artifact: { kind: 'vendored', source: '/plugins/demo/index.js' } },
+    });
+    assert.equal(vendored.status, 201);
+  });
+
+  test('a runtime that supplies no origin list has no installs refused by it', async () => {
+    // „The runtime did not say" must not read as „nothing is allowed": a caller
+    // that cannot supply the list would otherwise be refused by a rule it cannot
+    // see or satisfy.
+    const { registry } = arrange({ install: false });
+    const res = await registry('POST', {
+      body: {
+        manifest: DEMO,
+        artifact: { kind: 'url', source: 'https://elsewhere.example/p.js', integrity: 'sha384-x' },
+      },
+    });
+    assert.equal(res.status, 201);
   });
 
   test('a url artifact without an integrity hash is refused: the version would name nothing', async () => {

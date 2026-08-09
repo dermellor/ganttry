@@ -20,6 +20,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { readSession, hasValidMcpToken } from './_shared/session.ts';
 import { resolveRepo, type DbConnections } from '../../scripts/db/api.ts';
 import { parseOperators } from '../../scripts/db/operator.ts';
+import { parseOrigins } from '../../src/pluginHost/csp.ts';
 import {
   accessControlEnabled,
   handleApiRequest,
@@ -94,6 +95,9 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
     // Who may install or uninstall a plugin instance-wide. A deployment
     // property, so it comes from the host's env rather than the member list.
     operators: parseOperators(Deno.env.get('PLUGIN_OPERATOR_EMAILS')),
+    // The same list the deploy's CSP is built from (scripts/build-data.ts), so
+    // „installed" and „fetchable" cannot disagree.
+    pluginOrigins: parseOrigins(Deno.env.get('PLUGIN_ALLOWED_ORIGINS')),
     serviceToken: mcp,
     live: liveOverride(Deno.env.get('TIMELINES_DB_LIVE')),
   });

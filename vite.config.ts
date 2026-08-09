@@ -251,6 +251,9 @@ function timelinesApi(): Plugin {
           // a configured allowlist here would make installing a plugin
           // untestable without one, and there is nobody else on this port.
           operators: parseOperators(envValue('PLUGIN_OPERATOR_EMAILS')),
+          // The same list the CSP below is built from, so „installed" and
+          // „fetchable" cannot disagree.
+          pluginOrigins: parseOrigins(envValue('PLUGIN_ALLOWED_ORIGINS')),
           serviceToken: true,
           live: liveOverride(process.env.TIMELINES_DB_LIVE),
         });

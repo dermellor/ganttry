@@ -89,6 +89,39 @@ data on the timeline — the same argument that put the generic store on the rep
 seam rather than in Postgres. On a local source the refs go into the file, or
 into a directory's `timeline.json`.
 
+## Where an artifact may come from
+
+An artifact that is fetched has to be **pinned** — a `url` install without an
+integrity hash is refused, because „version 1.2.0" would otherwise name whatever
+that URL serves today — and it has to come from an origin the instance's
+Content-Security-Policy allows:
+
+```bash
+PLUGIN_ALLOWED_ORIGINS=https://plugins.example.com
+```
+
+**The install refuses an origin that is not on the list**, and that ordering is
+the point rather than strictness. The policy is a response header, so it is
+deployment configuration; installing from an origin it does not allow stores a
+row that is guaranteed never to load, and the only symptom is a CSP violation in
+the console of whoever opens the app next. The registry knows the URL and the
+host knows its own policy, so the two questions are asked together. The refusal
+names the variable and the origin, because „not allowed" alone sends an operator
+looking for a bug instead of a missing line of configuration.
+
+Two kinds are never asked: a **vendored** artifact is served from the deploy's own
+origin by construction, and a **builtin** is not fetched at all. That is what makes
+the air-gapped path need no CSP change (`plugins/README.md`).
+
+A runtime that supplies no list at all has no installs refused by it. „The runtime
+did not say" must not read as „nothing is allowed", or a caller that cannot see
+the policy would be refused by a rule it cannot satisfy.
+
+**What a pin buys, demonstrated:** with the hash stored, changing the artifact's
+bytes at its origin makes the plugin refuse to load and the plugin panel say
+„der Code weicht von seiner Prüfsumme ab". Everything else on the page keeps
+working.
+
 ## Who may install
 
 Installing is not editing. It loads third-party code into every session of the

@@ -24,6 +24,7 @@ import { grants, validateManifest } from '../../src/pluginHost/manifest.ts';
 import { validateRow } from '../../src/pluginHost/dataSchema.ts';
 import { pluginStatus } from '../../src/pluginHost/installed.ts';
 import { mayPublish, projectCollections, publicCollections } from '../../src/pluginHost/publicRead.ts';
+import { originOf } from '../../src/pluginHost/csp.ts';
 import { installedPluginStatuses, makeManifestSource, type ManifestSource } from './plugin-manifests.ts';
 import { isOperator, operatorRefusal, type Caller } from './operator.ts';
 import {
@@ -504,6 +505,16 @@ export type PluginsApiRequest = {
   caller: Caller;
   /** The configured operator list, read from the env by the runtime glue. */
   operators: string[];
+  /**
+   * The origins this instance's Content-Security-Policy allows a plugin artifact
+   * to be fetched from (`PLUGIN_ALLOWED_ORIGINS`), read from the env by the
+   * runtime glue like `operators`.
+   *
+   * Undefined means „the runtime did not say", and the check below is skipped —
+   * a caller that cannot supply the list must not have installs refused by a
+   * rule it cannot see.
+   */
+  allowedOrigins?: string[];
 };
 
 /**
@@ -559,6 +570,30 @@ export async function handlePluginsApi(
         return err(400, 'invalid_request', {
           message: 'a url artifact needs an integrity hash, or the pinned version means nothing',
         });
+      }
+      // **Refused at install, not discovered in a browser console.** The
+      // Content-Security-Policy decides which origins an artifact may be fetched
+      // from, and it is deployment configuration: installing from an origin the
+      // policy does not allow stores a row that is guaranteed never to load, and
+      // the only symptom is a CSP violation in the console of whoever opens the
+      // app next. The registry knows the URL and the host knows its own policy,
+      // so the two questions are asked in the right order here.
+      //
+      // A vendored artifact is same-origin by construction and a builtin is not
+      // fetched at all, so neither is checked.
+      if ((kind === 'url' || kind === 'package') && req.allowedOrigins) {
+        const origin = originOf(artifact.source as string);
+        if (!origin) {
+          return err(400, 'invalid_request', { message: `„${artifact.source}" is not an absolute URL` });
+        }
+        if (!req.allowedOrigins.includes(origin)) {
+          return err(400, 'origin_not_allowed', {
+            message:
+              `this instance does not allow plugin artifacts from ${origin}. Add it to ` +
+              'PLUGIN_ALLOWED_ORIGINS and redeploy, then install again — the policy is a response ' +
+              'header, so it cannot be changed from here.',
+          });
+        }
       }
 
       // Capabilities are GRANTED, not claimed: the stored list is what the

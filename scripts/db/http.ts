@@ -81,6 +81,13 @@ export type ApiContext = {
    */
   operators?: string[];
   /**
+   * `PLUGIN_ALLOWED_ORIGINS`, already read from the runtime's own env — the
+   * origins this instance's CSP lets a plugin artifact be fetched from. Passing
+   * it is what lets an install from an unreachable origin be refused here rather
+   * than discovered as a CSP violation in somebody's console.
+   */
+  pluginOrigins?: string[];
+  /**
    * Did the caller present the service token rather than a session?
    *
    * It counts as operator access on purpose (see `isOperator`): the token is a
@@ -333,6 +340,7 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
       params: Object.fromEntries(url.searchParams),
       caller: { email: ctx.caller?.email ?? null, mcp: ctx.serviceToken },
       operators: ctx.operators ?? [],
+      allowedOrigins: ctx.pluginOrigins,
     });
     return json(result.json, result.status);
   }
