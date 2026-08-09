@@ -32,6 +32,18 @@
   function = "timelines-api"
   path = "/api/users"
 
+# The instance's plugin install registry. Instance-level rather than per timeline,
+# so it is a sibling of /api/sources. Declared here as well as in the function's
+# own `config.path`, because every other route in this deploy is declared here and
+# a route that only exists in one of the two places is the one that goes missing.
+[[edge_functions]]
+  function = "timelines-api"
+  path = "/api/plugins"
+
+[[edge_functions]]
+  function = "timelines-api"
+  path = "/api/plugins/*"
+
 # PUBLIC pricing model for external marketing pages (Astro). No auth (see
 # auth.ts excludedPath); serves only the pricing model, never roadmap items.
 [[edge_functions]]

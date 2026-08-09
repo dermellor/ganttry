@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { envValue } from './db/env.ts';
 import { scanDirectory, timelineDirectories } from './local/scan.ts';
+import { buildCsp, parseOrigins } from '../src/pluginHost/csp.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CONFIG_PATH = join(ROOT, 'timelines.config.json');
@@ -148,6 +149,30 @@ async function collectPlugins(): Promise<unknown[]> {
   }
 }
 
+/**
+ * Write the Content-Security-Policy into the build output.
+ *
+ * A `_headers` file rather than an edge function, so a static asset is still
+ * served by the host's CDN instead of routed through Deno for one header. The
+ * consequence is that changing the policy needs a redeploy — which for a security
+ * policy is arguably the right cost: you want that change reviewed and shipped,
+ * not flipped live.
+ *
+ * Two of the values come from the build's own environment because they already
+ * do: `VITE_SUPABASE_URL` is what the client opens its realtime socket to, and a
+ * `connect-src` that omitted it would break live updates in a way that looks like
+ * a broken database.
+ */
+async function writeHeaders(): Promise<void> {
+  const policy = buildCsp({
+    supabaseUrl: envValue('VITE_SUPABASE_URL') || undefined,
+    jiraUrl: envValue('VITE_JIRA_BASE_URL') || undefined,
+    pluginOrigins: parseOrigins(envValue('PLUGIN_ALLOWED_ORIGINS')),
+  });
+  const body = ['/*', `  Content-Security-Policy: ${policy}`, '  X-Content-Type-Options: nosniff', '  Referrer-Policy: same-origin', ''].join('\n');
+  await writeIfChanged(join(ROOT, 'public', '_headers'), body);
+}
+
 async function buildOnce(): Promise<void> {
   const config = await loadConfig();
   await mkdir(OUT_DIR, { recursive: true });
@@ -167,6 +192,7 @@ async function buildOnce(): Promise<void> {
   const defaultView = views.some((v: any) => v.id === declared)
     ? declared
     : ((views[0] as any)?.id ?? declared);
+  await writeHeaders();
   const plugins = await collectPlugins();
   const mergedConfig = { ...config, defaultView, views, plugins };
   const configOut = join(OUT_DIR, 'config.json');

@@ -9,6 +9,7 @@ import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbCo
 import { hasLocalTimeline, isLocalWritable, makeFileRepo } from './scripts/local/file-repo';
 import { handlePluginsApi } from './scripts/db/plugin-api';
 import { parseOperators } from './scripts/db/operator';
+import { buildCsp, parseOrigins } from './src/pluginHost/csp';
 
 // Runs while Vite loads this config, before it resolves `import.meta.env`.
 // Vite reads VITE_* from repo-local .env files and from process.env only, so
@@ -375,10 +376,21 @@ function timelinesApi(): Plugin {
   };
 }
 
+// The same policy the deploy ships (scripts/build-data.ts writes it to
+// `public/_headers`). Set here too, because a CSP that only exists in production
+// is a CSP nobody finds out they broke until after a deploy — and the thing it
+// most often breaks is a plugin, which is exactly what this repo is now building.
+const CSP = buildCsp({
+  supabaseUrl: envValue('VITE_SUPABASE_URL') || undefined,
+  jiraUrl: envValue('VITE_JIRA_BASE_URL') || undefined,
+  pluginOrigins: parseOrigins(envValue('PLUGIN_ALLOWED_ORIGINS')),
+});
+
 export default defineConfig({
   server: {
     port: PORT,
     strictPort: true,
+    headers: { 'Content-Security-Policy': CSP },
     watch: {
       // Worktrees live inside the checkout (`.claude/worktrees/<name>`), so the
       // dev server's watcher reaches into them and reloads the page whenever
