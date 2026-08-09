@@ -384,6 +384,26 @@ export function statusFor(view: View, build: BuildResult): string {
   return `${filtered.items.length} items in „${view.name}" · ${filtered.groups.length} groups${suffix}${datelessHint}`;
 }
 
+/**
+ * A load failure, stated in the content area rather than only in the footer.
+ *
+ * The status line is easy to miss next to an empty timeline, and „nothing is
+ * drawn" reads as a broken app. This puts the reason where the timeline would
+ * have been, which is where somebody is already looking.
+ */
+function showLoadFailure(message: string): void {
+  clearLoadFailure();
+  const box = document.createElement('div');
+  box.className = 'load-failure';
+  box.setAttribute('role', 'status');
+  box.textContent = message;
+  els.timeline.appendChild(box);
+}
+
+function clearLoadFailure(): void {
+  els.timeline.querySelector('.load-failure')?.remove();
+}
+
 export async function renderTimeline(view: View) {
   if (!state.config) return;
 
@@ -407,6 +427,7 @@ export async function renderTimeline(view: View) {
   // Cover the area for the duration of the fetch — a DB-backed source takes long
   // enough that an untouched timeline area reads as "this view is empty".
   showTimelineSkeleton(els.timeline);
+  clearLoadFailure();
 
   {
     try {
@@ -418,7 +439,12 @@ export async function renderTimeline(view: View) {
       // The load failed, so nothing is on its way any more; leaving the
       // placeholder up would promise a timeline that is never going to arrive.
       hideTimelineSkeleton(els.timeline);
-      setStatus(`Konnte Quelle ${view.source.id} nicht laden: ${err instanceof Error ? err.message : err}`);
+      const message = err instanceof Error ? err.message : String(err);
+      setStatus(`Konnte Quelle ${view.source.id} nicht laden: ${message}`);
+      // And say it where the eye actually is. The status line alone leaves a
+      // blank content area, which reads as „the app is broken" rather than as
+      // „this did not load" — the failure looked silent even though it was not.
+      showLoadFailure(message);
       return;
     }
     sourceId = view.source.id;
