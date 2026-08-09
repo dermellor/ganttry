@@ -392,12 +392,203 @@ body {
 .timeline {
   flex: 1;
   min-height: 0;
-  padding: 16px 24px;
+  /* Named because the loading placeholder below has to inset itself by exactly
+     this much; two hardcoded copies drift apart the first time the padding is
+     touched. */
+  --timeline-pad-y: 16px;
+  --timeline-pad-x: 24px;
+  padding: var(--timeline-pad-y) var(--timeline-pad-x);
+  /* Positioning context for that placeholder, which covers the timeline rather
+     than displacing it. Harmless for vis-timeline: its own overlays (dependency
+     arrows, phase band) attach inside `.vis-panel.vis-center`, which is
+     absolutely positioned itself and therefore keeps its offset parent. */
+  position: relative;
   overflow: hidden;
 }
 
 .timeline > .vis-timeline {
   height: 100% !important;
+}
+
+/* ========================================================
+ * Loading placeholder (src/timelineSkeleton.ts)
+ *
+ * A preview of the timeline's own structure while a source loads. It is an
+ * opaque overlay, not a sibling: on a view switch the previous timeline is
+ * still mounted (it gets destroyed only once the new data has arrived), and
+ * leaving the old chart visible under a placeholder claims the wrong content
+ * is loading.
+ * ======================================================== */
+
+.tl-skeleton {
+  /* One row height for both columns: a label stub and its bar are only level
+     while they read the same value. */
+  --tl-skeleton-row: 34px;
+  position: absolute;
+  inset: var(--timeline-pad-y) var(--timeline-pad-x);
+  display: grid;
+  /* 160px matches the cap on `.vis-labelset .vis-label .vis-inner` in
+     timeline.css, so the placeholder's label column sits where the real one
+     will and the layout does not shift when the timeline replaces it. */
+  grid-template-columns: 160px 1fr;
+  grid-template-rows: 34px 1fr;
+  grid-template-areas:
+    'corner axis'
+    'labels track';
+  /* The frame is lighter than the real timeline's `--border`, like everything
+     else in here: the placeholder should read as the shape of the chart, not as
+     a chart. */
+  border: 1px solid var(--grid-line, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  overflow: hidden;
+  /* Above everything the outgoing timeline paints. `.vis-timeline` is positioned
+     but has no z-index, so it opens no stacking context and its descendants
+     compete directly with this overlay: the dependency arrows (5, arrows.ts) and
+     vis's own layers (up to 10) otherwise draw straight through an opaque
+     placeholder, which looked like the previous view's arrows had survived into
+     the new one. */
+  z-index: 11;
+  /* Delayed fade-in: a local JSON source resolves in a few milliseconds, and a
+     placeholder that flashes for one frame is worse than none at all. */
+  opacity: 0;
+  animation: tl-skeleton-in 0.2s ease 0.15s forwards;
+}
+
+.tl-skeleton-axis {
+  grid-area: axis;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  border-bottom: 1px solid var(--grid-line, rgba(0, 0, 0, 0.08));
+  border-left: 1px solid var(--grid-line, rgba(0, 0, 0, 0.08));
+}
+
+.tl-skeleton-axis span {
+  width: 44px;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--grid-line, rgba(0, 0, 0, 0.08));
+}
+
+/* A grid rather than stacked blocks with vertical margins: adjacent margins
+   collapse, so a stub row ends up shorter than the track row it belongs to and
+   the two columns drift apart by a few pixels more with every row. */
+.tl-skeleton-labels {
+  grid-area: labels;
+  display: grid;
+  grid-auto-rows: var(--tl-skeleton-row);
+  align-content: start;
+}
+
+.tl-skeleton-labels span {
+  align-self: center;
+  height: 10px;
+  margin: 0 14px;
+  border-radius: 5px;
+  background: var(--hover, rgba(0, 0, 0, 0.06));
+}
+
+.tl-skeleton-labels span:nth-child(6n + 1) { width: 62%; }
+.tl-skeleton-labels span:nth-child(6n + 2) { width: 78%; }
+.tl-skeleton-labels span:nth-child(6n + 3) { width: 46%; }
+.tl-skeleton-labels span:nth-child(6n + 4) { width: 70%; }
+.tl-skeleton-labels span:nth-child(6n + 5) { width: 54%; }
+.tl-skeleton-labels span:nth-child(6n + 6) { width: 66%; }
+
+.tl-skeleton-track {
+  grid-area: track;
+  border-left: 1px solid var(--grid-line, rgba(0, 0, 0, 0.08));
+  /* The vertical rules under the axis ticks. */
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--grid-line, rgba(0, 0, 0, 0.08)) 0 1px,
+    transparent 1px 12.5%
+  );
+}
+
+.tl-skeleton-row {
+  position: relative;
+  height: var(--tl-skeleton-row);
+}
+
+/* Deliberately *unlike* a real item: no border, a pill radius instead of the
+   bar's 2px, and a heavily diluted lane tint. Drawn at item fidelity — lane
+   background plus lane border, 2px corners — the placeholder read as content
+   that had finished loading, and the eye starts reading labels that are not
+   there. It only has to carry rhythm and lane colour. */
+.tl-skeleton-bar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 14px;
+  border-radius: 7px;
+  /* Plain tint first for anything without color-mix: too saturated, but a
+     visible bar beats an invisible one. */
+  background: var(--tl-skeleton-lane);
+  background: color-mix(in srgb, var(--tl-skeleton-lane) 38%, var(--surface, #fff));
+}
+
+.tl-skeleton-point {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: var(--mark-radius, 50%);
+  background: var(--tl-skeleton-dot);
+  background: color-mix(in srgb, var(--tl-skeleton-dot) 26%, var(--surface, #fff));
+}
+
+/* One pair of tints per row; the dilution above is stated once rather than
+   twelve times, so the whole placeholder gets lighter or heavier from a single
+   number. */
+.tl-skeleton-row:nth-child(6n + 1) { --tl-skeleton-lane: var(--lane-0-bg); --tl-skeleton-dot: var(--lane-0-border); }
+.tl-skeleton-row:nth-child(6n + 2) { --tl-skeleton-lane: var(--lane-1-bg); --tl-skeleton-dot: var(--lane-1-border); }
+.tl-skeleton-row:nth-child(6n + 3) { --tl-skeleton-lane: var(--lane-2-bg); --tl-skeleton-dot: var(--lane-2-border); }
+.tl-skeleton-row:nth-child(6n + 4) { --tl-skeleton-lane: var(--lane-3-bg); --tl-skeleton-dot: var(--lane-3-border); }
+.tl-skeleton-row:nth-child(6n + 5) { --tl-skeleton-lane: var(--lane-4-bg); --tl-skeleton-dot: var(--lane-4-border); }
+.tl-skeleton-row:nth-child(6n + 6) { --tl-skeleton-lane: var(--lane-5-bg); --tl-skeleton-dot: var(--lane-5-border); }
+
+/* The sweep that marks the whole thing as busy. One moving highlight over the
+   assembled placeholder, rather than an animation per element: six pulsing
+   bars read as content that is arriving one row at a time. */
+.tl-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* A faint accent wash rather than the usual white highlight: the placeholder
+     is nearly white itself now, so a lighter sweep would have nothing left to
+     brighten. */
+  background: linear-gradient(
+    100deg,
+    transparent 35%,
+    color-mix(in srgb, var(--accent, #2f0d5b) 5%, transparent) 50%,
+    transparent 65%
+  );
+  transform: translateX(-100%);
+  animation: tl-skeleton-sweep 1.9s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes tl-skeleton-in {
+  to { opacity: 1; }
+}
+
+@keyframes tl-skeleton-sweep {
+  to { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tl-skeleton {
+    opacity: 1;
+    animation: none;
+  }
+
+  .tl-skeleton::after {
+    animation: none;
+    background: none;
+  }
 }
 
 .app-footer {

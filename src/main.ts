@@ -59,6 +59,7 @@ import {
   showOnlyPluginSection,
 } from './pluginHost/views';
 import { dataUrl } from './data-base';
+import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -230,6 +231,11 @@ async function handleExport() {
 
 async function bootstrap() {
   setStatus('Lade Konfiguration…');
+  // Before the config and the user directory are even in, so the first painted
+  // frame shows the placeholder rather than an empty area. renderTimeline()
+  // keeps it up for its own source fetch and takes it down when the chart is
+  // built, which makes the two loads read as one.
+  showTimelineSkeleton(els.timeline);
 
   const [cfg, currentUser] = await Promise.all([
     loadConfig(),
@@ -393,5 +399,8 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
 
 bootstrap().catch((err) => {
   console.error(err);
+  // Same reason as in renderTimeline's load failure: a placeholder that outlives
+  // the load it stands for keeps promising a timeline that is not coming.
+  hideTimelineSkeleton(els.timeline);
   setStatus(`Fehler: ${err instanceof Error ? err.message : String(err)}`);
 });

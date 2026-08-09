@@ -483,6 +483,39 @@ active state driven by `aria-pressed`) switches between two renderings of the
   Owner. Phase background items are omitted. The milestones-only filter applies
   here too.
 
+### Loading placeholder
+
+Until a source has been fetched, the timeline area carries a placeholder drawn by
+[`src/timelineSkeleton.ts`](../src/timelineSkeleton.ts): a label column, an axis,
+and staggered bars and milestone dots in the lane colours. It goes up in
+`bootstrap()` (before the config is even in) and again at the top of
+`renderTimeline()`, and comes down the moment the vis-timeline is constructed, so
+the config fetch and the source fetch read as one wait rather than two.
+
+Three of its properties are load-bearing, and each replaces something that was
+visibly wrong without it:
+
+- **It previews the structure rather than spinning.** What it replaces is an
+  empty white area, which says „this timeline has no items" instead of „still
+  loading"; the only signal to the contrary sat in the footer status line at the
+  other end of the window.
+- **It stays well below item fidelity, on purpose.** Borderless pills in a
+  heavily diluted lane tint, on a grid drawn in `--grid-line` rather than
+  `--border`. A first version painted the bars the way real ones look — lane
+  background, lane border, 2px corners — and it read as a timeline that had
+  finished loading, which starts the eye looking for labels that are not there.
+  All the placeholder owes the user is the rhythm and the lane colours; the
+  dilution is one number in `.tl-skeleton-bar`.
+- **It is an opaque overlay above the outgoing timeline** (`z-index: 11`,
+  `.tl-skeleton` in [`src/styles/base.css`](../src/styles/base.css)), not a
+  sibling. A view switch destroys the previous timeline only *after* the new data
+  has arrived, and `.vis-timeline` opens no stacking context — so without that
+  z-index the previous view's dependency arrows draw straight through the
+  placeholder.
+- **It comes down on failure too.** Both load paths remove it before they report
+  the error, because a placeholder that outlives its load keeps promising a
+  timeline that is not coming.
+
 ### Shared toolbar: Gruppieren + Filter
 
 A single toolbar (`#view-toolbar`, styled `.view-toolbar` in
