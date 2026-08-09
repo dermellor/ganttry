@@ -97,8 +97,8 @@ const TAB_ICONS = {
 } as const;
 
 const FORM_TABS = [
-  { id: 'time', label: 'Date & Time' },
   { id: 'props', label: 'Properties' },
+  { id: 'time', label: 'Date & Time' },
   { id: 'rel', label: 'Relationships' },
 ] as const;
 type FormTabId = (typeof FORM_TABS)[number]['id'];
@@ -113,7 +113,7 @@ function tabIconHtml(id: FormTabId): string {
 
 // Remembered across form rebuilds so clicking through items keeps the tab the
 // user is working in.
-let activeFormTab: FormTabId = 'time';
+let activeFormTab: FormTabId = 'props';
 
 // The item form's id. Needed as a real id because the header pickers live
 // outside the form and associate with it via their `form` attribute.
@@ -462,23 +462,6 @@ export function showItemForm(
       <input id="f-content" name="content" type="hidden" value="${escapeHtml(item.content ?? '')}" />
       ${tabStripHtml()}
       ${panelHtml(
-        'time',
-        `
-      <div class="field">
-        <label for="f-start">Start</label>
-        <input id="f-start" name="start" type="date" value="${isoDateOnly(item.start)}" />
-      </div>
-      <div class="field">
-        <label for="f-end">End</label>
-        <input id="f-end" name="end" type="date" value="${isoDateOnly(item.end ?? '')}" />
-      </div>
-      <div class="field">
-        <label for="f-duration">Duration</label>
-        <input id="f-duration" name="duration" value="${escapeHtml(typeof item.duration === 'string' ? item.duration : item.duration != null ? String(item.duration) : '')}" placeholder="nur ohne End-Datum" />
-      </div>
-      <p class="field-error" data-role="extent-error" role="alert" hidden></p>`,
-      )}
-      ${panelHtml(
         'props',
         `
       <div class="field">
@@ -519,6 +502,23 @@ export function showItemForm(
           <textarea id="f-meta" name="metadata" rows="3" placeholder='{"key": "value"}'>${escapeHtml(metaJson)}</textarea>
         </div>
       </details>`,
+      )}
+      ${panelHtml(
+        'time',
+        `
+      <div class="field">
+        <label for="f-start">Start</label>
+        <input id="f-start" name="start" type="date" value="${isoDateOnly(item.start)}" />
+      </div>
+      <div class="field">
+        <label for="f-end">End</label>
+        <input id="f-end" name="end" type="date" value="${isoDateOnly(item.end ?? '')}" />
+      </div>
+      <div class="field">
+        <label for="f-duration">Duration</label>
+        <input id="f-duration" name="duration" value="${escapeHtml(typeof item.duration === 'string' ? item.duration : item.duration != null ? String(item.duration) : '')}" placeholder="nur ohne End-Datum" />
+      </div>
+      <p class="field-error" data-role="extent-error" role="alert" hidden></p>`,
       )}
       ${panelHtml(
         'rel',

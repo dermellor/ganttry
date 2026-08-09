@@ -376,23 +376,25 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
   it (both outside the tabs, see below); the remaining fields are split across
   three tabs ([`src/itemForm.ts`](../src/itemForm.ts), `FORM_TABS`), with the Delete
   button + audit footer below the tabstrip so they stay reachable from any tab:
-  - **Date & Time** — start, end, duration (a Meilenstein has no extent, so
-    picking that type mutes end/duration). The two date pickers are bounded
-    against each other so they can't cross, and a reversed pair typed in anyway is
-    refused with a status-line message — see „An item's `end` must lie after its
-    `start`".
   - **Properties** — group, owner (a user picker, see „Item owner" (docs/items.md)), body
     (Markdown), tags, and the per-timeline
     custom fields. The free-form metadata JSON box sits behind an „Erweitert"
     `<details>` disclosure, collapsed unless the item actually carries extra
     metadata.
+  - **Date & Time** — start, end, duration (a Meilenstein has no extent, so
+    picking that type mutes end/duration). The two date pickers are bounded
+    against each other so they can't cross, and a reversed pair typed in anyway is
+    refused with a status-line message — see „An item's `end` must lie after its
+    `start`".
   - **Relationships** — dependencies (`dependsOn`) and JIRA links.
 
   All panels stay in the DOM (inactive ones just `hidden`), so `FormData` keeps
   seeing every field and `applyItemForm` / the persist diff need no knowledge of
-  the tabs. The chosen tab is remembered across item switches (module-level
-  `activeFormTab`, not persisted across reloads). Save writes back; Delete removes
-  the item.
+  the tabs. Tab-strip order and panel order in the markup are kept in sync, since
+  roving-tabindex and reading order both follow the DOM. The chosen tab is
+  remembered across item switches (module-level `activeFormTab`, which starts on
+  Properties — the leftmost tab — and is not persisted across reloads). Save
+  writes back; Delete removes the item.
 
   **The panel headline IS the title editor.** The form used to repeat the title
   in a labelled input directly under the heading — the same string twice, one of
