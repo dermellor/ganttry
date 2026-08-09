@@ -285,13 +285,17 @@ body {
   display: none;
 }
 
-/* The host renders a plugin into a detached element and swaps it in when the
-   call settles (pluginHost/views.ts), so there is one wrapper between the section
+/* The host renders a plugin into a detached element and swaps it in when the call
+   settles (pluginHost/renderView.ts), so there is one wrapper between the section
    and whatever the plugin painted. It has to be transparent to layout, or a view
    that used to size itself against `.plugin-view`'s flex column suddenly cannot:
    the wrapper would resolve min-height:auto to min-content and the view would
-   overflow the viewport instead of scrolling inside its section. */
-.plugin-view-body {
+   overflow the viewport instead of scrolling inside its section.
+
+   Selected as „the section's child", not by the class the host puts on it: a
+   plugin is handed that element and may set `className` on it, which would drop
+   the class and take the layout with it — silently, and only for that plugin. */
+.plugin-view > * {
   flex: 1;
   min-height: 0;
   display: flex;
