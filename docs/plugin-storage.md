@@ -35,7 +35,7 @@ backing store:
 
 | Source | Where a plugin's rows live |
 | --- | --- |
-| `db` | the `plugin_data` table (migration `0016`) |
+| `db` | the `plugin_data` table (migration `0019`) |
 | `local`, JSON file | a `pluginData` section in the very file the user owns |
 | `local`, directory | the same section in its `timeline.json` |
 

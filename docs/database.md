@@ -284,7 +284,7 @@ lives with the plugin, and a CI check keeps it there.
   longer means rewriting the whole timeline — which was the path that lost a
   concurrent edit. The config is validated against the plugin's declared
   `configSchema` on write. See [`plugin-lifecycle.md`](plugin-lifecycle.md).
-- **Installed (instance level).** `installed_plugins` (migration 0017) plus
+- **Installed (instance level).** `installed_plugins` (migration 0020) plus
   `/api/plugins`, which is what makes „install a plugin" a row rather than a new
   build.
 

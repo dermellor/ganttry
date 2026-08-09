@@ -41,7 +41,7 @@ it into a probe for which timelines exist — and the id is often a customer nam
 
 A plugin being on does not mean the world may read it: plenty of timelines carry a
 pricing model that is not meant to be public. The consent lives on
-`timeline_plugins` (migration `0018`) for a `db` source and as `public` on the
+`timeline_plugins` (migration `0021`) for a `db` source and as `public` on the
 `PluginRef` in the file for a local one — the same granularity the decision has,
 in the place both source kinds already mirror.
 

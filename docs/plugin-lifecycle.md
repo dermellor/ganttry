@@ -11,7 +11,7 @@ For where a plugin's *data* lives, read
 
 | | Where it lives | What it means |
 | --- | --- | --- |
-| **Installed** | `installed_plugins` (migration 0017) | this instance has the plugin's code and granted it capabilities |
+| **Installed** | `installed_plugins` (migration 0020) | this instance has the plugin's code and granted it capabilities |
 | **Enabled** | `timeline_plugins` (migration 0012) | this one timeline uses it, with this config |
 
 A plugin has to be installed before it can be enabled anywhere, and disabling it
