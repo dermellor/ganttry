@@ -781,14 +781,43 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
 
     // ---- a plugin's enablement on one timeline -----------------------------
 
-    async setTimelinePlugin(id: string, pluginId: string, config: Record<string, unknown>): Promise<void> {
+    async setTimelinePlugin(
+      id: string,
+      pluginId: string,
+      config: Record<string, unknown>,
+      options: { public?: boolean } = {},
+    ): Promise<void> {
       const loaded = await loadForWrite(dirs, id);
       const plugins = [...(loaded.file.plugins ?? [])];
       const at = plugins.findIndex((p) => p.id === pluginId);
-      const ref: PluginRef = Object.keys(config ?? {}).length ? { id: pluginId, config } : { id: pluginId };
+      // Saying nothing about `public` keeps whatever the file already said:
+      // reconfiguring a plugin is not consent to change who may read it.
+      const isPublic = options.public ?? (at >= 0 ? plugins[at].public === true : false);
+      const ref: PluginRef = { id: pluginId };
+      if (Object.keys(config ?? {}).length) ref.config = config;
+      if (isPublic) ref.public = true;
       if (at >= 0) plugins[at] = ref;
       else plugins.push(ref);
       await persist(loaded, { ...loaded.file, plugins });
+    },
+
+    async getTimelinePlugin(
+      id: string,
+      pluginId: string,
+    ): Promise<{ timelineName?: string; config: Record<string, unknown>; public: boolean } | null> {
+      let loaded: Loaded;
+      try {
+        loaded = await load(dirs, id);
+      } catch {
+        return null;
+      }
+      const ref = (loaded.file.plugins ?? []).find((p) => p.id === pluginId);
+      if (!ref) return null;
+      return {
+        ...(loaded.file.name ? { timelineName: loaded.file.name } : {}),
+        config: ref.config ?? {},
+        public: ref.public === true,
+      };
     },
 
     async removeTimelinePlugin(id: string, pluginId: string): Promise<void> {

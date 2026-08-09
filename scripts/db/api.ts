@@ -489,6 +489,21 @@ function decodePart(part: string): string {
   }
 }
 
+/**
+ * Parse `/api/public/plugin/<pluginId>/<timelineId…>`.
+ *
+ * The timeline id is the whole tail and may contain slashes; the collection, when
+ * one is wanted, is the `collection` query parameter. A trailing path segment
+ * would be ambiguous against a namespaced id — see `handlePublicPluginApi`.
+ */
+export function parsePublicPluginPath(pathname: string): { pluginId: string; timelineId: string } | null {
+  const rest = pathname.replace(/^\/api\/public\/plugin\/?/, '').replace(/^\/+|\/+$/g, '');
+  if (!rest) return null;
+  const [rawPlugin, ...tail] = rest.split('/');
+  if (!rawPlugin || !tail.length) return null;
+  return { pluginId: decodePart(rawPlugin), timelineId: tail.join('/') };
+}
+
 /** Parse a `/api/source/<id>[/<subkind>[/<childId>]]` path into id + sub. */
 export function parseSourcePath(path: string): { id: string; sub?: ApiRequest['sub'] } | null {
   const clean = path.replace(/^\/+|\/+$/g, '');

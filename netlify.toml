@@ -46,9 +46,18 @@
 
 # PUBLIC pricing model for external marketing pages (Astro). No auth (see
 # auth.ts excludedPath); serves only the pricing model, never roadmap items.
+# Kept as-is while product-roadmap's data still lives in the pricing_* tables;
+# see docs/plugin-public-read.md → „What happens to /api/pricing".
 [[edge_functions]]
   function = "pricing-api"
   path = "/api/pricing/*"
+
+# The GENERIC public read, for any plugin that declares publicRead and any
+# timeline that consented. Served by timelines-api because it needs exactly the
+# same driver setup — a second function would be the duplication this replaces.
+[[edge_functions]]
+  function = "timelines-api"
+  path = "/api/public/plugin/*"
 
 # Current-user probe for the header presence badge. Runs after auth, so it only
 # sees a session when the gate is active.

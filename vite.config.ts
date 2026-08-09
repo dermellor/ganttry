@@ -5,10 +5,11 @@ import { envSourcesHint, envValue, hydrateProcessEnv } from './scripts/db/env';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
 import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
-import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
+import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, parsePublicPluginPath, type DbConnections, type ApiRequest } from './scripts/db/api';
 import { hasLocalTimeline, isLocalWritable, makeFileRepo } from './scripts/local/file-repo';
-import { handlePluginsApi } from './scripts/db/plugin-api';
+import { handlePluginsApi, handlePublicPluginApi } from './scripts/db/plugin-api';
 import { parseOperators } from './scripts/db/operator';
+import { makeManifestSource } from './scripts/db/plugin-manifests';
 import { buildCsp, parseOrigins } from './src/pluginHost/csp';
 
 // Runs while Vite loads this config, before it resolves `import.meta.env`.
@@ -236,6 +237,35 @@ function timelinesApi(): Plugin {
         if (!hasDb(conns) && !conns.local) return send(res, 200, { sources: [] });
         try {
           const result = await resolveAdapter(conns, '').handle({ method: 'GET', id: '' });
+          send(res, result.status, result.json);
+        } catch (err) {
+          send(res, 500, { error: 'server_error', message: String(err) });
+        }
+      });
+
+      // /api/public/plugin/<pluginId>/<timelineId> — PUBLIC, no auth.
+      //
+      // The generic replacement for the bespoke pricing endpoint: any installed
+      // plugin can publish, and none of them needs an endpoint of its own. Three
+      // gates decide, and every failure is a 404 — see handlePublicPluginApi.
+      server.middlewares.use('/api/public/plugin', async (req, res, next) => {
+        const url = new URL(req.url ?? '/', 'http://localhost');
+        const parsed = parsePublicPluginPath(`/api/public/plugin${url.pathname}`);
+        if (!parsed) return next();
+        const conns = dbConns();
+        const repo = resolveRepo(conns) ?? conns.local?.repo;
+        if (!repo) return send(res, 503, { error: 'db_not_configured' });
+        try {
+          const result = await handlePublicPluginApi(repo, makeManifestSource(repo), {
+            method: req.method ?? 'GET',
+            pluginId: parsed.pluginId,
+            timelineId: parsed.timelineId,
+            collection: url.searchParams.get('collection') ?? undefined,
+          });
+          // Same headers the pricing endpoint has always sent: public, cacheable,
+          // cross-origin. Consumers fetch this at build time from another site.
+          res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=300');
+          res.setHeader('Access-Control-Allow-Origin', '*');
           send(res, result.status, result.json);
         } catch (err) {
           send(res, 500, { error: 'server_error', message: String(err) });

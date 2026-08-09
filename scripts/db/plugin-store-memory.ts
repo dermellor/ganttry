@@ -51,7 +51,7 @@ export function makeMemoryStore(): MemoryStore {
   // The install registry and per-timeline enablement, so the lifecycle handlers
   // can be tested against the same faithful double.
   const installed = new Map<string, InstalledPlugin>();
-  const enabled = new Map<string, Map<string, Record<string, unknown>>>();
+  const enabled = new Map<string, Map<string, { config: Record<string, unknown>; public: boolean }>>();
   const timelines = new Set<string>();
 
   const repo = {
@@ -74,16 +74,32 @@ export function makeMemoryStore(): MemoryStore {
     },
     async getTimeline(timelineId: string) {
       if (!timelines.has(timelineId)) return null;
-      const refs = [...(enabled.get(timelineId) ?? new Map())].map(([id, config]) =>
-        Object.keys(config).length ? { id, config } : { id },
-      );
+      const refs = [...(enabled.get(timelineId) ?? new Map())].map(([id, entry]) => ({
+        id,
+        ...(Object.keys(entry.config).length ? { config: entry.config } : {}),
+        ...(entry.public ? { public: true } : {}),
+      }));
       return { items: [], ...(refs.length ? { plugins: refs } : {}) } as TimelineFile;
     },
-    async setTimelinePlugin(timelineId: string, pluginId: string, config: Record<string, unknown>) {
+    async setTimelinePlugin(
+      timelineId: string,
+      pluginId: string,
+      config: Record<string, unknown>,
+      options: { public?: boolean } = {},
+    ) {
       if (!timelines.has(timelineId)) throw new NotFoundError(`timeline „${timelineId}" not found`);
       const byPlugin = enabled.get(timelineId) ?? new Map();
       enabled.set(timelineId, byPlugin);
-      byPlugin.set(pluginId, config ?? {});
+      const previous = byPlugin.get(pluginId);
+      byPlugin.set(pluginId, {
+        config: config ?? {},
+        public: options.public ?? previous?.public ?? false,
+      });
+    },
+    async getTimelinePlugin(timelineId: string, pluginId: string) {
+      const entry = enabled.get(timelineId)?.get(pluginId);
+      if (!entry) return null;
+      return { timelineName: timelineId, config: entry.config, public: entry.public };
     },
     async removeTimelinePlugin(timelineId: string, pluginId: string) {
       enabled.get(timelineId)?.delete(pluginId);

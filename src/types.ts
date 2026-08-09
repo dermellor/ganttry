@@ -268,7 +268,21 @@ export type Pricing = {
 // the old plugin-specific `type` column/field. `config` is the plugin's opaque
 // bag; for 'product-roadmap' it carries `{ versions: string[] }`. Helpers +
 // stable ids live in ./plugins.
-export type PluginRef = { id: string; config?: Record<string, unknown> };
+export type PluginRef = {
+  id: string;
+  config?: Record<string, unknown>;
+  /**
+   * Consent to serve this plugin's declared `publicRead` collections without
+   * authentication. Absent = no.
+   *
+   * Separate from being enabled, and deliberately so: plenty of timelines carry a
+   * pricing model that is not meant to be public, and „the plugin is on" must not
+   * be read as „the world may read it". On a `db` source this is the
+   * `timeline_plugins.public` column; here it is the same fact on the file, so the
+   * decision travels with the document a user owns.
+   */
+  public?: boolean;
+};
 
 /**
  * Where a plugin's code came from.

@@ -237,7 +237,7 @@ export async function getTimeline(sql: Sql, id: string): Promise<TimelineFile | 
     where timeline_id = ${id} order by sort asc nulls first`;
 
   const pluginRows = await sql`
-    select plugin_id, config from timeline_plugins where timeline_id = ${id} order by plugin_id asc`;
+    select plugin_id, config, public from timeline_plugins where timeline_id = ${id} order by plugin_id asc`;
 
   const file: TimelineFile = { items: itemRows.map(rowToItem) };
   if (tl.name != null) file.name = tl.name;
@@ -246,6 +246,7 @@ export async function getTimeline(sql: Sql, id: string): Promise<TimelineFile | 
   const plugins: PluginRef[] = pluginRows.map((r: Record<string, any>) => ({
     id: r.plugin_id,
     config: (r.config ?? {}) as Record<string, unknown>,
+    ...(r.public === true ? { public: true } : {}),
   }));
   if (plugins.length) file.plugins = plugins;
   if (Array.isArray(tl.phases) && tl.phases.length) file.phases = tl.phases as TimelinePhase[];
@@ -1081,9 +1082,10 @@ export async function replacePluginRows(sql: Sql, id: string, plugins: PluginRef
     timeline_id: id,
     plugin_id: p.id,
     config: jsonBag(sql, p.config ?? {}),
+    public: p.public === true,
     updated_at: now,
   }));
-  await sql`insert into timeline_plugins ${sql(rows, 'timeline_id', 'plugin_id', 'config', 'updated_at')}`;
+  await sql`insert into timeline_plugins ${sql(rows, 'timeline_id', 'plugin_id', 'config', 'public', 'updated_at')}`;
 }
 
 // ---- the instance's install registry ---------------------------------------
@@ -1173,14 +1175,37 @@ export async function setTimelinePlugin(
   timelineId: string,
   pluginId: string,
   config: Record<string, unknown>,
+  options: { public?: boolean } = {},
 ): Promise<void> {
   const [exists] = await sql`select id from timelines where id = ${timelineId}`;
   if (!exists) throw new NotFoundError(`timeline „${timelineId}" not found`);
+  // `public` is only written when the caller said something about it. An enable
+  // that carries no opinion must not silently un-publish a timeline that was
+  // already published — reconfiguring a plugin is not consent to change who may
+  // read it.
+  const publicClause = options.public === undefined ? sql`` : sql`, public = ${options.public}`;
   await sql`
-    insert into timeline_plugins (timeline_id, plugin_id, config, updated_at)
-    values (${timelineId}, ${pluginId}, ${jsonBag(sql, config ?? {})}, now())
+    insert into timeline_plugins (timeline_id, plugin_id, config, public, updated_at)
+    values (${timelineId}, ${pluginId}, ${jsonBag(sql, config ?? {})}, ${options.public ?? false}, now())
     on conflict (timeline_id, plugin_id) do update
-      set config = excluded.config, updated_at = now()`;
+      set config = excluded.config, updated_at = now() ${publicClause}`;
+}
+
+export async function getTimelinePlugin(
+  sql: Sql,
+  timelineId: string,
+  pluginId: string,
+): Promise<{ timelineName?: string; config: Record<string, unknown>; public: boolean } | null> {
+  const [row] = await sql`
+    select tp.config, tp.public, t.name
+    from timeline_plugins tp join timelines t on t.id = tp.timeline_id
+    where tp.timeline_id = ${timelineId} and tp.plugin_id = ${pluginId}`;
+  if (!row) return null;
+  return {
+    ...(row.name != null ? { timelineName: row.name as string } : {}),
+    config: (row.config ?? {}) as Record<string, unknown>,
+    public: row.public === true,
+  };
 }
 
 export async function removeTimelinePlugin(sql: Sql, timelineId: string, pluginId: string): Promise<void> {
@@ -1536,7 +1561,9 @@ export function makePostgresRepo(sql: Sql): TimelineRepo {
     setPluginInstalledEnabled: (pluginId, enabled, updatedBy) =>
       setPluginInstalledEnabled(sql, pluginId, enabled, updatedBy),
     removeInstalledPlugin: (pluginId) => removeInstalledPlugin(sql, pluginId),
-    setTimelinePlugin: (timelineId, pluginId, config) => setTimelinePlugin(sql, timelineId, pluginId, config),
+    setTimelinePlugin: (timelineId, pluginId, config, options) =>
+      setTimelinePlugin(sql, timelineId, pluginId, config, options),
+    getTimelinePlugin: (timelineId, pluginId) => getTimelinePlugin(sql, timelineId, pluginId),
     removeTimelinePlugin: (timelineId, pluginId) => removeTimelinePlugin(sql, timelineId, pluginId),
     listPluginRows: (timelineId, pluginId, collection) => listPluginRows(sql, timelineId, pluginId, collection),
     listPluginData: (timelineId, pluginIds) => listPluginData(sql, timelineId, pluginIds),

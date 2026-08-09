@@ -107,6 +107,12 @@ export const config: Config = {
     '/robots.txt',
     // Public pricing endpoint for external marketing pages — no login gate.
     '/api/pricing/*',
+    // The generic public read. ONE exclusion for every plugin that ever publishes,
+    // rather than a line per plugin: the alternative is an auth-gate edit as part
+    // of installing a plugin, which is an edit nobody remembers to reverse on
+    // uninstall. What may actually be served is decided per plugin and per
+    // timeline behind this path (docs/plugin-public-read.md).
+    '/api/public/*',
     '/mcp',
     '/mcp-oauth/*',
     '/.well-known/oauth-protected-resource',

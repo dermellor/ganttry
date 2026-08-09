@@ -169,7 +169,26 @@ export interface TimelineRepo {
    * „enable" and „reconfigure" are the same write from the caller's side and
    * splitting them would only add a 404 nobody can act on.
    */
-  setTimelinePlugin(timelineId: string, pluginId: string, config: Record<string, unknown>): Promise<void>;
+  setTimelinePlugin(
+    timelineId: string,
+    pluginId: string,
+    config: Record<string, unknown>,
+    options?: { public?: boolean },
+  ): Promise<void>;
+  /**
+   * What one timeline says about one plugin: its config, and whether the timeline
+   * consents to publishing that plugin's declared collections.
+   *
+   * Deliberately NOT `getTimeline`, which the public path could otherwise reuse:
+   * that one loads every item, and the endpoint this serves is unauthenticated.
+   * Reading a timeline's whole content to answer „may I publish four rows" is both
+   * wasteful and the kind of shortcut that turns into a leak the day somebody
+   * returns more of it than they meant to.
+   */
+  getTimelinePlugin(
+    timelineId: string,
+    pluginId: string,
+  ): Promise<{ timelineName?: string; config: Record<string, unknown>; public: boolean } | null>;
   /**
    * Disable a plugin on a timeline. Deliberately keeps every row the plugin owns,
    * so re-enabling is lossless — the destructive operation is the instance-level

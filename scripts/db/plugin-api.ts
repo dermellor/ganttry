@@ -23,6 +23,7 @@ import type { PluginManifest } from '../../src/pluginHost/manifest';
 import { grants, validateManifest } from '../../src/pluginHost/manifest.ts';
 import { validateRow } from '../../src/pluginHost/dataSchema.ts';
 import { pluginStatus } from '../../src/pluginHost/installed.ts';
+import { mayPublish, projectCollections, publicCollections } from '../../src/pluginHost/publicRead.ts';
 import { installedPluginStatuses, makeManifestSource, type ManifestSource } from './plugin-manifests.ts';
 import { isOperator, operatorRefusal, type Caller } from './operator.ts';
 import {
@@ -341,15 +342,16 @@ export async function handlePluginLifecycle(
 
   try {
     if (method === 'GET') {
-      const file = await repo.getTimeline(timelineId);
-      if (!file) return err(404, 'not found');
-      const ref = (file.plugins ?? []).find((p) => p.id === path.pluginId);
+      // `getTimelinePlugin` rather than `getTimeline`: the latter loads every item
+      // to answer a question about one row.
+      const entry = await repo.getTimelinePlugin(timelineId, path.pluginId);
       return ok({
         pluginId: path.pluginId,
         installed: true,
         instanceEnabled: installed.enabled,
-        enabled: !!ref,
-        config: ref?.config ?? {},
+        enabled: !!entry,
+        config: entry?.config ?? {},
+        public: entry?.public ?? false,
       });
     }
 
@@ -367,8 +369,25 @@ export async function handlePluginLifecycle(
       if (problems.length) {
         return err(400, 'invalid_config', { message: problems.join('; ') });
       }
-      await repo.setTimelinePlugin(timelineId, path.pluginId, config);
-      return ok({ ok: true, pluginId: path.pluginId, enabled: true, config });
+      // Publishing is its own decision and is only touched when the caller says
+      // so. Refused outright when the plugin declares nothing public: silently
+      // storing a flag that can never have an effect invites somebody to believe
+      // their data is being served.
+      const wantsPublic = typeof body.public === 'boolean' ? body.public : undefined;
+      if (wantsPublic === true && !mayPublish(installed.manifest)) {
+        return err(400, 'not_publishable', {
+          message: `plugin „${path.pluginId}" declares no publicRead collections, so there is nothing to publish`,
+        });
+      }
+      await repo.setTimelinePlugin(timelineId, path.pluginId, config, { public: wantsPublic });
+      const stored = await repo.getTimelinePlugin(timelineId, path.pluginId);
+      return ok({
+        ok: true,
+        pluginId: path.pluginId,
+        enabled: true,
+        config,
+        public: stored?.public ?? false,
+      });
     }
 
     if (method === 'DELETE') {
@@ -399,6 +418,76 @@ export async function handlePluginLifecycle(
 export function configProblems(manifest: PluginManifest, config: unknown): string[] {
   if (manifest.configSchema == null) return [];
   return validateRow(manifest.configSchema, config ?? {}, 'config');
+}
+
+// ---------------------------------------------------------------------------
+// Public, unauthenticated reads: /api/public/plugin/<pluginId>/<timelineId>
+// ---------------------------------------------------------------------------
+
+export type PublicApiRequest = {
+  method: string;
+  pluginId: string;
+  timelineId: string;
+  /** Narrow to one collection. A query parameter, not a path segment — see below. */
+  collection?: string;
+};
+
+/**
+ * Serve a plugin's declared public collections, without authentication.
+ *
+ * Three gates, all of which must pass, and every failure answers **404**:
+ *
+ *   1. the instance has the plugin installed and it is switched on;
+ *   2. the plugin declares `publicRead` and was granted `public:read`;
+ *   3. THIS timeline consented to publishing that plugin's data.
+ *
+ * One status code for all of them on purpose. This endpoint is reachable by
+ * anyone, so distinguishing „no such timeline" from „exists but is not published"
+ * would turn it into a probe for which timelines exist — and the id is often a
+ * customer name.
+ *
+ * The path is `…/<pluginId>/<timelineId>` with the collection as a QUERY
+ * parameter rather than a trailing segment, which is where this departs from the
+ * sketch in the issue. A timeline id may contain slashes (`acme/foo`), so
+ * `…/acme/foo/features` is genuinely ambiguous: it could be the timeline
+ * `acme/foo` narrowed to `features`, or the timeline `acme/foo/features` in full.
+ * A query parameter has no such reading.
+ */
+export async function handlePublicPluginApi(
+  repo: TimelineRepo,
+  manifests: ManifestSource,
+  req: PublicApiRequest,
+): Promise<PluginApiResult> {
+  if (req.method !== 'GET') return err(405, 'method not allowed');
+
+  const notFound = () => err(404, 'not found');
+
+  const installed = await manifests(req.pluginId);
+  if (!installed || !installed.enabled) return notFound();
+  const { manifest } = installed;
+  if (!mayPublish(manifest)) return notFound();
+
+  const entry = await repo.getTimelinePlugin(req.timelineId, req.pluginId);
+  // Fail closed: not enabled here, or enabled without consent, both answer the
+  // same as „no such thing".
+  if (!entry || !entry.public) return notFound();
+
+  if (req.collection && !publicCollections(manifest).includes(req.collection)) return notFound();
+
+  const stored = await repo.listPluginData(req.timelineId, [req.pluginId]);
+  const collections = projectCollections(manifest, stored[req.pluginId]);
+  const narrowed = req.collection ? { [req.collection]: collections[req.collection] ?? [] } : collections;
+
+  return ok({
+    id: req.timelineId,
+    ...(entry.timelineName ? { name: entry.timelineName } : {}),
+    plugin: req.pluginId,
+    // The plugin's own config travels with it: for product-roadmap that is the
+    // ordered version list, which the payload is unreadable without. It is
+    // operator-authored configuration rather than anybody's content.
+    config: entry.config,
+    collections: narrowed,
+  });
 }
 
 // ---------------------------------------------------------------------------

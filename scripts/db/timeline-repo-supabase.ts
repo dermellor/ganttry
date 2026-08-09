@@ -203,7 +203,7 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
 
   const { data: pluginRows, error: plgErr } = await db
     .from('timeline_plugins')
-    .select('plugin_id, config')
+    .select('plugin_id, config, public')
     .eq('timeline_id', id)
     .order('plugin_id', { ascending: true });
   if (plgErr) throw new Error(`getTimeline plugins: ${plgErr.message}`);
@@ -229,6 +229,7 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
   const plugins: PluginRef[] = (pluginRows ?? []).map((r) => ({
     id: r.plugin_id,
     config: (r.config ?? {}) as Record<string, unknown>,
+    ...((r as any).public === true ? { public: true } : {}),
   }));
   if (plugins.length) file.plugins = plugins;
   if (Array.isArray(tl.phases) && tl.phases.length) file.phases = tl.phases as TimelinePhase[];
@@ -1194,14 +1195,56 @@ export async function setTimelinePlugin(
   timelineId: string,
   pluginId: string,
   config: Record<string, unknown>,
+  options: { public?: boolean } = {},
 ): Promise<void> {
   const { data: exists } = await db.from('timelines').select('id').eq('id', timelineId).maybeSingle();
   if (!exists) throw new NotFoundError(`timeline „${timelineId}" not found`);
+  // An upsert writes every column it is given, so „say nothing about public" has
+  // to mean reading the current value first: reconfiguring a plugin must not
+  // silently un-publish a timeline that was already published.
+  let isPublic = options.public;
+  if (isPublic === undefined) {
+    const { data: current } = await db
+      .from('timeline_plugins')
+      .select('public')
+      .eq('timeline_id', timelineId)
+      .eq('plugin_id', pluginId)
+      .maybeSingle();
+    isPublic = (current as { public?: boolean } | null)?.public === true;
+  }
   const { error } = await db.from('timeline_plugins').upsert(
-    { timeline_id: timelineId, plugin_id: pluginId, config: config ?? {}, updated_at: new Date().toISOString() },
+    {
+      timeline_id: timelineId,
+      plugin_id: pluginId,
+      config: config ?? {},
+      public: isPublic,
+      updated_at: new Date().toISOString(),
+    },
     { onConflict: 'timeline_id,plugin_id' },
   );
   if (error) throw new Error(`setTimelinePlugin: ${error.message}`);
+}
+
+export async function getTimelinePlugin(
+  db: SupabaseClient,
+  timelineId: string,
+  pluginId: string,
+): Promise<{ timelineName?: string; config: Record<string, unknown>; public: boolean } | null> {
+  const { data, error } = await db
+    .from('timeline_plugins')
+    .select('config, public')
+    .eq('timeline_id', timelineId)
+    .eq('plugin_id', pluginId)
+    .maybeSingle();
+  if (error) throw new Error(`getTimelinePlugin: ${error.message}`);
+  if (!data) return null;
+  const { data: tl } = await db.from('timelines').select('name').eq('id', timelineId).maybeSingle();
+  const name = (tl as { name?: string | null } | null)?.name;
+  return {
+    ...(name != null ? { timelineName: name } : {}),
+    config: ((data as any).config ?? {}) as Record<string, unknown>,
+    public: (data as any).public === true,
+  };
 }
 
 export async function removeTimelinePlugin(
@@ -1608,7 +1651,9 @@ export function makeSupabaseRepo(db: SupabaseClient): TimelineRepo {
     setPluginInstalledEnabled: (pluginId, enabled, updatedBy) =>
       setPluginInstalledEnabled(db, pluginId, enabled, updatedBy),
     removeInstalledPlugin: (pluginId) => removeInstalledPlugin(db, pluginId),
-    setTimelinePlugin: (timelineId, pluginId, config) => setTimelinePlugin(db, timelineId, pluginId, config),
+    setTimelinePlugin: (timelineId, pluginId, config, options) =>
+      setTimelinePlugin(db, timelineId, pluginId, config, options),
+    getTimelinePlugin: (timelineId, pluginId) => getTimelinePlugin(db, timelineId, pluginId),
     removeTimelinePlugin: (timelineId, pluginId) => removeTimelinePlugin(db, timelineId, pluginId),
     listPluginRows: (timelineId, pluginId, collection) => listPluginRows(db, timelineId, pluginId, collection),
     listPluginData: (timelineId, pluginIds) => listPluginData(db, timelineId, pluginIds),

@@ -18,9 +18,10 @@ import type { Context, Config } from '@netlify/edge-functions';
 import postgres from 'https://esm.sh/postgres@3.4.9';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { readSession, hasValidMcpToken } from './_shared/session.ts';
-import { handlePluginsApi } from '../../scripts/db/plugin-api.ts';
+import { handlePluginsApi, handlePublicPluginApi } from '../../scripts/db/plugin-api.ts';
+import { makeManifestSource } from '../../scripts/db/plugin-manifests.ts';
 import { parseOperators } from '../../scripts/db/operator.ts';
-import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
+import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, parsePublicPluginPath, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
 
 // Module-scoped, reused postgres.js connection. Opened once per isolate and
 // reused across invocations — NEVER call sql.end() in a handler (it throws a
@@ -69,11 +70,35 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
   // something under a timeline: which plugins this deployment has is not a
   // property of any one of them.
   const isPlugins = reqUrl.pathname === '/api/plugins' || reqUrl.pathname.startsWith('/api/plugins/');
+  // Public and unauthenticated. Handled BEFORE the gate below, because it is
+  // excluded from the gate anyway (auth.ts) and must answer for a caller with no
+  // session at all.
+  const publicPlugin = reqUrl.pathname.startsWith('/api/public/plugin/')
+    ? parsePublicPluginPath(reqUrl.pathname)
+    : null;
   const parsed =
-    isCollection || isUsers || isPlugins
+    isCollection || isUsers || isPlugins || publicPlugin
       ? { id: '' }
       : parseSourcePath(reqUrl.pathname.replace(/^\/api\/source/, ''));
   if (!parsed) return; // not our route → fall through
+
+  if (publicPlugin) {
+    const repo = resolveRepo(conns);
+    if (!repo) return json({ error: 'db_not_configured' }, 503);
+    const result = await handlePublicPluginApi(repo, makeManifestSource(repo), {
+      method: req.method ?? 'GET',
+      pluginId: publicPlugin.pluginId,
+      timelineId: publicPlugin.timelineId,
+      collection: reqUrl.searchParams.get('collection') ?? undefined,
+    });
+    const headers = new Headers({
+      // The same contract the pricing endpoint has always offered: cacheable and
+      // cross-origin, because consumers fetch it at build time from another site.
+      'Cache-Control': 'public, max-age=300, s-maxage=300',
+      'Access-Control-Allow-Origin': '*',
+    });
+    return json(result.json, result.status, headers);
+  }
 
   // Auth gate: valid session or MCP service token.
   const mcp = hasValidMcpToken(req);
@@ -154,5 +179,5 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
 }
 
 export const config: Config = {
-  path: ['/api/source/*', '/api/sources', '/api/users', '/api/plugins', '/api/plugins/*'],
+  path: ['/api/source/*', '/api/sources', '/api/users', '/api/plugins', '/api/plugins/*', '/api/public/plugin/*'],
 };

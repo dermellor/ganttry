@@ -7,7 +7,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
-import { handlePluginApi, handlePluginLifecycle, handlePluginsApi } from './plugin-api.ts';
+import { handlePluginApi, handlePluginLifecycle, handlePluginsApi, handlePublicPluginApi } from './plugin-api.ts';
 import { makeManifestSource } from './plugin-manifests.ts';
 import { makeMemoryStore, type MemoryStore } from './plugin-store-memory.ts';
 import type { InstalledPlugin } from '../../src/types.ts';
@@ -366,5 +366,131 @@ describe('the registry as the manifest source', () => {
     } as unknown as Parameters<typeof makeManifestSource>[0];
     const record = await makeManifestSource(broken)('product-roadmap');
     assert.equal(record?.manifest.id, 'product-roadmap');
+  });
+});
+
+describe('the public read', () => {
+  const PUBLISHER: PluginManifest = {
+    ...DEMO,
+    capabilities: ['items:read', 'data:own', 'public:read'],
+    collections: [{ id: 'entries', ordered: true }, { id: 'private' }],
+    publicRead: { collections: ['entries'] },
+  };
+
+  function publisher() {
+    const store = makeMemoryStore();
+    store.seedTimeline(TL);
+    store.seedInstalled({ ...installedRow(), manifest: PUBLISHER as unknown as Record<string, unknown> });
+    store.seed(TL, 'demo', 'entries', [{ id: 'e1', data: { label: 'Sprint 1', note: 'intern' } }]);
+    store.seed(TL, 'demo', 'private', [{ id: 'p1', data: { secret: true } }]);
+
+    const publicGet = (o: { collection?: string; timelineId?: string; pluginId?: string } = {}) =>
+      handlePublicPluginApi(store.repo, makeManifestSource(store.repo), {
+        method: 'GET',
+        pluginId: o.pluginId ?? 'demo',
+        timelineId: o.timelineId ?? TL,
+        collection: o.collection,
+      });
+
+    const consent = (value: boolean) =>
+      handlePluginLifecycle(store.repo, makeManifestSource(store.repo), {
+        method: 'PUT',
+        timelineId: TL,
+        path: { pluginId: 'demo' },
+        body: { config: {}, public: value },
+      });
+
+    return { store, publicGet, consent };
+  }
+
+  test('without consent it is a 404, and so is a timeline that does not exist', async () => {
+    // One status for both: this endpoint is reachable by anyone, so telling the
+    // two apart would turn it into a probe for which timelines exist — and the id
+    // is often a customer name.
+    const { publicGet, consent } = publisher();
+    await consent(false);
+    assert.equal((await publicGet()).status, 404);
+    assert.equal((await publicGet({ timelineId: 'nope' })).status, 404);
+    assert.equal((await publicGet({ pluginId: 'ghost' })).status, 404);
+  });
+
+  test('with consent only the declared collections are served', async () => {
+    const { publicGet, consent } = publisher();
+    await consent(true);
+    const res = await publicGet();
+    assert.equal(res.status, 200);
+    const body = res.json as any;
+    assert.deepEqual(Object.keys(body.collections), ['entries']);
+    assert.ok(!('private' in body.collections), 'an undeclared collection is absent, not empty');
+  });
+
+  test('host bookkeeping never reaches the public payload', async () => {
+    // updatedBy is an e-mail address.
+    const { publicGet, consent } = publisher();
+    await consent(true);
+    const row = (await publicGet()).json as any;
+    assert.deepEqual(Object.keys(row.collections.entries[0]).sort(), ['data', 'id']);
+  });
+
+  test('withdrawing consent takes it offline again', async () => {
+    const { publicGet, consent } = publisher();
+    await consent(true);
+    assert.equal((await publicGet()).status, 200);
+    await consent(false);
+    assert.equal((await publicGet()).status, 404);
+  });
+
+  test('reconfiguring without mentioning public does not change who may read it', async () => {
+    // The trap: an upsert that writes every column would silently un-publish, or
+    // silently publish, on an unrelated config edit.
+    const { store, publicGet, consent } = publisher();
+    await consent(true);
+    await handlePluginLifecycle(store.repo, makeManifestSource(store.repo), {
+      method: 'PUT',
+      timelineId: TL,
+      path: { pluginId: 'demo' },
+      body: { config: { versions: ['2.0'] } },
+    });
+    assert.equal((await publicGet()).status, 200, 'still published');
+  });
+
+  test('a plugin that declares nothing public cannot be published', async () => {
+    // Storing a flag that can never have an effect invites somebody to believe
+    // their data is being served.
+    const store = makeMemoryStore();
+    store.seedTimeline(TL);
+    store.seedInstalled(installedRow());
+    const res = await handlePluginLifecycle(store.repo, makeManifestSource(store.repo), {
+      method: 'PUT',
+      timelineId: TL,
+      path: { pluginId: 'demo' },
+      body: { config: {}, public: true },
+    });
+    assert.equal(res.status, 400);
+    assert.equal((res.json as any).error, 'not_publishable');
+  });
+
+  test('a plugin switched off instance-wide publishes nothing', async () => {
+    const { store, publicGet, consent } = publisher();
+    await consent(true);
+    await store.repo.setPluginInstalledEnabled('demo', false);
+    assert.equal((await publicGet()).status, 404);
+  });
+
+  test('narrowing to a collection works, to an undeclared one does not', async () => {
+    const { publicGet, consent } = publisher();
+    await consent(true);
+    assert.deepEqual(Object.keys(((await publicGet({ collection: 'entries' })).json as any).collections), ['entries']);
+    assert.equal((await publicGet({ collection: 'private' })).status, 404);
+  });
+
+  test('only GET is served', async () => {
+    const { store } = publisher();
+    const res = await handlePublicPluginApi(store.repo, makeManifestSource(store.repo), {
+      method: 'DELETE',
+      pluginId: 'demo',
+      timelineId: TL,
+    });
+    assert.equal(res.status, 405);
   });
 });
