@@ -212,8 +212,10 @@ function timelinesApi(): Plugin {
         try {
           const built = JSON.parse(await readFile(resolve(__dirname, 'public', DATA_DIR, 'config.json'), 'utf8'));
           for (const view of built.views ?? []) {
-            // Per source, not blanket: a Markdown directory is served here but
-            // is not writable yet, and claiming otherwise offers edits that 501.
+            // Per source, not blanket: a local view only becomes editable if its
+            // id still resolves to something this process can reach and write
+            // (`isLocalWritable`). A stamped-but-unresolvable source flipped to
+            // editable offers „+ Eintrag" and drag handles that end in an error.
             if (view?.source?.kind === 'local') {
               view.source.editable = isLocalWritable(localDirs, view.source.id);
             }

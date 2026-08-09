@@ -504,7 +504,8 @@ by the source through `capabilities.live` (`SourceLive` in
   server-gated, which is what makes a Postgres **without** realtime live. The poll
   pauses while an edit form is open (`isBusy`), and a change detected meanwhile is
   not discarded but applied afterwards.
-- **`none`** — no live updates (file sources).
+- **`none`** — no live updates: a local source read from its static copy, where
+  no process is serving it and nothing can change under it.
 
 The server tells the client which mode applies through the **`X-Source-Live`
 response header** on `GET /api/source/<id>`, set by the runtime glue from

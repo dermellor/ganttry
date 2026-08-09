@@ -8,7 +8,7 @@ and keep it in sync when behaviour changes.
 
 ## You do not need a database
 
-The quickest way in: file sources need no Postgres, no Supabase and no
+The quickest way in: local sources need no Postgres, no Supabase and no
 credentials.
 
 ```bash

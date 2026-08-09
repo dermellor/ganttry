@@ -3,10 +3,11 @@
 **Status: all three stages are built.** A single `local` source
 adapter replaced the former `file` kind and the separate Markdown notes pipeline,
 and made editability a property of the runtime rather than of the file format.
-What exists: a `data/*.json` timeline is editable under `npm run dev` and
-read-only on a static deploy, and a directory of Markdown files with a
-`timeline.json` in it is served as a source, read-only. Writing back into a note
-is still a proposal. Each section below says which it is.
+What exists: a `data/*.json` timeline and a directory of Markdown files with a
+`timeline.json` in it are both editable under `npm run dev` and read-only on a
+static deploy. Item writes go back into the note, one frontmatter key at a time;
+what is deliberately still missing is listed with each stage below, and id
+promotion („Staging" → stage 3) is the one design decision that was dropped.
 
 Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
@@ -314,6 +315,13 @@ Three stages, each shippable on its own, in increasing order of risk:
      every local source to editable offered „+ Eintrag" and drag handles on a
      Markdown timeline, each ending in a `501`. An edit that looks available and
      then is not is worse than one that was never offered.
+   - **`timeline.json` is what makes a directory a source.** The degenerate case
+     above („a directory with no `timeline.json` … stays legal") was not built:
+     `isTimelineDirectory` tests for the container file, and a folder without one
+     is descended into rather than registered. Registering every folder under
+     `data/` would turn each intermediate directory on the way to a timeline into
+     an empty timeline of its own, and there is no id or name to give those. A
+     plain notes folder therefore needs one `timeline.json`, which may be `{}`.
 3. ~~**The Markdown write path.**~~ **Done.**
    [`scripts/local/frontmatter.ts`](../scripts/local/frontmatter.ts) patches one
    key at a time; everything else in the file — comments, key order, quoting, the

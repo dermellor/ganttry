@@ -2,14 +2,15 @@
 
 A generic, self-hostable timeline and roadmap viewer built on
 [vis-timeline](https://visjs.github.io/vis-timeline/). It renders items, groups,
-phases and dependency arrows from either static JSON files or a live Postgres
+phases and dependency arrows from either local files or a live Postgres
 database, and shows the same data as an interactive Timeline or a grouped List.
 
 Two orthogonal extension axes keep it flexible:
 
-- **Source adapters** decide *where* a timeline's data comes from: a static JSON
-  file, or Postgres (via either supabase-js or native postgres.js, with optional
-  per-source connections).
+- **Source adapters** decide *where* a timeline's data comes from: local files (a
+  JSON file, or a directory with one Markdown file per item), or Postgres (via
+  either supabase-js or native postgres.js, with optional per-source
+  connections).
 - **Plugins** decide *what* a timeline carries beyond items and groups: a timeline
   with no plugin is just timeline + list; the `product-roadmap` plugin adds a
   pricing matrix and cards plus its own item fields, loaded lazily so a build
@@ -22,17 +23,20 @@ Two orthogonal extension axes keep it flexible:
 - **Rich items:** phases as a labeled ribbon, right-angle dependency arrows,
   semantic icons, a built-in status field, colour-coded tags, and per-timeline
   custom fields.
-- **Editable when DB-backed:** drag to move/resize, double-click to add, edit in
-  a side form. Writes are item-level with optimistic locking, so concurrent edits
-  do not clobber each other.
-- **File sources need no database:** drop a `*.json` into `data/`, it registers
-  itself as a read-only view.
+- **Editable wherever a writable runtime serves the source:** drag to
+  move/resize, double-click to add, edit in a side form. Writes are item-level
+  with optimistic locking, so concurrent edits do not clobber each other. DB
+  sources are editable anywhere; local sources are editable while the dev server
+  serves them, because that process has a filesystem to write to.
+- **Local sources need no database:** drop a `*.json` into `data/` and it
+  registers itself as a view.
 - **Two DB drivers, one seam:** supabase-js (HTTP/PostgREST, the Netlify default)
   or native postgres.js (any Postgres via a connection string), selected by env.
 - **Live collaboration:** other people's edits appear without reload, via
   Supabase Realtime or a cheap watermark-polling fallback, plus presence avatars.
-- **Markdown notes views (optional):** build timelines from frontmatter dates in
-  a notes directory.
+- **Markdown directories as a source:** a folder with a `timeline.json` and one
+  `*.md` per item is a timeline, with item dates taken from frontmatter or from
+  the filename.
 - **Static HTML export** of any view, and an **MCP server** so Claude Code can
   read and edit DB-backed timelines.
 - **Deployable behind auth:** a Netlify edge auth gate (Google OAuth + an
@@ -59,11 +63,13 @@ Supabase Realtime serves its timelines in polling mode automatically (the client
 polls a cheap watermark endpoint), and `TIMELINES_DB_LIVE` overrides that either
 way. Import example data with `npm run db:import`.
 
-### Static / file sources only (no database)
+### Local sources only (no database)
 
 Drop a `*.json` timeline into `data/` and run the viewer. The build copies it to
-`public/data/sources/<name>.json` and registers it automatically as a read-only
-view (`src:<name>`); no database and no config edit required.
+`public/data/sources/<name>.json` and registers it automatically as a view
+(`src:<name>`); no database and no config edit required. Under `npm run dev` that
+view is editable and edits land back in your file; a static deploy serves the
+same file read-only, because there is no process behind it to write with.
 
 ```bash
 npm install
@@ -77,12 +83,28 @@ types, so it cannot drift from what the app actually reads.
 [`AGENTS.md`](AGENTS.md) explains the constraints a schema cannot express, such as
 why `end` and `duration` are mutually exclusive.
 
-### Notes-driven views (optional)
+### Directory sources: one Markdown file per item
 
-`npm run dev` also scans a Markdown notes directory (`notesDir` in
-`timelines.config.json`, overridable with `TIMELINES_NOTES_DIR`) and builds
-timelines from frontmatter dates. If that directory does not exist the build
-warns and continues with zero notes, so a fresh clone still builds.
+A directory under `data/` is a timeline as well, as soon as it holds a
+`timeline.json`. That container file carries what no single item owns (`groups`
+including `nestedGroups`, `phases`, `groupBy`, `customFields`, `plugins`, `name`,
+`description`) and has no `items` array, because the items are the Markdown files
+next to it. The view id is the directory path relative to `data/`, so
+`data/notes/roadmap/` becomes `src:notes/roadmap`.
+
+An item's dates come from its frontmatter, falling back to a date at the start of
+the filename. Which frontmatter keys count and which filename patterns are tried
+is set in `timelines.config.json` (`dateFields`, `filenameDatePatterns`); the
+first match in that order wins. Editing such an item patches the one frontmatter
+key that changed and leaves the rest of the file untouched, down to key order,
+comments and blank lines, so a folder you also edit by hand does not come back as
+a diff over every file. Deleting moves the file to `.trash/` rather than
+unlinking it.
+
+A `"$schema"` key in `timeline.json` pointing at `schema/container.schema.json`
+gets you editor completion for it, the same way a JSON timeline points at
+`schema/timeline.schema.json`. The design, the write path and what is deliberately
+still missing are in [`docs/local-sources.md`](docs/local-sources.md).
 
 ## Architecture
 
@@ -90,19 +112,24 @@ Two steps: a build script (`scripts/build-data.ts`) prepares JSON + config, and 
 static Vite + TypeScript viewer (`src/`) renders it. The extension seams:
 
 - **Source adapters** (`SourceKind` in `src/types.ts`, `resolveAdapter` in
-  `scripts/db/api.ts`): `file` sources load read-only from static JSON; `db`
-  sources load live from `GET /api/source/<id>` and are editable. DB access goes
-  through one `TimelineRepo` seam (`scripts/db/repo.ts`) with two interchangeable
-  drivers, supabase-js (HTTP/PostgREST) or postgres.js (native TCP), selected by
-  env. The same dispatcher backs both the local Vite middleware and the Netlify
-  edge function.
+  `scripts/db/api.ts`): `local` sources are files the user owns, a JSON file or a
+  directory of Markdown; `db` sources live in Postgres. Whether a local source is
+  editable is decided by the runtime rather than by the format, stamped per source
+  into `view.source.editable` at build time and corrected upwards by the dev
+  server, so the client routes on one given value instead of probing. An editable
+  source loads from `GET /api/source/<id>`, a read-only one from the static copy
+  the build wrote. DB access goes through one `TimelineRepo` seam
+  (`scripts/db/repo.ts`) with two interchangeable drivers, supabase-js
+  (HTTP/PostgREST) or postgres.js (native TCP), selected by env. The same
+  dispatcher backs both the local Vite middleware and the Netlify edge function.
 - **Plugins** (`src/pluginHost/registry.ts`, plugins under `src/plugins/<id>/`):
   a plugin declares item fields and optionally views, which the host renders into
   chrome it creates itself. Lazily `import()`-ed, so a generic build ships no
   plugin code and no plugin CSS.
 - **Live-update seam** (`watchTimeline` in `src/realtime.ts`): `realtime`
-  (Supabase WebSocket) or `poll` (watermark endpoint), chosen per source; file
-  sources are static.
+  (Supabase WebSocket) or `poll` (watermark endpoint), chosen per source. A local
+  source polls a filesystem watermark while the dev server serves it, and is
+  static on a deploy, where nothing can change under it.
 
 The HTTP API is described in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1, generated
 from the TypeScript types), including the public, unauthenticated pricing endpoint
@@ -111,9 +138,9 @@ and the optimistic-locking contract.
 [`docs/overview.md`](docs/overview.md) maps the layers onto each other: the path a
 request takes from the viewer down to a store, and how one timeline type is laid
 out as Postgres rows, as a single JSON file, or as a directory of Markdown. Each
-subsystem is then documented with its reasoning in [`docs/`](docs/) — data model,
-items, editing, database, MCP, deploy, pricing — and [`AGENTS.md`](AGENTS.md) is the
-index plus the conventions that apply everywhere.
+subsystem is then documented with its reasoning in [`docs/`](docs/): data model,
+items, editing, database, local sources, MCP, deploy, pricing. [`AGENTS.md`](AGENTS.md)
+is the index plus the conventions that apply everywhere.
 
 ## Plugins
 
@@ -150,9 +177,7 @@ are read from `process.env`, then `.env.local`, then any file named by
 | `TIMELINES_MIGRATE_DATABASE_URL` | Connection used **only** for schema work (`db:migrate`, `db:check`). Needed on a Supabase-backed instance, because migrations are DDL and cannot run over PostgREST. Setting it does not change which driver serves the app. |
 | `TIMELINES_SUPABASE_URL` / `TIMELINES_SUPABASE_SERVICE_KEY` | Supabase project URL + service-role key. Used when `TIMELINES_DATABASE_URL` is unset. |
 | `TIMELINES_DB_LIVE` | Overrides the live-update mode of DB sources: `poll` (watermark polling, works against any Postgres) or `realtime` (Supabase Realtime). Unset derives it from the configured backend, so a plain Postgres already polls. |
-| `TIMELINES_NOTES_DIR` | Overrides `notesDir` for the Markdown notes scan. Missing directory is non-fatal. |
-| `TIMELINES_STATIC_ONLY` | `true` skips the notes scan and drops notes-driven views. |
-| `TIMELINES_SOURCES_SUBDIR` | Scope the file-source scan to `data/<subdir>/`. |
+| `TIMELINES_SOURCES_SUBDIR` | Scope the local-source scan to `data/<subdir>/`. |
 | `VITE_JIRA_BASE_URL` | Public base URL for JIRA browse links. Empty renders keys as plain text. |
 | `AUTH_REQUIRED` / `ALLOWED_EMAIL_DOMAINS` | Netlify edge auth gate: `true` enables it; comma-separated allowed sign-in domains (empty = nobody passes). |
 
@@ -169,7 +194,7 @@ server.
 Issues and pull requests are welcome at
 <https://github.com/dermellor/ganttry/issues>. See
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, the checks CI runs, and the
-conventions worth knowing. Contributing needs **no database**: file sources run
+conventions worth knowing. Contributing needs **no database**: local sources run
 on a plain `npm install && npm run dev`. Requires Node 22 or newer.
 
 [`AGENTS.md`](AGENTS.md) is the single source of truth for the data model, schema,
