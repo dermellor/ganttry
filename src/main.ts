@@ -36,6 +36,7 @@ import {
 } from './render';
 import { GROUP_DIM } from './listGrouping';
 import { loadPluginStatuses, renderPluginList } from './pluginPanel';
+import { browserDeps, loadInstalledPlugins } from './pluginHost/loader';
 import { commitItemForm } from './persistence';
 import type { PresenceUser } from './presence';
 import { loadUserDirectory } from './users';
@@ -243,6 +244,20 @@ async function bootstrap() {
   state.config = cfg;
   state.currentUser = currentUser;
 
+  // Load the plugins the instance installed, BEFORE the first view is applied:
+  // their contributed fields and view buttons have to exist by the time a view is
+  // built, or the first paint is missing them and only a switch away and back
+  // brings them in. Awaited for the same reason, and it is a small set.
+  //
+  // Failures are collected rather than thrown. A plugin that cannot load must
+  // cost the user that plugin and nothing else; the reasons are what the footer's
+  // plugin list shows.
+  state.pluginLoad = await loadInstalledPlugins(
+    await loadPluginStatuses(cfg.plugins),
+    browserDeps(),
+    (pluginId, error) => console.error(`[plugin ${pluginId}]`, error),
+  );
+
   els.viewSelect.innerHTML = cfg.views
     .map((v) => `<option value="${v.id}">${escapeHtml(v.name)}</option>`)
     .join('');
@@ -338,7 +353,12 @@ async function bootstrap() {
     }
     els.pluginsPanel.hidden = false;
     els.pluginsBtn.setAttribute('aria-expanded', 'true');
-    renderPluginList(els.pluginsPanel, await loadPluginStatuses(state.config?.plugins), state.activeSourceFile);
+    renderPluginList(
+      els.pluginsPanel,
+      await loadPluginStatuses(state.config?.plugins),
+      state.activeSourceFile,
+      state.pluginLoad,
+    );
   });
   document.addEventListener('click', (e) => {
     if (els.pluginsPanel.hidden) return;

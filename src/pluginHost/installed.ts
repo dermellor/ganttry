@@ -16,6 +16,7 @@
 import { apiVersionMismatch, type ApiVersion } from './apiVersion.ts';
 import { validateManifest, type PluginManifest } from './manifest.ts';
 import type { InstalledPlugin, PluginStatus } from '../types';
+import type { LoadOutcome } from './loader.ts';
 
 /**
  * Decide whether a plugin's code may run, and say why not in one sentence.
@@ -54,6 +55,9 @@ export function pluginStatus(plugin: InstalledPlugin, host?: ApiVersion): Plugin
   return { ...plugin, loadable: true };
 }
 
+/** Why a plugin is not running, from either of the two stages that can refuse it. */
+export type LineReason = NonNullable<PluginStatus['reason']> | NonNullable<LoadOutcome['reason']>;
+
 /** One line of the plugin list: what it is, and where it stands right now. */
 export type PluginLine = {
   id: string;
@@ -62,8 +66,15 @@ export type PluginLine = {
   version: string;
   /** Is it switched on for the timeline currently open? */
   enabledHere: boolean;
-  loadable: boolean;
-  reason?: PluginStatus['reason'];
+  /**
+   * Is its code actually running?
+   *
+   * Distinct from the host being WILLING to run it: a plugin can pass every check
+   * and still fail to load because its artifact is unreachable or was tampered
+   * with. Those two are what the reader is trying to tell apart.
+   */
+  running: boolean;
+  reason?: LineReason;
   problem?: string;
 };
 
@@ -78,21 +89,37 @@ export type PluginLine = {
 export function pluginLines(
   installed: PluginStatus[],
   enabledIds: readonly string[],
+  outcomes: readonly LoadOutcome[] = [],
 ): PluginLine[] {
+  const byId = new Map(outcomes.map((o) => [o.pluginId, o]));
   return installed
     .map((plugin) => {
       const name = typeof plugin.manifest?.name === 'string' && plugin.manifest.name.trim()
         ? (plugin.manifest.name as string)
         : plugin.id;
+      const outcome = byId.get(plugin.id);
       const line: PluginLine = {
         id: plugin.id,
         name,
         version: plugin.version,
         enabledHere: enabledIds.includes(plugin.id),
-        loadable: plugin.loadable,
+        // With no outcome the loader has not run yet (the panel can open during
+        // boot). Falling back to the host's willingness is the closest true
+        // statement; claiming „not running" would be a failure report for
+        // something that has not been tried.
+        running: outcome ? outcome.loaded : plugin.loadable,
       };
+      // The loader's verdict wins where it has one, because it is both later and
+      // more specific. `skipped` is the exception: it means the loader did not
+      // try, and the host's own reason is the one worth reading.
+      if (outcome && !outcome.loaded && outcome.reason && outcome.reason !== 'skipped') {
+        line.reason = outcome.reason;
+        if (outcome.problem) line.problem = outcome.problem;
+        return line;
+      }
       if (plugin.reason) line.reason = plugin.reason;
       if (plugin.problem) line.problem = plugin.problem;
+      else if (outcome?.problem) line.problem = outcome.problem;
       return line;
     })
     .sort((a, b) => a.name.localeCompare(b.name));

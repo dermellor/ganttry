@@ -486,6 +486,18 @@ body {
   color: var(--danger, #b3261e);
 }
 
+/* A plugin that threw mid-render. The message replaces whatever it managed to
+   paint, so a fault reads as a fault instead of a half-loaded page. */
+.plugin-view-error {
+  margin: 24px;
+  color: var(--fg-muted, #646464);
+}
+
+.plugin-view-error-detail {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--danger, #d3333a);
+}
+
 .plugin-empty {
   margin: 0;
   padding: 6px 4px;

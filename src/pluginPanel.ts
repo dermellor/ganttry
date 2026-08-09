@@ -9,6 +9,7 @@
 // when the plugin that renders it fails to load.
 
 import { pluginLines, type PluginLine } from './pluginHost/installed.ts';
+import type { LoadOutcome } from './pluginHost/loader.ts';
 import type { PluginStatus, TimelineFile } from './types';
 
 /**
@@ -41,7 +42,7 @@ export async function loadPluginStatuses(fromConfig: PluginStatus[] | undefined)
 function lineElement(line: PluginLine): HTMLLIElement {
   const li = document.createElement('li');
   li.className = 'plugin-line';
-  li.classList.toggle('plugin-line-problem', !line.loadable);
+  li.classList.toggle('plugin-line-problem', !line.running);
 
   const name = document.createElement('span');
   name.className = 'plugin-line-name';
@@ -58,7 +59,7 @@ function lineElement(line: PluginLine): HTMLLIElement {
   // both at once would bury the reason behind a state that no longer matters.
   const state = document.createElement('span');
   state.className = 'plugin-line-state';
-  state.textContent = line.loadable
+  state.textContent = line.running
     ? line.enabledHere
       ? 'in dieser Timeline aktiv'
       : 'nicht aktiv'
@@ -82,12 +83,24 @@ function lineElement(line: PluginLine): HTMLLIElement {
  */
 function reasonText(line: PluginLine): string {
   switch (line.reason) {
+    // The host refused before trying.
     case 'disabled':
       return 'für diese Instanz abgeschaltet';
     case 'api-version':
       return 'passt nicht zu dieser Host-Version';
     case 'invalid-manifest':
       return 'das Manifest ist nicht mehr gültig';
+    // The loader tried and could not.
+    case 'unsupported-artifact':
+      return 'die Herkunft des Codes wird nicht unterstützt';
+    case 'unreachable':
+      return 'der Code ist nicht erreichbar';
+    case 'integrity':
+      return 'der Code weicht von seiner Prüfsumme ab';
+    case 'invalid-module':
+      return 'der Code passt nicht zum Manifest';
+    case 'threw':
+      return 'das Laden ist gescheitert';
     default:
       return line.problem ?? 'kann nicht geladen werden';
   }
@@ -98,8 +111,9 @@ export function renderPluginList(
   container: HTMLElement,
   installed: PluginStatus[],
   file: TimelineFile | null | undefined,
+  outcomes: readonly LoadOutcome[] = [],
 ): void {
-  const lines = pluginLines(installed, (file?.plugins ?? []).map((p) => p.id));
+  const lines = pluginLines(installed, (file?.plugins ?? []).map((p) => p.id), outcomes);
   container.replaceChildren();
   if (!lines.length) {
     const empty = document.createElement('p');

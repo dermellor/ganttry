@@ -20,6 +20,7 @@ import type { PresenceHandle } from './realtime';
 import { isoDateOnly } from './editor';
 import { writeUrlState, type UrlState } from './urlState';
 import { legacyViewMode } from './pluginHost/registry';
+import type { LoadOutcome } from './pluginHost/loader';
 import { readViewMode, type ViewMode } from './pluginHost/viewMode';
 
 export const els = {
@@ -92,6 +93,12 @@ export interface AppState {
   // arrows, phaseBand and the vis DataSets are render-internal — they live as
   // module-level state in render.ts, not here.
   config: BuiltConfig | null;
+  /**
+   * What the loader did with each installed plugin at boot. Kept because it is
+   * the only record of it: a plugin that failed to load leaves no other trace,
+   * and „the view is missing" is not a diagnosis.
+   */
+  pluginLoad: LoadOutcome[];
   activeView: View | null;
   activeSourceId: string | null;
   activeSourceFile: TimelineFile | null;
@@ -169,6 +176,7 @@ export interface AppState {
 export const state: AppState = {
   timeline: null,
   config: null,
+  pluginLoad: [],
   activeView: null,
   activeSourceId: null,
   activeSourceFile: null,

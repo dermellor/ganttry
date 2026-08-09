@@ -24,7 +24,7 @@ describe('pluginLines', () => {
     const [line] = pluginLines([status({ id: 'demo', manifest: { name: 'Demo' } })], ['demo']);
     assert.equal(line.name, 'Demo');
     assert.equal(line.enabledHere, true);
-    assert.equal(line.loadable, true);
+    assert.equal(line.running, true);
   });
 
   test('installed but not enabled on this timeline is still listed', () => {
@@ -36,7 +36,7 @@ describe('pluginLines', () => {
 
   test('a plugin that cannot run carries its reason', () => {
     const [line] = pluginLines([status({ id: 'demo', loadable: false, problem: 'update the host' })], ['demo']);
-    assert.equal(line.loadable, false);
+    assert.equal(line.running, false);
     assert.equal(line.problem, 'update the host');
   });
 
@@ -65,5 +65,55 @@ describe('pluginLines', () => {
     // evidence of an install, and inventing a row for it would report a plugin
     // as present that nothing can load.
     assert.deepEqual(pluginLines([], ['ghost']), []);
+  });
+});
+
+describe('pluginLines: folding in what the loader actually did', () => {
+  const ok = status({ id: 'demo', manifest: { name: 'Demo' } });
+
+  test("the loader's verdict wins over the host's willingness", () => {
+    // The host was willing (`loadable`), the artifact was not there. Reporting
+    // „active" because the host had no objection would be the wrong half of the
+    // story.
+    const [line] = pluginLines([ok], ['demo'], [
+      { pluginId: 'demo', loaded: false, reason: 'unreachable', problem: 'could not fetch /p.js: HTTP 404' },
+    ]);
+    assert.equal(line.running, false);
+    assert.equal(line.reason, 'unreachable');
+    assert.match(line.problem!, /HTTP 404/);
+  });
+
+  test('a skipped plugin keeps the host reason, since the loader never tried', () => {
+    const refused = status({ id: 'demo', loadable: false, reason: 'disabled', problem: 'switched off for this instance' });
+    const [line] = pluginLines([refused], [], [
+      { pluginId: 'demo', loaded: false, reason: 'skipped', problem: 'switched off for this instance' },
+    ]);
+    assert.equal(line.reason, 'disabled', '„skipped" says nothing a reader can act on');
+  });
+
+  test('a successful load reports running, and the timeline question comes back', () => {
+    const [line] = pluginLines([ok], ['demo'], [{ pluginId: 'demo', loaded: true }]);
+    assert.equal(line.running, true);
+    assert.equal(line.enabledHere, true);
+    assert.equal(line.reason, undefined);
+  });
+
+  test('no outcome yet falls back to willingness rather than reporting a failure', () => {
+    // The panel can be opened during boot. Claiming „not running" for something
+    // that has not been tried is a failure report about nothing.
+    assert.equal(pluginLines([ok], [], [])[0].running, true);
+  });
+
+  test('an outcome for a plugin that is not installed is ignored', () => {
+    assert.deepEqual(pluginLines([], [], [{ pluginId: 'ghost', loaded: false, reason: 'threw' }]), []);
+  });
+
+  test('integrity failure is distinguishable from every other failure', () => {
+    // This is the one an operator has to act on differently: the artifact changed
+    // under a version somebody approved.
+    const [line] = pluginLines([ok], ['demo'], [
+      { pluginId: 'demo', loaded: false, reason: 'integrity', problem: 'does not match its pinned hash' },
+    ]);
+    assert.equal(line.reason, 'integrity');
   });
 });
