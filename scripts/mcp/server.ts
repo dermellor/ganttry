@@ -23,6 +23,7 @@ import { z } from 'zod';
 import type { TimelineFile, TimelineFileItem } from '../../src/types.js';
 import { envSourcesHint, envValue } from '../db/env.js';
 import { enforceExtentExclusivity, type TimelineGroupDecl } from '../db/timeline-repo.js';
+import { resolveItemPatch } from './patch.js';
 
 // ---------- config / env ----------
 
@@ -173,6 +174,10 @@ const itemFields = {
   body: z.string().optional().describe('Markdown shown in the detail panel.'),
   metadata: z
     .record(z.unknown())
+    // Nullable so `update_item` can clear the object outright, which is the same
+    // contract the remote server offers — the two expose one tool name and must
+    // not accept different things under it.
+    .nullable()
     .optional()
     .describe(
       'Free-form extras, e.g. { "owner": "robin@example.com", "dependsOn": ["S-1"] }. ' +
@@ -584,6 +589,9 @@ server.registerTool(
       }
       // Extent fields are mutually exclusive (end wins); never store both.
       enforceExtentExclusivity(item);
+      // `metadata` is nullable so update_item can clear it; on a create there is
+      // nothing to clear, and writing the null through would put it in the file.
+      if (item.metadata == null) delete (item as { metadata?: unknown }).metadata;
       f.items.push(item as TimelineFileItem);
     });
     return ok({ ok: true, id, itemId: item.id, items: file.items.length });
@@ -595,7 +603,9 @@ server.registerTool(
   {
     title: 'Update item',
     description:
-      'Patch fields of an existing item, matched by itemId. Only provided fields change; metadata is shallow-merged. Pass metadata:null keys to remove them.',
+      'Patch fields of an existing item, matched by itemId. Only provided fields change; metadata is ' +
+      'shallow-merged onto what the item already carries. Give a metadata key the value null to remove ' +
+      'it, or metadata: null to clear the whole object.',
     inputSchema: {
       id: z.string().describe('Timeline id.'),
       itemId: z.string().describe('Id of the item to update.'),
@@ -608,9 +618,12 @@ server.registerTool(
       const it = f.items.find((i) => i.id === itemId);
       if (!it) throw new Error(`Item "${itemId}" not found in "${id}".`);
       found = true;
-      const { metadata, ...rest } = patch;
+      const rest = resolveItemPatch(it, patch);
       Object.assign(it, rest);
-      if (metadata) it.metadata = { ...(it.metadata ?? {}), ...metadata };
+      // An emptied metadata object is dropped rather than written as `{}`: that is
+      // the shape a read returns (rowToItem omits it) and what the form leaves
+      // behind, so a round-trip through this tool does not add a key to the file.
+      if (it.metadata && Object.keys(it.metadata).length === 0) delete it.metadata;
       // Extent fields are mutually exclusive: whichever the patch set wins and
       // clears the counterpart, so switching end↔duration never leaves both.
       if (rest.end != null) delete it.duration;
