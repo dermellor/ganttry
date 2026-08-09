@@ -76,6 +76,14 @@ Status also surfaces on the built `TimelineItem` ([`src/buildItems.ts`](../src/b
 and renders as a **Status column in the Liste view** ([`src/listView.ts`](../src/listView.ts));
 items without a status (file-based sources) show „—".
 
+It is also a **grouping and filter dimension** (`STATUS_DIM` in
+[`src/listGrouping.ts`](../src/listGrouping.ts)): the toolbar offers **Status**
+whenever the build carries one, sections/lanes run `Open → Doing → Done` in the
+`ITEM_STATUSES` order, and the filter's checklist selects which of them stay
+visible. Both controls share one dimension list on purpose, so a state added to
+`ITEM_STATUSES` appears in both without a second edit. See „Shared toolbar:
+Gruppieren + Filter" (docs/editing.md).
+
 On the **timeline** the status is drawn on the bar as **one mark** in the item rail
 (see „Item rail → The status mark" (docs/editing.md)), plus, where the status contradicts the dates,
 a line that quantifies the contradiction:

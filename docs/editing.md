@@ -555,12 +555,21 @@ lives in [`src/grouping.ts`](../src/grouping.ts), the pure sectioning stays in
 - **Gruppieren** (`#groupby`, `state.groupBy`, persisted as
   `timelines.listGroupBy`) chooses the dimension: **Gruppe** (default, the item
   group — build order preserved), **Tag** (offered when anything is tagged, from
-  `metadata.tags`), and one entry per **custom field** (e.g. **Tier**, from
+  `metadata.tags`), **Status** (offered when any item carries one — see „Item
+  status" (docs/items.md)), and one entry per **custom field** (e.g. **Tier**, from
   `metadata.<key>`). Multi-valued dimensions (tags, `multi-select` fields) place
   an item under *every* value it carries; items without a value land in an
-  "Ohne …" bucket. Custom-field order follows the declared `options` first, then
-  first appearance. Falls back to Gruppe when the chosen dimension isn't
-  available on the active build.
+  "Ohne …" bucket. A dimension that declares its values up front is ordered by
+  that declaration — `Open → Doing → Done` for status, the field's `options` for a
+  custom field — everything else by first appearance. Falls back to Gruppe when
+  the chosen dimension isn't available on the active build.
+
+  Status is deliberately offered on evidence rather than always: a file-based
+  source has no status concept, so the dimension would collapse to a single "Ohne
+  Status" bucket. For the same reason an item without a *stored* status buckets as
+  "Ohne Status" and not as `Open` — it only *displays* as `Open` (see „The default
+  is shown, not stored" (docs/items.md)), and filtering for `Open` must not sweep
+  those in.
 
   In the **list** these are the table sections. In the **timeline** they are the
   vis lanes: for a non-Gruppe dimension the build is *regrouped*

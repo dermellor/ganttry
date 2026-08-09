@@ -4,10 +4,12 @@
 // chosen grouping dimension: the item's own group, its tags, or a custom field.
 
 import type { TimelineItem } from './buildItems';
+import { ITEM_STATUSES } from './status';
 import type { CustomFieldDef } from './types';
 
 export const GROUP_DIM = 'group';
 export const TAG_DIM = 'tag';
+export const STATUS_DIM = 'status';
 export const CF_PREFIX = 'cf:';
 // Sentinel bucket key for entries that carry no value for the active dimension
 // (the "Ohne …" section). Exported so the filter can offer it as a selectable
@@ -42,6 +44,12 @@ export function toValues(raw: unknown): string[] {
 // Bucket keys an item belongs to under the current dimension. Empty = ungrouped.
 export function bucketsFor(item: TimelineItem, dim: string, ctx: SectionContext): string[] {
   if (dim === TAG_DIM) return item.tags ?? [];
+  // Single-valued and never the default: an item without a stored status lands in
+  // the "Ohne Status" bucket rather than under `Open`, because the two are
+  // different states of the source (see „The default is shown, not stored" in
+  // docs/items.md) and filtering for `Open` must not sweep in items that only
+  // display as one.
+  if (dim === STATUS_DIM) return item.status ? [item.status] : [];
   if (dim.startsWith(CF_PREFIX)) return toValues(ctx.metaOf(item.id)?.[dim.slice(CF_PREFIX.length)]);
   // Default: the item's own group, if it resolves to a real group.
   const groupIds = new Set(ctx.groups.map((g) => g.id));
@@ -58,15 +66,31 @@ export function dimensionLabel(f: CustomFieldDef): string {
 }
 
 // Grouping dimensions offered for the current build: always the item group,
-// "Tag" when anything is tagged, plus one entry per declared custom field.
+// "Tag" when anything is tagged, "Status" when anything carries one, plus one
+// entry per declared custom field. Status is offered on evidence rather than
+// unconditionally: a file-based source has no status concept at all, and a
+// dimension whose only bucket is "Ohne Status" is a choice that cannot do
+// anything.
 export function groupByOptions(
   entries: TimelineItem[],
   customFields: CustomFieldDef[],
 ): GroupByOption[] {
   const opts: GroupByOption[] = [{ key: GROUP_DIM, label: 'Gruppe' }];
   if (entries.some((it) => (it.tags?.length ?? 0) > 0)) opts.push({ key: TAG_DIM, label: 'Tag' });
+  if (entries.some((it) => it.status)) opts.push({ key: STATUS_DIM, label: 'Status' });
   for (const f of customFields) opts.push({ key: `${CF_PREFIX}${f.key}`, label: dimensionLabel(f) });
   return opts;
+}
+
+// The values a dimension declares up front, in the order they should appear:
+// the fixed status sequence, or a custom field's `options`. Everything else
+// declares nothing and is ordered by first appearance.
+function declaredOrder(dim: string, ctx: SectionContext): { value: string; label?: string }[] {
+  if (dim === STATUS_DIM) return ITEM_STATUSES.map((s) => ({ value: s.key, label: s.label }));
+  if (dim.startsWith(CF_PREFIX)) {
+    return ctx.customFields.find((f) => `${CF_PREFIX}${f.key}` === dim)?.options ?? [];
+  }
+  return [];
 }
 
 // Human label of the "Ohne …" fallback bucket for the active dimension.
@@ -102,13 +126,13 @@ export function computeSections(
     }
   } else {
     const seen = new Set<string>();
-    if (dim.startsWith(CF_PREFIX)) {
-      const field = ctx.customFields.find((f) => `${CF_PREFIX}${f.key}` === dim);
-      for (const opt of field?.options ?? []) {
-        if (buckets.has(opt.value) && !seen.has(opt.value)) {
-          order.push({ id: opt.value, label: opt.label || opt.value });
-          seen.add(opt.value);
-        }
+    // A dimension with a declared value order uses it, so the sections read
+    // Open → Doing → Done (and a custom field follows its own options) instead of
+    // whichever value the earliest item happened to carry.
+    for (const opt of declaredOrder(dim, ctx)) {
+      if (buckets.has(opt.value) && !seen.has(opt.value)) {
+        order.push({ id: opt.value, label: opt.label || opt.value });
+        seen.add(opt.value);
       }
     }
     for (const it of entries) {
