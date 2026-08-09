@@ -161,7 +161,22 @@ gate it with a feature flag, not a long-lived branch. Issues live in this repo's
 own tracker (<https://github.com/dermellor/ganttry/issues>); reference them from
 the closing commit with `Closes #NN`.
 
-### 4. Guard against foreign in-flight work
+### 4. Everything written into the history is English
+
+Commit subjects and bodies, branch names, PR titles and descriptions, issue text:
+English, like the code and the documentation. The interface stays German
+(see [`CONTRIBUTING.md`](CONTRIBUTING.md) → „Conventions worth knowing"), and a
+quoted UI string stays German inside an English message. Conventional-commit
+prefixes are unaffected (`feat(sources): …`).
+
+The failure mode this prevents is imitation. Most of the history before this rule
+is German, and a tool told to „match the style of the last commits" reproduces
+that language forever, one commit at a time. What the repo documents outranks what
+`git log` happens to show. The existing German commits stay as they are: rewriting
+published history over a language choice costs every open branch and every
+existing link a rebase.
+
+### 5. Guard against foreign in-flight work
 
 At the start of a change-session, check `git status`. If it already contains
 uncommitted changes you did not create, another session owns them — do not build on
@@ -169,7 +184,7 @@ top of or commit them blindly. Surface them and either work in a fresh worktree 
 `origin/main` (per the base invariant — never off a possibly-stale local `HEAD`)
 or coordinate before touching shared files.
 
-### 5. Issues are public: never file instance-specific ones
+### 6. Issues are public: never file instance-specific ones
 
 There is **one** tracker, and it is the public one. GitHub has no such thing as a
 private issue: everything in a public repo's tracker is world-readable, including
