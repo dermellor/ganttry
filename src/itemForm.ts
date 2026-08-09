@@ -566,9 +566,26 @@ export function showItemForm(
   // to its neighbour's edge; it is an affordance, not the enforcement — a typed
   // (rather than picked) date still lands in the field, so applyItemForm rejects
   // it as well. Re-synced on every edit because either date may have just moved.
+  //
+  // Never while one of the two has focus, and never a write that changes
+  // nothing. Assigning `min`/`max` makes the control re-parse its value, which
+  // throws away the half-finished entry in its segment editor — the date the
+  // user was in the middle of typing is gone on the first keystroke. And this
+  // ran at exactly the wrong moment: Chrome fires `change` as soon as a complete
+  // date becomes incomplete, i.e. on that very first digit, not (as assumed)
+  // only on a settled value. Traced in the running app:
+  //   keydown "0" → value 2027-09-01
+  //   input       → value ""        badInput true
+  //   change      → value ""        badInput true   ← bounds were rewritten here
+  // The bounds are an affordance for the picker, so deferring them until the
+  // field is left costs nothing: the enforcement is applyItemForm plus the
+  // server, and both still run.
   const syncExtentBounds = () => {
-    endInput.min = startInput.value ? shiftDays(startInput.value, 1) : '';
-    startInput.max = endInput.value ? shiftDays(endInput.value, -1) : '';
+    if (document.activeElement === startInput || document.activeElement === endInput) return;
+    const nextEndMin = startInput.value ? shiftDays(startInput.value, 1) : '';
+    const nextStartMax = endInput.value ? shiftDays(endInput.value, -1) : '';
+    if (endInput.min !== nextEndMin) endInput.min = nextEndMin;
+    if (startInput.max !== nextStartMax) startInput.max = nextStartMax;
   };
   syncExtentBounds();
   // An item stored with a reversed extent (from before this rule existed) opens
@@ -613,11 +630,22 @@ export function showItemForm(
   // Reactive editing: every change writes straight into the model and refreshes
   // the live view. No save button — the source is persisted when the sidebar is
   // left (commitItemForm).
+  //
+  // Dates are not exempted here even though their intermediate states must not
+  // reach the model: `change` fires on the first keystroke too (traced — see
+  // syncExtentBounds), so skipping `input` for them would buy nothing. What
+  // keeps a half-typed date out of the model is `isTransient` in applyItemForm.
   form.addEventListener('input', scheduleLiveEdit);
   form.addEventListener('change', scheduleLiveEdit);
   // Leaving a field guarantees its edit is written even mid-session, without
-  // waiting for the throttle window or the sidebar to close.
-  form.addEventListener('focusout', () => commitItemForm());
+  // waiting for the throttle window or the sidebar to close. The bounds are
+  // re-synced here rather than on `change`, because that is the first moment
+  // writing them cannot disturb an entry in progress; deferred a tick so focus
+  // has actually moved.
+  form.addEventListener('focusout', () => {
+    commitItemForm();
+    setTimeout(syncExtentBounds, 0);
+  });
   form.querySelector<HTMLButtonElement>('[data-action="delete"]')!.addEventListener('click', () => {
     deleteItem(id);
   });
