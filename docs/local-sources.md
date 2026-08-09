@@ -285,14 +285,16 @@ Three stages, each shippable on its own, in increasing order of risk:
      answer `501` via a new `NotSupportedError`, because a 500 reads as „we are
      broken" and a silent success would report „Gespeichert" for a write that
      never happened.
-2. ~~**Directory sources on the read path.**~~ **Done, except the deletion.**
+2. ~~**Directory sources on the read path.**~~ **Done.**
    [`scripts/local/scan.ts`](../scripts/local/scan.ts) turns a directory into a
-   `TimelineFile`; the local adapter serves it live, `build-data.ts` materializes
-   it for a static build, and it is read-only throughout (every write answers
-   `501`, refused *before* the item lookup so the reason does not depend on
-   whether the item happened to exist). **`buildFromNotes` and `notes.json` are
-   still in place** — removing them takes the config-declared filter views with
-   them, which is a separate decision. Four things came out differently:
+   `TimelineFile`; the local adapter serves it live and `build-data.ts`
+   materializes it for a static build. As this stage shipped it was read-only
+   throughout, every write answering `501` refused *before* the item lookup so
+   the reason did not depend on whether the item happened to exist; stage 3
+   replaced that with the real write path. `buildFromNotes`, `notes.json` and
+   `src/filter.ts` went in this stage's own commit after all, rather than in the
+   separate decision anticipated here (see „What this removed" above). Five
+   things came out differently:
    - **A separate `TimelineContainer` type, not `items` made optional.**
      Optional `items` would weaken the type at the dozen call sites that iterate
      it, none of which a container file ever reaches: they all work on the
