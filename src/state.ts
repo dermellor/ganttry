@@ -16,6 +16,7 @@ import type { BuiltConfig, SourceLive, TimelineFile, View } from './types';
 import type { BuildResult } from './buildItems';
 import type { JiraIssue } from './jira';
 import type { PresenceUser } from './presence';
+import type { MemberRole } from './access';
 import type { PresenceHandle } from './realtime';
 import { isoDateOnly } from './editor';
 import { writeUrlState, type UrlState } from './urlState';
@@ -42,6 +43,7 @@ export const els = {
   milestonesOnly: document.getElementById('milestones-only') as HTMLInputElement,
   presence: document.getElementById('presence') as HTMLDivElement,
   addBtn: document.getElementById('add-btn') as HTMLButtonElement,
+  membersBtn: document.getElementById('members-btn') as HTMLButtonElement,
   exportBtn: document.getElementById('export-btn') as HTMLButtonElement,
   status: document.getElementById('status') as HTMLSpanElement,
   detail: document.getElementById('detail') as HTMLElement,
@@ -152,6 +154,11 @@ export interface AppState {
   // Signed-in user (from /api/me); labels our own presence avatar. Null when the
   // site isn't gated / identity is unknown.
   currentUser: PresenceUser | null;
+  // What this instance says the current user may do, from the same probe. Null
+  // when access control is off, which is also what the interface reads as „no
+  // membership screen": there is nothing to administer then. Only ever an
+  // affordance hint — every route enforces for itself.
+  currentRole: MemberRole | null;
   realtimeRefreshTimer: ReturnType<typeof setTimeout> | null;
   // Debounce for reactive form edits: coalesces rapid keystrokes into one
   // model update + live rebuild (see scheduleLiveEdit).
@@ -206,6 +213,7 @@ export const state: AppState = {
   presenceHandle: null,
   presenceSourceId: null,
   currentUser: null,
+  currentRole: null,
   realtimeRefreshTimer: null,
   liveEditTimer: null,
   selectedItemId: null,

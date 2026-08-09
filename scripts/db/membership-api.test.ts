@@ -1,4 +1,4 @@
-// The invitation lifecycle, end to end through the dispatcher.
+// The invitation lifecycle, end to end through the dispatcher (/api/members).
 //
 // Against a real Postgres rather than a fake repo, because the interesting parts
 // are exactly the ones a fake would paper over: that re-inviting does not
@@ -8,7 +8,7 @@
 
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { handleUsersApi } from './api.ts';
+import { handleMembersApi } from './api.ts';
 import { makePostgresRepo } from './timeline-repo.ts';
 import { applyMigrations, freshTestDatabase, skipWithoutDatabase } from './test-database.ts';
 import type { Member } from '../../src/types';
@@ -29,7 +29,7 @@ test('membership management', { skip: skipWithoutDatabase() }, async (t) => {
   };
 
   const call = (method: string, body: unknown) =>
-    handleUsersApi(repo, { method, caller: ADMIN, body });
+    handleMembersApi(repo, { method, caller: ADMIN, body });
 
   try {
     await t.test('inviting returns the token once, and stores only its hash', async () => {
@@ -49,7 +49,7 @@ test('membership management', { skip: skipWithoutDatabase() }, async (t) => {
       assert.match(row.invite_token_hash, /^[0-9a-f]{64}$/, 'a sha-256 hex digest is');
 
       // The listing must not leak it either.
-      const list = (await call('GET', undefined)).json as { users: unknown[] };
+      const list = (await call('GET', undefined)).json as { members: unknown[] };
       assert.equal(JSON.stringify(list).includes(inviteToken), false);
     });
 

@@ -20,6 +20,7 @@
 // which needs credentials rather than a database.
 
 import {
+  handleMembersApi,
   handleUsersApi,
   liveOverride,
   parseSourcePath,
@@ -127,6 +128,7 @@ async function readBody(req: Request, method: string): Promise<unknown> {
  */
 function isOurs(path: string): boolean {
   return (
+    path === '/api/members' ||
     path === '/api/users' ||
     path === '/api/sources' ||
     path === '/api/source' ||
@@ -154,12 +156,11 @@ export function serviceRoleFrom(raw: string | undefined | null): MemberRole {
  * one forgotten is a write path.
  */
 function requiredCapability(path: string, method: string): Capability {
-  const base = capabilityForMethod(method);
-  // Managing people is its own stake: a PATCH on a timeline item and a PATCH on
-  // a membership are the same verb with very different consequences. Reading the
-  // directory stays a plain read, because the owner picker needs it.
-  if (path === '/api/users' && base !== 'read') return 'manage';
-  return base;
+  // Everything about administering people needs `manage`, reading included: the
+  // member list carries roles, statuses and invitation state, which is not what
+  // the owner picker's directory (/api/users, a plain read) is for.
+  if (path === '/api/members') return 'manage';
+  return capabilityForMethod(method);
 }
 
 async function authorize(path: string, method: string, ctx: ApiContext): Promise<Response | null> {
@@ -263,20 +264,26 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
   const denied = await authorize(path, method, ctx);
   if (denied) return denied;
 
+  if (path === '/api/members') {
+    const repo = resolveRepo(ctx.conns);
+    if (!repo) return json({ error: 'db_not_configured', message: 'Membership needs a database.' }, 503);
+    const result = await handleMembersApi(repo, {
+      method,
+      caller: ctx.caller,
+      body: await readBody(req, method),
+    });
+    return json(result.json, result.status);
+  }
+
   if (path === '/api/users') {
-    if (method !== 'GET' && method !== 'POST' && method !== 'PATCH') {
-      return json({ error: 'method not allowed' }, 405);
-    }
+    if (method !== 'GET') return json({ error: 'method not allowed' }, 405);
     const repo = resolveRepo(ctx.conns);
     // Without a DB there is no directory. 200 with an empty list rather than an
     // error: that is the truth for a checkout without credentials, and no source
     // is editable there anyway, so the owner picker having nothing to offer is
-    // correct rather than a failure. A write has nowhere to go and says so.
-    if (!repo) {
-      if (method === 'GET') return json({ users: [] });
-      return json({ error: 'db_not_configured', message: 'Membership needs a database.' }, 503);
-    }
-    const result = await handleUsersApi(repo, { method, caller: ctx.caller, body: await readBody(req, method) });
+    // correct rather than a failure.
+    if (!repo) return json({ users: [] });
+    const result = await handleUsersApi(repo, { method, caller: ctx.caller });
     return json(result.json, result.status);
   }
 

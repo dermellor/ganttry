@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="/src/styles/theme.css" />
     <link rel="stylesheet" href="/src/styles/timeline.css" />
     <link rel="stylesheet" href="/src/styles/list.css" />
+    <link rel="stylesheet" href="/src/styles/members.css" />
     <link rel="stylesheet" href="/src/styles/menu.css" />
   </head>
   <body>
@@ -48,6 +49,7 @@
       </div>
       <div class="app-controls">
         <div id="presence" class="presence" aria-label="Online" hidden></div>
+        <button id="members-btn" class="export-btn" type="button" title="Benutzer dieser Instanz verwalten" hidden>Benutzer</button>
         <button id="add-btn" class="export-btn add-btn" type="button" title="Neuen Eintrag hinzufügen" hidden>+ Eintrag</button>
       </div>
     </header>
@@ -86,6 +88,41 @@
       <span id="status" class="status">…</span>
       <button id="export-btn" class="export-link" type="button" title="Aktuelle View als statische HTML-Datei herunterladen">Export HTML</button>
     </footer>
+    <dialog id="member-dialog" class="member-dialog" aria-label="Benutzer">
+      <form method="dialog" class="member-head">
+        <h2>Benutzer</h2>
+        <button id="member-close" type="button" class="detail-close" aria-label="Schließen">×</button>
+      </form>
+
+      <form id="member-invite-form" class="member-invite-form">
+        <input type="email" name="email" placeholder="adresse@example.com" aria-label="E-Mail-Adresse einladen" required />
+        <select name="role" aria-label="Rolle">
+          <option value="viewer">Leser</option>
+          <option value="editor" selected>Bearbeiter</option>
+          <option value="admin">Administrator</option>
+        </select>
+        <button type="submit">Einladen</button>
+      </form>
+
+      <p id="member-note" class="member-note" hidden></p>
+
+      <div id="member-invite" class="member-invite" hidden>
+        <p>Einladungslink für <strong class="member-invite-for"></strong>. Er wird nur dieses eine Mal angezeigt.</p>
+        <div class="member-invite-row">
+          <input id="member-invite-url" type="text" readonly aria-label="Einladungslink" />
+          <button id="member-invite-copy" type="button">Kopieren</button>
+        </div>
+      </div>
+
+      <div class="member-table-wrap">
+      <table class="member-table">
+        <thead>
+          <tr><th>Person</th><th>Rolle</th><th>Status</th><th>Zuletzt</th><th></th></tr>
+        </thead>
+        <tbody id="member-rows"></tbody>
+      </table>
+      </div>
+    </dialog>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
