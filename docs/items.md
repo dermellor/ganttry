@@ -56,6 +56,14 @@ exactly one of the three states.
 - **Editing:** the item form renders a Status dropdown
   ([`src/itemForm.ts`](../src/itemForm.ts)); new items seed `DEFAULT_STATUS`
   ([`src/render.ts`](../src/render.ts)).
+- **The default is shown, not stored.** An item without a `status` displays as
+  `Open`, and `statusToStore` keeps the form from writing that display value back
+  — otherwise merely opening an item committed `"status": "Open"` into the source
+  file, and on a DB-backed timeline bumped `version` and re-attributed
+  `updatedBy`, so reading an item announced itself to the others as editing it.
+  An item that already carries a status always gets an explicit value written,
+  including back to `Open`, because the column is `NOT NULL` and an omitted key
+  leaves the old value standing.
 - **Server write:** `itemToRow` always writes a canonical value (never `null`,
   so inserts satisfy `NOT NULL`); `updateItem`'s patch map carries `status`
   ([`scripts/db/timeline-repo.ts`](../scripts/db/timeline-repo.ts)).

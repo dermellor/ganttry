@@ -9,6 +9,7 @@
 // multi-select suggestions are the field's declared options, not free-form.
 
 import { escapeHtml } from './buildItems';
+import { writeListMeta } from './fieldValue';
 import { state } from './state';
 import { scheduleLiveEdit } from './persistence';
 import { mergeFieldDefs, pluginFieldDefs } from './pluginHost/registry';
@@ -317,9 +318,8 @@ export function applyCustomFields(form: HTMLFormElement, meta: Record<string, un
   for (const def of getCustomFields()) {
     const key = def.key;
     if (def.type === 'multi-select') {
-      const arr = (state.formCustomMulti[key] ?? []).filter(Boolean);
-      if (arr.length) meta[key] = [...arr];
-      else delete meta[key];
+      // Via writeListMeta so a stored empty array survives a read — see there.
+      writeListMeta(meta, key, (state.formCustomMulti[key] ?? []).filter(Boolean));
     } else {
       const control = form.querySelector<HTMLInputElement | HTMLSelectElement>(
         `[data-cf-control="${key}"]`,

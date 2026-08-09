@@ -13,9 +13,9 @@ import {
   wireCustomFields,
 } from './customFields';
 import { TIMELINE_ICONS } from './icons';
-import { ITEM_STATUSES, statusOrDefault, type StatusKey } from './status';
+import { ITEM_STATUSES, statusOrDefault, statusToStore, type StatusKey } from './status';
 import { findItemIndex, isoDateOnly } from './editor';
-import { applyFieldPick } from './fieldValue';
+import { applyFieldPick, writeListMeta } from './fieldValue';
 import { createMarkdownEditor, type MarkdownEditor } from './wysiwyg';
 import {
   isJiraKey,
@@ -53,10 +53,13 @@ function buildGroupOptions(
   const childIds = new Set<string>();
   for (const g of groups) for (const c of g.nestedGroups ?? []) childIds.add(c);
   const sel = selected == null ? null : String(selected);
+  let matched = false;
   const optHtml = (id: string): string => {
     const g = byId.get(id);
     if (!g) return '';
-    return `<option value="${escapeHtml(g.id)}"${g.id === sel ? ' selected' : ''}>${escapeHtml(g.content)}</option>`;
+    const isSel = g.id === sel;
+    if (isSel) matched = true;
+    return `<option value="${escapeHtml(g.id)}"${isSel ? ' selected' : ''}>${escapeHtml(g.content)}</option>`;
   };
 
   const out: string[] = [];
@@ -69,6 +72,13 @@ function buildGroupOptions(
       out.push(optHtml(g.id));
     }
   }
+  // Nothing matched — the item has no group, or one that no longer exists. A
+  // `<select>` with no selected option shows its *first* one, so committing the
+  // form wrote that first group onto the item: opening the form silently moved a
+  // group-less item into whatever track happened to sort first. The placeholder
+  // carries the empty value, which applyItemForm leaves alone, so the read stays
+  // a read and a dangling group id survives instead of being reassigned.
+  if (!matched) out.unshift('<option value="" selected>— —</option>');
   return out.join('');
 }
 
@@ -1431,6 +1441,10 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   };
 
   const item = state.activeSourceFile.items[idx];
+  // Captured before the form overwrites either: the extent seeding further down
+  // has to tell "the user just emptied this" from "it was stored this way".
+  const hadExtent = item.end != null || item.duration != null;
+  const prevType = item.type;
   item.content = get('content') || item.content;
   const durVal = get('duration');
   // A transient value counts as "no answer yet" everywhere below — including the
@@ -1505,10 +1519,18 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   // Not while a date is being typed: the extent is momentarily unreadable, and
   // seeding a default there would write a duration the user never asked for and
   // then have to take it back once the date completes.
+  //
+  // And only when this pass is what left the item extentless — either the type
+  // just changed, or an extent it arrived with was emptied. An item *stored*
+  // without one keeps it that way, because opening its form is a read: seeding
+  // unconditionally wrote `duration: '1w'` into the source on a mere click, the
+  // same defect as the status default. Such an item is invisible on the timeline
+  // either way; the form now shows an empty Duration, which says so.
   if (
     (item.type === 'range' || item.type === 'background') &&
     !item.end &&
     !item.duration &&
+    (hadExtent || item.type !== prevType) &&
     !startTyping &&
     !endTyping
   ) {
@@ -1524,27 +1546,33 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     else delete item.icon;
   }
 
-  // status is mandatory (NOT NULL, default Open) — always store a canonical
-  // value, but only when its control is actually present (see above).
-  if (fd.has('status')) item.status = statusOrDefault(get('status'));
+  // Only when the control is actually present (see above), and only when the
+  // value is the user's rather than the picker's seeded default — statusToStore
+  // owns that distinction, because getting it wrong made opening a form a write.
+  if (fd.has('status')) {
+    const status = statusToStore(item.status, get('status'));
+    if (status !== undefined) item.status = status;
+  }
 
   const body = String(fd.get('body') ?? '');
   if (body) item.body = body;
   else delete item.body;
 
+  // An item that arrived with an empty `metadata` object keeps it: the cleanup at
+  // the end of this function would otherwise drop the key on a mere read, the
+  // same churn writeListMeta exists to prevent one level down.
+  const arrivedWithEmptyMeta =
+    item.metadata != null && Object.keys(item.metadata as object).length === 0;
   const meta = (item.metadata ??= {}) as Record<string, unknown>;
-  if (state.formDependsOn.length) meta.dependsOn = [...state.formDependsOn];
-  else delete meta.dependsOn;
+  writeListMeta(meta, 'dependsOn', state.formDependsOn);
 
   const owner = get('owner');
   if (owner) meta.owner = owner;
   else delete meta.owner;
 
-  if (state.formJiraIssues.length) meta.jira = state.formJiraIssues.map((i) => ({ key: i.key, summary: i.summary }));
-  else delete meta.jira;
+  writeListMeta(meta, 'jira', state.formJiraIssues.map((i) => ({ key: i.key, summary: i.summary })));
 
-  if (state.formTags.length) meta.tags = [...state.formTags];
-  else delete meta.tags;
+  writeListMeta(meta, 'tags', state.formTags);
   // The tags chip editor supersedes the legacy singular `tag`; drop it so both
   // don't linger (readTags already folds it into formTags on load).
   delete meta.tag;
@@ -1574,7 +1602,7 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
       delete meta[k];
     }
   }
-  if (Object.keys(meta).length === 0) delete (item as any).metadata;
+  if (Object.keys(meta).length === 0 && !arrivedWithEmptyMeta) delete (item as any).metadata;
 
   rebuildAndApply();
   // Keep the caption and the timeline selection in sync with the live content

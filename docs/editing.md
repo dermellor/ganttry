@@ -308,7 +308,11 @@ replaced with nothing.
 - **An emptied field loses its key, and an item with none left loses `metadata`.**
   Same rule as `applyItemForm`, and load-bearing for the same reason: the persist
   diff sends a missing clearable field as an explicit `null` (`buildItemPatch`), or
-  the old value comes back on reload.
+  the old value comes back on reload. The one exception is a collection that was
+  *stored* empty (`"dependsOn": []`, `"metadata": {}`): both spellings mean the
+  same thing, so rewriting one into the other is not an edit, and doing it anyway
+  turned every click on such an item into a diff — see `writeListMeta` in
+  [`src/fieldValue.ts`](../src/fieldValue.ts).
 - **A status or field change has to re-render an open form**, and that is
   correctness, not polish: the form's pickers keep their values in hidden inputs,
   so a form still open on that item would hold the *old* value in its `FormData`
@@ -468,6 +472,25 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
 - **Depends on** is a title-autosuggest field: type to search the current timeline's items by title (or id), pick to link a dependency (rendered as a removable chip). Stored as `metadata.dependsOn` IDs — the chips just show the target's title.
 - **Tags** is a chip editor with autosuggest: type to match tags already used in the timeline, or type a new label and press Enter to create one. Each chip carries its resolved colour and a remove button. Stored as `metadata.tags` (string[]); saving migrates any legacy singular `metadata.tag` into the array.
 - **Phases** render as a ribbon along the top. Drag a segment to move it, drag either edge to resize (snaps to whole days, min. 1 day), and click it (without dragging) to open the phase form in the side panel: title, start/end, duration, icon, colour. Persists on drop / Save; Delete removes the phase.
+
+**Opening an item's form is a read.** Leaving the panel commits it — on
+`focusout`, on switching to another item, on closing, on a view switch, on
+unload — and `commitItemForm` runs `applyItemForm` whether or not anything was
+typed. So every value the form *displays* on behalf of an absent one has to stay
+out of the model, or the commit invents an edit and the persist diff faithfully
+writes it: on a JSON source the file gains a field on every click, on a DB source
+the same no-op bumps `version` and re-attributes `updatedBy`. Four of these were
+live at once — a defaulted `status`, a `<select>` with no empty option putting
+its first group on a group-less item (and silently reassigning a dangling group
+id), `DEFAULT_EXTENT` on a stored-extentless range, and an empty `dependsOn` /
+`metadata` losing its key. The rule the fixes share: a default is applied for
+display only, and a stored spelling of "nothing" is left exactly as it is.
+`statusToStore` ([`src/status.ts`](../src/status.ts)) and `writeListMeta`
+([`src/fieldValue.ts`](../src/fieldValue.ts)) carry the two halves that are worth
+unit-testing; the other two are guards inside `applyItemForm` /
+`buildGroupOptions`. The seeding that stays is the one a *change* triggers:
+emptying a range's extent still re-seeds `DEFAULT_EXTENT`, because a range
+without one vanishes from the timeline.
 
 Persistence path: viewer → item-level calls (`POST/PATCH/DELETE /api/source/<id>/item`, `PUT …/phases`) → middleware (`vite.config.ts`) → Supabase via `scripts/db/api.ts`. `PATCH` carries the item `version` in `If-Match`; a stale version returns `409` and the client reloads that item. Only DB-backed sources are editable; genuine file-based sources (the examples) load read-only from their static `/data/sources/<id>.json`. Builds (`npm run build`) and exported HTML have no edit endpoint. DB-backed timelines are discovered from the DB at build time (`collectDbSources`); the registration **stub** (`name` + `items: []`, no content) is written only to the gitignored build output `public/data/sources/<id>.json` — nothing DB-backed is committed, and there is deliberately no committed content cache (see „Principle: no emergency or fallback data").
 
