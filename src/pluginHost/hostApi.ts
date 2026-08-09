@@ -15,24 +15,31 @@
 // object with **no** item-write methods, so an over-reaching plugin fails at the
 // missing method rather than silently doing what it was not permitted to do.
 
-import type { TimelineFile, TimelineFileItem } from '../types';
+import type { PluginDataRow, TimelineFile, TimelineFileItem } from '../types';
 import { grants, type PluginManifest } from './manifest';
 
 /**
  * The timeline as a plugin sees it. Pinned to the file shape the viewer already
- * loads; #12 removes the plugin-specific fields still on it, at which point this
- * alias becomes a narrower type rather than a rename.
+ * loads, which now carries `pluginData` — so a plugin's own rows arrive with the
+ * snapshot rather than through a second request.
+ *
+ * `TimelineFile.pricing` is still on it, and that is the last plugin-specific
+ * field: it goes when product-roadmap moves onto the generic store
+ * (<https://github.com/dermellor/ganttry/issues/17>), at which point this alias
+ * becomes a narrower type rather than a rename.
  */
 export type TimelineSnapshot = TimelineFile;
 
-/** A row in one of the plugin's own collections (#12). */
-export type PluginRow = {
-  id: string;
-  data: Record<string, unknown>;
-  /** Optimistic-lock counter. Send it back on write; a stale one is a 409. */
-  version: number;
-  sort?: number;
-};
+/**
+ * A row in one of the plugin's own collections.
+ *
+ * One definition, aliased rather than restated: this is the shape the store
+ * writes, the wire carries and a local file holds, and two declarations of it
+ * drift the moment one changes. The first draft here also carried a `sort`, which
+ * the store does not have — order is the array's order, because that is the only
+ * representation a JSON file has (see docs/plugin-storage.md).
+ */
+export type PluginRow = PluginDataRow;
 
 export type ItemsApi = {
   add(item: TimelineFileItem): Promise<TimelineFileItem>;
