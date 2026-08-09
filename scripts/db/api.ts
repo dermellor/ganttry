@@ -17,6 +17,14 @@ import type {
   TimelinePhase,
 } from '../../src/types';
 import {
+  DEFAULT_ROLE,
+  normalizeMemberRole,
+  normalizeMemberStatus,
+  wouldOrphanInstance,
+  type MemberRole,
+  type MemberStatus,
+} from '../../src/access.ts';
+import {
   ConflictError,
   NotFoundError,
   NotSupportedError,
@@ -30,6 +38,7 @@ import {
 // driver into a bundle — the drivers arrive through the glue that constructs a
 // real handle (Node factories / edge esm.sh imports). This keeps both adapters
 // resolvable from one `resolveAdapter` while the Deno edge bundle stays clean.
+import { nextItemId } from '../../src/itemId.ts';
 import { makePostgresRepo } from './timeline-repo.ts';
 import { makeSupabaseRepo } from './timeline-repo-supabase.ts';
 
@@ -97,8 +106,13 @@ const err = (status: number, error: string, extra?: Record<string, unknown>): Ap
  */
 export async function handleUsersApi(
   repo: TimelineRepo,
-  req: { method: string; caller?: { email: string; name?: string | null } },
+  req: {
+    method: string;
+    caller?: { email: string; name?: string | null };
+    body?: unknown;
+  },
 ): Promise<ApiResult> {
+  if (req.method === 'POST' || req.method === 'PATCH') return manageMember(repo, req);
   if (req.method !== 'GET') return err(405, 'method not allowed');
   const email = req.caller?.email?.trim() ?? '';
   if (email.includes('@')) {
@@ -114,6 +128,150 @@ export async function handleUsersApi(
   try {
     return ok({ users: await repo.listUsers() });
   } catch (e) {
+    return err(500, 'server_error', { message: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Membership management (`POST` / `PATCH` on /api/users)
+// ---------------------------------------------------------------------------
+//
+// There is no DELETE, and that is the model rather than an omission: removing
+// somebody is `status: 'removed'`, because an item's `metadata.owner` stores an
+// address and a deleted row would leave attributions pointing at nothing.
+//
+// The address travels in the BODY, not the path. An e-mail carries `@` and dots,
+// and the same reasoning already keeps dotted ids out of the pricing matrix's
+// paths ("Body carries the coordinates so no dotted ids ever land in the path").
+
+/** How long an invitation stands unless the caller says otherwise. */
+const INVITE_TTL_DAYS = 14;
+
+/**
+ * A fresh invitation token and its hash.
+ *
+ * Web Crypto rather than `node:crypto`, because this module is bundled for the
+ * Deno edge as well. Only the hash is ever stored, so a database read cannot
+ * yield a usable invitation; the plain token is returned to the admin ONCE, in
+ * the response that created it.
+ */
+async function mintInviteToken(): Promise<{ token: string; hash: string }> {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const token = btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  const digest = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)),
+  );
+  const hash = [...digest].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return { token, hash };
+}
+
+/**
+ * Would this change leave the instance with no active admin?
+ *
+ * Checked before every demotion and every status change, because an instance
+ * without one cannot invite, cannot restore anybody, and is recoverable only
+ * through the bootstrap environment variable. Cheaper to refuse than to explain.
+ */
+async function orphansInstance(
+  repo: TimelineRepo,
+  email: string,
+  next: { role?: MemberRole; status?: MemberStatus },
+): Promise<boolean> {
+  const all = await repo.listMembers();
+  const others = all.filter((m) => m.email.toLowerCase() !== email.toLowerCase());
+  const changed = { role: next.role ?? 'viewer', status: next.status ?? 'removed' };
+  // The row being changed counts under its NEW values: promoting somebody to
+  // admin in the same call that demotes the last one is not an orphaning.
+  return wouldOrphanInstance([...others, changed]);
+}
+
+async function manageMember(
+  repo: TimelineRepo,
+  req: { method: string; caller?: { email: string; name?: string | null }; body?: unknown },
+): Promise<ApiResult> {
+  const body = (req.body ?? {}) as {
+    email?: string;
+    role?: string;
+    status?: string;
+    resend?: boolean;
+    expiresInDays?: number;
+  };
+  const email = (body.email ?? '').trim().toLowerCase();
+  // Shape only. Proving an address belongs to somebody is the identity
+  // provider's job at sign-in, and a stricter pattern here would reject valid
+  // addresses without buying any security.
+  if (!email || !email.includes('@')) return err(400, 'invalid_request', { message: 'email required' });
+
+  try {
+    if (req.method === 'POST') {
+      const role = normalizeMemberRole(body.role) ?? DEFAULT_ROLE;
+      const { token, hash } = await mintInviteToken();
+      const days = Number.isFinite(body.expiresInDays) ? Number(body.expiresInDays) : INVITE_TTL_DAYS;
+      const expiresAt = new Date(Date.now() + days * 86400_000).toISOString();
+      const member = await repo.inviteMember({
+        email,
+        role,
+        invitedBy: req.caller?.email ?? null,
+        tokenHash: hash,
+        expiresAt,
+      });
+      // The token is in this response and nowhere else, ever again.
+      return ok({ member, inviteToken: token }, 201);
+    }
+
+    // PATCH: role, status, or a fresh invitation for somebody who has not
+    // accepted yet.
+    const role = body.role === undefined ? undefined : normalizeMemberRole(body.role);
+    if (body.role !== undefined && !role) return err(400, 'invalid_request', { message: `unknown role "${body.role}"` });
+    const status = body.status === undefined ? undefined : normalizeMemberStatus(body.status);
+    if (body.status !== undefined && !status) return err(400, 'invalid_request', { message: `unknown status "${body.status}"` });
+
+    const current = await repo.getMember(email);
+    if (!current) return err(404, 'not found');
+
+    if ((role || status) && await orphansInstance(repo, email, {
+      role: role ?? current.role,
+      status: status ?? current.status,
+    })) {
+      return err(409, 'last_admin', {
+        message: 'This would leave the instance without an active admin.',
+      });
+    }
+
+    let member = current;
+    if (role) member = await repo.updateMemberRole(email, role);
+    if (status) member = await repo.setMemberStatus(email, status);
+
+    if (body.resend) {
+      // Only for somebody who has not accepted. Re-issuing a token for an active
+      // member would put a live invitation on a membership that needs none, and
+      // the link would do nothing for them anyway.
+      if (member.status !== 'invited') {
+        return err(409, 'nothing_to_resend', {
+          message: 'This membership is not awaiting an invitation.',
+        });
+      }
+      const { token, hash } = await mintInviteToken();
+      const days = Number.isFinite(body.expiresInDays) ? Number(body.expiresInDays) : INVITE_TTL_DAYS;
+      member = await repo.inviteMember({
+        email,
+        role: member.role,
+        invitedBy: req.caller?.email ?? null,
+        tokenHash: hash,
+        expiresAt: new Date(Date.now() + days * 86400_000).toISOString(),
+      });
+      return ok({ member, inviteToken: token });
+    }
+
+    return ok({ member });
+  } catch (e) {
+    if (e instanceof NotFoundError) return err(404, 'not found');
+    if (e instanceof ValidationError) return err(400, 'invalid_request', { message: e.message });
+    if (e instanceof NotSupportedError) return err(501, 'not_supported', { message: e.message });
     return err(500, 'server_error', { message: e instanceof Error ? e.message : String(e) });
   }
 }
@@ -154,6 +312,21 @@ export async function handleTimelineApi(repo: TimelineRepo, req: ApiRequest): Pr
         // `start` is optional (a list-created item may have no date yet); only
         // `content` is required.
         if (!item || !item.content) return err(400, 'item needs content');
+        // An id is optional too, and used not to be: without one the row reached
+        // the driver with `id: undefined` and failed there — postgres.js with
+        // UNDEFINED_VALUE, PostgREST with a not-null violation. Two error
+        // messages for one missing rule, and it contradicted the documented MCP
+        // contract, which asks only for `start` and `content`.
+        //
+        // Deriving it needs the ids already in use, hence the read. It happens
+        // only on the path that used to 500, so nothing that worked before pays
+        // for it; a repo method for "just the ids" would have to be written three
+        // times (postgres, supabase, file) to save one query on a create.
+        if (!item.id) {
+          const file = await repo.getTimeline(id);
+          if (!file) return err(404, 'not found');
+          item.id = nextItemId(file.items.map((i) => i.id).filter(Boolean) as string[]);
+        }
         return ok(await repo.addItem(id, item, req.updatedBy), 201);
       }
       if (!sub.childId) return err(400, 'item id required');
@@ -369,19 +542,72 @@ export type DbConnections = {
   local?: { has(id: string): boolean; repo: TimelineRepo };
 };
 
+/** Which driver serves a timeline id, with the handle it was selected by. */
+type ResolvedDriver =
+  | { kind: 'postgres'; sql: Sql }
+  | { kind: 'supabase'; db: SupabaseClient };
+
 /**
- * Pick the storage repo for a timeline id from the available connection(s):
- * native postgres.js when a `sql` handle is present, else supabase-js. Null when
- * neither is configured (the glue then surfaces the "no DB" path — 404/503, no
- * fallback). When `sqlFor` is set (per-source routing), it chooses the pool for
- * `id` (namespace → dedicated connection, else default); without an `id` or
- * `sqlFor` it uses the default `sql` handle.
+ * The driver selection, in one place: native postgres.js when a `sql` handle is
+ * present, else supabase-js. When `sqlFor` is set (per-source routing), it
+ * chooses the pool for `id` (namespace → dedicated connection, else default);
+ * without an `id` or `sqlFor` it uses the default `sql` handle.
+ *
+ * Separate from `resolveRepo` because two decisions hang off the *same* choice —
+ * which repo to build, and which live-update mode a source can honestly claim
+ * (see `defaultLive`). Deriving them independently is how the two drift apart.
+ */
+function resolveDriver(conns: DbConnections, id?: string): ResolvedDriver | null {
+  const sql = conns.sqlFor && id != null ? conns.sqlFor(id) : conns.sql;
+  if (sql) return { kind: 'postgres', sql };
+  if (conns.supabase) return { kind: 'supabase', db: conns.supabase };
+  return null;
+}
+
+/**
+ * Pick the storage repo for a timeline id from the available connection(s).
+ * Null when neither driver is configured (the glue then surfaces the "no DB"
+ * path — 404/503, no fallback).
  */
 export function resolveRepo(conns: DbConnections, id?: string): TimelineRepo | null {
-  const sql = conns.sqlFor && id != null ? conns.sqlFor(id) : conns.sql;
-  if (sql) return makePostgresRepo(sql);
-  if (conns.supabase) return makeSupabaseRepo(conns.supabase);
-  return null;
+  const driver = resolveDriver(conns, id);
+  if (!driver) return null;
+  return driver.kind === 'postgres' ? makePostgresRepo(driver.sql) : makeSupabaseRepo(driver.db);
+}
+
+/**
+ * The live-update mode a DB source advertises when the runtime states no
+ * preference.
+ *
+ * Supabase Realtime needs a Supabase project, so „is one configured" is the
+ * honest signal — not which driver won. A deployment may deliberately run
+ * postgres.js *against* a Supabase database (`TIMELINES_DATABASE_URL` wins over
+ * the Supabase vars, see docs/database.md), and Realtime still works there;
+ * keying off the driver would silently downgrade exactly that setup.
+ *
+ * This used to default to 'realtime' unconditionally, which broke the plain
+ * self-hosted Postgres case in the quietest possible way: the server claimed
+ * realtime, the client looked for `VITE_SUPABASE_ANON_KEY`, found none, and did
+ * nothing at all. Other people's edits then appeared on reload only, with
+ * nothing anywhere saying why. Polling needs no anon key (the watermark endpoint
+ * is server-gated), so it is the mode a bare Postgres can actually keep.
+ */
+export function defaultLive(conns: DbConnections): SourceLive {
+  return conns.supabase ? 'realtime' : 'poll';
+}
+
+/**
+ * Parse a runtime's `TIMELINES_DB_LIVE` into an explicit override, or undefined
+ * to leave the choice to `defaultLive`. Both runtimes read their own env (Node
+ * `process.env` / Deno `Deno.env`) but must agree on what the value means.
+ *
+ * Deliberately three-way: an unrecognised value yields undefined rather than
+ * being coerced to a mode. The old `=== 'poll' ? 'poll' : 'realtime'` turned
+ * every typo into "realtime", so `TIMELINES_DB_LIVE=polling` silently disabled
+ * live updates on a Postgres deployment.
+ */
+export function liveOverride(raw: string | undefined | null): SourceLive | undefined {
+  return raw === 'poll' || raw === 'realtime' ? raw : undefined;
 }
 
 function dbAdapter(repo: TimelineRepo, live: SourceLive): SourceAdapter {
@@ -393,12 +619,13 @@ function dbAdapter(repo: TimelineRepo, live: SourceLive): SourceAdapter {
 }
 
 /**
- * The DB-backed source via native postgres.js. `live` defaults to 'realtime'
- * (Supabase Realtime pushes row changes over a WebSocket). Pass 'poll' for a
- * Postgres without Realtime enabled — clients then poll the watermark endpoint
- * instead. The value flows to the client via the X-Source-Live response header.
+ * The DB-backed source via native postgres.js. `live` defaults to 'poll': a
+ * connection string on its own says nothing about a Realtime channel being
+ * available, and the watermark endpoint works against any Postgres. Pass
+ * 'realtime' when the database behind it is a Supabase project. The value flows
+ * to the client via the X-Source-Live response header.
  */
-export function createPostgresSource(sql: Sql, live: SourceLive = 'realtime'): SourceAdapter {
+export function createPostgresSource(sql: Sql, live: SourceLive = 'poll'): SourceAdapter {
   return dbAdapter(makePostgresRepo(sql), live);
 }
 
@@ -426,10 +653,14 @@ export function createSupabaseSource(db: SupabaseClient, live: SourceLive = 'rea
  * the driver from the available connection(s) — postgres.js when a `sql` handle
  * is present, else supabase-js — so both runtimes select the same way. The `id`
  * argument is the seam future kinds key off (a registry lookup / prefix match)
- * without changing callers. `live` is read from the runtime's env by the glue
- * (TIMELINES_DB_LIVE) and threaded through so both runtimes agree on the mode.
+ * without changing callers.
+ *
+ * `live` is an OVERRIDE, not the mode: the glue passes what its runtime's
+ * `TIMELINES_DB_LIVE` says (through `liveOverride`) and undefined otherwise, so
+ * the sane mode for the configured backend comes from `defaultLive` rather than
+ * from each runtime deciding for itself.
  */
-export function resolveAdapter(conns: DbConnections, id: string, live: SourceLive = 'realtime'): SourceAdapter {
+export function resolveAdapter(conns: DbConnections, id: string, live?: SourceLive): SourceAdapter {
   // A local file wins for its own id. It cannot shadow a DB timeline in
   // practice, because `build-data.ts` already drops a file view whose id
   // collides with a discovered DB timeline — so an id that reaches here as a
@@ -442,7 +673,7 @@ export function resolveAdapter(conns: DbConnections, id: string, live: SourceLiv
   // list of local timelines. Without either there is nothing to serve.
   if (!repo && conns.local && id === '') return localAdapter(conns.local.repo);
   if (!repo) throw new Error('resolveAdapter: no DB connection (set TIMELINES_DATABASE_URL, or TIMELINES_SUPABASE_URL + TIMELINES_SUPABASE_SERVICE_KEY)');
-  return dbAdapter(repo, live);
+  return dbAdapter(repo, live ?? defaultLive(conns));
 }
 
 /** Parse a `/api/source/<id>[/<subkind>[/<childId>]]` path into id + sub. */

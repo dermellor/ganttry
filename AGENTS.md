@@ -1,21 +1,23 @@
-# Ganttry
+# Zeitlines
 
 Working notes for whoever changes this code, human or agent. It carries the
 conventions that apply to every change, the commands, and an index into the
 chapters. The reasoning behind a subsystem lives with that subsystem, in `docs/`.
 
-For what Ganttry *is* and how to run it, see [`README.md`](README.md); for how to
+For what Zeitlines *is* and how to run it, see [`README.md`](README.md); for how to
 get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Documentation map
 
 | Where | What |
 | --- | --- |
-| [`docs/architecture.md`](docs/architecture.md) | The two extension seams: source adapters (where data comes from) and plugins (what a timeline carries beyond items). Start here. |
+| [`docs/overview.md`](docs/overview.md) | The map between the subsystems: the request path through the layers, and how one timeline type is laid out across three stores. Start here. |
+| [`docs/architecture.md`](docs/architecture.md) | The two extension seams: source adapters (where data comes from) and plugins (what a timeline carries beyond items). |
 | [`docs/data-model.md`](docs/data-model.md) | The timeline file format, date extraction, and `timelines.config.json`. |
 | [`docs/items.md`](docs/items.md) | What an item carries beyond dates: icons, status, owner, custom fields. |
 | [`docs/editing.md`](docs/editing.md) | Editing in the interface: the item rail, the context menu, drag and form behaviour, the two view modes, URL state. |
 | [`docs/database.md`](docs/database.md) | Postgres as the data source: schema, the two drivers, optimistic locking, live updates, presence. |
+| [`docs/self-hosting.md`](docs/self-hosting.md) | Running it yourself: the three deployment shapes, the one-command container, and the access gate. |
 | [`docs/local-sources.md`](docs/local-sources.md) | Files the user owns as a source: a JSON file or a directory of Markdown. Editability is decided by the runtime, not by the format. |
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server and its tools. |
 | [`docs/deploy.md`](docs/deploy.md) | The Netlify deploy, the auth gate, JIRA linking. |
@@ -26,7 +28,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Conventions
 
-Four rules that hold across the whole codebase. Everything else is local to a
+Five rules that hold across the whole codebase. Everything else is local to a
 subsystem and documented there.
 
 - **Comments explain *why*, not *what*.** Most non-obvious rules here carry the
@@ -49,10 +51,16 @@ subsystem and documented there.
   `openapi.yaml` come from `src/types.ts`; change the type and regenerate. CI fails
   when a committed copy no longer matches, which is what keeps documentation from
   drifting away from the code.
+- **Diagrams are Mermaid, and they draw seams.** A figure in `docs/` goes in a
+  mermaid fence rather than a committed SVG or PNG: it renders on GitHub, stays
+  reviewable in a diff, and cannot become a binary that no longer matches the
+  code. Draw the boundaries between the parts, never inventories of what sits
+  behind them, because a figure that lists functions or counts is wrong within a
+  month. See [`docs/overview.md`](docs/overview.md) for both.
 
 ## The name covers the product, not its vocabulary or its instances
 
-**Ganttry** is the product name. Three families of `timeline(s)` are deliberately
+**Zeitlines** is the product name. Three families of `timeline(s)` are deliberately
 left alone, and a sweep that "finishes the rename" breaks all three:
 
 - **Domain vocabulary.** A timeline is still called a timeline: the tables
@@ -158,10 +166,25 @@ working tree.
 
 Either way, the done-gate (rule 2) applies. If a change is too risky for `main`,
 gate it with a feature flag, not a long-lived branch. Issues live in this repo's
-own tracker (<https://github.com/dermellor/ganttry/issues>); reference them from
+own tracker (<https://github.com/dermellor/zeitlines/issues>); reference them from
 the closing commit with `Closes #NN`.
 
-### 4. Guard against foreign in-flight work
+### 4. Everything written into the history is English
+
+Commit subjects and bodies, branch names, PR titles and descriptions, issue text:
+English, like the code and the documentation. The interface stays German
+(see [`CONTRIBUTING.md`](CONTRIBUTING.md) → „Conventions worth knowing"), and a
+quoted UI string stays German inside an English message. Conventional-commit
+prefixes are unaffected (`feat(sources): …`).
+
+The failure mode this prevents is imitation. Most of the history before this rule
+is German, and a tool told to „match the style of the last commits" reproduces
+that language forever, one commit at a time. What the repo documents outranks what
+`git log` happens to show. The existing German commits stay as they are: rewriting
+published history over a language choice costs every open branch and every
+existing link a rebase.
+
+### 5. Guard against foreign in-flight work
 
 At the start of a change-session, check `git status`. If it already contains
 uncommitted changes you did not create, another session owns them — do not build on
@@ -169,7 +192,7 @@ top of or commit them blindly. Surface them and either work in a fresh worktree 
 `origin/main` (per the base invariant — never off a possibly-stale local `HEAD`)
 or coordinate before touching shared files.
 
-### 5. Issues are public: never file instance-specific ones
+### 6. Issues are public: never file instance-specific ones
 
 There is **one** tracker, and it is the public one. GitHub has no such thing as a
 private issue: everything in a public repo's tracker is world-readable, including
@@ -205,7 +228,7 @@ pass over several files.
 Instance values live **outside the repo**, one file per instance:
 
 ```
-~/.config/ganttry/instances/<name>.env
+~/.config/zeitlines/instances/<name>.env
 ```
 
 `.env.local` then carries only the name:
@@ -285,6 +308,7 @@ touch a local checkout.
 npm install
 npm run dev          # build data + Vite + chokidar watcher on data/
 npm run build        # static dist
+npm start            # serve that dist + the API from one Node process (self-hosting)
 npm test             # unit tests (node --test, TZ-pinned to Europe/Berlin)
 npm run typecheck    # tsc --noEmit
 npm run db:check     # migrations pending? (runs before `dev`; no-op without a DB)
@@ -364,8 +388,20 @@ check).
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to
 `main` and on every pull request, over a Node 22 + 24 matrix: `npm ci`,
-`npm test`, `npm run schema:check`, `npm run openapi:check`, `npm run build`, then
-the bundle-split check below.
+`npm test`, `npm run schema:check`, `npm run openapi:check`, the env-var check,
+`npm run build`, then the bundle-split check below.
+
+**Documented env vars are actually read**
+([`scripts/ci/check-env-docs.sh`](scripts/ci/check-env-docs.sh)): every variable
+named in README's Configuration table has to appear in some tracked file that is
+not documentation. A knob nothing reads is invisible to every other check here,
+and `TIMELINES_NOTES_DIR` plus `TIMELINES_STATIC_ONLY` survived the removal of the
+Markdown notes pipeline by several releases because of it, in the README table and
+in `.env.example` both. Only that table is parsed: `docs/` names retired variables
+on purpose in its „what used to be here" sections, and a checker that cannot tell
+a historical note from a live claim needs an ignore list that goes stale by itself.
+`.env.example` and the script's own comments are excluded from the search side for
+the same reason, which is what makes it fail on the bug it was written for.
 
 **Node 22 is the floor** (`engines.node` in `package.json`), and that is a real
 constraint rather than a preference: the test script hands a glob

@@ -46,6 +46,30 @@ export function statusOrDefault(value: unknown): StatusKey {
 }
 
 /**
+ * What to store for `status` after a control reports `picked`, given what the
+ * item currently carries. `undefined` means: leave the field absent.
+ *
+ * The distinction exists because *displaying* a status and *having* one are not
+ * the same thing. An item without a `status` is shown as the default, so the
+ * form's picker (and the context menu's checkmark) report `Open` for it — and
+ * writing that display value straight back turned merely opening an item's form
+ * into an edit: the source file gained `"status": "Open"` on every click, and on
+ * a DB-backed timeline the same no-op bumped `version` and re-attributed
+ * `updatedBy`, so looking at an item announced itself to everyone else as
+ * editing it.
+ *
+ * So the default is never materialised on an item that never had one. Anything
+ * else is: an item that already carries a status always gets an explicit,
+ * canonical value written (including back to `Open`), because the DB column is
+ * NOT NULL and a PATCH that omits the key would leave the old value standing.
+ */
+export function statusToStore(current: unknown, picked: unknown): StatusKey | undefined {
+  const value = statusOrDefault(picked);
+  if (current == null && value === DEFAULT_STATUS) return undefined;
+  return value;
+}
+
+/**
  * Does the item's status contradict its own dates — the timeline shows it as
  * finished, but it is not `Done`? Drives the overdue mark on the bar (see the
  * item rail).

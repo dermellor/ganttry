@@ -2,7 +2,7 @@
 
 What an item carries beyond dates: icons, status, owner, custom fields.
 
-Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
 its file when it lives in another chapter.
 
@@ -56,6 +56,14 @@ exactly one of the three states.
 - **Editing:** the item form renders a Status dropdown
   ([`src/itemForm.ts`](../src/itemForm.ts)); new items seed `DEFAULT_STATUS`
   ([`src/render.ts`](../src/render.ts)).
+- **The default is shown, not stored.** An item without a `status` displays as
+  `Open`, and `statusToStore` keeps the form from writing that display value back
+  — otherwise merely opening an item committed `"status": "Open"` into the source
+  file, and on a DB-backed timeline bumped `version` and re-attributed
+  `updatedBy`, so reading an item announced itself to the others as editing it.
+  An item that already carries a status always gets an explicit value written,
+  including back to `Open`, because the column is `NOT NULL` and an omitted key
+  leaves the old value standing.
 - **Server write:** `itemToRow` always writes a canonical value (never `null`,
   so inserts satisfy `NOT NULL`); `updateItem`'s patch map carries `status`
   ([`scripts/db/timeline-repo.ts`](../scripts/db/timeline-repo.ts)).
@@ -67,6 +75,14 @@ exactly one of the three states.
 Status also surfaces on the built `TimelineItem` ([`src/buildItems.ts`](../src/buildItems.ts))
 and renders as a **Status column in the Liste view** ([`src/listView.ts`](../src/listView.ts));
 items without a status (file-based sources) show „—".
+
+It is also a **grouping and filter dimension** (`STATUS_DIM` in
+[`src/listGrouping.ts`](../src/listGrouping.ts)): the toolbar offers **Status**
+whenever the build carries one, sections/lanes run `Open → Doing → Done` in the
+`ITEM_STATUSES` order, and the filter's checklist selects which of them stay
+visible. Both controls share one dimension list on purpose, so a state added to
+`ITEM_STATUSES` appears in both without a second edit. See „Shared toolbar:
+Gruppieren + Filter" (docs/editing.md).
 
 On the **timeline** the status is drawn on the bar as **one mark** in the item rail
 (see „Item rail → The status mark" (docs/editing.md)), plus, where the status contradicts the dates,

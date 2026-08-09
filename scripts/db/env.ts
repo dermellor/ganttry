@@ -6,7 +6,7 @@
 //
 // TIMELINES_INSTANCE names a deployment this checkout can be pointed at (a
 // production site, a staging site, a throwaway test DB). It resolves to
-// ~/.config/ganttry/instances/<name>.env — outside the repo, so instance
+// ~/.config/zeitlines/instances/<name>.env — outside the repo, so instance
 // identity never becomes a tracked file and switching instances is one line in
 // .env.local rather than a rewrite of it. TIMELINES_INSTANCE_DIR moves that
 // directory. Unset = no profile, which is what a fresh checkout does.
@@ -36,7 +36,7 @@ export const INSTANCE_VAR = 'TIMELINES_INSTANCE';
 export const INSTANCE_DIR_VAR = 'TIMELINES_INSTANCE_DIR';
 
 /** Where instance profiles live unless INSTANCE_DIR_VAR says otherwise. */
-export const DEFAULT_INSTANCE_DIR = '~/.config/ganttry/instances';
+export const DEFAULT_INSTANCE_DIR = '~/.config/zeitlines/instances';
 
 // Resolved from this module's own location rather than process.cwd(): the MCP
 // server is registered user-global and runs from arbitrary directories.

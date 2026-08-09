@@ -1,0 +1,20 @@
+# Keep the build context small and, more importantly, free of anything that
+# would leak a deployment's data into an image.
+node_modules
+dist
+.git
+.github
+.claude
+
+# Every subdirectory of data/ belongs to an instance and is gitignored for the
+# same reason it is excluded here: a roadmap must not end up baked into an image
+# that gets pushed somewhere. The shipped examples (data/*.json) stay.
+data/*/
+
+# Credentials, in every shape the cascade accepts.
+.env
+.env.*
+!.env.example
+
+public/data
+public/data-*

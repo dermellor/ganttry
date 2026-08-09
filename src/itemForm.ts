@@ -13,9 +13,9 @@ import {
   wireCustomFields,
 } from './customFields';
 import { TIMELINE_ICONS } from './icons';
-import { ITEM_STATUSES, statusOrDefault, type StatusKey } from './status';
+import { ITEM_STATUSES, statusOrDefault, statusToStore, type StatusKey } from './status';
 import { findItemIndex, isoDateOnly } from './editor';
-import { applyFieldPick } from './fieldValue';
+import { applyFieldPick, writeListMeta } from './fieldValue';
 import { createMarkdownEditor, type MarkdownEditor } from './wysiwyg';
 import {
   isJiraKey,
@@ -59,10 +59,13 @@ function buildGroupOptions(
   const childIds = new Set<string>();
   for (const g of groups) for (const c of g.nestedGroups ?? []) childIds.add(c);
   const sel = selected == null ? null : String(selected);
+  let matched = false;
   const optHtml = (id: string): string => {
     const g = byId.get(id);
     if (!g) return '';
-    return `<option value="${escapeHtml(g.id)}"${g.id === sel ? ' selected' : ''}>${escapeHtml(g.content)}</option>`;
+    const isSel = g.id === sel;
+    if (isSel) matched = true;
+    return `<option value="${escapeHtml(g.id)}"${isSel ? ' selected' : ''}>${escapeHtml(g.content)}</option>`;
   };
 
   const out: string[] = [];
@@ -75,6 +78,13 @@ function buildGroupOptions(
       out.push(optHtml(g.id));
     }
   }
+  // Nothing matched — the item has no group, or one that no longer exists. A
+  // `<select>` with no selected option shows its *first* one, so committing the
+  // form wrote that first group onto the item: opening the form silently moved a
+  // group-less item into whatever track happened to sort first. The placeholder
+  // carries the empty value, which applyItemForm leaves alone, so the read stays
+  // a read and a dangling group id survives instead of being reassigned.
+  if (!matched) out.unshift('<option value="" selected>— —</option>');
   return out.join('');
 }
 
@@ -103,8 +113,8 @@ const TAB_ICONS = {
 } as const;
 
 const FORM_TABS = [
-  { id: 'time', label: 'Date & Time' },
   { id: 'props', label: 'Properties' },
+  { id: 'time', label: 'Date & Time' },
   { id: 'rel', label: 'Relationships' },
 ] as const;
 type FormTabId = (typeof FORM_TABS)[number]['id'];
@@ -119,7 +129,7 @@ function tabIconHtml(id: FormTabId): string {
 
 // Remembered across form rebuilds so clicking through items keeps the tab the
 // user is working in.
-let activeFormTab: FormTabId = 'time';
+let activeFormTab: FormTabId = 'props';
 
 // The item form's id. Needed as a real id because the header pickers live
 // outside the form and associate with it via their `form` attribute.
@@ -469,23 +479,6 @@ export function showItemForm(
       <input id="f-content" name="content" type="hidden" value="${escapeHtml(item.content ?? '')}" />
       ${tabStripHtml()}
       ${panelHtml(
-        'time',
-        `
-      <div class="field">
-        <label for="f-start">Start</label>
-        <input id="f-start" name="start" type="date" value="${isoDateOnly(item.start)}" />
-      </div>
-      <div class="field">
-        <label for="f-end">End</label>
-        <input id="f-end" name="end" type="date" value="${isoDateOnly(item.end ?? '')}" />
-      </div>
-      <div class="field">
-        <label for="f-duration">Duration</label>
-        <input id="f-duration" name="duration" value="${escapeHtml(typeof item.duration === 'string' ? item.duration : item.duration != null ? String(item.duration) : '')}" placeholder="nur ohne End-Datum" />
-      </div>
-      <p class="field-error" data-role="extent-error" role="alert" hidden></p>`,
-      )}
-      ${panelHtml(
         'props',
         `
       <div class="field">
@@ -526,6 +519,23 @@ export function showItemForm(
           <textarea id="f-meta" name="metadata" rows="3" placeholder='{"key": "value"}'>${escapeHtml(metaJson)}</textarea>
         </div>
       </details>`,
+      )}
+      ${panelHtml(
+        'time',
+        `
+      <div class="field">
+        <label for="f-start">Start</label>
+        <input id="f-start" name="start" type="date" value="${isoDateOnly(item.start)}" />
+      </div>
+      <div class="field">
+        <label for="f-end">End</label>
+        <input id="f-end" name="end" type="date" value="${isoDateOnly(item.end ?? '')}" />
+      </div>
+      <div class="field">
+        <label for="f-duration">Duration</label>
+        <input id="f-duration" name="duration" value="${escapeHtml(typeof item.duration === 'string' ? item.duration : item.duration != null ? String(item.duration) : '')}" placeholder="nur ohne End-Datum" />
+      </div>
+      <p class="field-error" data-role="extent-error" role="alert" hidden></p>`,
       )}
       ${panelHtml(
         'rel',
@@ -588,9 +598,26 @@ export function showItemForm(
   // to its neighbour's edge; it is an affordance, not the enforcement — a typed
   // (rather than picked) date still lands in the field, so applyItemForm rejects
   // it as well. Re-synced on every edit because either date may have just moved.
+  //
+  // Never while one of the two has focus, and never a write that changes
+  // nothing. Assigning `min`/`max` makes the control re-parse its value, which
+  // throws away the half-finished entry in its segment editor — the date the
+  // user was in the middle of typing is gone on the first keystroke. And this
+  // ran at exactly the wrong moment: Chrome fires `change` as soon as a complete
+  // date becomes incomplete, i.e. on that very first digit, not (as assumed)
+  // only on a settled value. Traced in the running app:
+  //   keydown "0" → value 2027-09-01
+  //   input       → value ""        badInput true
+  //   change      → value ""        badInput true   ← bounds were rewritten here
+  // The bounds are an affordance for the picker, so deferring them until the
+  // field is left costs nothing: the enforcement is applyItemForm plus the
+  // server, and both still run.
   const syncExtentBounds = () => {
-    endInput.min = startInput.value ? shiftDays(startInput.value, 1) : '';
-    startInput.max = endInput.value ? shiftDays(endInput.value, -1) : '';
+    if (document.activeElement === startInput || document.activeElement === endInput) return;
+    const nextEndMin = startInput.value ? shiftDays(startInput.value, 1) : '';
+    const nextStartMax = endInput.value ? shiftDays(endInput.value, -1) : '';
+    if (endInput.min !== nextEndMin) endInput.min = nextEndMin;
+    if (startInput.max !== nextStartMax) startInput.max = nextStartMax;
   };
   syncExtentBounds();
   // An item stored with a reversed extent (from before this rule existed) opens
@@ -635,11 +662,22 @@ export function showItemForm(
   // Reactive editing: every change writes straight into the model and refreshes
   // the live view. No save button — the source is persisted when the sidebar is
   // left (commitItemForm).
+  //
+  // Dates are not exempted here even though their intermediate states must not
+  // reach the model: `change` fires on the first keystroke too (traced — see
+  // syncExtentBounds), so skipping `input` for them would buy nothing. What
+  // keeps a half-typed date out of the model is `isTransient` in applyItemForm.
   form.addEventListener('input', scheduleLiveEdit);
   form.addEventListener('change', scheduleLiveEdit);
   // Leaving a field guarantees its edit is written even mid-session, without
-  // waiting for the throttle window or the sidebar to close.
-  form.addEventListener('focusout', () => commitItemForm());
+  // waiting for the throttle window or the sidebar to close. The bounds are
+  // re-synced here rather than on `change`, because that is the first moment
+  // writing them cannot disturb an entry in progress; deferred a tick so focus
+  // has actually moved.
+  form.addEventListener('focusout', () => {
+    commitItemForm();
+    setTimeout(syncExtentBounds, 0);
+  });
   form.querySelector<HTMLButtonElement>('[data-action="delete"]')!.addEventListener('click', () => {
     deleteItem(id);
   });
@@ -1530,27 +1568,74 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   const fd = new FormData(form);
   const get = (name: string) => String(fd.get(name) ?? '').trim();
 
+  /**
+   * Is this date control being typed into right now?
+   *
+   * A half-typed `type=date` reports `value === ''`, exactly like a field the
+   * user cleared, and FormData cannot tell the two apart. It matters because
+   * this function runs on every keystroke: the FIRST digit typed makes the date
+   * incomplete, the extent block below read that as "cleared", deleted the date
+   * and persisted the deletion (`"start": null`). The field then lost its
+   * remaining segments under the caret, which is why entering a date was
+   * impossible — „ich gebe 01. ein, daraus wird 12.".
+   *
+   * Focus is the signal, deliberately not `validity.badInput`: after the first
+   * digit Chrome reports `value === ''` with `badInput === false`, so the
+   * platform's own "is this a partial entry" flag does not cover the case that
+   * breaks. Measured, not assumed.
+   *
+   * The year needs the same treatment for the opposite reason. Typing `2026`
+   * passes through the years 2, 20 and 202, and each of those is a *complete,
+   * valid* date — so an empty-value check alone does not catch it. The app took
+   * `0002-12-01` as the user's answer, flashed „das End-Datum muss nach dem
+   * Start liegen" on the first digit of the year, and reset the whole field on
+   * the next one. A year below 1000 while the control still has focus is
+   * therefore an intermediate state, not an input.
+   *
+   * Everything here is scoped to a focused control. Whatever stands in the field
+   * when the user leaves it counts, so a genuinely cleared date still reaches the
+   * model on blur (`focusout` already commits the form), and a deliberate
+   * year-999 date is applied then too.
+   */
+  const isTransient = (name: string, value: string): boolean => {
+    const el = form.querySelector(`[name="${name}"]`);
+    if (!(el instanceof HTMLInputElement) || el !== document.activeElement) return false;
+    if (!value) return true; // segments still empty
+    const year = Number(value.slice(0, 4));
+    return !Number.isFinite(year) || year < 1000; // year still being typed
+  };
+
   const item = state.activeSourceFile.items[idx];
+  // Captured before the form overwrites either: the extent seeding further down
+  // has to tell "the user just emptied this" from "it was stored this way".
+  const hadExtent = item.end != null || item.duration != null;
+  const prevType = item.type;
   item.content = get('content') || item.content;
-  const startVal = get('start');
-  const endVal = get('end');
   const durVal = get('duration');
+  // A transient value counts as "no answer yet" everywhere below — including the
+  // reversed-extent check, so no error is shown for a date the user is still
+  // halfway through typing.
+  const startTyping = isTransient('start', get('start'));
+  const endTyping = isTransient('end', get('end'));
+  const startVal = startTyping ? '' : get('start');
+  const endVal = endTyping ? '' : get('end');
 
   // An `end` before (or on) its `start` renders as a hairline stripe and the
   // server rejects it outright (see src/itemExtent.ts), so it must never reach
   // the model. The form is reactive, so there is no save button to block: keep
   // the last valid dates instead and name the problem under the fields (see
-  // showExtentError). A `type=date` input yields either a complete date or
-  // nothing, so no half-typed state trips this.
+  // showExtentError). Only settled values reach this — a date still being typed
+  // is blanked above, so no keystroke on the way to a valid one trips the error.
   //
   // Rejects the extent as a whole rather than guessing which of the two dates the
   // user meant to move. To shift an item past its own end, change the end first.
   const extentReversed = isReversedExtent(startVal, endVal);
   if (!extentReversed) {
     // Start is optional: clearing the field removes the date (the item then shows
-    // only in the list view, hidden from the timeline).
+    // only in the list view, hidden from the timeline). Half-typed is not
+    // cleared, though — see `isTransient`.
     if (startVal) item.start = startVal;
-    else delete item.start;
+    else if (!startTyping) delete item.start;
 
     // Extent precedence must match the render path (buildItems: `end` wins, with
     // `duration` only a fallback). Committing with the opposite precedence is what
@@ -1560,6 +1645,10 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     if (endVal) {
       item.end = endVal;
       delete item.duration;
+    } else if (endTyping) {
+      // Mid-entry: leave the extent exactly as it is. Falling through would read
+      // the half-typed end as "no end" and either promote a stale `duration` or
+      // clear both, i.e. rewrite the item on every keystroke.
     } else if (durVal) {
       item.duration = durVal;
       delete item.end;
@@ -1592,7 +1681,24 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   // item silently vanishes from the timeline. Seed a default duration (matching
   // the double-click "new item" default) so it renders as a visible bar the
   // user can then resize.
-  if ((item.type === 'range' || item.type === 'background') && !item.end && !item.duration) {
+  // Not while a date is being typed: the extent is momentarily unreadable, and
+  // seeding a default there would write a duration the user never asked for and
+  // then have to take it back once the date completes.
+  //
+  // And only when this pass is what left the item extentless — either the type
+  // just changed, or an extent it arrived with was emptied. An item *stored*
+  // without one keeps it that way, because opening its form is a read: seeding
+  // unconditionally wrote `duration: '1w'` into the source on a mere click, the
+  // same defect as the status default. Such an item is invisible on the timeline
+  // either way; the form now shows an empty Duration, which says so.
+  if (
+    (item.type === 'range' || item.type === 'background') &&
+    !item.end &&
+    !item.duration &&
+    (hadExtent || item.type !== prevType) &&
+    !startTyping &&
+    !endTyping
+  ) {
     item.duration = DEFAULT_EXTENT;
   }
 
@@ -1605,17 +1711,25 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     else delete item.icon;
   }
 
-  // status is mandatory (NOT NULL, default Open) — always store a canonical
-  // value, but only when its control is actually present (see above).
-  if (fd.has('status')) item.status = statusOrDefault(get('status'));
+  // Only when the control is actually present (see above), and only when the
+  // value is the user's rather than the picker's seeded default — statusToStore
+  // owns that distinction, because getting it wrong made opening a form a write.
+  if (fd.has('status')) {
+    const status = statusToStore(item.status, get('status'));
+    if (status !== undefined) item.status = status;
+  }
 
   const body = String(fd.get('body') ?? '');
   if (body) item.body = body;
   else delete item.body;
 
+  // An item that arrived with an empty `metadata` object keeps it: the cleanup at
+  // the end of this function would otherwise drop the key on a mere read, the
+  // same churn writeListMeta exists to prevent one level down.
+  const arrivedWithEmptyMeta =
+    item.metadata != null && Object.keys(item.metadata as object).length === 0;
   const meta = (item.metadata ??= {}) as Record<string, unknown>;
-  if (state.formDependsOn.length) meta.dependsOn = [...state.formDependsOn];
-  else delete meta.dependsOn;
+  writeListMeta(meta, 'dependsOn', state.formDependsOn);
 
   if (state.formParent) meta[PARENT_META_KEY] = state.formParent;
   else delete meta[PARENT_META_KEY];
@@ -1624,11 +1738,9 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   if (owner) meta.owner = owner;
   else delete meta.owner;
 
-  if (state.formJiraIssues.length) meta.jira = state.formJiraIssues.map((i) => ({ key: i.key, summary: i.summary }));
-  else delete meta.jira;
+  writeListMeta(meta, 'jira', state.formJiraIssues.map((i) => ({ key: i.key, summary: i.summary })));
 
-  if (state.formTags.length) meta.tags = [...state.formTags];
-  else delete meta.tags;
+  writeListMeta(meta, 'tags', state.formTags);
   // The tags chip editor supersedes the legacy singular `tag`; drop it so both
   // don't linger (readTags already folds it into formTags on load).
   delete meta.tag;
@@ -1658,7 +1770,7 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
       delete meta[k];
     }
   }
-  if (Object.keys(meta).length === 0) delete (item as any).metadata;
+  if (Object.keys(meta).length === 0 && !arrivedWithEmptyMeta) delete (item as any).metadata;
 
   rebuildAndApply();
   // Keep the caption and the timeline selection in sync with the live content

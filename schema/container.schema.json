@@ -1,5 +1,5 @@
 {
-  "$id": "https://ganttry.dev/schema/container.schema.json",
+  "$id": "https://zeitlines.dev/schema/container.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$ref": "#/definitions/TimelineContainer",
   "definitions": {

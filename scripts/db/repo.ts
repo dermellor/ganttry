@@ -14,9 +14,11 @@
 // bundle — the Deno edge bundle stays clean, the drivers arrive only through the
 // callers that construct a concrete handle.
 
+import type { MemberRole, MemberStatus } from '../../src/access';
 import type {
   CustomFieldDef,
   DirectoryUser,
+  Member,
   Pricing,
   PricingFeature,
   PricingHighlight,
@@ -35,6 +37,25 @@ export type TimelineGroupDecl = {
 };
 
 export type TimelineMeta = { id: string; name?: string; description?: string; groupBy?: string };
+
+/**
+ * What creating or re-sending an invitation needs.
+ *
+ * The token arrives already hashed, and that split is deliberate: hashing in the
+ * repo would mean two implementations of it, one per driver, and the plain token
+ * only exists in the request that generates it. `null` for both token fields is
+ * how an admin adds somebody without a link to hand over.
+ */
+export type MemberInvite = {
+  email: string;
+  role: MemberRole;
+  /** Address of the inviting admin, stored for the audit trail. */
+  invitedBy?: string | null;
+  /** SHA-256 of the invitation token; never the token itself. */
+  tokenHash?: string | null;
+  /** ISO timestamp after which the invitation is refused at sign-in. */
+  expiresAt?: string | null;
+};
 
 export type PublicPricing = { id: string; name?: string; pricing: Pricing };
 
@@ -104,6 +125,33 @@ export interface TimelineRepo {
    * previous visit already learned.
    */
   touchUser(email: string, name?: string | null): Promise<void>;
+
+  // membership (`app_users`, migration 0016) — the same rows the directory
+  // serves, read through the columns that say what a person may do. Nothing
+  // enforces these yet; the dispatcher starts consulting them behind
+  // TIMELINES_ACCESS_CONTROL in a later step.
+  /**
+   * One membership by address, or null when the address is not a member.
+   *
+   * Null is the ordinary answer for a stranger rather than an error, which is
+   * what lets the enforcement path treat "no row" and "wrong role" the same way.
+   */
+  getMember(email: string): Promise<Member | null>;
+  /** Every membership, `removed` ones included, ordered like the directory. */
+  listMembers(): Promise<Member[]>;
+  /**
+   * Create or re-invite a membership.
+   *
+   * Re-inviting an address that already has a row updates it in place instead of
+   * failing: an admin who invites somebody twice means "send it again", and an
+   * error there would leave them unable to fix a bounced invitation. An `active`
+   * membership is never downgraded to `invited` by this — accepting is one-way.
+   */
+  inviteMember(input: MemberInvite): Promise<Member>;
+  /** Change what an existing member may do. Throws NotFoundError for a stranger. */
+  updateMemberRole(email: string, role: MemberRole): Promise<Member>;
+  /** Move a membership through its lifecycle. Throws NotFoundError for a stranger. */
+  setMemberStatus(email: string, status: MemberStatus): Promise<Member>;
 
   // whole-timeline
   replaceTimeline(id: string, file: TimelineFile): Promise<void>;

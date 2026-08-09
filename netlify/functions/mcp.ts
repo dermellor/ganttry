@@ -1,4 +1,4 @@
-// Remote Ganttry MCP server — Streamable HTTP (Web Standard) on a Netlify
+// Remote Zeitlines MCP server — Streamable HTTP (Web Standard) on a Netlify
 // Function (Node runtime; the MCP SDK uses node: builtins). Exposes the timeline
 // tools over HTTP so colleagues add it as a remote MCP by URL — no local server.
 //
@@ -15,6 +15,9 @@ import type { Config } from '@netlify/functions';
 import { getSql } from '../../scripts/db/sql.ts';
 import { getServiceClient } from '../../scripts/db/client.ts';
 import { resolveAdapter, resolveRepo, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
+import { resolveGroupPatch, resolveItemPatch, type ItemPatch } from '../../scripts/mcp/patch.ts';
+import type { TimelineGroupDecl } from '../../scripts/db/timeline-repo.ts';
+import type { TimelineFileItem } from '../../src/types.ts';
 
 const ACCESS_TTL = 12 * 3600; // must match mcp-oauth.ts
 
@@ -100,10 +103,24 @@ function buildServer(updatedBy: string): McpServer {
   );
   server.tool(
     'update_item',
-    'Patch an item (only provided fields; metadata is merged).',
+    'Patch an item (only provided fields change; metadata is shallow-merged onto what the item ' +
+      'already carries). Give a metadata key the value null to remove it, or metadata: null to clear ' +
+      'the whole object.',
     { id: z.string(), itemId: z.string(), patch: z.record(z.any()) },
-    async ({ id, itemId, patch }) =>
-      ok(await run({ method: 'PATCH', id, sub: { kind: 'item', childId: itemId }, body: patch })),
+    async ({ id, itemId, patch }) => {
+      // The endpoint replaces the metadata column, so the merge this tool
+      // documents has to happen here, against the item's current value — see the
+      // header of scripts/mcp/patch.ts for why it cannot move server-side. That
+      // costs a read, and only on a patch that actually names metadata.
+      let body = patch as Record<string, unknown>;
+      if ('metadata' in patch) {
+        const file = (await run({ method: 'GET', id })) as { items?: TimelineFileItem[] };
+        const current = (file.items ?? []).find((i) => i.id === itemId);
+        if (!current) throw new Error(`Item "${itemId}" not found in "${id}".`);
+        body = resolveItemPatch(current, patch as ItemPatch) as Record<string, unknown>;
+      }
+      return ok(await run({ method: 'PATCH', id, sub: { kind: 'item', childId: itemId }, body }));
+    },
   );
   server.tool('delete_item', 'Delete an item by id.', { id: z.string(), itemId: z.string() }, async ({ id, itemId }) =>
     ok(await run({ method: 'DELETE', id, sub: { kind: 'item', childId: itemId } })),
@@ -113,9 +130,21 @@ function buildServer(updatedBy: string): McpServer {
   );
   server.tool(
     'update_group',
-    'Update a group (upsert by id).',
+    'Patch a group by id (only provided fields change; fields left out keep their value).',
     { id: z.string(), group: z.record(z.any()) },
-    async ({ id, group }) => ok(await run({ method: 'PATCH', id, sub: { kind: 'group' }, body: group })),
+    async ({ id, group }) => {
+      // Groups are written through an upsert, which rewrites content,
+      // nestedGroups and showNested from the body alone — so patching just
+      // `content` used to drop a group's nesting. Fold the patch onto the current
+      // group first so the upsert carries the untouched fields along.
+      const groupId = (group as TimelineGroupDecl).id;
+      if (!groupId) throw new Error('group needs id');
+      const file = (await run({ method: 'GET', id })) as { groups?: TimelineGroupDecl[] };
+      const current = (file.groups ?? []).find((g) => g.id === groupId);
+      if (!current) throw new Error(`Group "${groupId}" not found in "${id}".`);
+      const body = resolveGroupPatch(current, group as Partial<TimelineGroupDecl>);
+      return ok(await run({ method: 'PATCH', id, sub: { kind: 'group' }, body }));
+    },
   );
   server.tool('delete_group', 'Delete a group by id.', { id: z.string(), groupId: z.string() }, async ({ id, groupId }) =>
     ok(await run({ method: 'DELETE', id, sub: { kind: 'group', childId: groupId } })),

@@ -30,7 +30,7 @@ async function raw(id: string): Promise<TimelineFile> {
 }
 
 before(async () => {
-  const root = await mkdtemp(join(tmpdir(), 'ganttry-file-repo-'));
+  const root = await mkdtemp(join(tmpdir(), 'zeitlines-file-repo-'));
   dirs = { root, scope: root };
 });
 

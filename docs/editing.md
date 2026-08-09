@@ -2,7 +2,7 @@
 
 How a timeline is edited in the interface, and the two view modes.
 
-Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
 its file when it lives in another chapter.
 
@@ -308,7 +308,11 @@ replaced with nothing.
 - **An emptied field loses its key, and an item with none left loses `metadata`.**
   Same rule as `applyItemForm`, and load-bearing for the same reason: the persist
   diff sends a missing clearable field as an explicit `null` (`buildItemPatch`), or
-  the old value comes back on reload.
+  the old value comes back on reload. The one exception is a collection that was
+  *stored* empty (`"dependsOn": []`, `"metadata": {}`): both spellings mean the
+  same thing, so rewriting one into the other is not an edit, and doing it anyway
+  turned every click on such an item into a diff — see `writeListMeta` in
+  [`src/fieldValue.ts`](../src/fieldValue.ts).
 - **A status or field change has to re-render an open form**, and that is
   correctness, not polish: the form's pickers keep their values in hidden inputs,
   so a form still open on that item would hold the *old* value in its `FormData`
@@ -376,24 +380,26 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
   it (both outside the tabs, see below); the remaining fields are split across
   three tabs ([`src/itemForm.ts`](../src/itemForm.ts), `FORM_TABS`), with the Delete
   button + audit footer below the tabstrip so they stay reachable from any tab:
-  - **Date & Time** — start, end, duration (a Meilenstein has no extent, so
-    picking that type mutes end/duration). The two date pickers are bounded
-    against each other so they can't cross, and a reversed pair typed in anyway is
-    refused with a status-line message — see „An item's `end` must lie after its
-    `start`".
   - **Properties** — group, owner (a user picker, see „Item owner" (docs/items.md)), body
     (Markdown), tags, and the per-timeline
     custom fields. The free-form metadata JSON box sits behind an „Erweitert"
     `<details>` disclosure, collapsed unless the item actually carries extra
     metadata.
+  - **Date & Time** — start, end, duration (a Meilenstein has no extent, so
+    picking that type mutes end/duration). The two date pickers are bounded
+    against each other so they can't cross, and a reversed pair typed in anyway is
+    refused with a status-line message — see „An item's `end` must lie after its
+    `start`".
   - **Relationships** — containment (`parent`), dependencies (`dependsOn`) and
     JIRA links.
 
   All panels stay in the DOM (inactive ones just `hidden`), so `FormData` keeps
   seeing every field and `applyItemForm` / the persist diff need no knowledge of
-  the tabs. The chosen tab is remembered across item switches (module-level
-  `activeFormTab`, not persisted across reloads). Save writes back; Delete removes
-  the item.
+  the tabs. Tab-strip order and panel order in the markup are kept in sync, since
+  roving-tabindex and reading order both follow the DOM. The chosen tab is
+  remembered across item switches (module-level `activeFormTab`, which starts on
+  Properties — the leftmost tab — and is not persisted across reloads). Save
+  writes back; Delete removes the item.
 
   **The panel headline IS the title editor.** The form used to repeat the title
   in a labelled input directly under the heading — the same string twice, one of
@@ -469,6 +475,25 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
 - **Tags** is a chip editor with autosuggest: type to match tags already used in the timeline, or type a new label and press Enter to create one. Each chip carries its resolved colour and a remove button. Stored as `metadata.tags` (string[]); saving migrates any legacy singular `metadata.tag` into the array.
 - **Phases** render as a ribbon along the top. Drag a segment to move it, drag either edge to resize (snaps to whole days, min. 1 day), and click it (without dragging) to open the phase form in the side panel: title, start/end, duration, icon, colour. Persists on drop / Save; Delete removes the phase.
 
+**Opening an item's form is a read.** Leaving the panel commits it — on
+`focusout`, on switching to another item, on closing, on a view switch, on
+unload — and `commitItemForm` runs `applyItemForm` whether or not anything was
+typed. So every value the form *displays* on behalf of an absent one has to stay
+out of the model, or the commit invents an edit and the persist diff faithfully
+writes it: on a JSON source the file gains a field on every click, on a DB source
+the same no-op bumps `version` and re-attributes `updatedBy`. Four of these were
+live at once — a defaulted `status`, a `<select>` with no empty option putting
+its first group on a group-less item (and silently reassigning a dangling group
+id), `DEFAULT_EXTENT` on a stored-extentless range, and an empty `dependsOn` /
+`metadata` losing its key. The rule the fixes share: a default is applied for
+display only, and a stored spelling of "nothing" is left exactly as it is.
+`statusToStore` ([`src/status.ts`](../src/status.ts)) and `writeListMeta`
+([`src/fieldValue.ts`](../src/fieldValue.ts)) carry the two halves that are worth
+unit-testing; the other two are guards inside `applyItemForm` /
+`buildGroupOptions`. The seeding that stays is the one a *change* triggers:
+emptying a range's extent still re-seeds `DEFAULT_EXTENT`, because a range
+without one vanishes from the timeline.
+
   The strip the ribbon sits in is reserved by an **empty group** prepended to the group set (`BAND_SPACER_GROUP_ID` in [`src/render.ts`](../src/render.ts)), which is why the DataSet carries one row nobody can put an item in. It looks removable and is not: reserving the strip with CSS padding instead is invisible to vis, which derives its content height *and* its vertical scroll range from the sum of the group heights — the panel then holds more than vis knows about, scrolling stops short by the height of the reserve, and `.vis-timeline` (fixed height, `overflow: hidden`) cuts off whatever hangs below, always the last track. Two details in the spacer are load-bearing and commented where they live: it is added after filtering and lane assignment, and its height comes from a strut inside its label rather than from a `height` rule on the row.
 
 Persistence path: viewer → item-level calls (`POST/PATCH/DELETE /api/source/<id>/item`, `PUT …/phases`) → middleware (`vite.config.ts`) → Supabase via `scripts/db/api.ts`. `PATCH` carries the item `version` in `If-Match`; a stale version returns `409` and the client reloads that item. Only DB-backed sources are editable; genuine file-based sources (the examples) load read-only from their static `/data/sources/<id>.json`. Builds (`npm run build`) and exported HTML have no edit endpoint. DB-backed timelines are discovered from the DB at build time (`collectDbSources`); the registration **stub** (`name` + `items: []`, no content) is written only to the gitignored build output `public/data/sources/<id>.json` — nothing DB-backed is committed, and there is deliberately no committed content cache (see „Principle: no emergency or fallback data").
@@ -539,12 +564,21 @@ lives in [`src/grouping.ts`](../src/grouping.ts), the pure sectioning stays in
 - **Gruppieren** (`#groupby`, `state.groupBy`, persisted as
   `timelines.listGroupBy`) chooses the dimension: **Gruppe** (default, the item
   group — build order preserved), **Tag** (offered when anything is tagged, from
-  `metadata.tags`), and one entry per **custom field** (e.g. **Tier**, from
+  `metadata.tags`), **Status** (offered when any item carries one — see „Item
+  status" (docs/items.md)), and one entry per **custom field** (e.g. **Tier**, from
   `metadata.<key>`). Multi-valued dimensions (tags, `multi-select` fields) place
   an item under *every* value it carries; items without a value land in an
-  "Ohne …" bucket. Custom-field order follows the declared `options` first, then
-  first appearance. Falls back to Gruppe when the chosen dimension isn't
-  available on the active build.
+  "Ohne …" bucket. A dimension that declares its values up front is ordered by
+  that declaration — `Open → Doing → Done` for status, the field's `options` for a
+  custom field — everything else by first appearance. Falls back to Gruppe when
+  the chosen dimension isn't available on the active build.
+
+  Status is deliberately offered on evidence rather than always: a file-based
+  source has no status concept, so the dimension would collapse to a single "Ohne
+  Status" bucket. For the same reason an item without a *stored* status buckets as
+  "Ohne Status" and not as `Open` — it only *displays* as `Open` (see „The default
+  is shown, not stored" (docs/items.md)), and filtering for `Open` must not sweep
+  those in.
 
   In the **list** these are the table sections. In the **timeline** they are the
   vis lanes: for a non-Gruppe dimension the build is *regrouped*

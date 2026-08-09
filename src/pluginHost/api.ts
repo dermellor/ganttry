@@ -5,9 +5,9 @@
 // the app** — everything here is types plus three pure functions — so depending on
 // the contract never means vendoring the viewer.
 //
-// Packaging it as `@ganttry/plugin-api` belongs with distribution
-// (<https://github.com/dermellor/ganttry/issues/15>); until a plugin is built
-// outside this repository (<https://github.com/dermellor/ganttry/issues/16>) the
+// Packaging it as `@zeitlines/plugin-api` belongs with distribution
+// (<https://github.com/dermellor/zeitlines/issues/15>); until a plugin is built
+// outside this repository (<https://github.com/dermellor/zeitlines/issues/16>) the
 // path is the package.
 
 export {

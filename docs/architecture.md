@@ -2,7 +2,7 @@
 
 The extension seams: where data comes from, and what a timeline renders.
 
-Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
 its file when it lives in another chapter.
 
@@ -61,17 +61,35 @@ succeed.
 none). Adding a further API-served kind later (e.g. `gsheet`, external `pg`) is a
 new `SourceKind` value plus its loader — the routing seam already exists.
 
-**Server-side adapter seam:** the runtime glue (Vite middleware +
-`timelines-api` edge function) no longer calls the DB dispatcher directly. It
-resolves a `SourceAdapter` via `resolveAdapter(conns, id, live)`
+**Three runtimes, one HTTP layer.** The API is served by the Vite dev
+middleware, the Netlify edge functions, and the self-hosted Node server
+([`scripts/serve.ts`](../scripts/serve.ts), `npm start`). What differs between
+them is genuinely their own: which credentials they hold, who the caller is, and
+whether there is a filesystem behind the request. Everything else — route
+matching, body reading, `If-Match`, the `X-Source-Live` header, the error
+mapping — is [`scripts/db/http.ts`](../scripts/db/http.ts), a
+`Request` → `Response` handler all three call. It was two hand-kept copies
+before the third runtime existed, and they had already drifted.
+
+Being Fetch-shaped is what makes it testable without a server: the tests in
+`scripts/db/http.test.ts` build a `Request` and assert on the `Response`, no
+port and no database. The two Node runtimes reach it through one adapter,
+[`scripts/node-http.ts`](../scripts/node-http.ts); the edge functions speak Fetch
+natively.
+
+**Server-side adapter seam:** that HTTP layer does not call the DB dispatcher
+directly either. It
+resolves a `SourceAdapter` via `resolveAdapter(conns, id, liveOverride)`
 ([`scripts/db/api.ts`](../scripts/db/api.ts)) and dispatches through
 `adapter.handle(req)`. The DB-backed source has **two interchangeable drivers**
 behind that one adapter, selected by env (see „Postgres as the data source →
 Drivers"): supabase-js (the Netlify default) and native postgres.js (opt-in).
 Both satisfy the same `TimelineRepo` seam ([`scripts/db/repo.ts`](../scripts/db/repo.ts));
 `handleTimelineApi(repo, req)` dispatches through the bound repo and never sees
-the driver. The adapter's `capabilities` declare `editable` and a `live` mode
-(`realtime` by default). Future API-served kinds register in `resolveAdapter`
+the driver. The adapter's `capabilities` declare `editable` and a `live` mode,
+which `defaultLive` derives from the configured backend (a Supabase project gets
+`realtime`, a bare Postgres `poll`); `TIMELINES_DB_LIVE` overrides it in either
+direction. Future API-served kinds register in `resolveAdapter`
 without touching the middleware/edge glue. File sources are static and never
 reach this seam.
 
@@ -126,7 +144,7 @@ the first removed field fails somewhere in the middle of a render.
 **The host API is async and serializable throughout**
 ([`src/pluginHost/hostApi.ts`](../src/pluginHost/hostApi.ts)), even though plugins
 currently run in the app's own realm where a direct call would be cheaper. The
-isolation decision is still open (<https://github.com/dermellor/ganttry/issues/14>),
+isolation decision is still open (<https://github.com/dermellor/zeitlines/issues/14>),
 and an API shaped around shared objects cannot be moved behind an iframe or a
 worker afterwards without rewriting every plugin. `createHostApi` gates by
 capability structurally: without `items:write` there is no item-write method to
@@ -135,7 +153,7 @@ call, rather than a check that refuses at call time.
 The contract is re-exported as one import from
 [`src/pluginHost/api.ts`](../src/pluginHost/api.ts), which pulls in no runtime code
 from the app. Publishing it as a package belongs with distribution
-(<https://github.com/dermellor/ganttry/issues/15>).
+(<https://github.com/dermellor/zeitlines/issues/15>).
 
 **A plugin declares its views; the host builds the chrome.** `PluginView` carries
 an id, a label and the icon markup for the header toggle. The host creates one
@@ -174,7 +192,7 @@ Adding a plugin is a `register()` call plus a `src/plugins/<id>/` folder, and no
 core-file change. The step-by-step is
 [`docs/plugin-playbook.md`](plugin-playbook.md); the endgame, where a plugin is
 installed at runtime instead of registered at build time, is
-<https://github.com/dermellor/ganttry/issues/9>.
+<https://github.com/dermellor/zeitlines/issues/9>.
 
 **Enablement is pure data (the plugin registry table).** Which plugins a timeline
 carries is **not** a column on a core table. It lives in the generic
@@ -203,7 +221,7 @@ version list lives in that plugin's `config.versions`. Adding a further plugin n
   MCP tools, the `pricing_*` tables + `assemblePricing` in `timeline-repo.ts`)
   stays in place, and so does `TimelineFile.pricing` in the core types: a plugin
   has no data channel of its own until the generic store lands
-  (<https://github.com/dermellor/ganttry/issues/12>), so moving them now would mean
+  (<https://github.com/dermellor/zeitlines/issues/12>), so moving them now would mean
   either breaking the pricing path or inventing a placeholder indirection. Tracked
-  as <https://github.com/dermellor/ganttry/issues/17>, which also removes the
+  as <https://github.com/dermellor/zeitlines/issues/17>, which also removes the
   option of leaving it that way.
