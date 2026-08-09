@@ -1,0 +1,167 @@
+/* The „Benutzer" screen. Built on the same tokens as everything else
+   (theme.css), so an instance that recolours the viewer recolours this too. */
+
+.member-dialog {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--fg);
+  padding: 0;
+  width: min(56rem, calc(100vw - 2rem));
+  max-height: min(42rem, calc(100vh - 4rem));
+  overflow: auto;
+  font: inherit;
+}
+
+.member-dialog::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+
+.member-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.member-head h2 {
+  margin: 0;
+  font: 600 1.05rem/1.2 var(--font-headline);
+}
+
+.member-invite-form {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.member-invite-form input[type='email'] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.member-note {
+  margin: 0;
+  padding: 0.6rem 1.1rem;
+  font-size: 0.9rem;
+}
+
+.member-note.is-error {
+  color: var(--danger);
+}
+
+.member-invite {
+  padding: 0.6rem 1.1rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.member-invite-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.member-invite-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.member-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.member-table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.55rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+/* Wide content scrolls in its own container rather than pushing the dialog
+   sideways: on a narrow window the table needs more width than the dialog has,
+   and without this the last column is simply cut off. */
+.member-table-wrap {
+  overflow-x: auto;
+}
+
+.member-table td {
+  padding: 0.45rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+/* Only the narrow columns refuse to wrap. The person column is the one that can
+   give, so it is what lets the table fit a small window at all. */
+.member-status,
+.member-seen,
+.member-actions {
+  white-space: nowrap;
+}
+
+/* A removed member stays listed, because an item's owner may still point at
+   them — but it must not read as an equal participant. */
+.member-row.is-removed {
+  opacity: 0.55;
+}
+
+.member-mail {
+  color: var(--fg-muted);
+  font-size: 0.85em;
+  margin-left: 0.4em;
+}
+
+.member-status {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  /* Not --mark-radius: that token is 50%, meant for round item marks, and it
+     turns a text pill into an ellipse. */
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.member-status.is-active {
+  border-color: var(--accent);
+}
+
+.member-status.is-suspended,
+.member-status.is-removed {
+  color: var(--fg-muted);
+}
+
+.member-seen {
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+/* On a <div> inside the cell, never on the <td> itself: a flex table cell stops
+   participating in the table's column sizing, which makes every row a different
+   height and pushes the buttons past the dialog's edge. */
+.member-actions {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.member-actions button {
+  font-size: 0.85rem;
+  padding: 0.2rem 0.55rem;
+}
+
+.member-actions .is-destructive {
+  color: var(--danger);
+}

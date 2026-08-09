@@ -106,13 +106,8 @@ const err = (status: number, error: string, extra?: Record<string, unknown>): Ap
  */
 export async function handleUsersApi(
   repo: TimelineRepo,
-  req: {
-    method: string;
-    caller?: { email: string; name?: string | null };
-    body?: unknown;
-  },
+  req: { method: string; caller?: { email: string; name?: string | null } },
 ): Promise<ApiResult> {
-  if (req.method === 'POST' || req.method === 'PATCH') return manageMember(repo, req);
   if (req.method !== 'GET') return err(405, 'method not allowed');
   const email = req.caller?.email?.trim() ?? '';
   if (email.includes('@')) {
@@ -133,8 +128,16 @@ export async function handleUsersApi(
 }
 
 // ---------------------------------------------------------------------------
-// Membership management (`POST` / `PATCH` on /api/users)
+// Membership administration (/api/members)
 // ---------------------------------------------------------------------------
+//
+// Its own path rather than more methods on /api/users, because the two answer
+// different questions about the same rows. /api/users is the OWNER PICKER's
+// directory: every active member may read it, and it carries a name and an
+// address. /api/members is administration: it needs `manage`, and it carries
+// roles, statuses and invitation state. Sharing a path would make one `GET`
+// mean two things depending on who asked, and the authorization rule would have
+// to inspect a query string to tell them apart.
 //
 // There is no DELETE, and that is the model rather than an omission: removing
 // somebody is `status: 'removed'`, because an item's `metadata.owner` stores an
@@ -189,10 +192,20 @@ async function orphansInstance(
   return wouldOrphanInstance([...others, changed]);
 }
 
-async function manageMember(
+/** `GET|POST|PATCH /api/members` — the administration surface. Needs `manage`. */
+export async function handleMembersApi(
   repo: TimelineRepo,
   req: { method: string; caller?: { email: string; name?: string | null }; body?: unknown },
 ): Promise<ApiResult> {
+  if (req.method === 'GET') {
+    try {
+      return ok({ members: await repo.listMembers() });
+    } catch (e) {
+      return err(500, 'server_error', { message: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  if (req.method !== 'POST' && req.method !== 'PATCH') return err(405, 'method not allowed');
+
   const body = (req.body ?? {}) as {
     email?: string;
     role?: string;

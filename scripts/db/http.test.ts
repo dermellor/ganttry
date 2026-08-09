@@ -25,10 +25,10 @@ test('read-only routes reject a write with 405', async () => {
     const res = await call(path, { method: 'POST' });
     assert.equal(res?.status, 405, path);
   }
-  // /api/users takes POST and PATCH now (invite, role, status). Everything else
-  // is still refused, and without a database a write has nowhere to go.
-  assert.equal((await call('/api/users', { method: 'DELETE' }))?.status, 405);
-  assert.equal((await call('/api/users', { method: 'POST', body: '{}' }))?.status, 503);
+  // The directory is read-only; administration lives on /api/members, which
+  // without a database has nowhere to go.
+  assert.equal((await call('/api/users', { method: 'POST' }))?.status, 405);
+  assert.equal((await call('/api/members', { method: 'POST', body: '{}' }))?.status, 503);
 });
 
 test('without a DB the collection is still answerable, and empty', async () => {
@@ -262,6 +262,21 @@ test('the public pricing route stays reachable with the switch on', async () => 
   const res = (await call('/api/pricing/x', undefined, { accessControl: true }))!;
   assert.notEqual(res.status, 403);
   assert.equal(res.headers.get('Access-Control-Allow-Origin'), '*');
+});
+
+test('administering people needs manage, reading the directory does not', async () => {
+  // An editor runs the owner picker all day and must never be able to invite.
+  const editor = asMember(MEMBERS, 'editor@example.test');
+  assert.notEqual((await call('/api/users', undefined, editor))!.status, 403);
+
+  const denied = (await call('/api/members', undefined, editor))!;
+  assert.equal(denied.status, 403);
+  assert.equal(((await denied.json()) as any).capability, 'manage');
+
+  // Even reading the member list is administration: it carries roles, statuses
+  // and invitation state.
+  const admin = asMember(MEMBERS, 'admin@example.test');
+  assert.notEqual((await call('/api/members', undefined, admin))!.status, 403);
 });
 
 test('paths we do not own are never refused, only passed through', async () => {

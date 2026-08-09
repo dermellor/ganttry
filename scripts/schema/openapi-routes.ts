@@ -294,6 +294,18 @@ export const ROUTES: RouteDef[] = [
         description: 'The directory an item owner links to, ordered for a picker. Serving this also registers the caller, which is how the directory fills itself.',
         responses: { '200': { description: 'The directory.', schema: { type: 'object', required: ['users'], properties: { users: { type: 'array', items: ref('DirectoryUser') } } } }, ...commonErrors() },
       },
+    ],
+  },
+  {
+    path: '/api/members',
+    operations: [
+      {
+        method: 'GET',
+        summary: 'List the memberships',
+        description:
+          'Administration, not the owner picker: this carries roles, statuses and invitation state, so it needs the `manage` capability where `/api/users` needs a plain read. Removed members stay in the list, because an item owner may still point at them.',
+        responses: { ...commonErrors(), '200': { description: 'Every membership.', schema: { type: 'object', required: ['members'], properties: { members: { type: 'array', items: ref('Member') } } } } },
+      },
       {
         method: 'POST',
         summary: 'Invite somebody, or re-invite them',
