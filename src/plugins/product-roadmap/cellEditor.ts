@@ -13,6 +13,9 @@
 import { escapeHtml } from '../../buildItems';
 import { state, setStatus } from '../../state';
 import { apiSetTierValue } from './api';
+import { applyRow, dropRow } from './store';
+import { PRICING_COLLECTIONS } from './manifest';
+import { cellId } from './compose';
 import { anchorRect, layerFor } from './popover';
 import type { PricingTier } from './types';
 import { currentPricing } from './compose';
@@ -169,29 +172,21 @@ async function saveCell(
   // Imported lazily to keep the module graph acyclic: pricingMatrix.ts owns the
   // cell click that opens this editor.
   const { repaintPricingView } = await import('./pricingMatrix');
+  let saved;
   try {
-    await apiSetTierValue(sourceId, tier.id, featureId, value, availableFrom);
+    saved = await apiSetTierValue(sourceId, tier.id, featureId, value, availableFrom);
   } catch (err) {
     setStatus(`Zelle speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
 
-  // Mirror the authoritative write into the in-memory model. Clearing drops the
-  // version gate with the value — server-side the whole cell row is deleted, so
-  // leaving a stale gate behind would resurrect it on the next write.
-  tier.values = tier.values ?? {};
-  if (value === null) {
-    delete tier.values[featureId];
-    if (tier.valueVersions) delete tier.valueVersions[featureId];
-  } else {
-    tier.values[featureId] = value;
-    if (availableFrom) {
-      tier.valueVersions = tier.valueVersions ?? {};
-      tier.valueVersions[featureId] = availableFrom;
-    } else if (tier.valueVersions) {
-      delete tier.valueVersions[featureId];
-    }
-  }
+  // Mirror the write onto the stored ROWS, not onto `tier`: `tier` came out of
+  // `currentPricing`, which composes a fresh model on every call, so mutating it
+  // updates a copy nothing reads (see ./store.ts). A cleared cell has no row at
+  // all — which is also what drops its version gate, since the gate was a field
+  // of the row rather than a thing of its own.
+  if (saved) applyRow(state.activeSourceFile, PRICING_COLLECTIONS.tierValues, saved);
+  else dropRow(state.activeSourceFile, PRICING_COLLECTIONS.tierValues, cellId(tier.id, featureId));
 
   repaintPricingView();
   setStatus(value === null ? 'Zelle geleert' : 'Zelle gespeichert');

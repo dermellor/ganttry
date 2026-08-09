@@ -28,16 +28,6 @@ export { ConflictError };
 
 const { features: FEATURES, tiers: TIERS, tierValues: CELLS, highlights: HIGHLIGHTS } = PRICING_COLLECTIONS;
 
-/**
- * What a write gives back: the row the host stored, as this plugin's entity.
- *
- * Partial rather than the full type, because a row carries only what was written
- * — a tier's `values` live in their own collection and are not re-read on a tier
- * PATCH. The forms `Object.assign` this over their in-memory copy, so an absent
- * key has to mean „unchanged" rather than „cleared".
- */
-export type Saved<T> = Partial<T> & { id: string; rowVersion?: number };
-
 const base = (sourceId: string, collection: string) =>
   `/api/source/${sourceId}/plugin/${PRODUCT_ROADMAP_PLUGIN}/${collection}`;
 
@@ -46,8 +36,8 @@ const base = (sourceId: string, collection: string) =>
  *
  * On a feature, `version` is the domain „ab Version" label rather than the lock
  * counter, and putting the two in one object is how they get confused. The store
- * keeps its counter in the row envelope for the same reason, which is why
- * `fromRow` below reads `row.version` and writes it out as `rowVersion`.
+ * keeps its counter in the row envelope for the same reason, which is where
+ * `./compose.ts` reads it from when it hands the model back out as `rowVersion`.
  */
 function headers(rowVersion?: number): Record<string, string> {
   const out: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -59,12 +49,6 @@ function headers(rowVersion?: number): Record<string, string> {
 function toData<T extends object>(entity: T): Record<string, unknown> {
   const { id: _id, rowVersion: _rv, ...data } = entity as Record<string, unknown>;
   return data;
-}
-
-/** The stored row as an entity again: the envelope's id and lock counter, plus `data`. */
-function fromRow<T>(row: PluginDataRow | undefined): Saved<T> {
-  const id = row?.id ?? '';
-  return { id, ...(row?.data ?? {}), ...(row?.version != null ? { rowVersion: row.version } : {}) } as Saved<T>;
 }
 
 async function put(
@@ -107,16 +91,16 @@ async function remove(sourceId: string, collection: string, id: string): Promise
 // ---- features ---------------------------------------------------------------
 
 /**
- * Create a feature; returns it with what the host filled in (its lock counter).
+ * Create a feature; returns the ROW the host stored.
  *
- * Merged over what was sent rather than returned bare, because the caller pushes
- * the result straight into the model: a row echoes back only its stored `data`,
- * and a `Partial` there would make every required field optional at the one call
- * site that needs them all.
+ * Every write here returns a row rather than an entity, and that is deliberate:
+ * the caller's next step is to put it into `file.pluginData` through `./store`,
+ * because that is where the state lives. Handing back an entity invited the
+ * caller to merge it into a composed model instead — which is exactly the write
+ * that never reached the screen (see the note at the top of ./store.ts).
  */
-export async function apiAddFeature(sourceId: string, feature: PricingFeature): Promise<PricingFeature> {
-  const saved = fromRow<PricingFeature>(await put(sourceId, FEATURES, feature.id, toData(feature)));
-  return { ...feature, ...saved };
+export async function apiAddFeature(sourceId: string, feature: PricingFeature): Promise<PluginDataRow> {
+  return put(sourceId, FEATURES, feature.id, toData(feature));
 }
 
 /**
@@ -129,8 +113,8 @@ export async function apiUpdateFeature(
   featureId: string,
   update: Partial<PricingFeature>,
   rowVersion?: number,
-): Promise<Saved<PricingFeature>> {
-  return fromRow<PricingFeature>(await patch(sourceId, FEATURES, featureId, toData(update), rowVersion));
+): Promise<PluginDataRow> {
+  return patch(sourceId, FEATURES, featureId, toData(update), rowVersion);
 }
 
 /**
@@ -165,29 +149,23 @@ export async function apiMoveFeature(
 
 // ---- tiers ------------------------------------------------------------------
 
-/**
- * Create a tier (a matrix column). It starts with no cells, which is why the
- * returned entity carries an empty `values`: the caller pushes it straight into
- * the model, and the renderer reads that field.
- */
-export async function apiAddTier(sourceId: string, tier: PricingTier): Promise<PricingTier> {
-  const saved = fromRow<PricingTier>(await put(sourceId, TIERS, tier.id, toData(withoutCells(tier))));
-  return { ...tier, ...saved, values: {} };
+/** Create a tier (a matrix column). It starts with no cells: they are their own rows. */
+export async function apiAddTier(sourceId: string, tier: PricingTier): Promise<PluginDataRow> {
+  return put(sourceId, TIERS, tier.id, toData(withoutCells(tier)));
 }
 
 /**
  * Patch a tier's Stammdaten. `values` is not part of it, deliberately: cells are
  * their own rows, which is what lets two people edit two cells of one tier
- * without colliding. The response therefore has no `values` either, and the
- * caller's in-memory copy keeps the one it has.
+ * without colliding — and what keeps a tier rename from touching a single cell.
  */
 export async function apiUpdateTier(
   sourceId: string,
   tierId: string,
   update: Partial<PricingTier>,
   rowVersion?: number,
-): Promise<Saved<PricingTier>> {
-  return fromRow<PricingTier>(await patch(sourceId, TIERS, tierId, toData(withoutCells(update)), rowVersion));
+): Promise<PluginDataRow> {
+  return patch(sourceId, TIERS, tierId, toData(withoutCells(update)), rowVersion);
 }
 
 export async function apiDeleteTier(sourceId: string, tierId: string): Promise<void> {
@@ -216,16 +194,17 @@ export async function apiSetTierValue(
   featureId: string,
   value: string | boolean | null,
   availableFrom: string | null,
-): Promise<void> {
+): Promise<PluginDataRow | null> {
   const id = cellId(tierId, featureId);
   if (value === null || value === false || value === '') {
     // Clearing a cell that was never set is not an error: the old endpoint
     // answered the same either way, and the UI reaches this on every „nicht
-    // enthalten" click regardless of what was there before.
+    // enthalten" click regardless of what was there before. `null` back means
+    // „there is no row now", which is what the caller mirrors.
     await remove(sourceId, CELLS, id).catch(() => {});
-    return;
+    return null;
   }
-  await put(sourceId, CELLS, id, {
+  return put(sourceId, CELLS, id, {
     tierId,
     featureId,
     value,
@@ -239,12 +218,8 @@ export async function apiSetTierValue(
 // plugin's four collections and the route is the same one. Having them here is
 // what keeps the next caller from reaching past this module.
 
-export async function apiAddHighlight(
-  sourceId: string,
-  highlight: PricingHighlight,
-): Promise<PricingHighlight> {
-  const saved = fromRow<PricingHighlight>(await put(sourceId, HIGHLIGHTS, highlight.id, toData(highlight)));
-  return { ...highlight, ...saved };
+export async function apiAddHighlight(sourceId: string, highlight: PricingHighlight): Promise<PluginDataRow> {
+  return put(sourceId, HIGHLIGHTS, highlight.id, toData(highlight));
 }
 
 export async function apiUpdateHighlight(
@@ -252,8 +227,8 @@ export async function apiUpdateHighlight(
   highlightId: string,
   update: Partial<PricingHighlight>,
   rowVersion?: number,
-): Promise<Saved<PricingHighlight>> {
-  return fromRow<PricingHighlight>(await patch(sourceId, HIGHLIGHTS, highlightId, toData(update), rowVersion));
+): Promise<PluginDataRow> {
+  return patch(sourceId, HIGHLIGHTS, highlightId, toData(update), rowVersion);
 }
 
 export async function apiDeleteHighlight(sourceId: string, highlightId: string): Promise<void> {
