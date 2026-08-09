@@ -50,6 +50,23 @@ const CONFLICT = {
 
 const timelineId = [{ name: 'id', description: 'Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment.' }];
 
+/** The two names that address a plugin's storage, shared by its three paths. */
+const pluginPath = [
+  { name: 'pluginId', description: 'Plugin id, percent-encoded (a scoped id such as `@acme/sprints` therefore arrives as `%40acme%2Fsprints`).' },
+  { name: 'collection', description: 'A collection id the plugin declares in its manifest.' },
+];
+
+/**
+ * The plugin routes' own refusals, on top of the common ones. Both are 404/403
+ * rather than 400 because the host fails closed: it will not invent a collection
+ * for a plugin, and it will not store data for one that never asked to.
+ */
+const pluginErrors = () => ({
+  ...commonErrors(),
+  '403': { description: 'capability_missing — the plugin did not declare `data:own`.', schema: ERROR },
+  '404': { description: 'unknown_plugin / unknown_collection — the instance has no such plugin installed, or its manifest declares no such collection.', schema: ERROR },
+});
+
 export const ROUTES: RouteDef[] = [
   {
     path: '/api/sources',
@@ -163,8 +180,71 @@ export const ROUTES: RouteDef[] = [
       {
         method: 'GET',
         summary: 'Cheap change marker for polling',
-        description: 'Max item version, item count and max updated_at across items plus the timeline row. A client in `poll` mode compares it and does a full reload when it moves. Does not cover the pricing tables.',
+        description: 'Max item version, item count and max updated_at across items plus the timeline row, and the same pair (`pv`/`pn`) over the plugin-owned rows. A client in `poll` mode compares it and does a full reload when it moves. Does not cover the pricing tables, which move onto the generic store in issue #17.',
         responses: { '200': { description: 'The current watermark.', schema: ref('Watermark') }, ...commonErrors() },
+      },
+    ],
+  },
+  {
+    path: '/api/source/{id}/plugin/{pluginId}/{collection}',
+    pathParams: [...timelineId, ...pluginPath],
+    operations: [
+      {
+        method: 'GET',
+        summary: "List a plugin collection's rows",
+        description: 'In the collection\'s order. The same rows also travel inside `GET /api/source/{id}` under `pluginData`, so a client that already loaded the timeline does not need this call.',
+        responses: {
+          '200': { description: 'The rows.', schema: { type: 'object', required: ['rows'], properties: { rows: { type: 'array', items: ref('PluginDataRow') } } } },
+          ...pluginErrors(),
+        },
+      },
+      {
+        method: 'POST',
+        summary: 'Create or replace a row',
+        description: 'Body is `{ data, id? }`. `data` is validated against the collection\'s declared JSON Schema and its references must resolve. `id` is ignored for a collection with `keyFields` — there the row id is derived from the key values, so writing the same coordinates twice updates one row. An existing row keeps its position.',
+        optimisticLock: true,
+        requestBody: { type: 'object', required: ['data'], properties: { id: { type: 'string' }, data: { type: 'object' } } },
+        responses: { '201': { description: 'The stored row.', schema: ref('PluginDataRow') }, ...pluginErrors(), ...CONFLICT },
+      },
+    ],
+  },
+  {
+    path: '/api/source/{id}/plugin/{pluginId}/{collection}/move',
+    pathParams: [...timelineId, ...pluginPath],
+    operations: [
+      {
+        method: 'POST',
+        summary: 'Reposition a row',
+        description: 'Body is `{ id, after? , before? }`. Only for a collection declared `ordered`; anything else answers 400. Renumbers server-side and returns the new order. This shadows no row: a row whose id is `move` is still addressed by PATCH and DELETE on this path.',
+        requestBody: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, after: { type: 'string' }, before: { type: 'string' } } },
+        responses: {
+          '200': { description: 'The new order.', schema: { type: 'object', properties: { ok: { type: 'boolean' }, order: { type: 'array', items: { type: 'string' } } } } },
+          ...pluginErrors(),
+        },
+      },
+    ],
+  },
+  {
+    path: '/api/source/{id}/plugin/{pluginId}/{collection}/{rowId}',
+    pathParams: [...timelineId, ...pluginPath, { name: 'rowId', description: 'Row id, percent-encoded. For a collection with `keyFields` this is the derived composite key.' }],
+    operations: [
+      {
+        method: 'PATCH',
+        summary: "Merge into a row's data",
+        description: 'Body is `{ data }`, shallow-merged into the stored object; a `null` value removes its key. The MERGED result is validated, not the patch. A field that forms the row\'s identity cannot be patched — that would silently make it a different row — and answers 400.',
+        optimisticLock: true,
+        requestBody: { type: 'object', required: ['data'], properties: { data: { type: 'object' } } },
+        responses: { '200': { description: 'The stored row.', schema: ref('PluginDataRow') }, ...pluginErrors(), ...CONFLICT },
+      },
+      {
+        method: 'DELETE',
+        summary: 'Delete a row and its cascade',
+        description: 'Rows referencing this one through a declared reference go with it (`onDelete: cascade`, the default) and are listed in the response. A reference declared `restrict` blocks the delete with 409 instead, and nothing is removed.',
+        responses: {
+          '200': { description: 'Deleted, with what the cascade took.', schema: { type: 'object', properties: { ok: { type: 'boolean' }, cascaded: { type: 'array', items: { type: 'object', properties: { collection: { type: 'string' }, rowIds: { type: 'array', items: { type: 'string' } } } } } } } },
+          '409': { description: 'reference_restrict — a reference declared `restrict` still points at this row.', schema: ERROR },
+          ...pluginErrors(),
+        },
       },
     ],
   },

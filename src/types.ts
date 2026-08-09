@@ -43,7 +43,16 @@ export type SourceCapabilities = { editable: boolean; live: SourceLive };
 //   n — item count (catches inserts/deletes, which v/t alone miss)
 //   t — max `updated_at` across the items and the timeline row (ISO string),
 //       so item edits, phase/meta writes and renames all bump it
-export type Watermark = { v: number; n: number; t: string | null };
+//   pv/pn — the same pair over the plugin-owned rows (`plugin_data`).
+//
+// The plugin dimension is two extra fields rather than a widening of `v`/`n`,
+// because those two carry documented meanings the rest of the code relies on —
+// `v` is the item row version, and folding a second counter space into it would
+// make it useless for the own-echo hint. They are optional so a source without
+// plugin rows omits them, and both sides of a compare then agree on `undefined`.
+// A local source leaves them unset on purpose: its version IS the file's mtime,
+// which a plugin write moves along with everything else.
+export type Watermark = { v: number; n: number; t: string | null; pv?: number; pn?: number };
 
 /**
  * One entry of the user directory (`app_users`, served by `GET /api/users`).
@@ -261,6 +270,50 @@ export type Pricing = {
 // stable ids live in ./plugins.
 export type PluginRef = { id: string; config?: Record<string, unknown> };
 
+/**
+ * One row of a collection a plugin owns, in the shape it travels in everywhere:
+ * the wire, the host API, and the section a local file carries.
+ *
+ * `data` is the plugin's own object, validated against the collection's declared
+ * JSON Schema on the write path. Everything beside it is host-managed and a
+ * plugin never sets it.
+ *
+ * `version` is the optimistic-lock counter sent back as `If-Match`. What it
+ * counts differs by backing store, and the difference is real rather than
+ * cosmetic: a DB row has its own counter, so two people can edit two rows of one
+ * collection at once; a local file has one version for the whole document, so
+ * the same header there means „the file has not changed since you read it".
+ * Items already work exactly this way — see „Locking" in docs/plugin-storage.md.
+ *
+ * There is no `sort` field. Order is the array's order in `PluginCollectionData`,
+ * which is the only representation a JSON file has; the DB's `sort` column exists
+ * to reproduce it and stays behind the repo.
+ */
+export type PluginDataRow = {
+  id: string;
+  data: Record<string, unknown>;
+  version?: number;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+/** A plugin's collections, keyed by the collection id its manifest declares. */
+export type PluginCollectionData = Record<string, PluginDataRow[]>;
+
+/**
+ * Every enabled plugin's rows, keyed by plugin id.
+ *
+ * It sits on the timeline file rather than behind a second request because a
+ * local source has no server to ask: a static deploy materializes the file and
+ * that copy has to be complete, or the plugin renders nothing. Making the DB
+ * path match means one payload shape for both, and it keeps a local timeline
+ * self-contained — copying the file copies the plugin's data with it.
+ *
+ * Only plugins actually enabled on the timeline are included, which is the same
+ * gate that decides whether their code loads at all.
+ */
+export type PluginData = Record<string, PluginCollectionData>;
+
 export type TimelineFile = {
   /** Points editors at schema/timeline.schema.json for completion + validation. */
   $schema?: string;
@@ -270,6 +323,10 @@ export type TimelineFile = {
   // Plugins enabled on this timeline (e.g. 'product-roadmap' → pricing matrix).
   // Replaces the former `type: 'product'` gate; see ./plugins.
   plugins?: PluginRef[];
+  // Rows owned by the enabled plugins, stored generically by the host. A plugin
+  // never ships a migration, so this is where a plugin's own data lives on every
+  // source kind; see docs/plugin-storage.md.
+  pluginData?: PluginData;
   phases?: TimelinePhase[];
   customFields?: CustomFieldDef[];
   pricing?: Pricing;

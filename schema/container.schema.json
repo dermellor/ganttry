@@ -25,6 +25,9 @@
             "$ref": "#/definitions/PluginRef"
           }
         },
+        "pluginData": {
+          "$ref": "#/definitions/PluginData"
+        },
         "phases": {
           "type": "array",
           "items": {
@@ -87,6 +90,50 @@
         "id"
       ],
       "additionalProperties": false
+    },
+    "PluginData": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/PluginCollectionData"
+      },
+      "description": "Every enabled plugin's rows, keyed by plugin id.\n\nIt sits on the timeline file rather than behind a second request because a local source has no server to ask: a static deploy materializes the file and that copy has to be complete, or the plugin renders nothing. Making the DB path match means one payload shape for both, and it keeps a local timeline self-contained — copying the file copies the plugin's data with it.\n\nOnly plugins actually enabled on the timeline are included, which is the same gate that decides whether their code loads at all."
+    },
+    "PluginCollectionData": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/PluginDataRow"
+        }
+      },
+      "description": "A plugin's collections, keyed by the collection id its manifest declares."
+    },
+    "PluginDataRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "version": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "updatedBy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "data"
+      ],
+      "additionalProperties": false,
+      "description": "One row of a collection a plugin owns, in the shape it travels in everywhere: the wire, the host API, and the section a local file carries.\n\n`data` is the plugin's own object, validated against the collection's declared JSON Schema on the write path. Everything beside it is host-managed and a plugin never sets it.\n\n`version` is the optimistic-lock counter sent back as `If-Match`. What it counts differs by backing store, and the difference is real rather than cosmetic: a DB row has its own counter, so two people can edit two rows of one collection at once; a local file has one version for the whole document, so the same header there means „the file has not changed since you read it\". Items already work exactly this way — see „Locking\" in docs/plugin-storage.md.\n\nThere is no `sort` field. Order is the array's order in `PluginCollectionData`, which is the only representation a JSON file has; the DB's `sort` column exists to reproduce it and stays behind the repo."
     },
     "TimelinePhase": {
       "type": "object",

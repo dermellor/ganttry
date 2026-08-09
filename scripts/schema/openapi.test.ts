@@ -37,6 +37,11 @@ test('openapi routes: no path documents a sub-resource the dispatcher does not k
   for (const path of paths.filter((p) => p.startsWith(PREFIX))) {
     for (const seg of path.slice(PREFIX.length).split('/').filter(Boolean)) {
       if (seg.startsWith('{')) continue;
+      // `plugin` opens a namespace whose remaining segments are named by the
+      // plugin, not by the dispatcher — the same rule parseSourcePath applies.
+      // `move` there is a verb on a collection, and checking it against
+      // SUB_KINDS would demand a sub-resource that must never exist.
+      if (seg === 'move' && path.includes('/plugin/')) continue;
       if (!known.has(seg)) stale.push(`${path} → ${seg}`);
     }
   }

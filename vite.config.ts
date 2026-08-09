@@ -262,8 +262,17 @@ function timelinesApi(): Plugin {
         const parsed = parseSourcePath(rawPath);
         if (!parsed) return send(res, 400, { error: 'invalid path' });
 
-        // Validate id + childId segments.
-        const segs = [...parsed.id.split('/'), parsed.sub?.childId].filter(Boolean) as string[];
+        // Validate id + childId segments. The `/plugin/…` parts are deliberately
+        // exempt, and the exemption is not a hole: none of them ever becomes a
+        // path, and each is checked against something stricter than a charset —
+        // the plugin id and the collection against the installed manifest (an
+        // allowlist), the row id by the store that holds it. A charset rule would
+        // meanwhile reject legitimate values: a scoped plugin id carries `@` and
+        // `/`, and a composite row id carries `:` and percent escapes.
+        const segs = [
+          ...parsed.id.split('/'),
+          ...(parsed.sub?.plugin ? [] : [parsed.sub?.childId]),
+        ].filter(Boolean) as string[];
         if (!segs.every(isIdSegment)) {
           return send(res, 400, { error: `invalid id "${parsed.id}"` });
         }

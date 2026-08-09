@@ -32,6 +32,8 @@ import {
 // resolvable from one `resolveAdapter` while the Deno edge bundle stays clean.
 import { makePostgresRepo } from './timeline-repo.ts';
 import { makeSupabaseRepo } from './timeline-repo-supabase.ts';
+import { handlePluginApi, type ManifestSource, type PluginPath } from './plugin-api.ts';
+import { installedManifest } from './plugin-manifests.ts';
 
 /** Sub-resource kinds addressable under /api/source/<id>/. */
 /**
@@ -45,6 +47,7 @@ export const SUB_KINDS = [
   'group',
   'phases',
   'watermark',
+  'plugin',
   'pricing',
   'feature',
   'feature-move',
@@ -61,12 +64,19 @@ export type ApiRequest = {
   /** timeline id, e.g. "acme/foo"; empty string means the collection (/api/sources) */
   id: string;
   /** sub-resource: item / group / phases / pricing entities, with optional child id */
-  sub?: { kind: SubKind; childId?: string };
+  sub?: { kind: SubKind; childId?: string; plugin?: PluginPath };
   body?: unknown;
   /** optimistic-lock version (from If-Match header or body.version) */
   ifMatch?: number;
   /** attribution for updated_by */
   updatedBy?: string;
+  /**
+   * What a plugin declared, so the dispatcher can enforce it without executing
+   * the plugin. Injected rather than imported: today it reads the manifests this
+   * build shipped with, and #13 points it at the instance's install registry.
+   * Defaults to the built-in set, so every existing caller keeps working.
+   */
+  manifests?: ManifestSource;
 };
 
 export type ApiResult = { status: number; json: unknown };
@@ -200,6 +210,22 @@ export async function handleTimelineApi(repo: TimelineRepo, req: ApiRequest): Pr
     if (sub.kind === 'watermark') {
       if (method === 'GET') return ok(await repo.getWatermark(id));
       return err(405, 'method not allowed');
+    }
+
+    // ---- plugin-owned rows (the generic store) ----------------------------
+    // Everything under here is namespaced by plugin id, so no plugin's names can
+    // collide with a sub-resource above — which is also why the parser stops
+    // interpreting segments once it has seen `plugin`.
+    if (sub.kind === 'plugin') {
+      if (!sub.plugin) return err(400, 'plugin id required');
+      return handlePluginApi(repo, req.manifests ?? installedManifest, {
+        method,
+        timelineId: id,
+        path: sub.plugin,
+        body: req.body,
+        ifMatch: req.ifMatch,
+        updatedBy: req.updatedBy,
+      });
     }
 
     // ---- pricing: whole model (bulk seed / rewrite) ----------------------
@@ -445,10 +471,51 @@ export function resolveAdapter(conns: DbConnections, id: string, live: SourceLiv
   return dbAdapter(repo, live);
 }
 
+/** Decode one path part, leaving a malformed escape as the literal it was. */
+function decodePart(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    // A lone `%` is not a valid escape. Failing the whole request over it would
+    // turn a typo into a 400 with no useful message; the lookup that follows
+    // rejects the unknown name anyway, and says which one.
+    return part;
+  }
+}
+
 /** Parse a `/api/source/<id>[/<subkind>[/<childId>]]` path into id + sub. */
 export function parseSourcePath(path: string): { id: string; sub?: ApiRequest['sub'] } | null {
   const clean = path.replace(/^\/+|\/+$/g, '');
   const segs = clean.split('/').filter(Boolean);
+
+  // `plugin` opens a namespace: everything after it is named by the plugin, so
+  // it must NOT be matched against the sub-resource list. A collection called
+  // `tier` would otherwise be read as the pricing sub-resource and the timeline
+  // id would swallow `…/plugin/<pluginId>`. The rightmost occurrence wins, for
+  // the same reason the loop below scans from the right — a timeline id may
+  // itself contain a segment that looks like a marker.
+  const pluginAt = segs.lastIndexOf('plugin');
+  if (pluginAt > 0 && pluginAt < segs.length - 1) {
+    // Each part is decoded exactly once, which is what lets a scoped plugin id
+    // (`@acme/sprints`) and a composite row id (`pro:calls`) survive a path: the
+    // client sends `encodeURIComponent(part)`, and a value that itself contains a
+    // separator arrives double-encoded and comes back out intact. The timeline id
+    // above is deliberately NOT decoded — it keeps the literal-segment rule it has
+    // always had, because that one does reach the filesystem.
+    const [pluginId, collection, ...rest] = segs.slice(pluginAt + 1).map(decodePart);
+    const plugin: PluginPath = { pluginId };
+    if (collection) plugin.collection = collection;
+    // At most one segment may follow the collection. Joining several would accept
+    // a path no client can produce, and would make `a/b` and `a%2Fb` two spellings
+    // of one row id.
+    if (rest.length === 1) plugin.rowId = rest[0];
+    else if (rest.length > 1) return null;
+    return {
+      id: segs.slice(0, pluginAt).join('/'),
+      sub: { kind: 'plugin', childId: segs.slice(pluginAt + 1).join('/'), plugin },
+    };
+  }
+
   // find a trailing sub-resource marker
   for (let i = segs.length - 1; i >= 0; i--) {
     if ((SUB_KINDS as readonly string[]).includes(segs[i])) {

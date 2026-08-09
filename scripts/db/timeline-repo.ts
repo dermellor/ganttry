@@ -21,6 +21,8 @@ import type { Sql } from 'postgres';
 import type {
   CustomFieldDef,
   DirectoryUser,
+  PluginData,
+  PluginDataRow,
   PluginRef,
   Pricing,
   PricingFeature,
@@ -171,6 +173,20 @@ function jsonRow(sql: Sql, row: Record<string, any>, ...keys: string[]): Record<
   return out;
 }
 
+/**
+ * `sql.json` for a value typed as `unknown`-valued — a plugin's `config` or
+ * `data` bag, whose contents we deliberately do not model.
+ *
+ * postgres.js types the parameter as its own `JSONValue`, which
+ * `Record<string, unknown>` does not satisfy structurally even though every
+ * legal value does at runtime. The assertion is confined here rather than
+ * repeated at each call site, so there is one place to remove it if the driver's
+ * type ever widens.
+ */
+function jsonBag(sql: Sql, value: unknown): ReturnType<Sql['json']> {
+  return sql.json(value as Parameters<Sql['json']>[0]);
+}
+
 // ---- reads -----------------------------------------------------------------
 
 export async function listTimelines(sql: Sql): Promise<TimelineMeta[]> {
@@ -242,6 +258,13 @@ export async function getTimeline(sql: Sql, id: string): Promise<TimelineFile | 
   const versions = versionsFromConfig(plugins.find((p) => p.id === PRODUCT_ROADMAP_PLUGIN)?.config);
   const pricing = await assemblePricing(sql, id, versions);
   if (pricing && (pricing.features.length || pricing.tiers.length)) file.pricing = pricing;
+  // Plugin-owned rows travel with the timeline rather than behind a second
+  // request; the reasoning is on `PluginData` in src/types.ts. Only enabled
+  // plugins are folded in, which `listPluginData` reads from `timeline_plugins`.
+  if (plugins.length) {
+    const pluginData = await listPluginData(sql, id);
+    if (Object.keys(pluginData).length) file.pluginData = pluginData;
+  }
   if (groupRows.length) file.groups = groupRows.map(rowToGroup);
   return file;
 }
@@ -257,15 +280,23 @@ export async function getTimeline(sql: Sql, id: string): Promise<TimelineFile | 
  *   t — max `updated_at` across the items and the timeline row (an item edit,
  *       a phase/meta write and a rename all bump this)
  *
- * NOTE: this covers items + timeline meta (incl. phases). Pricing-table edits
- * are NOT reflected here yet — no poll source is a product timeline today, and
- * Realtime still covers pricing. Folding pricing into the watermark is a
- * follow-up (see AGENTS.md „Live-Update-Naht").
+ *   pv/pn — the same pair over `plugin_data`, so a plugin's rows are covered on
+ *       a polling source too. Kept apart from v/n rather than folded into them:
+ *       `v` is the item row version and a second counter space mixed into it
+ *       would spoil the own-echo hint. Reported as one aggregate over all
+ *       plugins, because the poller's only question is "did anything change".
+ *
+ * NOTE: this still does NOT cover the `pricing_*` tables. Those go away in #17,
+ * when product-roadmap moves onto `plugin_data` and is covered by pv/pn like any
+ * other plugin; adding a third pair for tables with a scheduled removal date
+ * would be work with a shelf life.
  */
 export async function getWatermark(sql: Sql, id: string): Promise<Watermark> {
-  const [itemRows, tlRows] = await Promise.all([
+  const [itemRows, tlRows, pluginRows] = await Promise.all([
     sql`select version, updated_at from timeline_items where timeline_id = ${id}`,
     sql`select updated_at from timelines where id = ${id}`,
+    sql`select coalesce(max(version), 0) as v, count(*)::int as n, max(updated_at) as t
+        from plugin_data where timeline_id = ${id}`,
   ]);
 
   let v = 0;
@@ -275,7 +306,16 @@ export async function getWatermark(sql: Sql, id: string): Promise<Watermark> {
     const ru = toIso(r.updated_at);
     if (ru != null && (t == null || ru > t)) t = ru;
   }
-  return { v, n: itemRows.length, t };
+  const pluginT = toIso(pluginRows[0]?.t ?? null);
+  if (pluginT != null && (t == null || pluginT > t)) t = pluginT;
+  const wm: Watermark = { v, n: itemRows.length, t };
+  // Omitted entirely when the timeline has no plugin rows, so a compare against
+  // a source that has none never sees a 0-vs-undefined difference.
+  if ((pluginRows[0]?.n ?? 0) > 0) {
+    wm.pv = Number(pluginRows[0].v ?? 0);
+    wm.pn = Number(pluginRows[0].n ?? 0);
+  }
+  return wm;
 }
 
 // ---- public pricing (marketing sites consume this) -------------------------
@@ -450,6 +490,12 @@ export async function replaceTimeline(sql: Sql, id: string, file: TimelineFile):
 
   // Pricing tables (wipe + re-insert).
   await replacePricingRows(sql, id, file.pricing);
+
+  // Plugin-owned rows. Same wipe-and-reinsert as everything else here, so a
+  // round trip through GET → PUT preserves a plugin's data instead of dropping
+  // it — a bulk write that silently emptied one collection would be the worst
+  // kind of loss, since nothing in the request said anything about it.
+  await replacePluginData(sql, id, file.pluginData);
 
   const itemRows = file.items
     // `start` is optional: a list-created item can exist without a date yet.
@@ -1033,10 +1079,249 @@ export async function replacePluginRows(sql: Sql, id: string, plugins: PluginRef
   const rows = plugins.map((p) => ({
     timeline_id: id,
     plugin_id: p.id,
-    config: sql.json(p.config ?? {}),
+    config: jsonBag(sql, p.config ?? {}),
     updated_at: now,
   }));
   await sql`insert into timeline_plugins ${sql(rows, 'timeline_id', 'plugin_id', 'config', 'updated_at')}`;
+}
+
+// ---- plugin-owned rows (the generic store) ---------------------------------
+//
+// One table for every plugin (`plugin_data`, migration 0016). The shape rules,
+// the references and the ordering are NOT here — they are enforced above the
+// repo so the file-backed store is held to the same ones. What is here is the
+// storage and the locking, and the locking is the item rule reused verbatim: the
+// UPDATE is gated on `version`, zero rows updated means either gone or stale,
+// and the follow-up SELECT tells the two apart.
+
+const PLUGIN_DATA_SELECT = 'row_id, data, version, updated_at, updated_by';
+
+function rowToPluginRow(row: Record<string, any>): PluginDataRow {
+  const out: PluginDataRow = { id: row.row_id, data: (row.data ?? {}) as Record<string, unknown> };
+  if (row.version != null) out.version = row.version;
+  const at = toIso(row.updated_at);
+  if (at != null) out.updatedAt = at;
+  if (row.updated_by != null) out.updatedBy = row.updated_by;
+  return out;
+}
+
+export async function listPluginRows(
+  sql: Sql,
+  timelineId: string,
+  pluginId: string,
+  collection: string,
+): Promise<PluginDataRow[]> {
+  const rows = await sql`
+    select ${sql.unsafe(PLUGIN_DATA_SELECT)} from plugin_data
+    where timeline_id = ${timelineId} and plugin_id = ${pluginId} and collection = ${collection}
+    order by sort asc nulls last, row_id asc`;
+  return rows.map(rowToPluginRow);
+}
+
+/**
+ * Every collection of the named plugins, grouped for the timeline payload.
+ *
+ * With no `pluginIds`, the set is „whatever this timeline has enabled" — read
+ * from `timeline_plugins` in the same statement. A plugin whose rows survive
+ * after it was disabled therefore stops shipping them without them being
+ * deleted, which is what makes re-enabling lossless (see #13).
+ */
+export async function listPluginData(sql: Sql, timelineId: string, pluginIds?: string[]): Promise<PluginData> {
+  const scope =
+    pluginIds != null
+      ? sql`and plugin_id = any(${pluginIds})`
+      : sql`and plugin_id in (select plugin_id from timeline_plugins where timeline_id = ${timelineId})`;
+  const rows = await sql`
+    select plugin_id, collection, ${sql.unsafe(PLUGIN_DATA_SELECT)} from plugin_data
+    where timeline_id = ${timelineId} ${scope}
+    order by plugin_id asc, collection asc, sort asc nulls last, row_id asc`;
+  const out: PluginData = {};
+  for (const row of rows) {
+    const byCollection = (out[row.plugin_id] ??= {});
+    (byCollection[row.collection] ??= []).push(rowToPluginRow(row));
+  }
+  return out;
+}
+
+async function nextPluginSort(sql: Sql, timelineId: string, pluginId: string, collection: string): Promise<number> {
+  const [top] = await sql`
+    select sort from plugin_data
+    where timeline_id = ${timelineId} and plugin_id = ${pluginId} and collection = ${collection}
+    order by sort desc nulls last limit 1`;
+  return typeof top?.sort === 'number' ? top.sort + 1 : 0;
+}
+
+/**
+ * Upsert a row's whole `data`.
+ *
+ * `sort` is assigned on insert only, so a rewrite of an existing row keeps its
+ * place — otherwise saving a row would silently move it to the end of an ordered
+ * collection. It is assigned even for a collection that declared no order,
+ * because insertion order is a better default than none: without it the fallback
+ * is the row id, and a list would reshuffle itself as ids are added.
+ */
+export async function putPluginRow(
+  sql: Sql,
+  timelineId: string,
+  pluginId: string,
+  collection: string,
+  row: PluginDataRow,
+  expectedVersion?: number,
+  updatedBy?: string,
+): Promise<PluginDataRow> {
+  const sort = await nextPluginSort(sql, timelineId, pluginId, collection);
+  const guard = expectedVersion != null ? sql`where plugin_data.version = ${expectedVersion}` : sql``;
+  const data = await sql`
+    insert into plugin_data (timeline_id, plugin_id, collection, row_id, data, sort, updated_by)
+    values (${timelineId}, ${pluginId}, ${collection}, ${row.id}, ${jsonBag(sql, row.data ?? {})}, ${sort}, ${updatedBy ?? null})
+    on conflict (timeline_id, plugin_id, collection, row_id) do update
+      set data = excluded.data, updated_by = excluded.updated_by
+      ${guard}
+    returning ${sql.unsafe(PLUGIN_DATA_SELECT)}`;
+  if (data.length === 0) {
+    // Nothing inserted and nothing updated: the row exists and the guard
+    // rejected it. (Without a guard the upsert always writes, so this branch is
+    // only reachable with an If-Match.)
+    throw new ConflictError(`${collection}/${row.id} changed since version ${expectedVersion}`);
+  }
+  return rowToPluginRow(data[0]);
+}
+
+/**
+ * Shallow-merge `patch` into a row's `data`.
+ *
+ * A `null` value REMOVES its key rather than storing a JSON null. That mirrors
+ * how an item PATCH treats null (clear the field), and it is the only way a
+ * merge-shaped write can delete a key at all — storing null instead would leave
+ * the key present and make `required` in a collection's schema unsatisfiable
+ * after the first clear.
+ */
+export async function patchPluginRow(
+  sql: Sql,
+  timelineId: string,
+  pluginId: string,
+  collection: string,
+  rowId: string,
+  patch: Record<string, unknown>,
+  expectedVersion?: number,
+  updatedBy?: string,
+): Promise<PluginDataRow> {
+  const set: Record<string, unknown> = {};
+  const drop: string[] = [];
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) drop.push(key);
+    else set[key] = value;
+  }
+  const versionCond = expectedVersion != null ? sql`and version = ${expectedVersion}` : sql``;
+  const data = await sql`
+    update plugin_data
+    set data = (data || ${jsonBag(sql, set)}::jsonb) - ${drop}::text[],
+        updated_by = coalesce(${updatedBy ?? null}, updated_by)
+    where timeline_id = ${timelineId} and plugin_id = ${pluginId}
+      and collection = ${collection} and row_id = ${rowId} ${versionCond}
+    returning ${sql.unsafe(PLUGIN_DATA_SELECT)}`;
+  if (data.length === 0) {
+    const [exists] = await sql`
+      select row_id from plugin_data
+      where timeline_id = ${timelineId} and plugin_id = ${pluginId}
+        and collection = ${collection} and row_id = ${rowId}`;
+    if (!exists) throw new NotFoundError();
+    throw new ConflictError(`${collection}/${rowId} changed since version ${expectedVersion}`);
+  }
+  return rowToPluginRow(data[0]);
+}
+
+export async function deletePluginRow(
+  sql: Sql,
+  timelineId: string,
+  pluginId: string,
+  collection: string,
+  rowId: string,
+): Promise<void> {
+  await sql`
+    delete from plugin_data
+    where timeline_id = ${timelineId} and plugin_id = ${pluginId}
+      and collection = ${collection} and row_id = ${rowId}`;
+}
+
+/**
+ * Renumber `sort` to a contiguous 0..n-1 in the given order, writing only the
+ * rows that actually move. Skipping the unchanged ones matters because every
+ * write bumps a row's version, and bumping all of them would make one reorder
+ * invalidate every open editor's If-Match.
+ */
+export async function orderPluginRows(
+  sql: Sql,
+  timelineId: string,
+  pluginId: string,
+  collection: string,
+  orderedIds: string[],
+  updatedBy?: string,
+): Promise<void> {
+  const rows = await sql`
+    select row_id, sort from plugin_data
+    where timeline_id = ${timelineId} and plugin_id = ${pluginId} and collection = ${collection}`;
+  const current = new Map(rows.map((r) => [r.row_id as string, r.sort as number | null]));
+  for (let i = 0; i < orderedIds.length; i++) {
+    if (current.get(orderedIds[i]) === i) continue;
+    await sql`
+      update plugin_data set sort = ${i}, updated_by = coalesce(${updatedBy ?? null}, updated_by)
+      where timeline_id = ${timelineId} and plugin_id = ${pluginId}
+        and collection = ${collection} and row_id = ${orderedIds[i]}`;
+  }
+}
+
+/**
+ * Wipe and re-insert every plugin row of a timeline from a whole `PluginData`
+ * section. Used by `replaceTimeline`; `sort` follows the array order, which is
+ * what makes the file's order authoritative on the way back in.
+ */
+export async function replacePluginData(sql: Sql, timelineId: string, pluginData?: PluginData): Promise<void> {
+  await sql`delete from plugin_data where timeline_id = ${timelineId}`;
+  const rows: Record<string, any>[] = [];
+  for (const [pluginId, collections] of Object.entries(pluginData ?? {})) {
+    for (const [collection, entries] of Object.entries(collections ?? {})) {
+      (entries ?? []).forEach((row, i) => {
+        if (!row?.id) return; // a row without an id cannot be addressed again
+        rows.push({
+          timeline_id: timelineId,
+          plugin_id: pluginId,
+          collection,
+          row_id: row.id,
+          data: jsonBag(sql, row.data ?? {}),
+          sort: i,
+          updated_by: row.updatedBy ?? null,
+        });
+      });
+    }
+  }
+  if (!rows.length) return;
+  await sql`insert into plugin_data ${sql(rows, 'timeline_id', 'plugin_id', 'collection', 'row_id', 'data', 'sort', 'updated_by')}`;
+}
+
+export async function purgePluginData(sql: Sql, pluginId: string, timelineId?: string | null): Promise<void> {
+  if (timelineId != null) {
+    await sql`delete from plugin_data where plugin_id = ${pluginId} and timeline_id = ${timelineId}`;
+    return;
+  }
+  await sql`delete from plugin_data where plugin_id = ${pluginId}`;
+}
+
+/**
+ * Strip `keys` off every item's `metadata`. Returns how many items changed.
+ *
+ * `metadata ?| keys` restricts the UPDATE to the items that actually carry one,
+ * so an uninstall does not bump the version of every item in the timeline and
+ * hand every open client a spurious reload.
+ */
+export async function purgeItemMetadata(sql: Sql, keys: string[], timelineId?: string | null): Promise<number> {
+  if (!keys.length) return 0;
+  const scope = timelineId != null ? sql`and timeline_id = ${timelineId}` : sql``;
+  const rows = await sql`
+    update timeline_items set metadata = metadata - ${keys}::text[]
+    where metadata ?| ${keys}::text[] ${scope}
+    returning id`;
+  return rows.length;
 }
 
 // -- bulk replace (import, MCP set_pricing seed, PUT) --
@@ -1144,6 +1429,18 @@ export function makePostgresRepo(sql: Sql): TimelineRepo {
     deleteGroup: (timelineId, groupId) => deleteGroup(sql, timelineId, groupId),
     updatePhases: (id, phases) => updatePhases(sql, id, phases),
     updateMeta: (id, meta) => updateMeta(sql, id, meta),
+    listPluginRows: (timelineId, pluginId, collection) => listPluginRows(sql, timelineId, pluginId, collection),
+    listPluginData: (timelineId, pluginIds) => listPluginData(sql, timelineId, pluginIds),
+    putPluginRow: (timelineId, pluginId, collection, row, expectedVersion, updatedBy) =>
+      putPluginRow(sql, timelineId, pluginId, collection, row, expectedVersion, updatedBy),
+    patchPluginRow: (timelineId, pluginId, collection, rowId, patch, expectedVersion, updatedBy) =>
+      patchPluginRow(sql, timelineId, pluginId, collection, rowId, patch, expectedVersion, updatedBy),
+    deletePluginRow: (timelineId, pluginId, collection, rowId) =>
+      deletePluginRow(sql, timelineId, pluginId, collection, rowId),
+    orderPluginRows: (timelineId, pluginId, collection, orderedIds, updatedBy) =>
+      orderPluginRows(sql, timelineId, pluginId, collection, orderedIds, updatedBy),
+    purgePluginData: (pluginId, timelineId) => purgePluginData(sql, pluginId, timelineId),
+    purgeItemMetadata: (keys, timelineId) => purgeItemMetadata(sql, keys, timelineId),
     addFeature: (timelineId, feature, updatedBy) => addFeature(sql, timelineId, feature, updatedBy),
     updateFeature: (timelineId, featureId, patch, expectedVersion, updatedBy) =>
       updateFeature(sql, timelineId, featureId, patch, expectedVersion, updatedBy),

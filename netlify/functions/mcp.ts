@@ -15,6 +15,7 @@ import type { Config } from '@netlify/functions';
 import { getSql } from '../../scripts/db/sql.ts';
 import { getServiceClient } from '../../scripts/db/client.ts';
 import { resolveAdapter, resolveRepo, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
+import { MOVE_SEGMENT } from '../../scripts/db/plugin-api.ts';
 
 const ACCESS_TTL = 12 * 3600; // must match mcp-oauth.ts
 
@@ -140,7 +141,87 @@ function buildServer(updatedBy: string): McpServer {
     },
   );
 
+  // ---- plugin-owned rows: two tools for every plugin ----------------------
+  //
+  // Two generic tools, not two per plugin. The thirteen pricing tools below are
+  // what one plugin costs when the surface is per plugin, and a plugin installed
+  // at runtime could not add tools to a compiled server at all. What a caller may
+  // write is not decided here: the dispatcher checks it against the plugin's
+  // manifest, so an unknown plugin, an undeclared collection or a row that fails
+  // its schema is refused the same way it is over HTTP.
+
+  server.tool(
+    'plugin_data_list',
+    'List the rows a plugin stores on a timeline, in the collection\'s own order. ' +
+      'Collections are declared in the plugin\'s manifest (product-roadmap: features, tiers, ' +
+      'tier-values, highlights). Each row is { id, data, version } — send `version` back as ' +
+      'expectedVersion when writing.',
+    { id: z.string(), pluginId: z.string(), collection: z.string() },
+    async ({ id, pluginId, collection }) =>
+      ok(await run({ method: 'GET', id, sub: { kind: 'plugin', plugin: { pluginId, collection } } })),
+  );
+  server.tool(
+    'plugin_data_write',
+    'Write one row of a plugin collection. op="put" creates or replaces `data` wholesale; ' +
+      'op="patch" merges into it (a null value removes that key); op="delete" removes the row ' +
+      'and cascades to rows referencing it; op="move" repositions it in an ordered collection ' +
+      '(pass after or before instead of data). rowId is required for patch, delete and move; ' +
+      'for put it is derived from the key fields when the collection has them. Pass ' +
+      'expectedVersion to make the write conditional — it fails rather than overwriting a ' +
+      'change you did not see.',
+    {
+      id: z.string(),
+      pluginId: z.string(),
+      collection: z.string(),
+      op: z.enum(['put', 'patch', 'delete', 'move']),
+      rowId: z.string().optional(),
+      data: z.record(z.any()).optional(),
+      after: z.string().optional(),
+      before: z.string().optional(),
+      expectedVersion: z.number().optional(),
+    },
+    async ({ id, pluginId, collection, op, rowId, data, after, before, expectedVersion }) => {
+      const plugin = { pluginId, collection, rowId };
+      if (op === 'move') {
+        if (!rowId) throw new Error('move needs rowId');
+        return ok(
+          await run({
+            method: 'POST',
+            id,
+            sub: { kind: 'plugin', plugin: { pluginId, collection, rowId: MOVE_SEGMENT } },
+            body: { id: rowId, after, before },
+          }),
+        );
+      }
+      if (op === 'delete') {
+        if (!rowId) throw new Error('delete needs rowId');
+        return ok(await run({ method: 'DELETE', id, sub: { kind: 'plugin', plugin } }));
+      }
+      if (!data) throw new Error(`${op} needs data`);
+      if (op === 'patch') {
+        if (!rowId) throw new Error('patch needs rowId');
+        return ok(
+          await run({ method: 'PATCH', id, sub: { kind: 'plugin', plugin }, body: { data }, ifMatch: expectedVersion }),
+        );
+      }
+      return ok(
+        await run({
+          method: 'POST',
+          id,
+          sub: { kind: 'plugin', plugin: { pluginId, collection } },
+          body: { id: rowId, data },
+          ifMatch: expectedVersion,
+        }),
+      );
+    },
+  );
+
   // ---- granular pricing tools (one row per call; no whole-model dump) ------
+  //
+  // Thirteen tools for one plugin, which is the cost the two generic ones above
+  // exist to stop paying. They stay until #17 moves product-roadmap onto the
+  // generic store; removing them before its data has moved would take the MCP
+  // path away from a model that still lives in the `pricing_*` tables.
   server.tool(
     'add_feature',
     'Add a pricing feature. Body: { id, name, group?, description?, version? (the version label it is ' +

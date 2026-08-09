@@ -67,6 +67,18 @@ export const productRoadmapManifest: PluginManifest = {
   references: [
     { from: PRICING_COLLECTIONS.tierValues, field: 'tierId', to: PRICING_COLLECTIONS.tiers, onDelete: 'cascade' },
     { from: PRICING_COLLECTIONS.tierValues, field: 'featureId', to: PRICING_COLLECTIONS.features, onDelete: 'cascade' },
+    // The third relation, and the one Postgres never enforced: a highlight
+    // bundles a LIST of feature ids. `deleteFeature` strips a deleted id out of
+    // every highlight by hand today (timeline-repo.ts), which is the loop this
+    // declaration replaces. `unlink` rather than `cascade` because the tile is
+    // the point: losing one of five features must not delete it.
+    {
+      from: PRICING_COLLECTIONS.highlights,
+      field: 'featureIds',
+      to: PRICING_COLLECTIONS.features,
+      array: true,
+      onDelete: 'unlink',
+    },
   ],
 
   // Item metadata this plugin owns (see ./plugin.ts for why the keys are what

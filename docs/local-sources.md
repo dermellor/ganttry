@@ -145,11 +145,17 @@ The sub-resources in `SUB_KINDS` split cleanly:
   entry in the single-file case.
 - **`group`, `phases`** map to `timeline.json` in the directory case, and to the
   same document in the single-file case.
+- **`plugin/<pluginId>/<collection>`** is the generic store for a plugin's own
+  rows, and it works on both shapes: the rows go into the JSON document, or into
+  the directory's `timeline.json`. See
+  [`plugin-storage.md`](plugin-storage.md) — including the one real difference,
+  that the lock there is the file rather than the row.
 - **`pricing`, `feature`, `tier`, `tier-value`, `highlight`, `pversion`** are the
-  `product-roadmap` plugin's. For a single-file source they are ordinary mutations
-  of one JSON document and cost nothing extra. For a directory source they belong
-  in `timeline.json` and can be deferred; until then the adapter answers `501` for
-  them, which is a truthful answer rather than a silent no-op.
+  `product-roadmap` plugin's own sub-resources, from before the generic store. The
+  adapter answers `501` for them, which is a truthful answer rather than a silent
+  no-op; they disappear when that plugin's data moves onto the generic store
+  (<https://github.com/dermellor/ganttry/issues/17>), and a local source becomes
+  writable for it without a line of plugin-specific code.
 
 ### Optimistic locking without a version column
 

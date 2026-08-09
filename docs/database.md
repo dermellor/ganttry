@@ -493,8 +493,9 @@ by the source through `capabilities.live` (`SourceLive` in
   anon key (`VITE_SUPABASE_*`); without it nothing happens and updates are
   reload-only.
 - **`poll`** — the client polls a cheap **watermark endpoint**
-  (`GET /api/source/<id>/watermark` → `{ v, n, t }`: max item `version`, item
-  count, and max `updated_at` across items plus the `timelines` row) on an
+  (`GET /api/source/<id>/watermark` → `{ v, n, t, pv?, pn? }`: max item `version`,
+  item count, max `updated_at` across items plus the `timelines` row, and the same
+  version/count pair over the plugin-owned rows) on an
   interval (`src/poll.ts`: ~8 s while visible, ~60 s while hidden, backing off on
   `visibilitychange`). When the watermark changes it triggers a **full reload**
   through the existing `loadSource` path; timelines are small, and a delta fetch is
@@ -512,11 +513,14 @@ var **`TIMELINES_DB_LIVE=poll`** (`process.env` locally, `Deno.env` on Netlify)
 switches DB sources to polling — useful for a Postgres without realtime enabled,
 and for testing the poll path end to end.
 
-> **Scope:** the watermark covers items plus timeline metadata (including
-> phases), but **not** the pricing tables. No poll source is a product timeline
-> today, and realtime still covers pricing; folding pricing into the watermark is a
-> follow-up (`getWatermark` in
-> [`scripts/db/timeline-repo.ts`](../scripts/db/timeline-repo.ts)).
+> **Scope:** the watermark covers items, timeline metadata (including phases) and
+> the plugin-owned rows in `plugin_data` (`pv`/`pn`), but **not** the `pricing_*`
+> tables. Those move onto the generic store in
+> <https://github.com/dermellor/ganttry/issues/17>, at which point product-roadmap
+> is covered by `pv`/`pn` like any other plugin — adding a third pair for tables
+> with a scheduled removal date would be work with a shelf life. `pv`/`pn` are kept
+> apart from `v`/`n` because `v` is the item row version and doubles as the
+> own-echo hint; see [`plugin-storage.md`](plugin-storage.md).
 
 #### Presence under polling
 

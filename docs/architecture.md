@@ -52,9 +52,11 @@ is injected into `DbConnections.local` by the Node glue instead of imported by
 `api.ts`, so the Deno edge bundle stays free of `node:fs` — and the edge
 functions leaving it unset is precisely what makes a static deploy read-only.
 Its version is the file's mtime in milliseconds, forced strictly forward on each
-write so two edits inside one millisecond cannot share a version. The pricing
-sub-resources answer `501` (`NotSupportedError`) rather than pretending to
-succeed.
+write so two edits inside one millisecond cannot share a version. Plugin-owned rows
+go into the same document ([`plugin-storage.md`](plugin-storage.md)); the
+`product-roadmap`-specific sub-resources still answer `501` (`NotSupportedError`)
+rather than pretending to succeed, until #17 moves that plugin's data onto the
+generic store.
 
 `loadSource(source)` ([`src/editor.ts`](../src/editor.ts)) routes on `kind`;
 `render.ts` renders a view whenever it has a `source` (notes-backed views have
@@ -136,6 +138,16 @@ The contract is re-exported as one import from
 [`src/pluginHost/api.ts`](../src/pluginHost/api.ts), which pulls in no runtime code
 from the app. Publishing it as a package belongs with distribution
 (<https://github.com/dermellor/ganttry/issues/15>).
+
+**A plugin's own rows are stored generically, on every source kind.** A plugin
+installed at runtime cannot ship a migration, so what Postgres would enforce for it
+— the column shape, the foreign keys, the row order, a composite primary key — is
+declared in the manifest and enforced above the repo, which is what lets one
+implementation serve the `plugin_data` table, a JSON file and a Markdown directory
+alike. The chapter is [`plugin-storage.md`](plugin-storage.md); the reason it sits
+on the repo seam rather than in Postgres is that `data:own` must not become a
+Postgres-only capability, which would undo the symmetry the source adapters just
+achieved.
 
 **A plugin declares its views; the host builds the chrome.** `PluginView` carries
 an id, a label and the icon markup for the header toggle. The host creates one

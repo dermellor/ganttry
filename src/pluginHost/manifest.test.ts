@@ -131,8 +131,14 @@ test('product-roadmap declares itself completely and validly', () => {
   // The matrix cell is identified by its pair, and both halves cascade.
   const cells = productRoadmapManifest.collections!.find((c) => c.id === 'tier-values')!;
   assert.deepEqual(cells.keyFields, ['tierId', 'featureId']);
-  assert.equal(productRoadmapManifest.references!.length, 2);
-  assert.ok(productRoadmapManifest.references!.every((r2) => r2.onDelete === 'cascade'));
+  const cascading = productRoadmapManifest.references!.filter((r2) => r2.onDelete === 'cascade');
+  assert.equal(cascading.length, 2, 'the two foreign keys on pricing_tier_values');
+  // The third relation has no foreign key behind it: a highlight bundles a LIST
+  // of feature ids, and deleting one feature must shorten the list rather than
+  // delete the tile. Behaviour is covered in plugin-store-product-roadmap.test.ts.
+  const bundle = productRoadmapManifest.references!.find((r2) => r2.field === 'featureIds')!;
+  assert.equal(bundle.array, true);
+  assert.equal(bundle.onDelete, 'unlink');
   // The item metadata keys it owns, so an uninstall can clean them off items.
   assert.deepEqual(productRoadmapManifest.metadataKeys, ['featureIds', 'featureVersion', 'tier']);
 });

@@ -16,6 +16,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   CustomFieldDef,
   DirectoryUser,
+  PluginData,
+  PluginDataRow,
   PluginRef,
   Pricing,
   PricingFeature,
@@ -238,6 +240,12 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
   const versions = versionsFromConfig(plugins.find((p) => p.id === PRODUCT_ROADMAP_PLUGIN)?.config);
   const pricing = await assemblePricing(db, id, versions);
   if (pricing && (pricing.features.length || pricing.tiers.length)) file.pricing = pricing;
+  // Plugin-owned rows travel with the timeline; see `PluginData` in src/types.ts.
+  // The enabled set is already in hand here, so it is passed rather than re-read.
+  if (plugins.length) {
+    const pluginData = await listPluginData(db, id, plugins.map((p) => p.id));
+    if (Object.keys(pluginData).length) file.pluginData = pluginData;
+  }
   if (groupRows && groupRows.length) file.groups = groupRows.map(rowToGroup);
   return file;
 }
@@ -253,18 +261,22 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
  *   t — max `updated_at` across the items and the timeline row (an item edit,
  *       a phase/meta write and a rename all bump this)
  *
- * NOTE: this covers items + timeline meta (incl. phases). Pricing-table edits
- * are NOT reflected here yet — no poll source is a product timeline today, and
- * Realtime still covers pricing. Folding pricing into the watermark is a
- * follow-up (see AGENTS.md „Live-Update-Naht").
+ *   pv/pn — the same pair over `plugin_data`. Kept apart from v/n so the item
+ *       row version stays usable as the own-echo hint; see the note on the
+ *       native driver's copy for the full reasoning.
+ *
+ * NOTE: this still does NOT cover the `pricing_*` tables — they go away in #17,
+ * at which point product-roadmap is covered by pv/pn like any other plugin.
  */
 export async function getWatermark(db: SupabaseClient, id: string): Promise<Watermark> {
-  const [itemsRes, tlRes] = await Promise.all([
+  const [itemsRes, tlRes, pluginRes] = await Promise.all([
     db.from('timeline_items').select('version, updated_at').eq('timeline_id', id),
     db.from('timelines').select('updated_at').eq('id', id).maybeSingle(),
+    db.from('plugin_data').select('version, updated_at').eq('timeline_id', id),
   ]);
   if (itemsRes.error) throw new Error(`getWatermark items: ${itemsRes.error.message}`);
   if (tlRes.error) throw new Error(`getWatermark timeline: ${tlRes.error.message}`);
+  if (pluginRes.error) throw new Error(`getWatermark plugin data: ${pluginRes.error.message}`);
 
   const rows = (itemsRes.data ?? []) as { version: number | null; updated_at: string | null }[];
   let v = 0;
@@ -273,7 +285,18 @@ export async function getWatermark(db: SupabaseClient, id: string): Promise<Wate
     if (r.version != null && r.version > v) v = r.version;
     if (r.updated_at != null && (t == null || r.updated_at > t)) t = r.updated_at;
   }
-  return { v, n: rows.length, t };
+  const pluginRows = (pluginRes.data ?? []) as { version: number | null; updated_at: string | null }[];
+  let pv = 0;
+  for (const r of pluginRows) {
+    if (r.version != null && r.version > pv) pv = r.version;
+    if (r.updated_at != null && (t == null || r.updated_at > t)) t = r.updated_at;
+  }
+  const wm: Watermark = { v, n: rows.length, t };
+  if (pluginRows.length) {
+    wm.pv = pv;
+    wm.pn = pluginRows.length;
+  }
+  return wm;
 }
 
 // ---- public pricing (marketing sites consume this) -------------------------
@@ -462,6 +485,10 @@ export async function replaceTimeline(db: SupabaseClient, id: string, file: Time
 
   // Pricing tables (wipe + re-insert).
   await replacePricingRows(db, id, file.pricing);
+
+  // Plugin-owned rows, so a GET → PUT round trip preserves them rather than
+  // silently emptying a collection the request never mentioned.
+  await replacePluginData(db, id, file.pluginData);
 
   const itemRows = file.items
     // `start` is optional: a list-created item can exist without a date yet.
@@ -1075,6 +1102,295 @@ export async function replacePluginRows(db: SupabaseClient, id: string, plugins:
   if (ins.error) throw new Error(`replacePluginRows insert: ${ins.error.message}`);
 }
 
+// ---- plugin-owned rows (the generic store) ---------------------------------
+//
+// Mirror of the same section in ./timeline-repo.ts, over PostgREST. Three places
+// where this driver has to do in two round trips what the native one does in
+// one, each because PostgREST has no equivalent:
+//
+//   - no `on conflict … where`, so a guarded upsert is a read then a write;
+//   - no jsonb `||`, so a merge patch is read-modify-write (the version guard on
+//     the write still makes a concurrent change a 409 rather than a lost update);
+//   - no `?|`, so „items carrying any of these keys" is filtered client-side.
+//
+// The extra round trip is the price of the driver that works in the Deno edge
+// without raw TCP, and all three paths are cold ones (a plugin write, an
+// uninstall) rather than the render path.
+
+const PLUGIN_DATA_SELECT = 'row_id, data, version, updated_at, updated_by';
+
+function rowToPluginRow(row: Record<string, any>): PluginDataRow {
+  const out: PluginDataRow = { id: row.row_id, data: (row.data ?? {}) as Record<string, unknown> };
+  if (row.version != null) out.version = row.version;
+  if (row.updated_at != null) out.updatedAt = row.updated_at;
+  if (row.updated_by != null) out.updatedBy = row.updated_by;
+  return out;
+}
+
+export async function listPluginRows(
+  db: SupabaseClient,
+  timelineId: string,
+  pluginId: string,
+  collection: string,
+): Promise<PluginDataRow[]> {
+  const { data, error } = await db
+    .from('plugin_data')
+    .select(PLUGIN_DATA_SELECT)
+    .eq('timeline_id', timelineId)
+    .eq('plugin_id', pluginId)
+    .eq('collection', collection)
+    .order('sort', { ascending: true, nullsFirst: false })
+    .order('row_id', { ascending: true });
+  if (error) throw new Error(`listPluginRows: ${error.message}`);
+  return (data ?? []).map(rowToPluginRow);
+}
+
+export async function listPluginData(
+  db: SupabaseClient,
+  timelineId: string,
+  pluginIds?: string[],
+): Promise<PluginData> {
+  let ids = pluginIds;
+  if (ids == null) {
+    const { data: enabled, error: enabledError } = await db
+      .from('timeline_plugins')
+      .select('plugin_id')
+      .eq('timeline_id', timelineId);
+    if (enabledError) throw new Error(`listPluginData plugins: ${enabledError.message}`);
+    ids = (enabled ?? []).map((r) => (r as { plugin_id: string }).plugin_id);
+  }
+  if (!ids.length) return {};
+  const { data, error } = await db
+    .from('plugin_data')
+    .select(`plugin_id, collection, ${PLUGIN_DATA_SELECT}`)
+    .eq('timeline_id', timelineId)
+    .in('plugin_id', ids)
+    .order('plugin_id', { ascending: true })
+    .order('collection', { ascending: true })
+    .order('sort', { ascending: true, nullsFirst: false })
+    .order('row_id', { ascending: true });
+  if (error) throw new Error(`listPluginData: ${error.message}`);
+  const out: PluginData = {};
+  for (const row of (data ?? []) as Record<string, any>[]) {
+    const byCollection = (out[row.plugin_id] ??= {});
+    (byCollection[row.collection] ??= []).push(rowToPluginRow(row));
+  }
+  return out;
+}
+
+async function nextPluginSort(
+  db: SupabaseClient,
+  timelineId: string,
+  pluginId: string,
+  collection: string,
+): Promise<number> {
+  const { data } = await db
+    .from('plugin_data')
+    .select('sort')
+    .eq('timeline_id', timelineId)
+    .eq('plugin_id', pluginId)
+    .eq('collection', collection)
+    .order('sort', { ascending: false, nullsFirst: false })
+    .limit(1);
+  const top = (data ?? [])[0] as { sort?: number | null } | undefined;
+  return typeof top?.sort === 'number' ? top.sort + 1 : 0;
+}
+
+export async function putPluginRow(
+  db: SupabaseClient,
+  timelineId: string,
+  pluginId: string,
+  collection: string,
+  row: PluginDataRow,
+  expectedVersion?: number,
+  updatedBy?: string,
+): Promise<PluginDataRow> {
+  const key = (q: any) =>
+    q.eq('timeline_id', timelineId).eq('plugin_id', pluginId).eq('collection', collection).eq('row_id', row.id);
+  const { data: existing } = await key(db.from('plugin_data').select('version')).maybeSingle();
+
+  if (existing) {
+    let q = key(db.from('plugin_data').update({ data: row.data ?? {}, updated_by: updatedBy ?? null }));
+    if (expectedVersion != null) q = q.eq('version', expectedVersion);
+    const { data, error } = await q.select(PLUGIN_DATA_SELECT);
+    if (error) throw new Error(`putPluginRow: ${error.message}`);
+    if (!data || data.length === 0) {
+      throw new ConflictError(`${collection}/${row.id} changed since version ${expectedVersion}`);
+    }
+    return rowToPluginRow(data[0]);
+  }
+
+  const { data, error } = await db
+    .from('plugin_data')
+    .insert({
+      timeline_id: timelineId,
+      plugin_id: pluginId,
+      collection,
+      row_id: row.id,
+      data: row.data ?? {},
+      sort: await nextPluginSort(db, timelineId, pluginId, collection),
+      updated_by: updatedBy ?? null,
+    })
+    .select(PLUGIN_DATA_SELECT)
+    .single();
+  if (error) throw new Error(`putPluginRow: ${error.message}`);
+  return rowToPluginRow(data);
+}
+
+export async function patchPluginRow(
+  db: SupabaseClient,
+  timelineId: string,
+  pluginId: string,
+  collection: string,
+  rowId: string,
+  patch: Record<string, unknown>,
+  expectedVersion?: number,
+  updatedBy?: string,
+): Promise<PluginDataRow> {
+  const key = (q: any) =>
+    q.eq('timeline_id', timelineId).eq('plugin_id', pluginId).eq('collection', collection).eq('row_id', rowId);
+  const { data: current } = await key(db.from('plugin_data').select('data, version')).maybeSingle();
+  if (!current) throw new NotFoundError();
+
+  // A null clears its key rather than storing a JSON null — see the note on the
+  // postgres.js implementation for why a merge write needs that to be a removal.
+  const merged: Record<string, unknown> = { ...((current as any).data ?? {}) };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) delete merged[k];
+    else merged[k] = v;
+  }
+
+  // Always gate on a version, falling back to the one just read: without it the
+  // read-modify-write above would silently overwrite a change that landed in
+  // between, which the native driver's in-statement merge cannot do.
+  const guard = expectedVersion ?? ((current as any).version as number);
+  const { data, error } = await key(
+    db.from('plugin_data').update({ data: merged, updated_by: updatedBy ?? null }),
+  )
+    .eq('version', guard)
+    .select(PLUGIN_DATA_SELECT);
+  if (error) throw new Error(`patchPluginRow: ${error.message}`);
+  if (!data || data.length === 0) {
+    throw new ConflictError(`${collection}/${rowId} changed since version ${guard}`);
+  }
+  return rowToPluginRow(data[0]);
+}
+
+export async function deletePluginRow(
+  db: SupabaseClient,
+  timelineId: string,
+  pluginId: string,
+  collection: string,
+  rowId: string,
+): Promise<void> {
+  const { error } = await db
+    .from('plugin_data')
+    .delete()
+    .eq('timeline_id', timelineId)
+    .eq('plugin_id', pluginId)
+    .eq('collection', collection)
+    .eq('row_id', rowId);
+  if (error) throw new Error(`deletePluginRow: ${error.message}`);
+}
+
+export async function orderPluginRows(
+  db: SupabaseClient,
+  timelineId: string,
+  pluginId: string,
+  collection: string,
+  orderedIds: string[],
+  updatedBy?: string,
+): Promise<void> {
+  const { data } = await db
+    .from('plugin_data')
+    .select('row_id, sort')
+    .eq('timeline_id', timelineId)
+    .eq('plugin_id', pluginId)
+    .eq('collection', collection);
+  const current = new Map(((data ?? []) as { row_id: string; sort: number | null }[]).map((r) => [r.row_id, r.sort]));
+  for (let i = 0; i < orderedIds.length; i++) {
+    if (current.get(orderedIds[i]) === i) continue; // unchanged → skip the version bump
+    const set: Record<string, any> = { sort: i };
+    if (updatedBy) set.updated_by = updatedBy;
+    const { error } = await db
+      .from('plugin_data')
+      .update(set)
+      .eq('timeline_id', timelineId)
+      .eq('plugin_id', pluginId)
+      .eq('collection', collection)
+      .eq('row_id', orderedIds[i]);
+    if (error) throw new Error(`orderPluginRows: ${error.message}`);
+  }
+}
+
+export async function replacePluginData(
+  db: SupabaseClient,
+  timelineId: string,
+  pluginData?: PluginData,
+): Promise<void> {
+  const { error: wipeError } = await db.from('plugin_data').delete().eq('timeline_id', timelineId);
+  if (wipeError) throw new Error(`replacePluginData wipe: ${wipeError.message}`);
+  const rows: Record<string, any>[] = [];
+  for (const [pluginId, collections] of Object.entries(pluginData ?? {})) {
+    for (const [collection, entries] of Object.entries(collections ?? {})) {
+      (entries ?? []).forEach((row, i) => {
+        if (!row?.id) return;
+        rows.push({
+          timeline_id: timelineId,
+          plugin_id: pluginId,
+          collection,
+          row_id: row.id,
+          data: row.data ?? {},
+          sort: i,
+          updated_by: row.updatedBy ?? null,
+        });
+      });
+    }
+  }
+  if (!rows.length) return;
+  const { error } = await db.from('plugin_data').insert(rows);
+  if (error) throw new Error(`replacePluginData: ${error.message}`);
+}
+
+export async function purgePluginData(
+  db: SupabaseClient,
+  pluginId: string,
+  timelineId?: string | null,
+): Promise<void> {
+  let q = db.from('plugin_data').delete().eq('plugin_id', pluginId);
+  if (timelineId != null) q = q.eq('timeline_id', timelineId);
+  const { error } = await q;
+  if (error) throw new Error(`purgePluginData: ${error.message}`);
+}
+
+export async function purgeItemMetadata(
+  db: SupabaseClient,
+  keys: string[],
+  timelineId?: string | null,
+): Promise<number> {
+  if (!keys.length) return 0;
+  let read = db.from('timeline_items').select('timeline_id, id, metadata, version');
+  if (timelineId != null) read = read.eq('timeline_id', timelineId);
+  const { data, error } = await read;
+  if (error) throw new Error(`purgeItemMetadata: ${error.message}`);
+
+  let changed = 0;
+  for (const row of (data ?? []) as { timeline_id: string; id: string; metadata: Record<string, unknown> | null }[]) {
+    const metadata = row.metadata ?? {};
+    if (!keys.some((k) => k in metadata)) continue; // untouched items keep their version
+    const next = { ...metadata };
+    for (const k of keys) delete next[k];
+    const { error: writeError } = await db
+      .from('timeline_items')
+      .update({ metadata: next })
+      .eq('timeline_id', row.timeline_id)
+      .eq('id', row.id);
+    if (writeError) throw new Error(`purgeItemMetadata: ${writeError.message}`);
+    changed++;
+  }
+  return changed;
+}
+
 // -- bulk replace (import, MCP set_pricing seed, PUT) --
 
 /**
@@ -1172,6 +1488,18 @@ export function makeSupabaseRepo(db: SupabaseClient): TimelineRepo {
     deleteGroup: (timelineId, groupId) => deleteGroup(db, timelineId, groupId),
     updatePhases: (id, phases) => updatePhases(db, id, phases),
     updateMeta: (id, meta) => updateMeta(db, id, meta),
+    listPluginRows: (timelineId, pluginId, collection) => listPluginRows(db, timelineId, pluginId, collection),
+    listPluginData: (timelineId, pluginIds) => listPluginData(db, timelineId, pluginIds),
+    putPluginRow: (timelineId, pluginId, collection, row, expectedVersion, updatedBy) =>
+      putPluginRow(db, timelineId, pluginId, collection, row, expectedVersion, updatedBy),
+    patchPluginRow: (timelineId, pluginId, collection, rowId, patch, expectedVersion, updatedBy) =>
+      patchPluginRow(db, timelineId, pluginId, collection, rowId, patch, expectedVersion, updatedBy),
+    deletePluginRow: (timelineId, pluginId, collection, rowId) =>
+      deletePluginRow(db, timelineId, pluginId, collection, rowId),
+    orderPluginRows: (timelineId, pluginId, collection, orderedIds, updatedBy) =>
+      orderPluginRows(db, timelineId, pluginId, collection, orderedIds, updatedBy),
+    purgePluginData: (pluginId, timelineId) => purgePluginData(db, pluginId, timelineId),
+    purgeItemMetadata: (keys, timelineId) => purgeItemMetadata(db, keys, timelineId),
     addFeature: (timelineId, feature, updatedBy) => addFeature(db, timelineId, feature, updatedBy),
     updateFeature: (timelineId, featureId, patch, expectedVersion, updatedBy) =>
       updateFeature(db, timelineId, featureId, patch, expectedVersion, updatedBy),

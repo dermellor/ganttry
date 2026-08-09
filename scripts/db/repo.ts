@@ -17,6 +17,8 @@
 import type {
   CustomFieldDef,
   DirectoryUser,
+  PluginData,
+  PluginDataRow,
   Pricing,
   PricingFeature,
   PricingHighlight,
@@ -135,6 +137,69 @@ export interface TimelineRepo {
       customFields?: CustomFieldDef[];
     },
   ): Promise<void>;
+
+  // ---- plugin-owned rows (the generic store) ------------------------------
+  // Eight methods that together replace the per-plugin ones below: a plugin
+  // installed at runtime cannot add to this interface, so the interface has to
+  // stop naming plugins. What they store differs per backing store — a
+  // `plugin_data` table for `db`, a section in the user's own file for `local` —
+  // and only that difference lives in the implementations. The rules (shape,
+  // references, ordering, composite identity) sit ABOVE this seam, in
+  // [`src/pluginHost/dataStore.ts`](../../src/pluginHost/dataStore.ts), so all
+  // three implementations are held to them by one piece of code.
+
+  /** One collection's rows, in order. Empty when the plugin stored nothing. */
+  listPluginRows(timelineId: string, pluginId: string, collection: string): Promise<PluginDataRow[]>;
+  /**
+   * Every collection of the named plugins, for folding into `getTimeline`.
+   * Omitting `pluginIds` means „whichever plugins this timeline has enabled" —
+   * the store knows that without being told, and a caller that had to look it up
+   * first would make two round trips out of one.
+   */
+  listPluginData(timelineId: string, pluginIds?: string[]): Promise<PluginData>;
+  /**
+   * Create or replace one row's `data` wholesale. Upsert rather than insert,
+   * because a collection with `keyFields` has no separate create: writing the
+   * cell (tier, feature) twice addresses the same row both times.
+   */
+  putPluginRow(
+    timelineId: string,
+    pluginId: string,
+    collection: string,
+    row: PluginDataRow,
+    expectedVersion?: number,
+    updatedBy?: string,
+  ): Promise<PluginDataRow>;
+  /** Merge `patch` into an existing row's `data` (shallow, top-level keys). */
+  patchPluginRow(
+    timelineId: string,
+    pluginId: string,
+    collection: string,
+    rowId: string,
+    patch: Record<string, unknown>,
+    expectedVersion?: number,
+    updatedBy?: string,
+  ): Promise<PluginDataRow>;
+  deletePluginRow(timelineId: string, pluginId: string, collection: string, rowId: string): Promise<void>;
+  /** Persist an explicit row order for an `ordered` collection. */
+  orderPluginRows(
+    timelineId: string,
+    pluginId: string,
+    collection: string,
+    orderedIds: string[],
+    updatedBy?: string,
+  ): Promise<void>;
+  /**
+   * Drop every row of a plugin. `timelineId: null` is the instance-wide
+   * uninstall; a timeline id scopes it to that one timeline.
+   */
+  purgePluginData(pluginId: string, timelineId?: string | null): Promise<void>;
+  /**
+   * Strip the given `metadata` keys off items. The other half of an uninstall:
+   * without it a plugin's keys stay behind in the raw metadata box of every item
+   * that ever carried one, visible and unexplained.
+   */
+  purgeItemMetadata(keys: string[], timelineId?: string | null): Promise<number>;
 
   // pricing — features
   addFeature(timelineId: string, feature: PricingFeature, updatedBy?: string): Promise<PricingFeature>;
