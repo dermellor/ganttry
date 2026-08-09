@@ -226,7 +226,8 @@ Files, all inside the plugin's own folder:
 | `index.ts` | the lazily loaded view module, if there is a view |
 | `README.md` | what it does, the field and tool reference, the domain confidence, the GEO material from phase 1 |
 | `preview.png` | generated in phase 4, used by the catalogue |
-| `AGENTS.md` | conventions for changing **this** plugin |
+| `AGENTS.md` | conventions for changing **this** plugin: its invariants with the failure each prevents, where its data lives, what must not be renamed, and how to verify it |
+| `docs/` | anything longer than the README carries: the model reference, the migrations, the endpoints |
 
 Registration is one `register()` call in the registry
 ([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)), passing the
@@ -242,8 +243,12 @@ point of pulling them out of prompts: a rule in a prompt cannot be tested and ca
 be reused, and it is wrong in a way nobody notices until a date is wrong.
 
 **The documentation lives with the plugin from the first commit.** Do not write a
-chapter in `docs/`. See [#18](https://github.com/dermellor/zeitlines/issues/18) for
-why the existing plugin is the counter-example.
+chapter in the core `docs/`. `product-roadmap` was the counter-example for a
+while — a 200-line chapter in `docs/pricing.md` plus a field table in
+`docs/items.md`, so uninstalling it would have left the core documentation wrong
+rather than merely shorter. Both moved into its folder
+([#18](https://github.com/dermellor/zeitlines/issues/18)), and writing it there
+in the first place costs nothing.
 
 **Exit condition:** `npm run typecheck` shows no new errors, and no file outside the
 plugin folder changed except the one registry line.
@@ -318,6 +323,19 @@ Before committing, read every sentence you wrote outside the plugin folder and a
 orphaned, it is plugin documentation and belongs in the plugin folder. If it stays
 true because it describes a mechanism and merely cites an example, it is core
 documentation and may stay.
+
+Zero mentions in the core docs is the wrong target, and aiming for it makes the
+seam chapters unreadable: „Plugins" (docs/architecture.md) is good precisely
+because it names a real case. The rule is narrower — **no core chapter is the
+home of a plugin fact.** Applied to `product-roadmap`, it left
+`docs/architecture.md` almost untouched while the field table in `docs/items.md`
+moved out entirely.
+
+The same question has a code half, and that one is checked mechanically:
+`node scripts/ci/check-plugin-isolation.mjs` refuses a core file that imports
+from a plugin folder, names a plugin id as a literal, adds a plugin-specific
+method to `TimelineRepo`, or links a plugin's markup from `index.html`. Run it
+before committing; the prose half is still yours to read.
 
 ### 5.3 The catalogue
 
@@ -446,6 +464,7 @@ publication, is written to survive that change unaltered.
 [ ] 4  Tests incl. domain rules, schema check, build, bundle split,
        preview.png, click path
 [ ] 5  Plugin README incl. tools, confidence and contribution call;
-       uninstall test; plugins:catalogue:check green
+       uninstall test on every sentence outside the plugin folder;
+       check-plugin-isolation green; plugins:catalogue:check green
 [ ] 6  Measurement scheduled; committed, pushed, deploy green
 ```

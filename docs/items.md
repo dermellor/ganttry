@@ -245,35 +245,33 @@ Set it the same ways as any other part of a definition (`set_custom_fields`,
 from it is silently dropped on that path. `contextMenu` is declared; `group` and
 `width` are not yet, and have to go through `PATCH`/SQL until they are added.
 
-**A plugin opts in through its own `fields()`** rather than through stored config,
-since its definitions are derived. `product-roadmap` flags **Version** and
-**Tier**: short, fixed lists that get retargeted often while planning. **Features**
-deliberately stays off — a timeline carries dozens, and a submenu that long is a
-worse way in than the form's searchable chip editor.
+**A plugin opts in through its own `fields()`** rather than through stored
+config, since its definitions are derived. The rule of thumb it should apply: a
+short, fixed list that gets retargeted often while planning belongs in the menu;
+one with dozens of options does not, because a submenu that long is a worse way
+in than the form's searchable chip editor.
 
 ### Plugin-contributed fields
 
 The stored definitions above are not the only source of custom fields: an enabled
 **plugin** contributes its own, derived from the timeline's data rather than
-declared by hand (see „Plugins" (docs/architecture.md)). `getCustomFields()` concatenates the
-timeline's stored defs with `pluginFieldDefs(file)`, and everything downstream —
-the form control, the managed-metadata rule, grouping and filtering — works off
-that one list, so a plugin field needs no parallel code path. Being derived, these
-defs are never persisted back as definitions. `product-roadmap` contributes:
+declared by hand (see „Plugins" (docs/architecture.md)). `getCustomFields()`
+concatenates the timeline's stored defs with `pluginFieldDefs(file)`, and
+everything downstream — the form control, the managed-metadata rule, grouping and
+filtering — works off that one list, so a plugin field needs no parallel code
+path. Being derived, these defs are never persisted back as definitions.
 
-| Field        | Key                       | Options derived from                    | Width | Context menu |
-| ------------ | ------------------------- | --------------------------------------- | ----- | ------------ |
-| **Version**  | `metadata.featureVersion` | `pricing.versions`                      | half  | yes          |
-| **Tier**     | `metadata.tier`           | `pricing.tiers` (value = tier id)       | half  | yes          |
-| **Features** | `metadata.featureIds`     | `pricing.features` (value = feature id) | full  | no (too many) |
+Which fields a given plugin contributes is documented with that plugin
+(`src/plugins/<id>/README.md`), not here: uninstall it and a table in this
+chapter would be describing fields that no longer exist.
 
-**The plugin lays out its own section.** The order of the array `fields(file)`
+**A plugin lays out its own section.** The order of the array `fields(file)`
 returns is the render order, and each def's `width` (`half`, the default, or
-`full`) decides whether it shares its grid row — `full` reuses the form's existing
-`.field.full` rule, the same seam the built-in fields use. So Version and Tier
-pair up on one row as compact pickers, and Features spans both columns below them
-because its chips carry long feature names. Changing that layout is a change to
-`fields()`, not to the form.
+`full`) decides whether it shares its grid row — `full` reuses the form's
+existing `.field.full` rule, the same seam the built-in fields use. So a pair of
+compact pickers can share one row while a chip field spans both columns below
+them. Changing that layout is a change to the plugin's `fields()`, not to the
+form.
 
 **One definition per key** — a contributed field *supersedes* a stored one with
 the same key (`mergeFieldDefs` in `pluginHost/registry.ts`). Two defs on one key would
@@ -281,16 +279,16 @@ render two controls writing the same `metadata[key]` and sharing one multi-selec
 state bucket (that state is keyed by the field key). So a stored definition a
 plugin has taken over is inert, and dropping it is a tidy-up rather than a fix.
 
-**Tier was such a definition.** It used to be a hand-seeded stored field whose
-options were a copy of the tier *names*, so renaming a tier in the pricing model
-left the field offering the old label. Derived, it cannot drift. Two consequences
-of the switch: its values are tier **ids** (`"scale"`, like the feature field)
-rather than names, so a rename doesn't orphan them — no migration was needed, as
-no item carried a `tier` value; and the chip colour is derived from the tier id
-(`tierColor`, an hsl hue from a hash) instead of hand-picked per tier, because
-picking colours in the code would reintroduce exactly the duplication the derived
-field removes. A tier colour that has to be chosen belongs on the tier's own row as a
-column, not in the field definition.
+**Derived beats stored, and that is the reason the seam exists.** A hand-seeded
+stored field whose options are a copy of some list drifts the moment the list
+changes: the field keeps offering yesterday's labels, and nothing says so.
+Derived, it cannot. Two rules follow, and both are cheap only if applied from the
+start: a contributed field's values are **ids** rather than labels, so a rename
+orphans nothing; and anything cosmetic that would otherwise be picked per option
+(a colour, an icon) is derived from the id too, because picking them in code
+reintroduces exactly the duplication the derived field removed. Something that
+genuinely has to be *chosen* belongs on the plugin's own row, not in the field
+definition.
 
 **Sections.** A def may carry a `group`, and the item form renders one titled
 section per group in the Properties tab, after the ungrouped fields

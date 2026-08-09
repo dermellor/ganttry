@@ -775,7 +775,7 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
     //
     // Answering `501` for the writes says so. Returning success would report a
     // plugin as installed that nothing could ever load. The vendored / offline
-    // install path is <https://github.com/dermellor/ganttry/issues/14>, which is
+    // install path is <https://github.com/dermellor/zeitlines/issues/14>, which is
     // also where the loader that would use this arrives.
     //
     // Enablement PER TIMELINE is a different matter and is implemented below: it

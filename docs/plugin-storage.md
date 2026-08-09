@@ -4,7 +4,7 @@ Where the rows a plugin owns are kept, and why the rules that used to be columns
 and foreign keys are now declarations the host enforces.
 
 This chapter covers the generic store from
-[issue #12](https://github.com/dermellor/ganttry/issues/12). For the two extension
+[issue #12](https://github.com/dermellor/zeitlines/issues/12). For the two extension
 seams it sits inside, read [`architecture.md`](architecture.md) first; for the
 manifest that declares a plugin's collections,
 [`src/pluginHost/manifest.ts`](../src/pluginHost/manifest.ts).

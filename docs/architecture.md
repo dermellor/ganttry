@@ -53,10 +53,11 @@ is injected into `DbConnections.local` by the Node glue instead of imported by
 functions leaving it unset is precisely what makes a static deploy read-only.
 Its version is the file's mtime in milliseconds, forced strictly forward on each
 write so two edits inside one millisecond cannot share a version. Plugin-owned rows
-go into the same document ([`plugin-storage.md`](plugin-storage.md)); the
-`product-roadmap`-specific sub-resources still answer `501` (`NotSupportedError`)
-rather than pretending to succeed, until #17 moves that plugin's data onto the
-generic store.
+go into the same document ([`plugin-storage.md`](plugin-storage.md)) and are
+written through the same generic routes, so a plugin's data is editable on a file
+the user owns with no database involved. Sixteen `NotSupportedError` → `501`
+answers used to sit here for one plugin's sub-resources; they went with the
+methods behind them.
 
 `loadSource(source)` ([`src/editor.ts`](../src/editor.ts)) routes on `kind`;
 `render.ts` renders a view whenever it has a `source` (notes-backed views have
@@ -107,9 +108,10 @@ The split in the file tree says which half is which. `src/pluginHost/` is core a
 permanent: the registry, the view-mode encoding, the DOM a plugin view gets.
 `src/plugins/<id>/` holds the plugins themselves, in-tree only for as long as they
 have to be — when one moves out to its own repository, nothing in `pluginHost/`
-notices. Today one plugin lives there, `product-roadmap` (the pricing matrix and
-cards, its editors, its fields and its stylesheet). A timeline with no plugin is
-just timeline + list.
+notices. Each folder is self-contained down to its documentation: its `README.md`
+is the public page and its `AGENTS.md` the conventions for changing it, so
+uninstalling a plugin leaves the core chapters shorter rather than wrong. A
+timeline with no plugin is just timeline + list.
 
 A `PluginDescriptor` exposes a cheap synchronous `matches(file)` predicate, a
 `label` (its display name), the `views` it declares, the item `fields(file)` it
@@ -119,7 +121,10 @@ static import of any plugin *view* module**: Rollup code-splits each plugin into
 its own chunk, and a generic build downloads none of it. The plugin imports its own
 CSS inside that chunk, so a deploy without the plugin ships neither its code nor its
 stylesheet. Both halves are asserted by
-[`scripts/ci/check-bundle-split.sh`](../scripts/ci/check-bundle-split.sh).
+[`scripts/ci/check-bundle-split.sh`](../scripts/ci/check-bundle-split.sh), which
+takes its markers out of each plugin's own stylesheet rather than from a list in
+the script — a hardcoded list is a plugin fact in a core file, and it goes stale
+silently.
 
 **The manifest is what the host reads before running anything.**
 [`src/pluginHost/manifest.ts`](../src/pluginHost/manifest.ts) defines it: id, name,
@@ -198,9 +203,10 @@ what makes a second view possible without touching the core.
 `plugin:<pluginId>:<viewId>`, and that one scalar is what `state.viewMode`, the
 `?mode=` hash parameter and the persisted `timelines.viewMode` key all carry
 ([`src/pluginHost/viewMode.ts`](../src/pluginHost/viewMode.ts)). Modes from before
-plugin views were addressable (`mode=pricing`) resolve through the descriptor's
-`legacyModeIds`, so old deep links and every user's stored preference keep working;
-dropping that mapping would silently reset both.
+plugin views were addressable — a bare view id, with no plugin in front of it —
+resolve through the descriptor's `legacyModeIds`, so old deep links and every
+user's stored preference keep working; dropping that mapping would silently reset
+both. Which old ids a plugin still answers to is its own declaration.
 
 **`matches` and `applies` are deliberately different questions.** `matches` decides
 whether a view is *offered* and may demand a populated model; `applies` decides
@@ -214,11 +220,11 @@ data-derived `CustomFieldDef[]`, gated internally on the plugin being enabled an
 therefore independent of `matches`. `pluginFieldDefs(file)` collects every enabled
 plugin's fields and stamps each with the plugin's `label` as its `group`, which is
 what sections them under a plugin heading in the item form (see „Custom fields →
-Plugin-contributed fields"). The product-roadmap implementation lives in
-[`src/plugins/product-roadmap/fields.ts`](../src/plugins/product-roadmap/fields.ts):
-it imports only types plus the plugin helper, so it is statically importable from
-the registry **without** adding an edge into the plugin's chunk. `customFields.ts`
-reads plugin fields through that one seam and knows no plugin ids.
+Plugin-contributed fields"). A plugin's `fields.ts` may import only types plus the
+plugin helper, so the registry can import it **statically without** adding an edge
+into the plugin's view chunk — that constraint is the whole reason it is a
+separate file from the views. `customFields.ts` reads plugin fields through that
+one seam and knows no plugin ids.
 
 Adding a plugin is a `register()` call plus a `src/plugins/<id>/` folder, and no
 core-file change. The step-by-step is
@@ -233,10 +239,9 @@ bag; see „Schema" (docs/database.md) → `timeline_plugins`), surfaced to the 
 `TimelineFile.plugins` (`PluginRef[]`). So enabling a plugin on a timeline is an
 INSERT, never an `ALTER TABLE`. How enablement is read off a file lives in
 [`src/pluginHost/plugins.ts`](../src/pluginHost/plugins.ts) (`hasPlugin`,
-`pluginConfig`), which knows no plugin ids; a plugin's own ids, metadata keys and
-write rules live with the plugin (for product-roadmap:
-[`src/plugins/product-roadmap/plugin.ts`](../src/plugins/product-roadmap/plugin.ts),
-imported by the client registry and by nothing else in the core). A plugin whose
+`pluginConfig`), which knows no plugin ids; a plugin's own id, its metadata keys
+and its rules live in its folder, imported by the client registry and by nothing
+else in the core. A plugin whose
 rows are in a bulk write is enabled by that alone (`pluginsForWrite`), which is a
 generic rule rather than one plugin's: storing rows nothing reads would leave the
 timeline looking empty while the data sat there. Adding a further plugin needs

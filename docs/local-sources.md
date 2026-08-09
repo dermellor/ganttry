@@ -152,12 +152,11 @@ The sub-resources in `SUB_KINDS` split cleanly:
   the directory's `timeline.json`. See
   [`plugin-storage.md`](plugin-storage.md) — including the one real difference,
   that the lock there is the file rather than the row.
-- **`pricing`, `feature`, `tier`, `tier-value`, `highlight`, `pversion`** are the
-  `product-roadmap` plugin's own sub-resources, from before the generic store. The
-  adapter answers `501` for them, which is a truthful answer rather than a silent
-  no-op; they disappear when that plugin's data moves onto the generic store
-  (<https://github.com/dermellor/ganttry/issues/17>), and a local source becomes
-  writable for it without a line of plugin-specific code.
+  There used to be six more sub-resources here — one plugin's entities, each
+  answering `501`, which is what made a pricing model in a JSON file readable and
+  not editable. They went with the repo methods behind them
+  (<https://github.com/dermellor/zeitlines/issues/17>), so a local source is now
+  writable for a plugin without a line of plugin-specific code.
 
 ### Optimistic locking without a version column
 
@@ -287,10 +286,12 @@ Three stages, each shippable on its own, in increasing order of risk:
      failed. `save()` now bumps the mtime explicitly whenever the new value
      would not exceed the old one, which keeps the numeric contract intact and
      made the widening to a content hash unnecessary.
-   - **The pricing sub-resources needed a status code of their own.** They
-     answer `501` via a new `NotSupportedError`, because a 500 reads as „we are
+   - **A route this repo cannot serve needed a status code of its own.** It
+     answers `501` via `NotSupportedError`, because a 500 reads as „we are
      broken" and a silent success would report „Gespeichert" for a write that
-     never happened.
+     never happened. One plugin's sub-resources were the first users of it and
+     are gone; the install registry and a wholesale replace of a Markdown
+     directory still use it.
 2. ~~**Directory sources on the read path.**~~ **Done.**
    [`scripts/local/scan.ts`](../scripts/local/scan.ts) turns a directory into a
    `TimelineFile`; the local adapter serves it live and `build-data.ts`

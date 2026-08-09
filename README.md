@@ -12,8 +12,8 @@ Two orthogonal extension axes keep it flexible:
   either supabase-js or native postgres.js, with optional per-source
   connections).
 - **Plugins** decide *what* a timeline carries beyond items and groups: a timeline
-  with no plugin is just timeline + list; the `product-roadmap` plugin adds a
-  pricing matrix and cards plus its own item fields, loaded lazily so a build
+  with no plugin is just timeline + list; the bundled `product-roadmap` plugin
+  adds a pricing matrix and cards plus its own item fields, loaded lazily so a build
   without it ships neither its code nor its stylesheet.
 
 ## Features
@@ -174,8 +174,9 @@ endpoint and the optimistic-locking contract.
 request takes from the viewer down to a store, and how one timeline type is laid
 out as Postgres rows, as a single JSON file, or as a directory of Markdown. Each
 subsystem is then documented with its reasoning in [`docs/`](docs/): data model,
-items, editing, database, local sources, MCP, deploy, pricing. [`AGENTS.md`](AGENTS.md)
-is the index plus the conventions that apply everywhere.
+items, editing, database, local sources, plugins, MCP, deploy. Each plugin
+documents itself in its own folder. [`AGENTS.md`](AGENTS.md) is the index plus
+the conventions that apply everywhere.
 
 ## Plugins
 
@@ -185,7 +186,7 @@ what the timelines in front of you actually use.
 
 | Plugin | What it adds |
 | --- | --- |
-| [`product-roadmap`](src/plugins/product-roadmap/) | A pricing matrix and pricing cards, plus Version, Tier and Features fields derived from the pricing model. See [`docs/pricing.md`](docs/pricing.md). |
+| [`product-roadmap`](src/plugins/product-roadmap/) | A pricing matrix and pricing cards, plus Version, Tier and Features fields derived from the pricing model. See its [`README.md`](src/plugins/product-roadmap/README.md). |
 
 Building one: [`docs/plugin-playbook.md`](docs/plugin-playbook.md), starting from
 [`src/plugins/_template/`](src/plugins/_template/).

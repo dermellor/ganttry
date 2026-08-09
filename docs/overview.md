@@ -81,7 +81,7 @@ Nothing downstream of a repo knows which store it came from.
 
 ```mermaid
 flowchart LR
-    TF["TimelineFile<br/>name, groupBy, items, groups,<br/>phases, customFields, plugins, pricing"]
+    TF["TimelineFile<br/>name, groupBy, items, groups,<br/>phases, customFields, plugins, pluginData"]
     A["Postgres<br/>rows and jsonb across several tables"]
     B["JSON file<br/>the whole type in one file"]
     C["Markdown directory<br/>container file plus one note per item"]
@@ -99,7 +99,7 @@ flowchart LR
 | `phases[]` | `timelines.phases`, jsonb | an array | `timeline.json` |
 | `customFields[]` | `timelines.custom_fields`, jsonb | an array | `timeline.json` |
 | `plugins[]` | one row per plugin in `timeline_plugins` | an array | `timeline.json` |
-| `pricing` | the `pricing_*` tables | an object | not supported, answered with `501` |
+| `pluginData` | one row per plugin row in `plugin_data` | an object of collections | `timeline.json` |
 | the version behind `If-Match` | a `version` column, maintained by trigger | the file's mtime | the directory's mtime |
 
 Three consequences follow from that table.

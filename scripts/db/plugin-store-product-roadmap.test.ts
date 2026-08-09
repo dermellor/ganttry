@@ -242,7 +242,7 @@ behaviour(
 
 let dirs: FileRepoDirs;
 before(async () => {
-  const root = await mkdtemp(join(tmpdir(), 'ganttry-pr-proof-'));
+  const root = await mkdtemp(join(tmpdir(), 'zeitlines-pr-proof-'));
   dirs = { root, scope: root };
 });
 

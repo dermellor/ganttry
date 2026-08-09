@@ -91,19 +91,17 @@ runner works against any Postgres).
 
 - `timelines` — id, name, description, group_by, `phases` (jsonb),
   `custom_fields` (jsonb). **No plugin-specific columns any more:** the former
-  `type` column (gating on `'product'`) and `pricing_versions` (ordered version
-  labels) moved into the generic `timeline_plugins` registry in migrations
-  `0012`/`0013` (see below and „Plugin registry"). The pricing model itself has
-  been normalised into its own tables since migration `0009`.
+  `type` column (a discriminator gating on one plugin) and `pricing_versions`
+  (one plugin's ordered version labels) moved into the generic
+  `timeline_plugins` registry in migrations `0012`/`0013` (see below and „Plugin
+  registry").
 - `timeline_plugins` — the **generic plugin registry** (migration `0012`): one
   row per (timeline_id, plugin_id) plus a `config` (jsonb). A plugin (a.k.a. a
-  timeline kind, e.g. `'product-roadmap'`) is **enabled on a timeline as soon as
-  a row exists here** — pure data, no `ALTER TABLE`, no core column. For
-  `product-roadmap` the `config` carries the version list
-  (`{ versions: [...] }`, formerly the `pricing_versions` column). FK cascade on
-  `timelines`, anon SELECT plus realtime like the `pricing_*` tables. A new
-  plugin needs (at most) its own data and tables, never a column on the core.
-  See „Plugin registry".
+  timeline kind) is **enabled on a timeline as soon as a row exists here** — pure
+  data, no `ALTER TABLE`, no core column. What the `config` means is the plugin's
+  business and is validated against the `configSchema` its manifest declares. FK
+  cascade on `timelines`, anon SELECT plus realtime. A new plugin needs its own
+  rows in `plugin_data` and nothing else. See „Plugin registry".
 - `timeline_items` — columns for start/end/duration/content/group/type/title/
   body/icon/status/class_name (`status` is `NOT NULL DEFAULT 'Open'` with a CHECK
   for `Open|Doing|Done`, see „Item status" (docs/items.md)), `metadata` (jsonb: `dependsOn`,
@@ -536,13 +534,12 @@ value defers to the default instead of being coerced into a mode.
 > covered.
 
 > **Scope:** the watermark covers items, timeline metadata (including phases) and
-> the plugin-owned rows in `plugin_data` (`pv`/`pn`), but **not** the `pricing_*`
-> tables. Those move onto the generic store in
-> <https://github.com/dermellor/ganttry/issues/17>, at which point product-roadmap
-> is covered by `pv`/`pn` like any other plugin — adding a third pair for tables
-> with a scheduled removal date would be work with a shelf life. `pv`/`pn` are kept
-> apart from `v`/`n` because `v` is the item row version and doubles as the
-> own-echo hint; see [`plugin-storage.md`](plugin-storage.md).
+> the plugin-owned rows in `plugin_data` (`pv`/`pn`) — every plugin, through the
+> one pair, because every plugin's rows are in the one table. The retired
+> `pricing_*` tables are deliberately not covered: they are no longer read, and a
+> third pair for tables with a scheduled removal date would be work with a shelf
+> life. `pv`/`pn` are kept apart from `v`/`n` because `v` is the item row version
+> and doubles as the own-echo hint; see [`plugin-storage.md`](plugin-storage.md).
 
 #### Presence under polling
 

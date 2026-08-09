@@ -186,7 +186,7 @@ let appOverlays: OverlayApi | null = null;
  * The overlay API a plugin uses.
  *
  * Imported by plugins today. Handing it through `HostApi` instead is part of the
- * SDK work (<https://github.com/dermellor/ganttry/issues/16>), which is where the
+ * SDK work (<https://github.com/dermellor/zeitlines/issues/16>), which is where the
  * remaining host imports in a plugin get replaced by one injected object; the call
  * sites here do not change when that happens.
  */

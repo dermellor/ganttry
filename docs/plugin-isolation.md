@@ -3,7 +3,7 @@
 Where a plugin's code runs, what protects an instance instead of a sandbox, and
 the condition under which this decision gets revisited.
 
-This is the decision half of [issue #14](https://github.com/dermellor/ganttry/issues/14).
+This is the decision half of [issue #14](https://github.com/dermellor/zeitlines/issues/14).
 The loader itself is [`src/pluginHost/loader.ts`](../src/pluginHost/loader.ts); for
 installing a plugin read [`plugin-lifecycle.md`](plugin-lifecycle.md), for its data
 [`plugin-storage.md`](plugin-storage.md).
@@ -26,14 +26,15 @@ storage and no access to the parent document, and it needs **no second domain** 
 a common misconception, and it was in the issue.
 
 It was still rejected, for one reason that outweighs the rest: **the cost is paid
-per view, and views are the normal case here.** The pricing matrix is not the
-exception, it is the shape most plugins are expected to take. Behind a frame, every
-one of them pays for:
+per view, and views are the normal case here.** A plugin that only contributes
+fields is the exception; a view is the shape most plugins are expected to take.
+Behind a frame, every one of them pays for:
 
 - **Overlays that cannot leave the frame.** A tooltip or popover near the frame's
   edge is clipped. The fix is a declarative overlay protocol — which is exactly the
   cost the issue attributed to the *worker* option, inherited by the iframe as soon
-  as a view has a popover. The pricing view has two.
+  as a view has a popover. The one view that existed when this was decided had
+  two, neither of them unusual.
 - **Height negotiation**, because the frame does not size to its content.
 - **Focus and keyboard traversal** across the boundary.
 - **Theming** pushed across, and **debugging** through a message channel.
@@ -42,16 +43,16 @@ Comparable products line up with that reading. Obsidian, VS Code, Neovim and Ske
 all run extensions with full access and have large ecosystems. The ones that
 sandbox — Figma, Shopify — do it because third-party code runs on *their*
 infrastructure against *other customers'* data. That is a business-model question
-before it is a technical one, and it is not the shape Ganttry is in today.
+before it is a technical one, and it is not the shape Zeitlines is in today.
 
 ### The two rejected alternatives, and what would bring them back
 
 | Option | Why not now |
 | --- | --- |
-| **Sandboxed iframe for everything** | Strongest guarantee and the only one that truly tests the contract, but every view pays the overlay, sizing, focus and theming cost, and `product-roadmap` needs its two overlays rebuilt first. |
+| **Sandboxed iframe for everything** | Strongest guarantee and the only one that truly tests the contract, but every view pays the overlay, sizing, focus and theming cost, and every existing overlay has to be rebuilt against the protocol first. |
 | **Iframe for third-party, same-realm for trusted** | The proposal in the issue. Rejected because the wall would never be exercised: the contract would be tested on the comfortable path only, and a same-realm assumption would reach the catalog through the gap. Two paths also mean two sets of bugs. |
 
-**What brings the decision back:** a managed, multi-tenant Ganttry with an open
+**What brings the decision back:** a managed, multi-tenant Zeitlines with an open
 catalog, where somebody installs a stranger's plugin and it runs against another
 customer's data on our infrastructure. At that point the wall stops being optional,
 and it should go up for *all* plugins rather than only the untrusted ones, for the
@@ -122,6 +123,6 @@ appear is indistinguishable from a bug in the app, and gets reported as one.
 - **No network egress control beyond the CSP.** A plugin cannot be prevented from
   trying; it can be prevented from succeeding at the easy routes.
 - **No review of what a plugin does.** A catalog with a review gate is
-  [#15](https://github.com/dermellor/ganttry/issues/15), and the human gate is the
+  [#15](https://github.com/dermellor/zeitlines/issues/15), and the human gate is the
   thing the technical measures here are meant to make meaningful rather than
   replace.

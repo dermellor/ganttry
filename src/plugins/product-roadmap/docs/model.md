@@ -1,27 +1,29 @@
-# Pricing
+# The pricing model
 
-The pricing model of a product-roadmap timeline.
+The reference for what a `product-roadmap` timeline carries beyond items: the
+shape of the model, how versions gate what is shown, and how the matrix is
+edited.
 
-Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
-the conventions and the commands. References in „quotes" name a section, with
-its file when it lives in another chapter.
+This file belongs to the plugin, not to the core documentation, and that is the
+rule rather than a filing preference: uninstall the plugin and every sentence
+here becomes orphaned, which is what makes it plugin documentation
+([#18](https://github.com/dermellor/zeitlines/issues/18)). What the plugin *is*
+and how to switch it on is [`../README.md`](../README.md); how to change it is
+[`../AGENTS.md`](../AGENTS.md). The seams it sits on are core chapters: „The
+generic store" (docs/plugin-storage.md), „Publishing a plugin's data"
+(docs/plugin-public-read.md), „Plugins" (docs/architecture.md).
 
-## Pricing
-
-> **Where this plugin lives.** All of it is under
-> [`src/plugins/product-roadmap/`](../src/plugins/product-roadmap/): the views,
-> the manifest, the model types, the composition, the write calls and the
-> Markdown export. Nothing about it is in the core any more, and a CI check
-> asserts that (`scripts/ci/check-plugin-isolation.mjs`). What follows describes
-> the model; how it is stored is „The generic store" (docs/plugin-storage.md),
-> and how it is published is „Publishing a plugin's data"
-> (docs/plugin-public-read.md).
+> **Everything about this plugin is in this folder:** the views, the manifest,
+> the model types, the composition, the write calls, the Markdown export and this
+> documentation. Nothing about it is in the core any more, and two CI checks
+> assert it — [`check-plugin-isolation.mjs`](../../../../scripts/ci/check-plugin-isolation.mjs)
+> for the code, the uninstall test in the playbook for the prose.
 
 The pricing model (tiers + features) is the single source of truth for external
 pricing pages. It is stored the way **every** plugin's data is stored: four
 declared collections of undistinguished rows in `plugin_data` — `features`,
 `tiers`, `tier-values` (the matrix, one row per cell) and `highlights` — plus the
-ordered version list in the plugin's config. `src/plugins/product-roadmap/compose.ts`
+ordered version list in the plugin's config. [`compose.ts`](../compose.ts)
 turns those rows into the `Pricing` shape described below and back, and it is the
 only place that knows a matrix cell belongs inside its tier under `values`.
 
@@ -77,7 +79,7 @@ POST   /api/source/<id>/plugin/product-roadmap/<collection>/move
   implemented on the repo seam, that now includes a pricing model in a plain
   `data/*.json` timeline, which used to answer `501`.
 
-### Editing the matrix in the interface
+## Editing the matrix in the interface
 
 On an editable (DB-backed) product timeline the matrix carries its own write
 paths. Each one writes exactly the row or cell that was edited, with no model
@@ -85,17 +87,22 @@ dump, so concurrent edits in different places do not collide.
 
 | What | Affordance | Endpoint | Locking |
 | --- | --- | --- | --- |
-| **Cell** (tier × feature) | Click (or Enter) on the cell → popover | `PUT …/tier-value` | none; a cell is atomic |
-| **Tier** (column) | Click the column header → drawer form | `PATCH/DELETE …/tier/<id>` | `If-Match` on `rowVersion` |
-| **Add a tier** | „+ Tarif" in the header row | `POST …/tier` | — |
-| **Feature** (row) | Click the row header → drawer form | `PATCH/DELETE …/feature/<id>` | `If-Match` on `rowVersion` |
-| **Add a feature** | „+ Feature" (header row = no group, per section = in that group) | `POST …/feature` | — |
-| **Reorder a row** | ↑/↓ on the row (on hover) | `POST …/feature-move` | — |
+| **Cell** (tier × feature) | Click (or Enter) on the cell → popover | `POST …/tier-values` (clearing: `DELETE …/tier-values/<tierId>:<featureId>`) | none; a cell is atomic |
+| **Tier** (column) | Click the column header → drawer form | `PATCH/DELETE …/tiers/<id>` | `If-Match` on `rowVersion` |
+| **Add a tier** | „+ Tarif" in the header row | `POST …/tiers` | — |
+| **Feature** (row) | Click the row header → drawer form | `PATCH/DELETE …/features/<id>` | `If-Match` on `rowVersion` |
+| **Add a feature** | „+ Feature" (header row = no group, per section = in that group) | `POST …/features` | — |
+| **Reorder a row** | ↑/↓ on the row (on hover) | `POST …/features/move` | — |
+
+All of them are the generic plugin-data routes under
+`/api/source/<id>/plugin/product-roadmap/`, which is what makes the matrix
+editable on a `data/*.json` timeline as well as on a database one. The calls
+themselves are [`../api.ts`](../api.ts).
 
 A few decisions that are not obvious:
 
 - **A cell gets a popover, not a click cycle**
-  ([`src/plugins/product-roadmap/cellEditor.ts`](../src/plugins/product-roadmap/cellEditor.ts)).
+  ([`cellEditor.ts`](../cellEditor.ts)).
   A cell carries two dimensions (`value` and availability from a version) and the
   value itself has three shapes (`true` / free text / empty). Cycling through
   clicks cannot express that. „Wert" with empty text deliberately saves as *empty*:
@@ -109,42 +116,42 @@ A few decisions that are not obvious:
   the direction the user sees. The client then adopts the order the server returns
   rather than replaying the move locally, because the `sort` column belongs to the
   server.
-- **The tier form touches no cells.** `updateTier` re-reads the cell rows and
-  returns them in full, so the client adopts the response unchanged and the column's
-  values survive.
+- **The tier form touches no cells,** because it cannot: a cell is a row in
+  another collection. The response carries the tier's own data, and the column's
+  values are composed from the cell rows that were never in the request.
 - **Popover layers are `fixed` on `<body>`** (`popover.ts`, shared with the feature
   tooltip): the table wrapper carries `overflow-x`, which clips `overflow-y` as
   well, so an embedded layer would be cut off at the row's edge.
 - **New ids are slugs of the name** (`slugId` in
-  [`pricing.ts`](../src/plugins/product-roadmap/pricing.ts), transliterating umlauts and
+  [`pricing.ts`](../pricing.ts), transliterating umlauts and
   adding a counter suffix on collision), which keeps the model readable in SQL and
   in MCP output.
 
 **Not in the interface yet:** highlights (the card tiles) and a version editor. For
-versions that is no accident: `updateVersions` writes only the plugin config and
-migrates **no** references. Since the gates implement „an unknown version never
+versions that is no accident: the list is plugin config, and writing it migrates
+**no** references. Since the gates implement „an unknown version never
 hides" (`featureVisibleForVersion`), renaming `3.0` would make every 3.0-gated
 feature visible in *every* pinned version, silently and wrongly. A version editor
 has to migrate `feature.version`, `tier.valueVersions`, `descriptionByVersion`,
 `nameByVersion` and `labelByVersion` along with it.
 
-Shape (assembled):
+## The shape of the model
+
 - `features[]`: `{ id, name, group, version?, description?, nameByVersion?, descriptionByVersion?, rowVersion? }`.
-  `version` is the tracked version a feature is available from (DB column
-  `available_from`). **No `version` means pre-existing** (it existed before the
+  `version` is the tracked version a feature is available from. **No `version` means pre-existing** (it existed before the
   first tracked version), so it is always visible, never badged „Neu", but still
   eligible for „Modified". Setting `feature.version` to the baseline
   (`versions[0]`) means „introduced in this version", NOT „always been there" —
   for that, leave `version` out.
-  - `nameByVersion` (`Record<version, string>`, DB column `name_by_version`): a
+  - `nameByVersion` (`Record<version, string>`): a
     version-dependent name *override*, resolved **cumulatively** (the newest
     override ≤ the selected version wins) — `resolveFeatureName`.
-  - `descriptionByVersion` (`Record<version, string>`, DB column
-    `description_by_version`): additional version-bound descriptions **on top of**
+  - `descriptionByVersion` (`Record<version, string>`): additional version-bound
+    descriptions **on top of**
     `description`. Unlike `nameByVersion` these are **additive**, not overrides: the
     base `description` stays and each note appears as its own line, „ab
     \<version\>: …", in version order — `resolveFeatureDescription`
-    ([`src/pricing.ts`](../src/plugins/product-roadmap/pricing.ts)). It shows as a matrix tooltip behind an
+    ([`pricing.ts`](../pricing.ts)). It shows as a matrix tooltip behind an
     **info icon**, and is editable in the feature form via „+ Versionsbeschreibung".
   - `rowVersion` is the server-managed lock counter: do not edit it, and it is
     stripped from the public output.
@@ -154,7 +161,7 @@ Shape (assembled):
   anyway. `valueVersions[featureId]` (`availableFrom` on the cell's row) is the
   optional **cell availability from a version**: the cell only counts as included from that label on and shows „–"
   before it (cumulative, `cellActiveForVersion` in
-  [`src/pricing.ts`](../src/plugins/product-roadmap/pricing.ts)). `values` remains the end state and the map
+  [`pricing.ts`](../pricing.ts)). `values` remains the end state and the map
   only gates *when* it appears (a sibling of `values`, additive). Under „Alle" the
   matrix shows the end state plus a subtle „ab \<version\>" chip in the cell; with a
   pinned version, the cell appearing or showing „–" carries that information by
@@ -183,7 +190,7 @@ row badges:
   `resolveHighlight`); a single pre-existing feature in the bundle suppresses the
   chip. Pre-existing features (no `version`) never get one.
 
-### Cell versioning (tier×feature availability from a version)
+## Cell versioning (tier × feature availability from a version)
 
 Where `feature.version` controls when a feature (the whole row) starts to exist,
 `tier.valueVersions[featureId]` (`availableFrom` on the cell's own row)
@@ -192,12 +199,12 @@ express „feature X is in Enterprise right away, in Scale only from v4" without
 gating the entire feature row.
 
 - **Resolution** — `cellActiveForVersion(availableFrom, versions, selected)` in
-  [`src/pricing.ts`](../src/plugins/product-roadmap/pricing.ts), cumulative and shaped like
+  [`pricing.ts`](../pricing.ts), cumulative and shaped like
   `featureVisibleForVersion`: under „Alle" it is always active; with no
   `availableFrom` it is active from the start; otherwise it becomes active as soon
   as the pinned version is ≥ `availableFrom`. Before that version the cell renders
   as „–", while the stored `value` stays the end state.
-- **Matrix** ([`src/plugins/product-roadmap/pricingMatrix.ts`](../src/plugins/product-roadmap/pricingMatrix.ts)):
+- **Matrix** ([`pricingMatrix.ts`](../pricingMatrix.ts)):
   pinned → the cell either appears or shows „–", which carries the information
   itself; „Alle" → the end state plus a subtle „ab \<version\>" chip
   (`.pm-cell-ver`) in the cell.
@@ -210,11 +217,11 @@ gating the entire feature row.
   `{tierId, featureId, value, availableFrom}`. Deleting the cell removes the gate
   with it, which is why clearing a cell deletes the row rather than blanking it.
   The rows ↔ model round trip is tested in
-  [`compose.test.ts`](../src/plugins/product-roadmap/compose.test.ts) and the
+  [`compose.test.ts`](../compose.test.ts) and the
   gating logic in
-  [`pricing.test.ts`](../src/plugins/product-roadmap/pricing.test.ts).
+  [`pricing.test.ts`](../pricing.test.ts).
 
-## Open extensions: pricing model / cards
+## Open extensions
 
 Not yet represented in the data model, as a backlog:
 
@@ -223,5 +230,5 @@ Not yet represented in the data model, as a backlog:
 - Tiered volume packages per tier (e.g. S/M/L/custom with graduated prices).
 - `highlight.icon` exists in the schema but is unused (no per-tile icons).
 
-Bekanntes Verhalten: Wert-Highlights (z.B. „Charaktere") erscheinen auf jeder
-Tarif-Karte (Wert variiert je Tarif) → der Arbeits-Punkt wiederholt sich dort.
+Known behaviour: a value highlight appears on every tier card (its value differs
+per tier), so the work dot repeats there.
