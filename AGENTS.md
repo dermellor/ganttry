@@ -27,7 +27,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Conventions
 
-Four rules that hold across the whole codebase. Everything else is local to a
+Five rules that hold across the whole codebase. Everything else is local to a
 subsystem and documented there.
 
 - **Comments explain *why*, not *what*.** Most non-obvious rules here carry the
@@ -50,6 +50,12 @@ subsystem and documented there.
   `openapi.yaml` come from `src/types.ts`; change the type and regenerate. CI fails
   when a committed copy no longer matches, which is what keeps documentation from
   drifting away from the code.
+- **Diagrams are Mermaid, and they draw seams.** A figure in `docs/` goes in a
+  mermaid fence rather than a committed SVG or PNG: it renders on GitHub, stays
+  reviewable in a diff, and cannot become a binary that no longer matches the
+  code. Draw the boundaries between the parts, never inventories of what sits
+  behind them, because a figure that lists functions or counts is wrong within a
+  month. See [`docs/overview.md`](docs/overview.md) for both.
 
 ## The name covers the product, not its vocabulary or its instances
 
