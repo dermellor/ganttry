@@ -10,8 +10,13 @@
 // `src/types.ts`), which is exactly the leak #18 describes: core modules carrying
 // facts that stop being true the moment the plugin is uninstalled.
 
-import { pluginConfig } from '../../pluginHost/plugins';
-import type { PluginRef, TimelineFile } from '../../types';
+// Explicit `.ts` on both: this module is reachable from the Deno edge functions
+// (edge → scripts/db/api.ts → timeline-repo*.ts → here), and Deno resolves an
+// extensionless relative import to nothing. A missing extension anywhere in that
+// graph fails the *deploy*, not the build or the tests — see the guard in
+// `netlify/edge-functions/imports.test.ts`.
+import { pluginConfig } from '../../pluginHost/plugins.ts';
+import type { PluginRef, TimelineFile } from '../../types.ts';
 
 /** Stable id of the product-roadmap (pricing matrix/cards) plugin. */
 export const PRODUCT_ROADMAP_PLUGIN = 'product-roadmap';
