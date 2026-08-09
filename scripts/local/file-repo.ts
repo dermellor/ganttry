@@ -16,16 +16,19 @@
 
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
-import { dirname, extname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 
 import {
   CONTAINER_FILE,
+  DATE_SOURCE_KEY,
+  FILENAME_DATE_SOURCE,
   directoryVersion,
   isTimelineDirectory,
   scanDirectory,
   timelineDirectories,
   type ScanOptions,
 } from './scan.ts';
+import { patchFrontmatter, setBody, type Patch } from './frontmatter.ts';
 import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
 import { describeReversedExtent, findReversedExtent, hasReversedExtent } from '../../src/itemExtent.ts';
 import {
@@ -41,6 +44,7 @@ import {
 import type {
   CustomFieldDef,
   DirectoryUser,
+  TimelineContainer,
   TimelineFile,
   TimelineFileItem,
   TimelinePhase,
@@ -166,22 +170,9 @@ async function load(dirs: FileRepoDirs, id: string): Promise<Loaded> {
   return { file, version: versionOf(path, mtimeMs), path };
 }
 
-/**
- * Load for a write, refusing a directory source up front.
- *
- * The refusal has to come BEFORE the item lookup. Guarding only in `save()`
- * means a write to a directory reports whatever the lookup found first — a 404
- * for an item id that does exist — so the caller learns the wrong thing about
- * why it failed.
- */
+/** Load for a write. Kept separate from `load` so the intent reads at the call site. */
 async function loadForWrite(dirs: FileRepoDirs, id: string): Promise<Loaded> {
-  const loaded = await load(dirs, id);
-  if (loaded.isDir) {
-    throw new NotSupportedError(
-      `„${id}" is a Markdown directory: writing back into a note is not supported yet (stage 3 of docs/local-sources.md)`,
-    );
-  }
-  return loaded;
+  return load(dirs, id);
 }
 
 /**
@@ -207,16 +198,6 @@ function withoutEmpty<T extends Record<string, unknown>>(obj: T): T {
 }
 
 async function save(loaded: Loaded, file: TimelineFile): Promise<number> {
-  // Every write funnels through here, so one guard covers all of them. A
-  // directory source has no single document to rewrite: an item is a Markdown
-  // file whose frontmatter would have to be patched in place, which is stage 3.
-  // Refusing here rather than at each call site is what keeps a later write path
-  // from having to remember a dozen guards.
-  if (loaded.isDir) {
-    throw new NotSupportedError(
-      'writing to a Markdown directory is not supported yet (stage 3 of docs/local-sources.md)',
-    );
-  }
   const clean: TimelineFile = {
     ...file,
     items: file.items.map(({ version, ...rest }) => withoutEmpty(rest)),
@@ -291,6 +272,138 @@ async function* walkJson(dir: string): AsyncGenerator<string> {
       yield full;
     }
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// directory sources: writing back into the notes
+//
+// An item here is a Markdown file, so a write is a frontmatter patch on that one
+// file (see `./frontmatter.ts` for why it is surgical rather than a re-serialize).
+
+/** Keys the scanner puts on `metadata` that describe the file, not the note. */
+const SYNTHETIC_META = new Set(['path', 'filename', DATE_SOURCE_KEY]);
+
+/** Frontmatter keys this module owns, and therefore never writes twice. */
+const MAPPED_KEYS = new Set(['title', 'end', 'end_date', 'until', 'duration', 'group', 'icon', 'status', 'type']);
+
+/** Where a scanned item's file lives, relative to the source directory. */
+function notePathOf(item: TimelineFileItem): string | null {
+  const rel = item.metadata?.path;
+  return typeof rel === 'string' && rel ? rel : null;
+}
+
+/**
+ * The frontmatter key an item's start is written back to.
+ *
+ * The scanner recorded which key it read (`dateSource`). A date that came from
+ * the filename has no key yet, so an explicit one is written: the cascade tries
+ * frontmatter before the filename, so from then on the note states its own date
+ * instead of depending on what it is called. That promotion is the reason the
+ * read path bothers to record the provenance at all.
+ */
+function startKeyFor(stored: TimelineFileItem, dateFields: string[]): string {
+  const recorded = stored.metadata?.[DATE_SOURCE_KEY];
+  if (typeof recorded === 'string' && recorded && recorded !== FILENAME_DATE_SOURCE) return recorded;
+  return dateFields[0] ?? 'date';
+}
+
+/**
+ * Turn an item patch into a frontmatter patch.
+ *
+ * Only keys the caller actually sent are considered, so a patch that carries
+ * `end` alone cannot blank a title. `metadata` is diffed against what is stored
+ * so a removed custom key becomes a removed line, and the synthetic keys the
+ * scanner added are never written back into the user's file.
+ */
+function frontmatterPatchFor(
+  patch: Partial<TimelineFileItem>,
+  stored: TimelineFileItem,
+  dateFields: string[],
+): Patch {
+  const out: Patch = {};
+  if ('content' in patch) out.title = patch.content;
+  if ('start' in patch) out[startKeyFor(stored, dateFields)] = patch.start ?? null;
+  if ('end' in patch) out.end = patch.end ?? null;
+  if ('duration' in patch) out.duration = patch.duration ?? null;
+  if ('group' in patch) out.group = patch.group ?? null;
+  if ('icon' in patch) out.icon = patch.icon ?? null;
+  if ('status' in patch) out.status = patch.status ?? null;
+  if ('type' in patch) out.type = patch.type ?? null;
+
+  if ('metadata' in patch) {
+    const next = (patch.metadata ?? {}) as Record<string, unknown>;
+    const prev = (stored.metadata ?? {}) as Record<string, unknown>;
+    const owned = (k: string) => !SYNTHETIC_META.has(k) && !MAPPED_KEYS.has(k) && !(k in out);
+    for (const [k, v] of Object.entries(next)) {
+      if (owned(k) && v !== prev[k]) out[k] = v;
+    }
+    for (const k of Object.keys(prev)) {
+      if (owned(k) && !(k in next)) out[k] = null;
+    }
+  }
+  return out;
+}
+
+/** A filename for a new note: the title, made safe, with a counter on collision. */
+function noteFilenameFor(dir: string, title: string): string {
+  const base =
+    title
+      .toLowerCase()
+      .replace(/[äöüß]/g, (c) => ({ ä: 'ae', ö: 'oe', ü: 'ue', ß: 'ss' })[c] ?? c)
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'eintrag';
+  let candidate = `${base}.md`;
+  for (let n = 2; existsSync(join(dir, candidate)); n++) candidate = `${base}-${n}.md`;
+  return candidate;
+}
+
+/**
+ * Delete a note by moving it to `<root>/.trash/`.
+ *
+ * Never `unlink`. This is a file the tool did not create and cannot recreate,
+ * and the scan already skips dot-directories, so a trashed note disappears from
+ * the timeline without disappearing from the disk. `.trash` is also Obsidian's
+ * own convention, so a vault user finds it where they expect.
+ */
+async function trashNote(dir: string, rel: string): Promise<void> {
+  const from = join(dir, rel);
+  const to = join(dir, '.trash', rel);
+  await mkdir(dirname(to), { recursive: true });
+  let target = to;
+  for (let n = 2; existsSync(target); n++) {
+    target = join(dirname(to), `${basename(to, extname(to))}-${n}${extname(to)}`);
+  }
+  await rename(from, target);
+}
+
+/** Write the directory's container file, creating it when it is missing. */
+async function writeContainer(dir: string, container: TimelineContainer): Promise<void> {
+  const path = join(dir, CONTAINER_FILE);
+  const tmp = `${path}.${process.pid}.tmp`;
+  await writeFile(tmp, `${JSON.stringify(container, null, 2)}\n`, 'utf8');
+  await rename(tmp, path);
+}
+
+/** The container half of a scanned file: everything except the items. */
+function containerOf(file: TimelineFile): TimelineContainer {
+  const { items: _items, ...rest } = file;
+  return rest;
+}
+
+/**
+ * Write a timeline-level change (groups, phases, meta) to whichever document
+ * holds it: the JSON file itself, or the directory's container.
+ *
+ * The items are deliberately not part of a container write — in a directory they
+ * live in their own files, and folding the scanned copy back in would give the
+ * timeline two places that claim to define them.
+ */
+async function persist(loaded: Loaded, file: TimelineFile): Promise<number> {
+  if (!loaded.isDir) return save(loaded, file);
+  await writeContainer(loaded.path, containerOf(file));
+  return nextVersion(loaded.path, await directoryVersion(loaded.path), loaded.version);
 }
 
 // ---------------------------------------------------------------------------
@@ -374,6 +487,15 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       assertExtentsOrdered(file.items);
       assertPhasesDisjoint(file.phases);
       const target = targetFor(dirs, id);
+      if (target.kind === 'dir') {
+        // Replacing a directory wholesale would mean rewriting or deleting every
+        // note in it from one request. That is a destructive operation on files
+        // the tool does not own, and no interaction asks for it — the viewer
+        // edits item by item. The bulk path stays available for JSON sources.
+        throw new NotSupportedError(
+          `„${id}" is a Markdown directory: replacing it wholesale is refused; edit its items individually`,
+        );
+      }
       const loaded: Loaded = existsSync(target.path)
         ? await loadForWrite(dirs, id)
         : { file: { items: [] }, version: 0, path: target.path };
@@ -385,6 +507,24 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       const loaded = await loadForWrite(dirs, id);
       assertExtent(item);
       const { version: _v, ...rest } = item;
+
+      if (loaded.isDir) {
+        // A new item is a new note. Its id is its path, so the filename decides
+        // it — derived from the title rather than minted, because a file called
+        // `i-7.md` in somebody's vault is the tool leaving litter behind.
+        const dateFields = dirs.scanOptions?.dateFields ?? ['date'];
+        const file = noteFilenameFor(loaded.path, rest.content);
+        const front = frontmatterPatchFor(
+          { ...rest, metadata: {} },
+          { content: rest.content, metadata: {} },
+          dateFields,
+        );
+        const text = patchFrontmatter(rest.body ? `\n${rest.body}\n` : '\n', front);
+        await writeFile(join(loaded.path, file), text, 'utf8');
+        const version = nextVersion(loaded.path, await directoryVersion(loaded.path), loaded.version);
+        return { ...rest, id: file.slice(0, -extname(file).length), version };
+      }
+
       const added: TimelineFileItem = { ...rest, id: item.id || mintItemId(loaded.file) };
       const next = { ...loaded.file, items: [...loaded.file.items, added] };
       const version = await save(loaded, next);
@@ -403,6 +543,27 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       if (idx < 0) throw new NotFoundError(`item „${itemId}" not found in „${id}"`);
       const { version: _v, ...clean } = patch;
       const merged = { ...loaded.file.items[idx], ...clean };
+
+      if (loaded.isDir) {
+        assertExtent(merged);
+        const stored = loaded.file.items[idx];
+        const rel = notePathOf(stored);
+        if (!rel) throw new NotFoundError(`item „${itemId}" has no file behind it`);
+        const notePath = join(loaded.path, rel);
+        let text = await readFile(notePath, 'utf8');
+        const dateFields = dirs.scanOptions?.dateFields ?? ['date'];
+        text = patchFrontmatter(text, frontmatterPatchFor(clean, stored, dateFields));
+        // The body is prose, not a field. The viewer sends a full patch, so it
+        // arrives on every edit whether or not it changed — rewriting it anyway
+        // costs the file its exact spacing (the blank line under the block, for
+        // one), which is a diff the user never asked for. Only an actual change
+        // touches it.
+        const storedBody = stored.body ?? '';
+        if ('body' in clean && (clean.body ?? '') !== storedBody) text = setBody(text, clean.body ?? '');
+        await writeFile(notePath, text, 'utf8');
+        const version = nextVersion(loaded.path, await directoryVersion(loaded.path), loaded.version);
+        return { ...merged, version };
+      }
       // A partial patch can reverse the extent while carrying only one of the
       // two dates, so the check runs against the MERGED item — the same reason
       // `updateItem` reads the stored counterpart in the DB drivers.
@@ -424,6 +585,16 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
 
     async deleteItem(id: string, itemId: string): Promise<void> {
       const loaded = await loadForWrite(dirs, id);
+
+      if (loaded.isDir) {
+        const stored = loaded.file.items.find((it) => it.id === itemId);
+        const rel = stored ? notePathOf(stored) : null;
+        if (!rel) throw new NotFoundError(`item „${itemId}" not found in „${id}"`);
+        await trashNote(loaded.path, rel);
+        nextVersion(loaded.path, await directoryVersion(loaded.path), loaded.version);
+        return;
+      }
+
       const items = loaded.file.items.filter((it) => it.id !== itemId);
       if (items.length === loaded.file.items.length) {
         throw new NotFoundError(`item „${itemId}" not found in „${id}"`);
@@ -438,21 +609,21 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       const idx = groups.findIndex((g) => g.id === group.id);
       if (idx >= 0) groups[idx] = { ...groups[idx], ...group };
       else groups.push(group);
-      await save(loaded, { ...loaded.file, groups });
+      await persist(loaded, { ...loaded.file, groups });
       return group;
     },
 
     async deleteGroup(id: string, groupId: string): Promise<void> {
       const loaded = await loadForWrite(dirs, id);
       const groups = (loaded.file.groups ?? []).filter((g) => g.id !== groupId);
-      await save(loaded, { ...loaded.file, groups });
+      await persist(loaded, { ...loaded.file, groups });
     },
 
     // ---- timeline-level meta / phases -------------------------------------
     async updatePhases(id: string, phases: TimelinePhase[]): Promise<void> {
       assertPhasesDisjoint(phases);
       const loaded = await loadForWrite(dirs, id);
-      await save(loaded, { ...loaded.file, phases });
+      await persist(loaded, { ...loaded.file, phases });
     },
 
     async updateMeta(
@@ -466,7 +637,7 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       for (const key of ['name', 'description', 'groupBy', 'customFields'] as const) {
         if (key in meta && meta[key] !== undefined) (next as any)[key] = meta[key];
       }
-      await save(loaded, next);
+      await persist(loaded, next);
     },
 
     // ---- pricing (plugin surface, first cut: 501) --------------------------
@@ -538,7 +709,7 @@ export function hasLocalTimeline(dirs: FileRepoDirs, id: string): boolean {
 export function isLocalWritable(dirs: FileRepoDirs, id: string): boolean {
   try {
     const target = targetFor(dirs, id);
-    return target.kind === 'file' && existsSync(target.path);
+    return target.kind === 'dir' || existsSync(target.path);
   } catch {
     return false;
   }

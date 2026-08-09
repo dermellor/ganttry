@@ -1,6 +1,6 @@
 # Local sources (design proposal)
 
-**Status: stages 1 and 2 are built; stage 3 is not.** A single `local` source
+**Status: all three stages are built.** A single `local` source
 adapter replaced the former `file` kind and the separate Markdown notes pipeline,
 and made editability a property of the runtime rather than of the file format.
 What exists: a `data/*.json` timeline is editable under `npm run dev` and
@@ -313,8 +313,35 @@ Three stages, each shippable on its own, in increasing order of risk:
      every local source to editable offered „+ Eintrag" and drag handles on a
      Markdown timeline, each ending in a `501`. An edit that looks available and
      then is not is worse than one that was never offered.
-3. **The Markdown write path.** The frontmatter patcher, promotion of date and id,
-   filter-derived creation defaults, trash-on-delete.
+3. ~~**The Markdown write path.**~~ **Done.**
+   [`scripts/local/frontmatter.ts`](../scripts/local/frontmatter.ts) patches one
+   key at a time; everything else in the file — comments, key order, quoting, the
+   blank line under the block, the body — is left byte-for-byte alone. Four
+   things worth knowing:
+   - **A full patch does not rewrite the body.** The viewer sends `body` on every
+     edit whether or not it changed, and running it through the writer costs the
+     file its exact spacing. Only an actual change touches it. This surfaced in
+     the interface, not in the API tests: the first UI edit ate the blank line
+     under the frontmatter.
+   - **A filename date is promoted on first write.** The scanner recorded that
+     the date came from the filename, so the write puts an explicit key in the
+     frontmatter instead of renaming the file. From then on the note states its
+     own date. That promotion is the reason the read path records the provenance
+     at all.
+   - **Delete moves the note to `.trash/`,** never `unlink`. This is a file the
+     tool did not create and cannot recreate, and the scan already skips
+     dot-directories, so a trashed note leaves the timeline without leaving the
+     disk. `.trash` is Obsidian's own convention.
+   - **`replaceTimeline` is refused for a directory** (`501`). Replacing one
+     wholesale means rewriting or deleting every note from a single request, and
+     no interaction asks for that: the viewer edits item by item.
+
+   **Not done, deliberately: id promotion.** The design called for writing an
+   explicit `id:` when an item becomes the target of a reference. Doing it on
+   every write would add a line to every note the user touches, which is the
+   diff-over-the-whole-vault problem the patcher exists to prevent. Until there
+   is a narrower trigger, a rename still breaks a `dependsOn` pointing at the old
+   path.
 
 Stage 1 is worth doing whether or not stages 2 and 3 follow. Stage 3 is the only
 one that writes to files the tool does not own, and it should not start until

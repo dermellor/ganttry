@@ -1,4 +1,4 @@
-// App entry point: loads config + notes, wires the header/footer controls and
+// App entry point: loads the discovered config, wires the header/footer controls and
 // URL-state syncing, and delegates rendering and editing to the feature modules
 // (render, itemForm, phaseForm, detailPanel, persistence). Shared mutable state
 // and DOM refs live in state.ts.
