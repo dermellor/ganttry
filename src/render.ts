@@ -520,7 +520,12 @@ export async function renderTimeline(view: View) {
     // and titles are already escapeHtml'd at build time and icon keys are
     // validated, so disabling the redundant filter is safe here.
     xss: { disabled: true },
-    margin: { item: 6, axis: axisMargin },
+    // vis puts a *half* gap at a track's top and bottom edge and a full one
+    // between its rows, so a bar ended up 3px from the track's border while
+    // sitting 6px from its neighbour, and read as glued to the line. Doubling
+    // the vertical gap buys the edges their 6px; the rows are further apart for
+    // it, which a track carrying a summary bar and its children needs anyway.
+    margin: { item: { horizontal: 6, vertical: 12 }, axis: axisMargin },
     orientation: { axis: 'top', item: 'top' },
     locale: 'de',
     tooltip: { followMouse: false, overflowMethod: 'cap' },
