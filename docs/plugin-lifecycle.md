@@ -217,9 +217,9 @@ which manifest field) for logs and for whoever wrote the plugin.
 
 - **Loading the code.** Nothing in this chapter runs a plugin from an artifact;
   the registry records what would be loaded. The loader, the isolation model, the
-  integrity check and the CSP are
-  [#14](https://github.com/dermellor/ganttry/issues/14), which is also where
-  „failed to load, and why" joins the panel above.
+  integrity check and the CSP are in
+  [`plugin-isolation.md`](plugin-isolation.md) — including why a plugin runs in the
+  app's own realm and what protects an instance instead of a sandbox.
 - **A catalog.** Distribution, an artifact format and version compatibility across
   a published index are [#15](https://github.com/dermellor/ganttry/issues/15).
   Nothing here makes a hosted catalog a precondition: an operator installs by

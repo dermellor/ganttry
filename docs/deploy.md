@@ -103,6 +103,8 @@ unset/`false` for local previews. Required runtime env vars:
 | `AUTH_SECRET`           | dashboard (secret)     | `openssl rand -base64 32`                        |
 | `ALLOWED_EMAIL_DOMAINS` | dashboard              | comma-separated allowed sign-in domains; code default empty (fail-closed). Set your own; the auth edge function reads it at runtime, so it must be a runtime env var (not just build-time in `netlify.toml`) |
 | `PLUGIN_OPERATOR_EMAILS` | dashboard             | comma-separated addresses that may install, uninstall or switch off a plugin instance-wide. Empty (the default) means no HTTP caller can — installing loads third-party code into every session, so it is not the same permission as passing the sign-in gate. The MCP token counts as operator access. See [`plugin-lifecycle.md`](plugin-lifecycle.md) |
+| `PLUGIN_ALLOWED_ORIGINS` | build                 | comma-separated origins plugin code may be loaded from and talk to, added to `script-src` and `connect-src`. Empty (the default) means the page may only reach itself. Read at BUILD time into `_headers`, so changing it needs a redeploy — see [`plugin-isolation.md`](plugin-isolation.md) |
+| `TIMELINES_PLUGINS_DIR` | build                  | where vendored plugin artifacts live (default `plugins/`). The air-gapped install path; see [`plugins/README.md`](../plugins/README.md) |
 
 ### Google OAuth setup (one-time)
 

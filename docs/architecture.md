@@ -125,6 +125,17 @@ an incompatible plugin is refused with a sentence saying which side is behind.
 A plugin is an artifact that is not rebuilt when the host changes, so without this
 the first removed field fails somewhere in the middle of a render.
 
+**Plugins run in the app's own realm, and installing one is trusting its author.**
+The sandbox was considered and rejected: its cost is paid per view, and views are
+the normal case here rather than the exception. What protects an instance instead
+is an integrity pin on the artifact, a fail-closed CSP that closes the easy
+exfiltration routes, capability grants recorded at install, and failure containment
+so a throwing plugin costs the user that plugin. The decision, the rejected
+alternatives and the condition that would bring them back are in
+[`plugin-isolation.md`](plugin-isolation.md). Two things keep that door open at no
+running cost: the host API below, and overlays coming from the host rather than a
+plugin attaching one to `document.body`.
+
 **The host API is async and serializable throughout**
 ([`src/pluginHost/hostApi.ts`](../src/pluginHost/hostApi.ts)), even though plugins
 currently run in the app's own realm where a direct call would be cheaper. The
