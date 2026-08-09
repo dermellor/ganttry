@@ -107,6 +107,13 @@ function json(data: unknown, status = 200, headers?: Record<string, string>): Re
 
 const hasDb = (c: DbConnections): boolean => Boolean(c.sql || c.supabase);
 
+/** The request's JSON body, or undefined for a bodyless method / empty body. */
+async function readBody(req: Request, method: string): Promise<unknown> {
+  if (method === 'GET' || method === 'DELETE') return undefined;
+  const raw = await req.text();
+  return raw.trim() ? JSON.parse(raw) : undefined;
+}
+
 /**
  * Is this one of ours at all?
  *
@@ -146,10 +153,19 @@ export function serviceRoleFrom(raw: string | undefined | null): MemberRole {
  * dispatcher below: a per-branch check is eleven chances to forget one, and the
  * one forgotten is a write path.
  */
-async function authorize(method: string, ctx: ApiContext): Promise<Response | null> {
+function requiredCapability(path: string, method: string): Capability {
+  const base = capabilityForMethod(method);
+  // Managing people is its own stake: a PATCH on a timeline item and a PATCH on
+  // a membership are the same verb with very different consequences. Reading the
+  // directory stays a plain read, because the owner picker needs it.
+  if (path === '/api/users' && base !== 'read') return 'manage';
+  return base;
+}
+
+async function authorize(path: string, method: string, ctx: ApiContext): Promise<Response | null> {
   if (!ctx.accessControl) return null;
 
-  const capability: Capability = capabilityForMethod(method);
+  const capability: Capability = requiredCapability(path, method);
   // `message` rather than `detail`: the client's `apiJson` surfaces that field
   // (src/editor.ts), so the user reads the reason instead of the word
   // „forbidden". It also does NOT redirect on 403 — only 401 means „log in
@@ -244,18 +260,23 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
   // Ours, and only now: everything below may refuse, and a refusal must never
   // reach a path this module does not own (see `isOurs`).
   if (!isOurs(path)) return null;
-  const denied = await authorize(method, ctx);
+  const denied = await authorize(path, method, ctx);
   if (denied) return denied;
 
   if (path === '/api/users') {
-    if (method !== 'GET') return json({ error: 'method not allowed' }, 405);
+    if (method !== 'GET' && method !== 'POST' && method !== 'PATCH') {
+      return json({ error: 'method not allowed' }, 405);
+    }
     const repo = resolveRepo(ctx.conns);
     // Without a DB there is no directory. 200 with an empty list rather than an
     // error: that is the truth for a checkout without credentials, and no source
     // is editable there anyway, so the owner picker having nothing to offer is
-    // correct rather than a failure.
-    if (!repo) return json({ users: [] });
-    const result = await handleUsersApi(repo, { method, caller: ctx.caller });
+    // correct rather than a failure. A write has nowhere to go and says so.
+    if (!repo) {
+      if (method === 'GET') return json({ users: [] });
+      return json({ error: 'db_not_configured', message: 'Membership needs a database.' }, 503);
+    }
+    const result = await handleUsersApi(repo, { method, caller: ctx.caller, body: await readBody(req, method) });
     return json(result.json, result.status);
   }
 
@@ -303,8 +324,7 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
   let body: unknown;
   if (method !== 'GET' && method !== 'DELETE') {
     try {
-      const raw = await req.text();
-      body = raw.trim() ? JSON.parse(raw) : undefined;
+      body = await readBody(req, method);
     } catch (err) {
       return json({ error: 'invalid JSON', detail: String(err) }, 400);
     }

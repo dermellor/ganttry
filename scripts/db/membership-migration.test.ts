@@ -14,27 +14,16 @@
 //   npm run db:local:up
 //   TIMELINES_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55432/postgres npm test
 //
-// It drops and recreates the `public` schema, so it refuses any host that is not
-// local — the same guard `db:reset` applies, imported from ./local-url.ts rather
-// than restated.
+// It runs against its OWN database, created by `freshTestDatabase`: `node --test`
+// runs files concurrently, and two files rebuilding the same schema means one
+// file's teardown lands in the middle of the other's run. That guard also refuses
+// any host that is not local, since it creates and drops databases.
 
 import { strict as assert } from 'node:assert';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { test } from 'node:test';
 import postgres from 'postgres';
-import { MIGRATIONS_DIR, migrationFiles } from './pending.ts';
-import { isLocalUrl } from './local-url.ts';
-
-const URL_VAR = 'TIMELINES_TEST_DATABASE_URL';
-const url = process.env[URL_VAR];
-
-/** Apply exactly these migration files, in the order given. */
-async function apply(sql: postgres.Sql, files: string[]): Promise<void> {
-  for (const file of files) {
-    await sql.unsafe(await readFile(join(MIGRATIONS_DIR, file), 'utf8'));
-  }
-}
+import { migrationFiles } from './pending.ts';
+import { applyMigrations as apply, freshTestDatabase, skipWithoutDatabase } from './test-database.ts';
 
 /**
  * Split the set at a migration: everything up to and including it, and the rest.
@@ -59,11 +48,9 @@ async function freshSchema(sql: postgres.Sql): Promise<void> {
 // second one's rebuild lands in the middle of the first one's run — which
 // surfaces as „policy already exists" and reads like a broken migration rather
 // than like a test sharing state with its neighbour.
-test('migration 0016', { skip: url ? false : `set ${URL_VAR} to a throwaway local Postgres` }, async (t) => {
-  assert.ok(isLocalUrl(url!), `${URL_VAR} must point at a local database; these tests drop the schema`);
-
+test('migration 0016', { skip: skipWithoutDatabase() }, async (t) => {
   await t.test('leaves every existing directory entry able to do what it could yesterday', async () => {
-    const sql = postgres(url!, { prepare: false, max: 1 });
+    const sql = await freshTestDatabase('membership_migration');
     try {
       const files = await migrationFiles();
       await freshSchema(sql);
@@ -93,7 +80,7 @@ test('migration 0016', { skip: url ? false : `set ${URL_VAR} to a throwaway loca
   });
 
   await t.test('applies to an empty database, and the new constraints bite', async () => {
-    const sql = postgres(url!, { prepare: false, max: 1 });
+    const sql = await freshTestDatabase('membership_migration');
     try {
       const files = await migrationFiles();
       await freshSchema(sql);

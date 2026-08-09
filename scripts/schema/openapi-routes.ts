@@ -294,6 +294,35 @@ export const ROUTES: RouteDef[] = [
         description: 'The directory an item owner links to, ordered for a picker. Serving this also registers the caller, which is how the directory fills itself.',
         responses: { '200': { description: 'The directory.', schema: { type: 'object', required: ['users'], properties: { users: { type: 'array', items: ref('DirectoryUser') } } } }, ...commonErrors() },
       },
+      {
+        method: 'POST',
+        summary: 'Invite somebody, or re-invite them',
+        description:
+          'Creates the membership with status `invited` and mints an invitation token. The plain token is in THIS response and nowhere else; only its SHA-256 is stored. Re-inviting an existing address corrects the role and issues a fresh token, and never downgrades a membership that has already been accepted. Needs the `manage` capability.',
+        requestBody: { required: ['email'], properties: { email: { type: 'string' }, role: { type: 'string', enum: ['admin', 'editor', 'viewer'] }, expiresInDays: { type: 'number' } } },
+        // commonErrors first: the specific descriptions below have to win, and a
+        // trailing spread silently overwrites them with the generic wording.
+        responses: {
+          ...commonErrors(),
+          '201': { description: 'The membership, plus the one-time token.', schema: { type: 'object', required: ['member'], properties: { member: ref('Member'), inviteToken: { type: 'string' } } } },
+          '400': { description: 'The address is not address-shaped.' },
+          '503': { description: 'No database is configured to hold the member list.' },
+        },
+      },
+      {
+        method: 'PATCH',
+        summary: 'Change a role or a status, or resend an invitation',
+        description:
+          'The address travels in the body, because an e-mail carries `@` and dots. There is no DELETE: removing somebody is `status: "removed"`, since an item owner points at an address and a deleted row would leave that dangling. Refuses any change that would leave the instance without an active admin. Needs the `manage` capability.',
+        requestBody: { properties: { email: { type: 'string' }, role: { type: 'string', enum: ['admin', 'editor', 'viewer'] }, status: { type: 'string', enum: ['invited', 'active', 'suspended', 'removed'] }, resend: { type: 'boolean' }, expiresInDays: { type: 'number' } } },
+        responses: {
+          ...commonErrors(),
+          '200': { description: 'The updated membership, with a fresh token when one was resent.', schema: { type: 'object', required: ['member'], properties: { member: ref('Member'), inviteToken: { type: 'string' } } } },
+          '400': { description: 'An unknown role or status.' },
+          '404': { description: 'No such member.' },
+          '409': { description: 'The change would leave no active admin, or there is no invitation to resend.' },
+        },
+      },
     ],
   },
   {

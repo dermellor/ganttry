@@ -1418,6 +1418,137 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
+    post:
+      operationId: postUsers
+      summary: "Invite somebody, or re-invite them"
+      description: "Creates the membership with status `invited` and mints an invitation token. The plain token is in THIS response and nowhere else; only its SHA-256 is stored. Re-inviting an existing address corrects the role and issues a fresh token, and never downgrades a membership that has already been accepted. Needs the `manage` capability."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                role:
+                  type: string
+                  enum:
+                    - admin
+                    - editor
+                    - viewer
+                expiresInDays:
+                  type: number
+      responses:
+        "201":
+          description: "The membership, plus the one-time token."
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - member
+                properties:
+                  member:
+                    "$ref": "#/components/schemas/Member"
+                  inviteToken:
+                    type: string
+        "400":
+          description: "The address is not address-shaped."
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "503":
+          description: "No database is configured to hold the member list."
+    patch:
+      operationId: patchUsers
+      summary: "Change a role or a status, or resend an invitation"
+      description: "The address travels in the body, because an e-mail carries `@` and dots. There is no DELETE: removing somebody is `status: \"removed\"`, since an item owner points at an address and a deleted row would leave that dangling. Refuses any change that would leave the instance without an active admin. Needs the `manage` capability."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              properties:
+                email:
+                  type: string
+                role:
+                  type: string
+                  enum:
+                    - admin
+                    - editor
+                    - viewer
+                status:
+                  type: string
+                  enum:
+                    - invited
+                    - active
+                    - suspended
+                    - removed
+                resend:
+                  type: boolean
+                expiresInDays:
+                  type: number
+      responses:
+        "200":
+          description: "The updated membership, with a fresh token when one was resent."
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - member
+                properties:
+                  member:
+                    "$ref": "#/components/schemas/Member"
+                  inviteToken:
+                    type: string
+        "400":
+          description: "An unknown role or status."
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "No such member."
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "409":
+          description: "The change would leave no active admin, or there is no invitation to resend."
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
   "/api/me":
     get:
       operationId: getMe
@@ -1835,6 +1966,59 @@ components:
           One entry of the user directory (`app_users`, served by `GET /api/users`). The e-mail is the identity an item's `metadata.owner` stores; `name` is only for display and may be missing (a row backfilled from edit attribution knows the address but not the name until that person's next visit).
 
           Structurally a `PresenceUser` (src/presenceModel.ts), which is why the label / initials / hue helpers there serve both: the same person shown as a presence avatar and as an item's owner has to look like the same person.
+    MemberRole:
+      type: string
+      enum:
+        - admin
+        - editor
+        - viewer
+      description: "Instance-wide role. Deliberately not per timeline (see migration 0016)."
+    MemberStatus:
+      type: string
+      enum:
+        - invited
+        - active
+        - suspended
+        - removed
+      description: |-
+          Lifecycle of one membership.
+
+            (—) --invite--> invited --first sign-in--> active <--> suspended                      \                          \           /                       `--------- removed <-------`---------`
+    Member:
+      type: object
+      additionalProperties: false
+      properties:
+        role:
+          "$ref": "#/components/schemas/MemberRole"
+        status:
+          "$ref": "#/components/schemas/MemberStatus"
+        invitedBy:
+          type: string
+          description: "Who sent the invitation; absent for rows that predate membership."
+        invitedAt:
+          type: string
+        acceptedAt:
+          type: string
+          description: "When the invitation was accepted, which is the first successful sign-in."
+        inviteExpiresAt:
+          type: string
+          description: "When an outstanding invitation stops being accepted at sign-in. Absent once accepted: `setMemberStatus` clears it, so a stale expiry cannot later refuse somebody who is long since active."
+        lastSeenAt:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+      required:
+        - email
+        - role
+        - status
+      description: |-
+          One membership of this instance: a directory entry plus what it may do.
+
+          `Member extends DirectoryUser` is the type-level statement of migration 0016's decision — the directory and the member list are one table, because once an invitation is the only way in they are the same set of people. The rules that read `role` and `status` live in [`src/access.ts`](./access.ts), which is also where the two unions come from, so a role added there cannot be forgotten here.
+
+          Timestamps are ISO strings rather than `Date`, like everything else that crosses the API boundary.
     Error:
       type: object
       required:
