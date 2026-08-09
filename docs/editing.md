@@ -263,6 +263,24 @@ them off their dates.
   behave like the item it stands for; a second copy of those steps is how the two
   drift apart, and the ones that drift silently (a forgotten
   `publishSelfPresence`) only surface on somebody else's screen.
+- **…and scrolls its row into view** (`scrollItemIntoView` in
+  [`src/visGeometry.ts`](../src/visGeometry.ts)). From the rail this is the other
+  half of the click: its marks stand for milestones the user cannot see, so
+  opening a form for a row still off screen answers only half of it. Vertically
+  only — the time window is left alone, because the mark was clicked at a position
+  it already occupies and re-centring would slide every other mark out from under
+  the pointer. That rules out vis's own `focus()`, which always calls
+  `range.setRange()`, `zoom: false` included (that option preserves the interval
+  *width*, not the position).
+
+  Two details make it work. The item's **group label** is measured rather than the
+  item itself: vis only mounts items whose row is on screen, so the one worth
+  scrolling to is exactly the one with no box to measure, while labels are always
+  mounted and the panels are in vertical lockstep. And the scroll is applied in up
+  to four corrective passes, because `_setScrollTop` clamps against vis's record of
+  the content height, which is refreshed in a *throttled* redraw — a single pass
+  issued right after a selection can be cut short by a stale limit and land
+  part-way.
 - **The title lives in the tooltip**, together with the date. Labelling every mark
   inline was the alternative and costs a second row plus collision handling, for
   information the rail is not trying to carry: it says *which* milestones exist and

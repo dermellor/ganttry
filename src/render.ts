@@ -29,6 +29,7 @@ import { GROUP_DIM } from './listGrouping';
 import { DependencyArrows } from './arrows';
 import { PhaseBand } from './phaseBand';
 import { MilestoneRail } from './milestoneRail';
+import { scrollItemIntoView } from './visGeometry';
 import { iconSpanHtml } from './icons';
 import { DEFAULT_STATUS } from './status';
 import {
@@ -115,14 +116,25 @@ export function displayIdsFor(realId: string): string[] {
  * `setSelection` runs unconditionally rather than only for multi-lane items:
  * from the rail nothing has selected the item yet, and re-selecting an already
  * selected item is a no-op for vis.
+ *
+ * The item is then scrolled into view if it isn't. From the rail that is the
+ * whole point — its marks stand for milestones that are off screen, so opening a
+ * form for a row the user still cannot see only answers half the click. For a
+ * click on the item itself it costs nothing, since a visible item needs no
+ * scrolling.
  */
 function selectItemById(realId: string): void {
   state.selectedItemId = realId;
+  const displayIds = displayIdsFor(realId);
   try {
-    timeline?.setSelection(displayIdsFor(realId));
+    timeline?.setSelection(displayIds);
   } catch {
     /* item may not exist in this build */
   }
+  // The first clone is arbitrary but stable — with several, any one of them
+  // brings the item on screen, and scrolling to each in turn would just fight
+  // itself.
+  if (timeline && displayIds[0]) scrollItemIntoView(timeline, displayIds[0], els.timeline);
   syncUrl();
   publishSelfPresence();
   showDetailForId(realId);
