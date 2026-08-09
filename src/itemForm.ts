@@ -1365,11 +1365,37 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   const fd = new FormData(form);
   const get = (name: string) => String(fd.get(name) ?? '').trim();
 
+  /**
+   * Is this date control being typed into right now?
+   *
+   * A half-typed `type=date` reports `value === ''`, exactly like a field the
+   * user cleared, and FormData cannot tell the two apart. It matters because
+   * this function runs on every keystroke: the FIRST digit typed makes the date
+   * incomplete, the extent block below read that as "cleared", deleted the date
+   * and persisted the deletion (`"start": null`). The field then lost its
+   * remaining segments under the caret, which is why entering a date was
+   * impossible — „ich gebe 01. ein, daraus wird 12.".
+   *
+   * Focus is the signal, deliberately not `validity.badInput`: after the first
+   * digit Chrome reports `value === ''` with `badInput === false`, so the
+   * platform's own "is this a partial entry" flag does not cover the case that
+   * breaks. Measured, not assumed.
+   *
+   * A field the user really did clear reaches the model on blur — `focusout`
+   * commits the form, and by then the control no longer holds focus.
+   */
+  const beingTyped = (name: string): boolean => {
+    const el = form.querySelector(`[name="${name}"]`);
+    return el instanceof HTMLInputElement && el === document.activeElement;
+  };
+
   const item = state.activeSourceFile.items[idx];
   item.content = get('content') || item.content;
   const startVal = get('start');
   const endVal = get('end');
   const durVal = get('duration');
+  const startTyping = !startVal && beingTyped('start');
+  const endTyping = !endVal && beingTyped('end');
 
   // An `end` before (or on) its `start` renders as a hairline stripe and the
   // server rejects it outright (see src/itemExtent.ts), so it must never reach
@@ -1383,9 +1409,10 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   const extentReversed = isReversedExtent(startVal, endVal);
   if (!extentReversed) {
     // Start is optional: clearing the field removes the date (the item then shows
-    // only in the list view, hidden from the timeline).
+    // only in the list view, hidden from the timeline). Half-typed is not
+    // cleared, though — see `beingTyped`.
     if (startVal) item.start = startVal;
-    else delete item.start;
+    else if (!startTyping) delete item.start;
 
     // Extent precedence must match the render path (buildItems: `end` wins, with
     // `duration` only a fallback). Committing with the opposite precedence is what
@@ -1395,6 +1422,10 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     if (endVal) {
       item.end = endVal;
       delete item.duration;
+    } else if (endTyping) {
+      // Mid-entry: leave the extent exactly as it is. Falling through would read
+      // the half-typed end as "no end" and either promote a stale `duration` or
+      // clear both, i.e. rewrite the item on every keystroke.
     } else if (durVal) {
       item.duration = durVal;
       delete item.end;
@@ -1427,7 +1458,16 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   // item silently vanishes from the timeline. Seed a default duration (matching
   // the double-click "new item" default) so it renders as a visible bar the
   // user can then resize.
-  if ((item.type === 'range' || item.type === 'background') && !item.end && !item.duration) {
+  // Not while a date is being typed: the extent is momentarily unreadable, and
+  // seeding a default there would write a duration the user never asked for and
+  // then have to take it back once the date completes.
+  if (
+    (item.type === 'range' || item.type === 'background') &&
+    !item.end &&
+    !item.duration &&
+    !startTyping &&
+    !endTyping
+  ) {
     item.duration = DEFAULT_EXTENT;
   }
 
