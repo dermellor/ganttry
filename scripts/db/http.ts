@@ -29,6 +29,15 @@ import {
   type DbConnections,
 } from './api.ts';
 import type { SourceLive } from '../../src/types';
+import { isPublicPath } from '../admission.ts';
+import {
+  capabilityForMethod,
+  memberCan,
+  normalizeMemberRole,
+  roleAllows,
+  type Capability,
+  type MemberRole,
+} from '../../src/access.ts';
 
 /** What the runtime resolved before dispatching: connections plus who is asking. */
 export type ApiContext = {
@@ -37,6 +46,26 @@ export type ApiContext = {
   updatedBy?: string;
   /** Identity for the user directory. Absent for unauthenticated runtimes. */
   caller?: { email: string; name?: string | null };
+  /**
+   * Does membership decide what this caller may do (`TIMELINES_ACCESS_CONTROL`)?
+   *
+   * Off by default, and that is deliberate rather than timid: every existing
+   * instance, every dev server and every self-hosted deployment predates the
+   * member list, so switching this on by shipping it would refuse everybody the
+   * moment the code lands. The operator turns it on once the list is populated
+   * — see the rollout order in docs.
+   */
+  accessControl?: boolean;
+  /**
+   * The role a NON-human caller acts with, skipping the member lookup.
+   *
+   * The MCP service token authenticates a program, not a person, so there is no
+   * membership row to find and „no row" would lock every automation out the
+   * moment the switch flips. The runtime that recognises the token supplies the
+   * role instead. Per-user MCP access is a membership like any other and does
+   * not come through here.
+   */
+  serviceRole?: MemberRole;
   /**
    * `TIMELINES_DB_LIVE`, already read from the runtime's own env (`process.env`
    * / `Deno.env`) — pass it through `liveOverride`. Undefined leaves the mode to
@@ -76,6 +105,95 @@ function json(data: unknown, status = 200, headers?: Record<string, string>): Re
 }
 
 const hasDb = (c: DbConnections): boolean => Boolean(c.sql || c.supabase);
+
+/**
+ * Is this one of ours at all?
+ *
+ * Needed as its own question because authorization has to run after „yes" and
+ * before anything else. Checking it inside the individual route branches would
+ * put a `403` in front of `/api/me` and `/api/jira/search`, which this module
+ * does not own and answers `null` for so the caller can fall through.
+ *
+ * The public pricing route is deliberately absent: it is answered before this is
+ * ever consulted.
+ */
+function isOurs(path: string): boolean {
+  return (
+    path === '/api/users' ||
+    path === '/api/sources' ||
+    path === '/api/source' ||
+    path.startsWith('/api/source/')
+  );
+}
+
+/**
+ * `TIMELINES_ACCESS_CONTROL`, read from the runtime's own env and parsed here so
+ * three runtimes cannot disagree about what the value means.
+ *
+ * Only the exact string `true` enables it. Anything else — unset, `false`, `1`,
+ * `yes`, a typo — leaves it off, because a switch that silently interprets is a
+ * switch nobody can reason about, and the safe reading of „I do not understand
+ * this value" is „behave as before" rather than „refuse everybody".
+ */
+export function accessControlEnabled(raw: string | undefined | null): boolean {
+  return raw === 'true';
+}
+
+/** The service role a runtime should use for its token caller, defaulting to editor. */
+export function serviceRoleFrom(raw: string | undefined | null): MemberRole {
+  // Defaulting to `editor` keeps every existing automation working unchanged the
+  // day the switch is turned on. An operator who wants a read-only agent says so.
+  return normalizeMemberRole(raw) ?? 'editor';
+}
+
+/**
+ * May this caller do this? Answers a `Response` to send, or null to proceed.
+ *
+ * The check lives here, once, rather than in the eleven branches of the
+ * dispatcher below: a per-branch check is eleven chances to forget one, and the
+ * one forgotten is a write path.
+ */
+async function authorize(method: string, ctx: ApiContext): Promise<Response | null> {
+  if (!ctx.accessControl) return null;
+
+  const capability: Capability = capabilityForMethod(method);
+  // `message` rather than `detail`: the client's `apiJson` surfaces that field
+  // (src/editor.ts), so the user reads the reason instead of the word
+  // „forbidden". It also does NOT redirect on 403 — only 401 means „log in
+  // again" — so a refusal has to explain itself where it lands.
+  const deny = (message: string) => json({ error: 'forbidden', capability, message }, 403);
+
+  // A program acting under a service token: no person, no membership row.
+  if (ctx.serviceRole) {
+    return roleAllows(ctx.serviceRole, capability)
+      ? null
+      : deny(`this token acts as ${ctx.serviceRole}, which may not ${capability}`);
+  }
+
+  const email = ctx.caller?.email?.trim();
+  if (!email) return deny('no identity on this request');
+
+  // Membership lives in the database, so a deployment serving only files has
+  // nowhere to look it up. Refusing loudly beats both alternatives: denying
+  // everybody would brick such an instance with no explanation, and ignoring the
+  // switch would leave an operator believing they had turned something on.
+  const repo = resolveRepo(ctx.conns);
+  if (!repo) {
+    return json(
+      {
+        error: 'access_control_without_database',
+        message:
+          'TIMELINES_ACCESS_CONTROL is on, but no database is configured to hold the member list.',
+      },
+      503,
+    );
+  }
+
+  const member = await repo.getMember(email);
+  // One message for „not a member" and „wrong role" on purpose: the difference
+  // is only interesting to somebody probing which addresses exist.
+  return memberCan(member, capability) ? null : deny(`${email} may not ${capability} here`);
+}
 
 /**
  * `GET /api/pricing/<id>` — the public pricing model.
@@ -122,10 +240,19 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
   const path = url.pathname;
   const method = req.method || 'GET';
 
-  if (path === '/api/pricing' || path.startsWith('/api/pricing/')) {
+  // Answered before any authorization, and `isPublicPath` is the same predicate
+  // the self-hosted gate admits it by (scripts/admission.ts). Two spellings of
+  // „this route is public" is how one of them later stops being true.
+  if (isPublicPath(path)) {
     if (method !== 'GET') return json({ error: 'method not allowed' }, 405);
     return handlePricing(path, ctx);
   }
+
+  // Ours, and only now: everything below may refuse, and a refusal must never
+  // reach a path this module does not own (see `isOurs`).
+  if (!isOurs(path)) return null;
+  const denied = await authorize(method, ctx);
+  if (denied) return denied;
 
   if (path === '/api/users') {
     if (method !== 'GET') return json({ error: 'method not allowed' }, 405);
@@ -152,7 +279,10 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
     }
   }
 
-  if (path !== '/api/source' && !path.startsWith('/api/source/')) return null;
+  // Whatever is left is a source path: `isOurs` above admitted only these four
+  // shapes and the two collection routes have returned. The former re-check here
+  // is gone rather than kept „for safety" — a condition that can no longer be
+  // true reads as a live guard and outlives the reason it was written.
 
   const parsed = parseSourcePath(path.replace(/^\/api\/source/, ''));
   if (!parsed) return json({ error: 'invalid path' }, 400);
