@@ -54,10 +54,10 @@ npm run dev                                                            # start t
 `db:migrate` is a portable runner (no Supabase CLI needed): it applies
 `supabase/migrations/*.sql` in order and tracks what has run. `npm run dev` checks
 first and refuses to start with migrations pending, so the app never quietly talks
-to an older schema. To get live updates
-without Supabase Realtime, run the server with `TIMELINES_DB_LIVE=poll` (the
-client then polls a cheap watermark endpoint). Import example data with
-`npm run db:import`.
+to an older schema. Live updates need no extra setting: a Postgres without
+Supabase Realtime serves its timelines in polling mode automatically (the client
+polls a cheap watermark endpoint), and `TIMELINES_DB_LIVE` overrides that either
+way. Import example data with `npm run db:import`.
 
 ### Static / file sources only (no database)
 
@@ -146,7 +146,7 @@ are read from `process.env`, then `.env.local`, then any file named by
 | `TIMELINES_DATABASE_URL` | Postgres connection string. Set to use the native postgres.js driver. Also enables per-source connections via `TIMELINES_DATABASE_URL_<NAMESPACE>`. |
 | `TIMELINES_MIGRATE_DATABASE_URL` | Connection used **only** for schema work (`db:migrate`, `db:check`). Needed on a Supabase-backed instance, because migrations are DDL and cannot run over PostgREST. Setting it does not change which driver serves the app. |
 | `TIMELINES_SUPABASE_URL` / `TIMELINES_SUPABASE_SERVICE_KEY` | Supabase project URL + service-role key. Used when `TIMELINES_DATABASE_URL` is unset. |
-| `TIMELINES_DB_LIVE` | Set to `poll` to serve DB sources in polling mode (live updates without Supabase Realtime). |
+| `TIMELINES_DB_LIVE` | Overrides the live-update mode of DB sources: `poll` (watermark polling, works against any Postgres) or `realtime` (Supabase Realtime). Unset derives it from the configured backend, so a plain Postgres already polls. |
 | `TIMELINES_NOTES_DIR` | Overrides `notesDir` for the Markdown notes scan. Missing directory is non-fatal. |
 | `TIMELINES_STATIC_ONLY` | `true` skips the notes scan and drops notes-driven views. |
 | `TIMELINES_SOURCES_SUBDIR` | Scope the file-source scan to `data/<subdir>/`. |

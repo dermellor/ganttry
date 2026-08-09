@@ -5,7 +5,7 @@ import { envSourcesHint, envValue, hydrateProcessEnv } from './scripts/db/env';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
 import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
-import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
+import { handleUsersApi, liveOverride, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
 import { hasLocalTimeline, isLocalWritable, makeFileRepo } from './scripts/local/file-repo';
 
 // Runs while Vite loads this config, before it resolves `import.meta.env`.
@@ -308,10 +308,11 @@ function timelinesApi(): Plugin {
         };
 
         try {
-          // TIMELINES_DB_LIVE=poll makes DB sources advertise polling instead of
-          // Supabase Realtime (for a Postgres without Realtime enabled).
-          const live = process.env.TIMELINES_DB_LIVE === 'poll' ? 'poll' : 'realtime';
-          const adapter = resolveAdapter(conns, apiReq.id, live);
+          // TIMELINES_DB_LIVE overrides the live-update mode in either
+          // direction; unset (or unrecognised) leaves it to `defaultLive`, which
+          // derives it from the configured backend. The mode is NOT decided
+          // here — that is what kept the two runtimes agreeing by coincidence.
+          const adapter = resolveAdapter(conns, apiReq.id, liveOverride(process.env.TIMELINES_DB_LIVE));
           // Tell the client which live-update impl to use (read by loadSource).
           res.setHeader('X-Source-Live', adapter.capabilities.live);
           const result = await adapter.handle(apiReq);

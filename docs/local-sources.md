@@ -43,7 +43,8 @@ their repository, and that they cannot edit in the tool built to edit it.
 
 The existing seam already models the right thing. `SourceCapabilities` is
 `{ editable, live }` on the adapter, and the DB adapter already derives its `live`
-value from the environment (`TIMELINES_DB_LIVE`) and ships it to the client in the
+value from the configured backend (`defaultLive`, overridable with
+`TIMELINES_DB_LIVE`) and ships it to the client in the
 `X-Source-Live` header. A local adapter deriving `editable` from "is there a
 writable data directory behind this request" is the same move.
 

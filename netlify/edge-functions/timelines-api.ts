@@ -18,7 +18,7 @@ import type { Context, Config } from '@netlify/edge-functions';
 import postgres from 'https://esm.sh/postgres@3.4.9';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { readSession, hasValidMcpToken } from './_shared/session.ts';
-import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
+import { handleUsersApi, liveOverride, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
 
 // Module-scoped, reused postgres.js connection. Opened once per isolate and
 // reused across invocations — NEVER call sql.end() in a handler (it throws a
@@ -114,10 +114,10 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
   };
 
   try {
-    // TIMELINES_DB_LIVE=poll makes DB sources advertise polling instead of
-    // Supabase Realtime (for a Postgres without Realtime enabled).
-    const live = Deno.env.get('TIMELINES_DB_LIVE') === 'poll' ? 'poll' : 'realtime';
-    const adapter = resolveAdapter(conns, apiReq.id, live);
+    // TIMELINES_DB_LIVE overrides the live-update mode in either direction;
+    // unset leaves it to `defaultLive`, which derives it from the configured
+    // backend. Same call as the Vite middleware makes, on purpose.
+    const adapter = resolveAdapter(conns, apiReq.id, liveOverride(Deno.env.get('TIMELINES_DB_LIVE')));
     const result = await adapter.handle(apiReq);
     // Tell the client which live-update impl to use (read by loadSource).
     const headers = new Headers();

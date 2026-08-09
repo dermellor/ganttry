@@ -369,19 +369,72 @@ export type DbConnections = {
   local?: { has(id: string): boolean; repo: TimelineRepo };
 };
 
+/** Which driver serves a timeline id, with the handle it was selected by. */
+type ResolvedDriver =
+  | { kind: 'postgres'; sql: Sql }
+  | { kind: 'supabase'; db: SupabaseClient };
+
 /**
- * Pick the storage repo for a timeline id from the available connection(s):
- * native postgres.js when a `sql` handle is present, else supabase-js. Null when
- * neither is configured (the glue then surfaces the "no DB" path — 404/503, no
- * fallback). When `sqlFor` is set (per-source routing), it chooses the pool for
- * `id` (namespace → dedicated connection, else default); without an `id` or
- * `sqlFor` it uses the default `sql` handle.
+ * The driver selection, in one place: native postgres.js when a `sql` handle is
+ * present, else supabase-js. When `sqlFor` is set (per-source routing), it
+ * chooses the pool for `id` (namespace → dedicated connection, else default);
+ * without an `id` or `sqlFor` it uses the default `sql` handle.
+ *
+ * Separate from `resolveRepo` because two decisions hang off the *same* choice —
+ * which repo to build, and which live-update mode a source can honestly claim
+ * (see `defaultLive`). Deriving them independently is how the two drift apart.
+ */
+function resolveDriver(conns: DbConnections, id?: string): ResolvedDriver | null {
+  const sql = conns.sqlFor && id != null ? conns.sqlFor(id) : conns.sql;
+  if (sql) return { kind: 'postgres', sql };
+  if (conns.supabase) return { kind: 'supabase', db: conns.supabase };
+  return null;
+}
+
+/**
+ * Pick the storage repo for a timeline id from the available connection(s).
+ * Null when neither driver is configured (the glue then surfaces the "no DB"
+ * path — 404/503, no fallback).
  */
 export function resolveRepo(conns: DbConnections, id?: string): TimelineRepo | null {
-  const sql = conns.sqlFor && id != null ? conns.sqlFor(id) : conns.sql;
-  if (sql) return makePostgresRepo(sql);
-  if (conns.supabase) return makeSupabaseRepo(conns.supabase);
-  return null;
+  const driver = resolveDriver(conns, id);
+  if (!driver) return null;
+  return driver.kind === 'postgres' ? makePostgresRepo(driver.sql) : makeSupabaseRepo(driver.db);
+}
+
+/**
+ * The live-update mode a DB source advertises when the runtime states no
+ * preference.
+ *
+ * Supabase Realtime needs a Supabase project, so „is one configured" is the
+ * honest signal — not which driver won. A deployment may deliberately run
+ * postgres.js *against* a Supabase database (`TIMELINES_DATABASE_URL` wins over
+ * the Supabase vars, see docs/database.md), and Realtime still works there;
+ * keying off the driver would silently downgrade exactly that setup.
+ *
+ * This used to default to 'realtime' unconditionally, which broke the plain
+ * self-hosted Postgres case in the quietest possible way: the server claimed
+ * realtime, the client looked for `VITE_SUPABASE_ANON_KEY`, found none, and did
+ * nothing at all. Other people's edits then appeared on reload only, with
+ * nothing anywhere saying why. Polling needs no anon key (the watermark endpoint
+ * is server-gated), so it is the mode a bare Postgres can actually keep.
+ */
+export function defaultLive(conns: DbConnections): SourceLive {
+  return conns.supabase ? 'realtime' : 'poll';
+}
+
+/**
+ * Parse a runtime's `TIMELINES_DB_LIVE` into an explicit override, or undefined
+ * to leave the choice to `defaultLive`. Both runtimes read their own env (Node
+ * `process.env` / Deno `Deno.env`) but must agree on what the value means.
+ *
+ * Deliberately three-way: an unrecognised value yields undefined rather than
+ * being coerced to a mode. The old `=== 'poll' ? 'poll' : 'realtime'` turned
+ * every typo into "realtime", so `TIMELINES_DB_LIVE=polling` silently disabled
+ * live updates on a Postgres deployment.
+ */
+export function liveOverride(raw: string | undefined | null): SourceLive | undefined {
+  return raw === 'poll' || raw === 'realtime' ? raw : undefined;
 }
 
 function dbAdapter(repo: TimelineRepo, live: SourceLive): SourceAdapter {
@@ -393,12 +446,13 @@ function dbAdapter(repo: TimelineRepo, live: SourceLive): SourceAdapter {
 }
 
 /**
- * The DB-backed source via native postgres.js. `live` defaults to 'realtime'
- * (Supabase Realtime pushes row changes over a WebSocket). Pass 'poll' for a
- * Postgres without Realtime enabled — clients then poll the watermark endpoint
- * instead. The value flows to the client via the X-Source-Live response header.
+ * The DB-backed source via native postgres.js. `live` defaults to 'poll': a
+ * connection string on its own says nothing about a Realtime channel being
+ * available, and the watermark endpoint works against any Postgres. Pass
+ * 'realtime' when the database behind it is a Supabase project. The value flows
+ * to the client via the X-Source-Live response header.
  */
-export function createPostgresSource(sql: Sql, live: SourceLive = 'realtime'): SourceAdapter {
+export function createPostgresSource(sql: Sql, live: SourceLive = 'poll'): SourceAdapter {
   return dbAdapter(makePostgresRepo(sql), live);
 }
 
@@ -426,10 +480,14 @@ export function createSupabaseSource(db: SupabaseClient, live: SourceLive = 'rea
  * the driver from the available connection(s) — postgres.js when a `sql` handle
  * is present, else supabase-js — so both runtimes select the same way. The `id`
  * argument is the seam future kinds key off (a registry lookup / prefix match)
- * without changing callers. `live` is read from the runtime's env by the glue
- * (TIMELINES_DB_LIVE) and threaded through so both runtimes agree on the mode.
+ * without changing callers.
+ *
+ * `live` is an OVERRIDE, not the mode: the glue passes what its runtime's
+ * `TIMELINES_DB_LIVE` says (through `liveOverride`) and undefined otherwise, so
+ * the sane mode for the configured backend comes from `defaultLive` rather than
+ * from each runtime deciding for itself.
  */
-export function resolveAdapter(conns: DbConnections, id: string, live: SourceLive = 'realtime'): SourceAdapter {
+export function resolveAdapter(conns: DbConnections, id: string, live?: SourceLive): SourceAdapter {
   // A local file wins for its own id. It cannot shadow a DB timeline in
   // practice, because `build-data.ts` already drops a file view whose id
   // collides with a discovered DB timeline — so an id that reaches here as a
@@ -442,7 +500,7 @@ export function resolveAdapter(conns: DbConnections, id: string, live: SourceLiv
   // list of local timelines. Without either there is nothing to serve.
   if (!repo && conns.local && id === '') return localAdapter(conns.local.repo);
   if (!repo) throw new Error('resolveAdapter: no DB connection (set TIMELINES_DATABASE_URL, or TIMELINES_SUPABASE_URL + TIMELINES_SUPABASE_SERVICE_KEY)');
-  return dbAdapter(repo, live);
+  return dbAdapter(repo, live ?? defaultLive(conns));
 }
 
 /** Parse a `/api/source/<id>[/<subkind>[/<childId>]]` path into id + sub. */

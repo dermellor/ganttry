@@ -63,15 +63,17 @@ new `SourceKind` value plus its loader — the routing seam already exists.
 
 **Server-side adapter seam:** the runtime glue (Vite middleware +
 `timelines-api` edge function) no longer calls the DB dispatcher directly. It
-resolves a `SourceAdapter` via `resolveAdapter(conns, id, live)`
+resolves a `SourceAdapter` via `resolveAdapter(conns, id, liveOverride)`
 ([`scripts/db/api.ts`](../scripts/db/api.ts)) and dispatches through
 `adapter.handle(req)`. The DB-backed source has **two interchangeable drivers**
 behind that one adapter, selected by env (see „Postgres as the data source →
 Drivers"): supabase-js (the Netlify default) and native postgres.js (opt-in).
 Both satisfy the same `TimelineRepo` seam ([`scripts/db/repo.ts`](../scripts/db/repo.ts));
 `handleTimelineApi(repo, req)` dispatches through the bound repo and never sees
-the driver. The adapter's `capabilities` declare `editable` and a `live` mode
-(`realtime` by default). Future API-served kinds register in `resolveAdapter`
+the driver. The adapter's `capabilities` declare `editable` and a `live` mode,
+which `defaultLive` derives from the configured backend (a Supabase project gets
+`realtime`, a bare Postgres `poll`); `TIMELINES_DB_LIVE` overrides it in either
+direction. Future API-served kinds register in `resolveAdapter`
 without touching the middleware/edge glue. File sources are static and never
 reach this seam.
 
