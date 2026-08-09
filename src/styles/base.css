@@ -486,6 +486,20 @@ body {
   color: var(--danger, #b3261e);
 }
 
+/* A floating layer the host created for a plugin (src/pluginHost/overlay.ts).
+   The host owns PLACEMENT — fixed positioning plus the left/top it computes — and
+   the plugin's own stylesheet owns how the layer looks. Without the base rule
+   here, every plugin would have to restate position:fixed for the host's
+   coordinates to mean anything. */
+.plugin-overlay {
+  position: fixed;
+  z-index: 60;
+}
+
+.plugin-overlay[hidden] {
+  display: none;
+}
+
 /* A plugin that threw mid-render. The message replaces whatever it managed to
    paint, so a fault reads as a fault instead of a half-loaded page. */
 .plugin-view-error {

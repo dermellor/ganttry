@@ -28,7 +28,7 @@ import { showDetailForId } from '../../detailPanel';
 import { showFeatureForm, addFeature, moveFeature } from './featureForm';
 import { showTierForm, addTier } from './tierForm';
 import { openCellEditor, closeCellEditor } from './cellEditor';
-import { ensureLayer, positionLayer } from './popover';
+import { anchorRect, layerFor } from './popover';
 import { renderCardsHtml } from './pricingCards';
 import { workDotHtml } from './pricingWork';
 import { type TimelineFile, type PricingFeature } from '../../types';
@@ -282,12 +282,12 @@ function wireEditing(host: HTMLElement): void {
 }
 
 // ---- feature description tooltip -------------------------------------------
-// A single styled tooltip, reused across all feature rows and re-renders. Creation
-// and placement come from popover.ts, shared with the cell editor (see the note
-// there on why these layers are fixed-on-body rather than nested in the table).
+// A single styled tooltip, reused across all feature rows and re-renders. The
+// layer itself comes from the host (see popover.ts for why the plugin no longer
+// builds it), which is also what places it clear of the table's own clipping.
 
-function ensureTip(): HTMLElement {
-  return ensureLayer('pm-tip', 'pm-tip', 'tooltip');
+function ensureTip() {
+  return layerFor('pm-tip', 'pm-tip', 'tooltip');
 }
 
 // Structured description → styled tooltip HTML: availability line, base
@@ -317,10 +317,8 @@ function featureTipHtml(f: PricingFeature, versions: string[]): string {
 
 function wireFeatureTooltips(host: HTMLElement): void {
   const tip = ensureTip();
-  tip.hidden = true; // reset across re-renders
-  const hide = () => {
-    tip.hidden = true;
-  };
+  tip.hide(); // reset across re-renders
+  const hide = () => tip.hide();
   const show = (icon: HTMLElement) => {
     const featureId = icon.closest<HTMLElement>('[data-feature-id]')?.dataset.featureId;
     const pricing = state.activeSourceFile?.pricing;
@@ -328,9 +326,8 @@ function wireFeatureTooltips(host: HTMLElement): void {
     if (!f) return;
     const html = featureTipHtml(f, pricing?.versions ?? []);
     if (!html) return;
-    tip.innerHTML = html;
-    tip.hidden = false;
-    positionLayer(tip, icon);
+    tip.element.innerHTML = html;
+    tip.showAt(anchorRect(icon));
   };
   host.querySelectorAll<HTMLElement>('.pm-info').forEach((icon) => {
     icon.addEventListener('mouseenter', () => show(icon));
@@ -340,8 +337,8 @@ function wireFeatureTooltips(host: HTMLElement): void {
     // Tap/click the icon: toggle the tip and don't let it open the edit form.
     icon.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (tip.hidden) show(icon);
-      else hide();
+      if (tip.visible) hide();
+      else show(icon);
     });
   });
   // A stale tooltip after scrolling would float over the wrong icon — hide it.
