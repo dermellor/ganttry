@@ -17,7 +17,8 @@
 import type { Context, Config } from '@netlify/edge-functions';
 import postgres from 'https://esm.sh/postgres@3.4.9';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
-import { resolveRepo, type DbConnections } from '../../scripts/db/api.ts';
+import type { DbConnections } from '../../scripts/db/api.ts';
+import { handleApiRequest } from '../../scripts/db/http.ts';
 
 // Module-scoped, reused handles (see timelines-api.ts) — opened once per
 // isolate, never torn down in a handler.
@@ -40,34 +41,12 @@ function getSupabase() {
 
 const dbConns = (): DbConnections => ({ sql: getSql(), supabase: getSupabase() });
 
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      // Public + cacheable: fine to serve stale briefly; consumers fetch at build.
-      'Cache-Control': 'public, max-age=300, s-maxage=300',
-      'Access-Control-Allow-Origin': '*',
-    },
-  });
-}
-
+// The route itself — status codes, the public cache policy and the CORS header —
+// lives in the shared HTTP layer, so this function is only the driver setup plus
+// a dispatch. No auth: the gate excludes /api/pricing/* on purpose (see above).
 export default async function handler(req: Request, _ctx: Context): Promise<Response | void> {
-  if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405);
-
-  const repo = resolveRepo(dbConns());
-  if (!repo) return json({ error: 'db_not_configured' }, 503);
-
-  // Path: /api/pricing/<id> — id may contain slashes (e.g. "acme/foo").
-  const id = new URL(req.url).pathname.replace(/^\/api\/pricing\//, '').replace(/\/+$/, '');
-  if (!id) return json({ error: 'id required' }, 400);
-
-  try {
-    const pricing = await repo.getPublicPricing(decodeURIComponent(id));
-    return pricing ? json(pricing) : json({ error: 'not found' }, 404);
-  } catch (err) {
-    return json({ error: 'server_error', message: String(err) }, 500);
-  }
+  const out = await handleApiRequest(req, { conns: dbConns() });
+  return out ?? undefined;
 }
 
 export const config: Config = {

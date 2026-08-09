@@ -21,6 +21,7 @@
     "export": "npm run build:data && tsx scripts/export-view.ts",
     "export:pricing": "tsx scripts/pricing-export.ts",
     "preview": "vite preview",
+    "start": "tsx scripts/serve.ts",
     "test": "TZ=Europe/Berlin node --import tsx --test '{src,scripts}/**/*.test.ts'",
     "typecheck": "tsc --noEmit",
     "schema": "tsx scripts/schema/build.ts",

@@ -52,8 +52,26 @@ npm install
 docker run -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16   # 1. Postgres
 export TIMELINES_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/postgres  # 2. target
 npm run db:migrate                                                     # 3. schema
-npm run dev                                                            # start the viewer
+npm run build && npm start                                             # 4. serve it
 ```
+
+`npm start` runs the built site and the API from one Node process
+([`scripts/serve.ts`](scripts/serve.ts)) — that is the supported way to self-host
+an **editable** deployment. `npm run dev` is for development; it serves the same
+API but through Vite, with a file watcher and no build step.
+
+**It has no authentication.** Anyone who can reach the port can edit, and every
+write is attributed to `self-hosted`. Put an authenticating reverse proxy in
+front (oauth2-proxy, Authelia, an SSO ingress) and tell the server which header
+carries the identity:
+
+```bash
+TIMELINES_TRUSTED_IDENTITY_HEADER=X-Forwarded-Email npm start
+```
+
+The header is only trustworthy if the proxy strips it from incoming client
+requests; the server cannot check that, which is why it stays opt-in and the
+startup log says which mode it is in.
 
 `db:migrate` is a portable runner (no Supabase CLI needed): it applies
 `supabase/migrations/*.sql` in order and tracks what has run. `npm run dev` checks
@@ -177,6 +195,9 @@ are read from `process.env`, then `.env.local`, then any file named by
 | `TIMELINES_MIGRATE_DATABASE_URL` | Connection used **only** for schema work (`db:migrate`, `db:check`). Needed on a Supabase-backed instance, because migrations are DDL and cannot run over PostgREST. Setting it does not change which driver serves the app. |
 | `TIMELINES_SUPABASE_URL` / `TIMELINES_SUPABASE_SERVICE_KEY` | Supabase project URL + service-role key. Used when `TIMELINES_DATABASE_URL` is unset. |
 | `TIMELINES_DB_LIVE` | Overrides the live-update mode of DB sources: `poll` (watermark polling, works against any Postgres) or `realtime` (Supabase Realtime). Unset derives it from the configured backend, so a plain Postgres already polls. |
+| `TIMELINES_SERVE_PORT` / `TIMELINES_SERVE_HOST` | `npm start` only. Where the self-hosted server listens; defaults to `TIMELINES_PORT` (3120) on `127.0.0.1`. Bind to `0.0.0.0` only behind a proxy — the server has no auth of its own. |
+| `TIMELINES_DIST_DIR` | `npm start` only. The built site to serve, default `dist/`. |
+| `TIMELINES_TRUSTED_IDENTITY_HEADER` | `npm start` only. Name of the request header an authenticating proxy sets (e.g. `X-Forwarded-Email`); its value becomes the edit's `updated_by` and registers in the user directory. Unset means no identity and every edit is attributed to `self-hosted`. Only set this when the proxy strips the header from client requests. |
 | `TIMELINES_SOURCES_SUBDIR` | Scope the local-source scan to `data/<subdir>/`. |
 | `VITE_JIRA_BASE_URL` | Public base URL for JIRA browse links. Empty renders keys as plain text. |
 | `AUTH_REQUIRED` / `ALLOWED_EMAIL_DOMAINS` | Netlify edge auth gate: `true` enables it; comma-separated allowed sign-in domains (empty = nobody passes). |

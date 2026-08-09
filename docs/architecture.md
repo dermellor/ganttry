@@ -61,8 +61,24 @@ succeed.
 none). Adding a further API-served kind later (e.g. `gsheet`, external `pg`) is a
 new `SourceKind` value plus its loader — the routing seam already exists.
 
-**Server-side adapter seam:** the runtime glue (Vite middleware +
-`timelines-api` edge function) no longer calls the DB dispatcher directly. It
+**Three runtimes, one HTTP layer.** The API is served by the Vite dev
+middleware, the Netlify edge functions, and the self-hosted Node server
+([`scripts/serve.ts`](../scripts/serve.ts), `npm start`). What differs between
+them is genuinely their own: which credentials they hold, who the caller is, and
+whether there is a filesystem behind the request. Everything else — route
+matching, body reading, `If-Match`, the `X-Source-Live` header, the error
+mapping — is [`scripts/db/http.ts`](../scripts/db/http.ts), a
+`Request` → `Response` handler all three call. It was two hand-kept copies
+before the third runtime existed, and they had already drifted.
+
+Being Fetch-shaped is what makes it testable without a server: the tests in
+`scripts/db/http.test.ts` build a `Request` and assert on the `Response`, no
+port and no database. The two Node runtimes reach it through one adapter,
+[`scripts/node-http.ts`](../scripts/node-http.ts); the edge functions speak Fetch
+natively.
+
+**Server-side adapter seam:** that HTTP layer does not call the DB dispatcher
+directly either. It
 resolves a `SourceAdapter` via `resolveAdapter(conns, id, liveOverride)`
 ([`scripts/db/api.ts`](../scripts/db/api.ts)) and dispatches through
 `adapter.handle(req)`. The DB-backed source has **two interchangeable drivers**

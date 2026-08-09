@@ -307,6 +307,7 @@ touch a local checkout.
 npm install
 npm run dev          # build data + Vite + chokidar watcher on data/
 npm run build        # static dist
+npm start            # serve that dist + the API from one Node process (self-hosting)
 npm test             # unit tests (node --test, TZ-pinned to Europe/Berlin)
 npm run typecheck    # tsc --noEmit
 npm run db:check     # migrations pending? (runs before `dev`; no-op without a DB)
