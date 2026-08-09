@@ -17,6 +17,14 @@ import type {
   TimelinePhase,
 } from '../../src/types';
 import {
+  DEFAULT_ROLE,
+  normalizeMemberRole,
+  normalizeMemberStatus,
+  wouldOrphanInstance,
+  type MemberRole,
+  type MemberStatus,
+} from '../../src/access.ts';
+import {
   ConflictError,
   NotFoundError,
   NotSupportedError,
@@ -98,8 +106,13 @@ const err = (status: number, error: string, extra?: Record<string, unknown>): Ap
  */
 export async function handleUsersApi(
   repo: TimelineRepo,
-  req: { method: string; caller?: { email: string; name?: string | null } },
+  req: {
+    method: string;
+    caller?: { email: string; name?: string | null };
+    body?: unknown;
+  },
 ): Promise<ApiResult> {
+  if (req.method === 'POST' || req.method === 'PATCH') return manageMember(repo, req);
   if (req.method !== 'GET') return err(405, 'method not allowed');
   const email = req.caller?.email?.trim() ?? '';
   if (email.includes('@')) {
@@ -115,6 +128,150 @@ export async function handleUsersApi(
   try {
     return ok({ users: await repo.listUsers() });
   } catch (e) {
+    return err(500, 'server_error', { message: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Membership management (`POST` / `PATCH` on /api/users)
+// ---------------------------------------------------------------------------
+//
+// There is no DELETE, and that is the model rather than an omission: removing
+// somebody is `status: 'removed'`, because an item's `metadata.owner` stores an
+// address and a deleted row would leave attributions pointing at nothing.
+//
+// The address travels in the BODY, not the path. An e-mail carries `@` and dots,
+// and the same reasoning already keeps dotted ids out of the pricing matrix's
+// paths ("Body carries the coordinates so no dotted ids ever land in the path").
+
+/** How long an invitation stands unless the caller says otherwise. */
+const INVITE_TTL_DAYS = 14;
+
+/**
+ * A fresh invitation token and its hash.
+ *
+ * Web Crypto rather than `node:crypto`, because this module is bundled for the
+ * Deno edge as well. Only the hash is ever stored, so a database read cannot
+ * yield a usable invitation; the plain token is returned to the admin ONCE, in
+ * the response that created it.
+ */
+async function mintInviteToken(): Promise<{ token: string; hash: string }> {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const token = btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  const digest = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)),
+  );
+  const hash = [...digest].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return { token, hash };
+}
+
+/**
+ * Would this change leave the instance with no active admin?
+ *
+ * Checked before every demotion and every status change, because an instance
+ * without one cannot invite, cannot restore anybody, and is recoverable only
+ * through the bootstrap environment variable. Cheaper to refuse than to explain.
+ */
+async function orphansInstance(
+  repo: TimelineRepo,
+  email: string,
+  next: { role?: MemberRole; status?: MemberStatus },
+): Promise<boolean> {
+  const all = await repo.listMembers();
+  const others = all.filter((m) => m.email.toLowerCase() !== email.toLowerCase());
+  const changed = { role: next.role ?? 'viewer', status: next.status ?? 'removed' };
+  // The row being changed counts under its NEW values: promoting somebody to
+  // admin in the same call that demotes the last one is not an orphaning.
+  return wouldOrphanInstance([...others, changed]);
+}
+
+async function manageMember(
+  repo: TimelineRepo,
+  req: { method: string; caller?: { email: string; name?: string | null }; body?: unknown },
+): Promise<ApiResult> {
+  const body = (req.body ?? {}) as {
+    email?: string;
+    role?: string;
+    status?: string;
+    resend?: boolean;
+    expiresInDays?: number;
+  };
+  const email = (body.email ?? '').trim().toLowerCase();
+  // Shape only. Proving an address belongs to somebody is the identity
+  // provider's job at sign-in, and a stricter pattern here would reject valid
+  // addresses without buying any security.
+  if (!email || !email.includes('@')) return err(400, 'invalid_request', { message: 'email required' });
+
+  try {
+    if (req.method === 'POST') {
+      const role = normalizeMemberRole(body.role) ?? DEFAULT_ROLE;
+      const { token, hash } = await mintInviteToken();
+      const days = Number.isFinite(body.expiresInDays) ? Number(body.expiresInDays) : INVITE_TTL_DAYS;
+      const expiresAt = new Date(Date.now() + days * 86400_000).toISOString();
+      const member = await repo.inviteMember({
+        email,
+        role,
+        invitedBy: req.caller?.email ?? null,
+        tokenHash: hash,
+        expiresAt,
+      });
+      // The token is in this response and nowhere else, ever again.
+      return ok({ member, inviteToken: token }, 201);
+    }
+
+    // PATCH: role, status, or a fresh invitation for somebody who has not
+    // accepted yet.
+    const role = body.role === undefined ? undefined : normalizeMemberRole(body.role);
+    if (body.role !== undefined && !role) return err(400, 'invalid_request', { message: `unknown role "${body.role}"` });
+    const status = body.status === undefined ? undefined : normalizeMemberStatus(body.status);
+    if (body.status !== undefined && !status) return err(400, 'invalid_request', { message: `unknown status "${body.status}"` });
+
+    const current = await repo.getMember(email);
+    if (!current) return err(404, 'not found');
+
+    if ((role || status) && await orphansInstance(repo, email, {
+      role: role ?? current.role,
+      status: status ?? current.status,
+    })) {
+      return err(409, 'last_admin', {
+        message: 'This would leave the instance without an active admin.',
+      });
+    }
+
+    let member = current;
+    if (role) member = await repo.updateMemberRole(email, role);
+    if (status) member = await repo.setMemberStatus(email, status);
+
+    if (body.resend) {
+      // Only for somebody who has not accepted. Re-issuing a token for an active
+      // member would put a live invitation on a membership that needs none, and
+      // the link would do nothing for them anyway.
+      if (member.status !== 'invited') {
+        return err(409, 'nothing_to_resend', {
+          message: 'This membership is not awaiting an invitation.',
+        });
+      }
+      const { token, hash } = await mintInviteToken();
+      const days = Number.isFinite(body.expiresInDays) ? Number(body.expiresInDays) : INVITE_TTL_DAYS;
+      member = await repo.inviteMember({
+        email,
+        role: member.role,
+        invitedBy: req.caller?.email ?? null,
+        tokenHash: hash,
+        expiresAt: new Date(Date.now() + days * 86400_000).toISOString(),
+      });
+      return ok({ member, inviteToken: token });
+    }
+
+    return ok({ member });
+  } catch (e) {
+    if (e instanceof NotFoundError) return err(404, 'not found');
+    if (e instanceof ValidationError) return err(400, 'invalid_request', { message: e.message });
+    if (e instanceof NotSupportedError) return err(501, 'not_supported', { message: e.message });
     return err(500, 'server_error', { message: e instanceof Error ? e.message : String(e) });
   }
 }

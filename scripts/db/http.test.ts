@@ -21,10 +21,14 @@ test('a path we do not own answers null so the caller can fall through', async (
 });
 
 test('read-only routes reject a write with 405', async () => {
-  for (const path of ['/api/sources', '/api/users', '/api/pricing/x']) {
+  for (const path of ['/api/sources', '/api/pricing/x']) {
     const res = await call(path, { method: 'POST' });
     assert.equal(res?.status, 405, path);
   }
+  // /api/users takes POST and PATCH now (invite, role, status). Everything else
+  // is still refused, and without a database a write has nowhere to go.
+  assert.equal((await call('/api/users', { method: 'DELETE' }))?.status, 405);
+  assert.equal((await call('/api/users', { method: 'POST', body: '{}' }))?.status, 503);
 });
 
 test('without a DB the collection is still answerable, and empty', async () => {

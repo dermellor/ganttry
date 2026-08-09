@@ -36,6 +36,7 @@ const SCHEMA_TYPES = [
   'PricingHighlight',
   'Watermark',
   'DirectoryUser',
+  'Member',
   'PluginRef',
 ];
 
