@@ -33,8 +33,9 @@ time and flows through the built config to the client:
   `data/**/*.json` without the `db` marker), or a **directory** holding a
   `timeline.json` plus one Markdown file per item. Both produce the same
   `TimelineFile` ([`scripts/local/scan.ts`](../scripts/local/scan.ts) does the
-  directory half), so nothing downstream knows which it is. A directory is
-  read-only for now; a write answers `501`. Whether it is editable is a property of the **runtime**, not of the
+  directory half), so nothing downstream knows which it is. Editing a directory
+  writes back into the individual notes, one frontmatter key at a time
+  ([`scripts/local/frontmatter.ts`](../scripts/local/frontmatter.ts)). Whether it is editable is a property of the **runtime**, not of the
   format: a process with filesystem access serves it through
   `GET /api/source/<id>` and accepts writes, a static deploy has nothing to write
   with and serves the built copy from `/data/sources/<id>.json` read-only. The

@@ -302,3 +302,151 @@ describe('makeFileRepo: the plugin surface says so instead of pretending', () =>
     assert.equal(pub!.pricing.features.length, 1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// directory sources: the Markdown write path
+
+import { mkdir as mkdirp } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+
+async function seedDir(id: string, container: object, notes: Record<string, string>): Promise<string> {
+  const dir = join(dirs.root, id);
+  await mkdirp(dir, { recursive: true });
+  await writeFile(join(dir, 'timeline.json'), JSON.stringify(container, null, 2), 'utf8');
+  for (const [name, text] of Object.entries(notes)) {
+    await mkdirp(join(dir, name, '..'), { recursive: true });
+    await writeFile(join(dir, name), text, 'utf8');
+  }
+  return dir;
+}
+
+const NOTE_A = ['---', '# Kommentar', 'date: 2026-03-01', 'title: Erstes', 'eigenes: behalten', '---', '', 'Body-Text.', ''].join('\n');
+
+describe('directory source: writing', () => {
+  test('a date change patches only that line', async () => {
+    const dir = await seedDir('w-date', {}, { 'a.md': NOTE_A });
+    const repo = makeFileRepo(dirs);
+    await repo.updateItem('w-date', 'a', { start: '2026-04-05' });
+    const text = await readFile(join(dir, 'a.md'), 'utf8');
+    assert.match(text, /^date: 2026-04-05$/m);
+    assert.ok(text.includes('# Kommentar'), 'der Kommentar bleibt');
+    assert.ok(text.includes('eigenes: behalten'), 'fremde Schlüssel bleiben');
+    assert.ok(text.includes('Body-Text.'), 'der Body bleibt');
+  });
+
+  test('a date that came from the filename is promoted to an explicit key', async () => {
+    const dir = await seedDir('w-promote', {}, { '2026-05-01-x.md': '---\ntitle: X\n---\nBody\n' });
+    const repo = makeFileRepo(dirs);
+    await repo.updateItem('w-promote', '2026-05-01-x', { start: '2026-06-02' });
+    const text = await readFile(join(dir, '2026-05-01-x.md'), 'utf8');
+    assert.match(text, /^date: 2026-06-02$/m, 'the note now states its own date');
+    const item = (await repo.getTimeline('w-promote'))!.items[0];
+    assert.equal(item.start, '2026-06-02', 'and the explicit key wins over the filename');
+  });
+
+  test('the title is written back to `title`', async () => {
+    const dir = await seedDir('w-title', {}, { 'a.md': NOTE_A });
+    await makeFileRepo(dirs).updateItem('w-title', 'a', { content: 'Umbenannt' });
+    assert.match(await readFile(join(dir, 'a.md'), 'utf8'), /^title: Umbenannt$/m);
+  });
+
+  test('a cleared field loses its line', async () => {
+    const dir = await seedDir('w-clear', {}, { 'a.md': '---\ndate: 2026-03-01\nend: 2026-04-01\n---\nB\n' });
+    await makeFileRepo(dirs).updateItem('w-clear', 'a', { end: null } as any);
+    const text = await readFile(join(dir, 'a.md'), 'utf8');
+    assert.ok(!text.includes('end:'));
+    assert.ok(text.includes('date: 2026-03-01'));
+  });
+
+  test('the body is only touched when one was sent', async () => {
+    const dir = await seedDir('w-body', {}, { 'a.md': NOTE_A });
+    const repo = makeFileRepo(dirs);
+    await repo.updateItem('w-body', 'a', { start: '2026-03-02' });
+    assert.ok((await readFile(join(dir, 'a.md'), 'utf8')).includes('Body-Text.'));
+    await repo.updateItem('w-body', 'a', { body: 'Neuer Text.' });
+    const text = await readFile(join(dir, 'a.md'), 'utf8');
+    assert.ok(text.includes('Neuer Text.'));
+    assert.ok(!text.includes('Body-Text.'));
+    assert.ok(text.includes('date: 2026-03-02'), 'the frontmatter survives a body write');
+  });
+
+  test('an unchanged body leaves the file spacing alone', async () => {
+    const dir = await seedDir('w-spacing', {}, { 'a.md': NOTE_A });
+    const repo = makeFileRepo(dirs);
+    const stored = (await repo.getTimeline('w-spacing'))!.items[0];
+    // Exactly the shape the viewer sends: everything, body included, unchanged.
+    await repo.updateItem('w-spacing', 'a', { content: 'Erstes', body: stored.body, start: '2026-03-09' });
+    const text = await readFile(join(dir, 'a.md'), 'utf8');
+    assert.match(text, /---\n\nBody-Text\./, 'die Leerzeile unter dem Block bleibt');
+  });
+
+  test('a new item becomes a note named after its title', async () => {
+    const dir = await seedDir('w-add', {}, {});
+    const repo = makeFileRepo(dirs);
+    const added = await repo.addItem('w-add', { content: 'Neuer Eintrag', start: '2026-08-01' });
+    assert.equal(added.id, 'neuer-eintrag');
+    const text = await readFile(join(dir, 'neuer-eintrag.md'), 'utf8');
+    assert.match(text, /^title: Neuer Eintrag$/m);
+    assert.match(text, /^date: 2026-08-01$/m);
+  });
+
+  test('two items with the same title do not collide', async () => {
+    await seedDir('w-add2', {}, {});
+    const repo = makeFileRepo(dirs);
+    const a = await repo.addItem('w-add2', { content: 'Gleich' });
+    const b = await repo.addItem('w-add2', { content: 'Gleich' });
+    assert.notEqual(a.id, b.id);
+  });
+
+  test('deleting moves the note to .trash instead of unlinking it', async () => {
+    const dir = await seedDir('w-del', {}, { 'a.md': NOTE_A });
+    await makeFileRepo(dirs).deleteItem('w-del', 'a');
+    assert.equal(existsSync(join(dir, 'a.md')), false);
+    assert.equal(existsSync(join(dir, '.trash', 'a.md')), true, 'a file the tool did not create is never destroyed');
+    assert.equal((await makeFileRepo(dirs).getTimeline('w-del'))!.items.length, 0, 'and it is gone from the timeline');
+  });
+
+  test('groups and phases are written to the container, not into a note', async () => {
+    const dir = await seedDir('w-container', { name: 'C' }, { 'a.md': NOTE_A });
+    const repo = makeFileRepo(dirs);
+    await repo.upsertGroup('w-container', { id: 'g1', content: 'Phase 1' });
+    await repo.updatePhases('w-container', [{ id: 'p', label: 'Vorlauf', start: '2026-01-01', end: '2026-02-01' }]);
+    const container = JSON.parse(await readFile(join(dir, 'timeline.json'), 'utf8'));
+    assert.equal(container.groups.length, 1);
+    assert.equal(container.phases.length, 1);
+    assert.ok(!('items' in container), 'the notes stay the only definition of the items');
+    assert.ok((await readFile(join(dir, 'a.md'), 'utf8')).includes('# Kommentar'), 'the note was not touched');
+  });
+
+  test('the shared validations apply to a directory too', async () => {
+    await seedDir('w-val', {}, { 'a.md': NOTE_A });
+    const repo = makeFileRepo(dirs);
+    await assert.rejects(() => repo.updateItem('w-val', 'a', { end: '2025-01-01' }), ValidationError);
+    await assert.rejects(
+      () =>
+        repo.updatePhases('w-val', [
+          { id: 'x', label: 'A', start: '2026-01-01', end: '2026-03-01' },
+          { id: 'y', label: 'B', start: '2026-02-01', end: '2026-04-01' },
+        ]),
+      ValidationError,
+    );
+  });
+
+  test('the version moves forward on every write', async () => {
+    await seedDir('w-ver', {}, { 'a.md': NOTE_A });
+    const repo = makeFileRepo(dirs);
+    const seen: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      seen.push((await repo.updateItem('w-ver', 'a', { content: `v${i}` })).version!);
+    }
+    for (let i = 1; i < seen.length; i++) assert.ok(seen[i] > seen[i - 1]);
+  });
+
+  test('a stale version is a conflict for a directory as well', async () => {
+    await seedDir('w-conf', {}, { 'a.md': NOTE_A });
+    const repo = makeFileRepo(dirs);
+    const stale = (await repo.getTimeline('w-conf'))!.items[0].version!;
+    await repo.updateItem('w-conf', 'a', { content: 'jemand anderes' });
+    await assert.rejects(() => repo.updateItem('w-conf', 'a', { content: 'ich' }, stale), ConflictError);
+  });
+});
