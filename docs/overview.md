@@ -74,7 +74,7 @@ Deno edge bundle depends on that, and
 [`edge-imports.test.ts`](../scripts/ci/edge-imports.test.ts) guards the import
 graph against a regression.
 
-## One type, three layouts
+## One type, three shapes
 
 A timeline is one type, `TimelineFile` in [`src/types.ts`](../src/types.ts).
 Nothing downstream of a repo knows which store it came from.
