@@ -31,6 +31,7 @@ import {
 import type { SourceLive } from '../../src/types';
 import { isPublicPath } from '../admission.ts';
 import {
+  accessControlEnabled,
   capabilityForMethod,
   memberCan,
   normalizeMemberRole,
@@ -126,18 +127,10 @@ function isOurs(path: string): boolean {
   );
 }
 
-/**
- * `TIMELINES_ACCESS_CONTROL`, read from the runtime's own env and parsed here so
- * three runtimes cannot disagree about what the value means.
- *
- * Only the exact string `true` enables it. Anything else — unset, `false`, `1`,
- * `yes`, a typo — leaves it off, because a switch that silently interprets is a
- * switch nobody can reason about, and the safe reading of „I do not understand
- * this value" is „behave as before" rather than „refuse everybody".
- */
-export function accessControlEnabled(raw: string | undefined | null): boolean {
-  return raw === 'true';
-}
+// Re-exported so the runtimes keep reaching it through this module; the parser
+// itself lives with the rules, because the auth gate needs it too and must not
+// import a module that pulls in both database drivers.
+export { accessControlEnabled };
 
 /** The service role a runtime should use for its token caller, defaulting to editor. */
 export function serviceRoleFrom(raw: string | undefined | null): MemberRole {
