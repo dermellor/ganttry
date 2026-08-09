@@ -34,6 +34,7 @@ import { workDotHtml } from './pricingWork';
 import { type TimelineFile, type PricingFeature } from '../../types';
 import { hasPlugin } from '../../pluginHost/plugins';
 import { PRODUCT_ROADMAP_PLUGIN } from './plugin';
+import { currentPricing, hasPricingModel } from './compose';
 
 const PRICING_VERSION_KEY = 'timelines.pricingVersion';
 const PRICING_SUBVIEW_KEY = 'timelines.pricingSubview';
@@ -59,16 +60,15 @@ function scrollBody(host: HTMLElement): HTMLElement | null {
 
 /** True when the active timeline is a product timeline with a populated pricing model. */
 export function hasPricing(file: TimelineFile | null | undefined): file is TimelineFile {
-  return (
-    hasPlugin(file, PRODUCT_ROADMAP_PLUGIN) &&
-    !!file!.pricing &&
-    (file!.pricing.tiers.length > 0 || file!.pricing.features.length > 0)
-  );
+  // Both halves still matter: enablement decides whether the plugin belongs here
+  // at all, a populated model decides whether a view is worth offering. The second
+  // one now asks the generic store rather than a field on the core file type.
+  return hasPlugin(file, PRODUCT_ROADMAP_PLUGIN) && hasPricingModel(file);
 }
 
 // Build the full matrix table HTML (tiers × features + work column).
 function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): string {
-  const { tiers, features } = file.pricing!;
+  const { tiers, features } = currentPricing(file);
   const items = file.items ?? [];
   // Show the work column when any item is linked to any feature at all (regardless
   // of the current version filter — otherwise the column would flicker in/out), or
@@ -321,7 +321,7 @@ function wireFeatureTooltips(host: HTMLElement): void {
   const hide = () => tip.hide();
   const show = (icon: HTMLElement) => {
     const featureId = icon.closest<HTMLElement>('[data-feature-id]')?.dataset.featureId;
-    const pricing = state.activeSourceFile?.pricing;
+    const pricing = currentPricing(state.activeSourceFile);
     const f = pricing?.features.find((x) => x.id === featureId);
     if (!f) return;
     const html = featureTipHtml(f, pricing?.versions ?? []);
@@ -412,9 +412,10 @@ export function renderPricingView(host: HTMLElement): void {
     return;
   }
 
-  const versions = file.pricing!.versions ?? [];
+  const model = currentPricing(file);
+  const versions = model.versions ?? [];
   if (selectedVersion && !versions.includes(selectedVersion)) selectedVersion = null;
-  const hasHighlights = (file.pricing!.highlights?.length ?? 0) > 0;
+  const hasHighlights = (model.highlights?.length ?? 0) > 0;
   // Cards need highlights; fall back to matrix when none are defined.
   if (subView === 'cards' && !hasHighlights) subView = 'matrix';
 

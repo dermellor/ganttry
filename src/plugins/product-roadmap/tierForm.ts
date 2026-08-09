@@ -15,9 +15,10 @@ import { hideDetail, setDetailTitle } from '../../detailPanel';
 import { repaintPricingView } from './pricingMatrix';
 import { slugId } from './pricing';
 import { renderTimeline } from '../../render';
+import { currentPricing } from './compose';
 
 function findTier(tierId: string): PricingTier | undefined {
-  return state.activeSourceFile?.pricing?.tiers.find((t) => t.id === tierId);
+  return currentPricing(state.activeSourceFile)?.tiers.find((t) => t.id === tierId);
 }
 
 export function showTierForm(tierId: string): void {
@@ -116,7 +117,7 @@ async function saveTierFromForm(tierId: string, form: HTMLFormElement): Promise<
 }
 
 async function deleteTier(tierId: string): Promise<void> {
-  const pricing = state.activeSourceFile?.pricing;
+  const pricing = currentPricing(state.activeSourceFile);
   const sourceId = state.activeSourceId;
   const tier = pricing && findTier(tierId);
   if (!pricing || !tier || !sourceId) return;
@@ -147,7 +148,7 @@ async function deleteTier(tierId: string): Promise<void> {
  * starts filling cells — the same "create then edit" flow items use.
  */
 export async function addTier(): Promise<void> {
-  const pricing = state.activeSourceFile?.pricing;
+  const pricing = currentPricing(state.activeSourceFile);
   const sourceId = state.activeSourceId;
   if (!pricing || !sourceId) return;
 

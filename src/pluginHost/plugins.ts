@@ -8,7 +8,7 @@
 // the thing every *other* plugin has to work around. A plugin's own facts live
 // in its folder (see `src/plugins/product-roadmap/plugin.ts`).
 
-import type { TimelineFile } from '../types';
+import type { PluginRef, TimelineFile } from '../types';
 
 /** Is the given plugin enabled on this timeline? */
 export function hasPlugin(file: TimelineFile | null | undefined, pluginId: string): boolean {
@@ -21,4 +21,28 @@ export function pluginConfig(
   pluginId: string,
 ): Record<string, unknown> | undefined {
   return file?.plugins?.find((p) => p.id === pluginId)?.config;
+}
+
+/**
+ * The plugin registrations a whole-timeline write should persist.
+ *
+ * Carries one rule: **a plugin with rows is a plugin that is enabled.** A bulk
+ * write that brought a plugin's data but not its registration would store rows
+ * nothing reads, and the timeline would look empty while the data sat there.
+ *
+ * Generic on purpose. This used to be `resolveWritePlugins` inside
+ * product-roadmap, keyed on `file.pricing`, and imported by BOTH database
+ * drivers — which is a core file importing from a plugin folder, the coupling
+ * issue #17 removes. The rule was never plugin-specific; only its old trigger was.
+ */
+export function pluginsForWrite(file: TimelineFile): PluginRef[] {
+  const plugins: PluginRef[] = (file.plugins ?? []).map((p) => ({
+    id: p.id,
+    config: p.config ? { ...p.config } : {},
+    ...(p.public ? { public: true } : {}),
+  }));
+  for (const pluginId of Object.keys(file.pluginData ?? {})) {
+    if (!plugins.some((p) => p.id === pluginId)) plugins.push({ id: pluginId, config: {} });
+  }
+  return plugins;
 }

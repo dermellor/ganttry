@@ -32,7 +32,8 @@ import type {
 import { statusOrDefault } from '../../src/status.ts';
 import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
 import { describeReversedExtent, findReversedExtent, hasReversedExtent } from '../../src/itemExtent.ts';
-import { PRODUCT_ROADMAP_PLUGIN, resolveWritePlugins, versionsFromConfig } from '../../src/plugins/product-roadmap/plugin.ts';
+import { PRODUCT_ROADMAP_PLUGIN, versionsFromConfig } from '../../src/plugins/product-roadmap/plugin.ts';
+import { pluginsForWrite } from '../../src/pluginHost/plugins.ts';
 import {
   ConflictError,
   NotFoundError,
@@ -235,13 +236,12 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
   if (Array.isArray(tl.phases) && tl.phases.length) file.phases = tl.phases as TimelinePhase[];
   if (Array.isArray(tl.custom_fields) && tl.custom_fields.length)
     file.customFields = tl.custom_fields as CustomFieldDef[];
-  // Assemble the pricing model from the normalized tables. The ordered version
-  // list now lives in the product-roadmap plugin's config (was the dropped
-  // pricing_versions column). Only surface a populated model — matches the old
-  // behaviour of surfacing pricing only when it carried tiers/features.
-  const versions = versionsFromConfig(plugins.find((p) => p.id === PRODUCT_ROADMAP_PLUGIN)?.config);
-  const pricing = await assemblePricing(db, id, versions);
-  if (pricing && (pricing.features.length || pricing.tiers.length)) file.pricing = pricing;
+  // No pricing assembly here any more. The model is composed by the PLUGIN from
+  // its generic rows (src/plugins/product-roadmap/compose.ts), which is what makes
+  // it a plugin rather than a privilege: the host serves undistinguished
+  // collections and knows nothing about tiers, features or cells. The `pricing_*`
+  // tables are still there and still written by the legacy sub-resources, but
+  // nothing reads them on this path (issue #17).
   // Plugin-owned rows travel with the timeline; see `PluginData` in src/types.ts.
   // The enabled set is already in hand here, so it is passed rather than re-read.
   if (plugins.length) {
@@ -480,10 +480,10 @@ export async function replaceTimeline(db: SupabaseClient, id: string, file: Time
   const del2 = await db.from('timeline_groups').delete().eq('timeline_id', id);
   if (del2.error) throw new Error(`replaceTimeline clear groups: ${del2.error.message}`);
 
-  // Plugin registrations (enablement + config incl. the version list). Replaces
-  // the former type/pricing_versions columns; resolveWritePlugins folds a
-  // populated pricing model into a product-roadmap row.
-  await replacePluginRows(db, id, resolveWritePlugins(file));
+  // Plugin registrations (enablement + config). `pluginsForWrite` carries the
+  // one rule: a plugin whose rows are in the payload is a plugin that is
+  // enabled, or the write stores data nothing reads.
+  await replacePluginRows(db, id, pluginsForWrite(file));
 
   // Pricing tables (wipe + re-insert).
   await replacePricingRows(db, id, file.pricing);

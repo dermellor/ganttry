@@ -13,6 +13,7 @@
 // manifest, so a rename happens in one place.
 
 import { PRICING_COLLECTIONS } from './manifest';
+import { PRODUCT_ROADMAP_PLUGIN, versionsFromConfig } from './plugin.ts';
 import type {
   Pricing,
   PricingFeature,
@@ -97,6 +98,28 @@ export function pricingFromCollections(
   if (highlights.length) pricing.highlights = highlights;
   if (versions.length) pricing.versions = versions;
   return pricing;
+}
+
+/**
+ * The pricing model of a timeline, composed from what the host stored.
+ *
+ * **The one place the plugin asks „what is the model here".** Every view, form and
+ * field goes through it, so there is exactly one answer and one place to change
+ * when the storage does — which is what made this migration a change to one
+ * function rather than to twenty call sites.
+ *
+ * It reads `pluginData`, never `file.pricing`: after #17 the core file type has no
+ * pricing field, and a plugin reading one would be the plugin still being special.
+ */
+export function currentPricing(file: { pluginData?: Record<string, PluginCollectionData>; plugins?: { id: string; config?: Record<string, unknown> }[] } | null | undefined): Pricing {
+  const versions = versionsFromConfig(file?.plugins?.find((p) => p.id === PRODUCT_ROADMAP_PLUGIN)?.config);
+  return pricingFromCollections(file?.pluginData?.[PRODUCT_ROADMAP_PLUGIN], versions);
+}
+
+/** Does this timeline carry a model worth showing a view for? */
+export function hasPricingModel(file: Parameters<typeof currentPricing>[0]): boolean {
+  const data = file?.pluginData?.[PRODUCT_ROADMAP_PLUGIN];
+  return !!(data?.[TIERS]?.length || data?.[FEATURES]?.length);
 }
 
 /** The row id of a matrix cell: its coordinates, encoded the way the host does. */

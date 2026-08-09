@@ -15,6 +15,7 @@ import { state, setStatus } from '../../state';
 import { apiSetTierValue } from '../../editor';
 import { anchorRect, layerFor } from './popover';
 import type { PricingTier } from '../../types';
+import { currentPricing } from './compose';
 
 const LAYER_ID = 'pm-cell-editor';
 
@@ -39,7 +40,7 @@ export function closeCellEditor(): void {
 }
 
 export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: string): void {
-  const pricing = state.activeSourceFile?.pricing;
+  const pricing = currentPricing(state.activeSourceFile);
   const sourceId = state.activeSourceId;
   const tier = pricing?.tiers.find((t) => t.id === tierId);
   const feature = pricing?.features.find((f) => f.id === featureId);

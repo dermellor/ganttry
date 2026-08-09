@@ -14,9 +14,10 @@ import { slugId } from './pricing';
 import { hideDetail, setDetailTitle } from '../../detailPanel';
 import { repaintPricingView } from './pricingMatrix';
 import { renderTimeline } from '../../render';
+import { currentPricing } from './compose';
 
 function findFeature(featureId: string): PricingFeature | undefined {
-  return state.activeSourceFile?.pricing?.features.find((f) => f.id === featureId);
+  return currentPricing(state.activeSourceFile)?.features.find((f) => f.id === featureId);
 }
 
 // One row of the version-description editor: a version <select>, the note text,
@@ -62,7 +63,7 @@ function wireVdescRow(row: HTMLElement): void {
 // datalist so a typo doesn't silently create a second matrix section.
 function existingGroups(): string[] {
   const out = new Set<string>();
-  for (const f of state.activeSourceFile?.pricing?.features ?? []) {
+  for (const f of currentPricing(state.activeSourceFile)?.features ?? []) {
     const g = f.group?.trim();
     if (g) out.add(g);
   }
@@ -79,7 +80,7 @@ export function showFeatureForm(featureId: string): void {
   setDetailTitle(feature.name || '(unbenanntes Feature)');
   els.detailMeta.innerHTML = '';
 
-  const versions = state.activeSourceFile?.pricing?.versions ?? [];
+  const versions = currentPricing(state.activeSourceFile)?.versions ?? [];
   const versionOptions =
     `<option value=""${!feature.version ? ' selected' : ''}>— von Anfang an —</option>` +
     versions
@@ -240,7 +241,7 @@ async function saveFeatureFromForm(featureId: string, form: HTMLFormElement): Pr
 }
 
 async function deleteFeature(featureId: string): Promise<void> {
-  const pricing = state.activeSourceFile?.pricing;
+  const pricing = currentPricing(state.activeSourceFile);
   const sourceId = state.activeSourceId;
   const feature = pricing && findFeature(featureId);
   if (!pricing || !feature || !sourceId) return;
@@ -281,7 +282,7 @@ async function deleteFeature(featureId: string): Promise<void> {
  * the matrix re-groups by label — is exactly the end of its own section.
  */
 export async function addFeature(group?: string): Promise<void> {
-  const pricing = state.activeSourceFile?.pricing;
+  const pricing = currentPricing(state.activeSourceFile);
   const sourceId = state.activeSourceId;
   if (!pricing || !sourceId) return;
 
@@ -311,7 +312,7 @@ export async function addFeature(group?: string): Promise<void> {
  * regardless of how the global sort order interleaves groups.
  */
 export async function moveFeature(featureId: string, anchor: { after?: string; before?: string }): Promise<void> {
-  const pricing = state.activeSourceFile?.pricing;
+  const pricing = currentPricing(state.activeSourceFile);
   const sourceId = state.activeSourceId;
   if (!pricing || !sourceId) return;
 

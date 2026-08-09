@@ -19,10 +19,7 @@
 import type { CustomFieldDef, TimelineFile } from '../types';
 import { pluginViewMode, type PluginViewMode } from './viewMode';
 import { validateManifest, type ManifestView, type PluginManifest } from './manifest';
-import { PRODUCT_ROADMAP_PLUGIN } from '../plugins/product-roadmap/plugin';
-import { productRoadmapManifest } from '../plugins/product-roadmap/manifest';
-import { productRoadmapFields } from '../plugins/product-roadmap/fields';
-import { hasPlugin } from './plugins';
+import { productRoadmapDescriptor } from '../plugins/product-roadmap/descriptor';
 
 /**
  * One view a plugin adds to the header's mode toggle. Declared in the manifest,
@@ -106,20 +103,11 @@ export function pluginViews(plugin: PluginDescriptor): PluginView[] {
   return plugin.manifest.views ?? [];
 }
 
-register({
-  manifest: productRoadmapManifest,
-  // Enabled by the product-roadmap plugin registration (a data row), plus a
-  // populated pricing model. Still a cheap sync check that pulls in no pricing
-  // code, so the generic bundle never reaches the plugin's chunk.
-  matches: (f) =>
-    hasPlugin(f, PRODUCT_ROADMAP_PLUGIN) &&
-    !!f?.pricing &&
-    (f.pricing.tiers.length > 0 || f.pricing.features.length > 0),
-  applies: (f) => hasPlugin(f, PRODUCT_ROADMAP_PLUGIN),
-  realtimeTables: ['pricing_features', 'pricing_tiers', 'pricing_tier_values', 'pricing_highlights'],
-  fields: productRoadmapFields,
-  load: () => import('../plugins/product-roadmap/index'),
-});
+// The one built-in plugin, registered from its own folder. The host imports a
+// descriptor it does not understand — the same thing it will do for a plugin
+// loaded at runtime (src/pluginHost/loader.ts). Nothing about product-roadmap is
+// decided here any more.
+register(productRoadmapDescriptor);
 
 /** Every registered plugin, in registration order. */
 export function allPlugins(): readonly PluginDescriptor[] {

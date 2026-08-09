@@ -67,8 +67,13 @@ function comparable(pricing: Pricing): Pricing {
 type Report = { id: string; rows: number; ok: boolean; detail?: string };
 
 async function migrateOne(repo: TimelineRepo, id: string): Promise<Report | null> {
-  const file = await repo.getTimeline(id);
-  const pricing = file?.pricing;
+  // Read the legacy model through `getPublicPricing`, NOT through `getTimeline`.
+  // Both return it today, but `getTimeline` stops assembling it the moment the
+  // read path switches to the generic store — and a migration that cannot read
+  // its own source once the new code is deployed is a migration nobody can run.
+  // This method exists on all three repos and survives until the final cleanup.
+  const legacy = await repo.getPublicPricing(id);
+  const pricing = legacy?.pricing;
   if (!pricing || (!pricing.features?.length && !pricing.tiers?.length)) return null;
 
   const collections = collectionsFromPricing(pricing);
@@ -97,8 +102,8 @@ async function migrateOne(repo: TimelineRepo, id: string): Promise<Report | null
   // check that matters: it exercises the real write path, the real ordering and
   // the real id derivation rather than the in-memory objects above.
   const stored = await repo.listPluginData(id, [PRODUCT_ROADMAP_PLUGIN]);
-  const config = (file?.plugins ?? []).find((p) => p.id === PRODUCT_ROADMAP_PLUGIN)?.config;
-  const after = canonical(pricingFromCollections(stored[PRODUCT_ROADMAP_PLUGIN], versionsFromConfig(config)));
+  const entry = await repo.getTimelinePlugin(id, PRODUCT_ROADMAP_PLUGIN);
+  const after = canonical(pricingFromCollections(stored[PRODUCT_ROADMAP_PLUGIN], versionsFromConfig(entry?.config)));
   if (before !== after) {
     return { id, rows: rowCount, ok: false, detail: 'stored rows do not compose back to the original model' };
   }
