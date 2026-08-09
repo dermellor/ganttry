@@ -38,7 +38,9 @@
     "@supabase/supabase-js": "^2.110.0",
     "marked": "^14.1.0",
     "postgres": "^3.4.9",
+    "tsx": "^4.19.0",
     "turndown": "^7.2.4",
+    "umzug": "^3.8.3",
     "vis-data": "^7.1.9",
     "vis-timeline": "^7.7.3",
     "ws": "^8.21.0",
@@ -53,9 +55,7 @@
     "concurrently": "^9.0.0",
     "gray-matter": "^4.0.3",
     "ts-json-schema-generator": "^2.9.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.5.0",
-    "umzug": "^3.8.3",
     "vite": "^5.4.0"
   }
 }

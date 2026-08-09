@@ -47,6 +47,11 @@ Two orthogonal extension axes keep it flexible:
 
 ### Self-host with your own Postgres (no Supabase)
 
+One command, if you have Docker: `docker compose up --build` starts a Postgres,
+applies the migrations and serves on <http://localhost:3120>. The full picture —
+the three deployment shapes and the access gate — is in
+[`docs/self-hosting.md`](docs/self-hosting.md). By hand:
+
 ```bash
 npm install
 docker run -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16   # 1. Postgres

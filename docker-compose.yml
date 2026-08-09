@@ -1,0 +1,54 @@
+# A self-hosted deployment in one command:
+#
+#   docker compose up --build
+#
+# Replaces the four sequential steps of the manual quickstart (container,
+# connection string, migrate, serve) and makes the migration unskippable — the
+# entrypoint applies it before the server starts.
+#
+# What this file is NOT: a production template. The database password is the
+# obvious placeholder, the port is published to the host, and there is no
+# authenticating proxy in front (see „Access" in docs/self-hosting.md). It is the
+# shortest path to a working instance you can then adapt.
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: zeitlines
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      # The app's entrypoint migrates immediately, so it must not start against a
+      # Postgres that is still initialising — "container running" is not "ready".
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d zeitlines']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TIMELINES_DATABASE_URL: postgresql://postgres:postgres@db:5432/zeitlines
+      # A plain Postgres has no Supabase Realtime, and `defaultLive` already
+      # derives polling from that — set here only to make the mode visible in the
+      # file rather than implicit.
+      TIMELINES_DB_LIVE: poll
+      # Nothing outside the repo is read: the instance profile cascade would
+      # otherwise pull in whatever the host has under ~/.config.
+      TIMELINES_ENV_FILE: ''
+      # Uncomment behind an authenticating proxy. Without it the API is open to
+      # anyone who reaches the published port.
+      # TIMELINES_TRUSTED_IDENTITY_HEADER: X-Forwarded-Email
+      # TIMELINES_ALLOWED_EMAIL_DOMAINS: example.com
+    ports:
+      # Overridable, because 3120 is also the dev server's default and a machine
+      # that runs both would otherwise refuse to start one of them.
+      - '${TIMELINES_PUBLISH_PORT:-3120}:3120'
+
+volumes:
+  db-data:
