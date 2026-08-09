@@ -128,22 +128,15 @@ runner works against any Postgres).
   content, only the identity the auth provider asserts anyway. No anon SELECT —
   it is read through the server-gated `/api/users` endpoint (service key) and
   never subscribed to. It fills itself (see „Item owner" (docs/items.md)).
-- **Pricing tables** (migration `0009`, only relevant to product-roadmap
-  timelines): `pricing_features`, `pricing_tiers`, `pricing_highlights`, one row
-  per entity with its own `version` column (trigger bump, optimistic locking like
-  `timeline_items`; the client sees it as `rowVersion`). The feature's domain
-  field „ab Version" is called `available_from` in the DB, not `version`, to
-  avoid colliding with the locking column. `pricing_tier_values` is the matrix:
-  **one row per (tier_id, feature_id)** with a `value` (jsonb: `true` or a
-  string) and an optional `available_from` (migration `0011`, a text version
-  label); FK cascade from features and tiers, and no locking, since a cell is
-  atomic. Two people therefore edit different matrix cells without colliding.
-  `available_from` makes **cell availability version-dependent** — the same
-  semantics as `pricing_features.available_from`, one level deeper (per
-  tier×feature): the cell only counts as included from that version on and
-  renders „–" before it, while `value` stays the end state. That is what lets you
-  express „in Enterprise now, in Scale only from v4" (see „Pricing → Cell
-  versioning").
+- **The pricing tables** (`pricing_features`, `pricing_tiers`,
+  `pricing_tier_values`, `pricing_highlights`, migration `0009`) are **still
+  present and no longer read**. They were one plugin's schema in the core
+  database, served by fifteen methods on `TimelineRepo`; issue #17 moved their
+  contents into `plugin_data` and removed every reader.
+  [`scripts/db/legacy-pricing.ts`](../scripts/db/legacy-pricing.ts) is the only
+  file that still names them, for `npm run migrate:pricing`, and both go with the
+  migration that drops the tables. Dropping them is deliberately a **separate,
+  later** migration: a drop in the same one as the copy removes the way back.
 
 RLS is on; server access uses the service key, which bypasses it. The anon SELECT
 policies exist only for the realtime subscription (see below).
@@ -274,9 +267,10 @@ supabase db query --linked -f supabase/migrations/<file>.sql
 
 A **plugin** (a.k.a. a timeline kind) is enabled on a timeline as soon as a
 `(timeline_id, plugin_id, config)` row exists in `timeline_plugins` — pure data,
-no `ALTER TABLE`. The only place that knows plugin ids is
-[`src/pluginHost/plugins.ts`](../src/pluginHost/plugins.ts) (`PRODUCT_ROADMAP_PLUGIN`, `hasPlugin`,
-`pluginConfig`, `versionsFromConfig`, `resolveWritePlugins`).
+no `ALTER TABLE`. Reading enablement off a file is
+[`src/pluginHost/plugins.ts`](../src/pluginHost/plugins.ts) (`hasPlugin`,
+`pluginConfig`, `pluginsForWrite`), which knows no plugin ids — a plugin's own id
+lives with the plugin, and a CI check keeps it there.
 
 **What is generic today:**
 
@@ -296,13 +290,16 @@ no `ALTER TABLE`. The only place that knows plugin ids is
   `/api/plugins`, which is what makes „install a plugin" a row rather than a new
   build.
 
-**What is NOT generic (yet):**
+**What is NOT generic:**
 
-- **Behaviour is code-coupled.** `resolveWritePlugins` / `updateVersions` /
-  `getPublicPricing` are hard-wired to `product-roadmap`, and client-side
-  the plugin registry ([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)) lists only
-  `product-roadmap`. A row with an unknown `plugin_id` is stored and served, but
-  **nothing consumes it** until code interprets it.
+- **A view still needs code.** A row with an unknown `plugin_id` is stored and
+  served, and its rows in `plugin_data` are stored, validated against the
+  manifest and published according to it — but nothing *renders* it until a
+  module is registered or installed. That is the remaining asymmetry, and it is
+  the one the runtime loader addresses (see „Where plugin code runs"
+  (docs/plugin-isolation.md)). Storage, lifecycle, publishing and the API are
+  generic: no method on `TimelineRepo` names a plugin, and a CI check asserts
+  it.
 
 **Adding a new plugin:**
 
@@ -314,10 +311,10 @@ no `ALTER TABLE`. The only place that knows plugin ids is
    seam pulls the view chunk into the generic build). They appear automatically as
    a section under the plugin's `label`, and as a grouping/filter dimension — see
    „Custom fields → Plugin-contributed fields" (docs/items.md). No core file changes.
-4. **Its own persisted data?** → its own tables plus a write path (model:
-   `pricing_*` and `assemblePricing`). Never a column on the core.
-5. Reads through `file.plugins` already work. The product-specific auto-enable
-   behaviour (`resolveWritePlugins`) is a model to copy, not an obligation.
+4. **Its own persisted data?** → declare collections in the manifest and write
+   through the generic routes. No tables, no repo methods, no core column — see
+   „The generic store" (docs/plugin-storage.md).
+5. Reads through `file.plugins` already work.
 
 ### Setup (one-time)
 

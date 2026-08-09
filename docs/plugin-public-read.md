@@ -9,11 +9,11 @@ and enabling, [`plugin-lifecycle.md`](plugin-lifecycle.md).
 
 ## Why it is generic
 
-`GET /api/pricing/<id>` is public, unauthenticated, cached and fetched at build
-time by external pages. It is served by a dedicated edge function and a dedicated
-repo method that strips the internal lock counters by hand.
+`GET /api/pricing/<id>` was public, unauthenticated, cached and fetched at build
+time by external pages, served by a dedicated edge function and a dedicated repo
+method that stripped the internal lock counters by hand.
 
-A third-party plugin can have none of that, so the answer to „can an external
+A third-party plugin could have none of that, so the answer to „can an external
 plugin do what `product-roadmap` does" was no. Publishing is therefore a declared
 capability of the generic layer.
 
@@ -89,11 +89,12 @@ stripped object.
 **Fail closed on an unknown plugin.** No manifest, no publication: „we could not
 check" must not resolve to „ship it".
 
-**Not covered yet:** `file.pricing`. That is `product-roadmap`'s data in its
-pre-generic shape and has always been materialized as-is. It comes under this rule
-when that plugin moves onto the generic store
-([#17](https://github.com/dermellor/zeitlines/issues/17)); until then a local
-timeline's pricing model is as public as its file is.
+**It covers every plugin, with no exception left.** There used to be one: the
+pricing model sat in a `pricing` field of its own and was materialized as-is, so
+a local timeline's prices were as public as its file was, whatever anybody had
+decided. That field is gone
+([#17](https://github.com/dermellor/zeitlines/issues/17)) and its rows go through
+the check above like everybody else's.
 
 ## One exclusion in the auth gate
 
@@ -107,35 +108,51 @@ replaces. Cache headers are fixed (`max-age=300`, as today) and
 `Access-Control-Allow-Origin: *`. A manifest-declared TTL is deliberately not a
 thing: a plugin that can set caching is a plugin that can cause a thundering herd.
 
-## What happens to `/api/pricing/<id>`
+## What happened to `/api/pricing/<id>`
 
-The issue proposed keeping it as a thin alias over the generic envelope, with no
-plugin-specific server code, and asked for that to be verified early. **It does not
-hold.**
+Keeping it as a thin alias over the generic envelope, with no plugin-specific
+server code, was the plan. **It does not hold**, and finding that out early is
+what the plan was for.
 
-The current payload folds the matrix cells into each tier's `values` and
-`valueVersions`, grouped by `tierId` and keyed by `featureId` (`rowsToPricing`).
-The generic layer cannot know that `tier-values` rows belong inside `tiers` under
-`values` — that is plugin knowledge. Expressing it as a manifest declaration would
-mean inventing an embedding grammar with five parameters for exactly one consumer.
+The old payload folds the matrix cells into each tier's `values` and
+`valueVersions`, grouped by `tierId` and keyed by `featureId`. The generic layer
+cannot know that `tier-values` rows belong inside `tiers` under `values` — that is
+plugin knowledge, and it now lives in the plugin
+([`compose.ts`](../src/plugins/product-roadmap/compose.ts)). Expressing it as a
+manifest declaration would mean inventing an embedding grammar with five
+parameters for exactly one consumer.
 
-So the endpoint stays exactly as it is, served from the `pricing_*` tables, for as
-long as `product-roadmap`'s data lives there. The choice becomes unavoidable in
-[#17](https://github.com/dermellor/zeitlines/issues/17), and it is between:
+So the endpoint is **retired**: it answers `410 Gone` and names its successor,
 
-- a **versioned public endpoint** plus a deprecation window, with the external
-  consumers told; or
-- a small **plugin-specific shim** kept on the server for the legacy path, which
-  costs the epic its „no plugin code on the server" property for one endpoint.
+```
+GET /api/public/plugin/product-roadmap/<timelineId>
+```
 
-That is a decision about an external contract, so it belongs to whoever owns the
-consumers rather than to the migration.
+That is a break, chosen over a shim, and the reasoning is that the alternative is
+worse in a way nobody would notice: a consumer silently handed the new shape
+renders a price list with empty columns, and no build fails. A 410 with the new
+address stops the build with the answer in the body.
+
+Two details that are not incidental:
+
+- **The route stays answered rather than dropped.** An unrouted `/api/pricing/…`
+  falls through to the SPA, which returns `200` with HTML, so a build-time
+  `fetch(...).json()` fails on a parse error that says nothing about what
+  happened.
+- **It stays outside the auth gate**, so the 410 reaches a consumer with no
+  session instead of a login redirect it cannot follow.
+
+The refusal lives in
+[`scripts/db/retired-pricing-route.ts`](../scripts/db/retired-pricing-route.ts),
+one file, because it has to name the plugin it used to serve and the isolation
+check forbids that in core code. A one-file exception is deletable in a single
+commit once the deprecation window closes.
 
 ## Rate limiting
 
-There is none, and there was none before: `/api/pricing/<id>` has always relied on
-the host's CDN caching plus its platform-level protections. This issue widens what
-is reachable that way from one endpoint to any installed plugin that declares
+There is none, and there was none before: the public endpoint has always relied on
+the host's CDN caching plus its platform-level protections. This widens what is
+reachable that way from one endpoint to any installed plugin that declares
 `publicRead`, without changing the shape of the exposure — every response is a
 cacheable `GET` over data an operator explicitly published.
 

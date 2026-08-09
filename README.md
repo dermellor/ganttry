@@ -40,7 +40,8 @@ Two orthogonal extension axes keep it flexible:
 - **Static HTML export** of any view, and an **MCP server** so Claude Code can
   read and edit DB-backed timelines.
 - **Deployable behind auth:** a Netlify edge auth gate (Google OAuth + an
-  allowed-domain whitelist), JIRA issue linking, and public pricing endpoints.
+  allowed-domain whitelist), JIRA issue linking, and a public read endpoint for
+  the data a plugin publishes.
 - **Single neutral theme,** themeable through CSS custom properties.
 
 ## Quickstart
@@ -166,8 +167,8 @@ static Vite + TypeScript viewer (`src/`) renders it. The extension seams:
   static on a deploy, where nothing can change under it.
 
 The HTTP API is described in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1, generated
-from the TypeScript types), including the public, unauthenticated pricing endpoint
-and the optimistic-locking contract.
+from the TypeScript types), including the public, unauthenticated plugin read
+endpoint and the optimistic-locking contract.
 
 [`docs/overview.md`](docs/overview.md) maps the layers onto each other: the path a
 request takes from the viewer down to a store, and how one timeline type is laid
@@ -226,7 +227,7 @@ are read from `process.env`, then `.env.local`, then any file named by
 
 Config-as-code lives in [`netlify.toml`](netlify.toml); instance-specific values
 and secrets go in the Netlify dashboard. `netlify build` produces the static site
-plus the edge functions (auth gate, timelines API, pricing API). See
+plus the edge functions (auth gate, timelines API, public API). See
 [`AGENTS.md`](AGENTS.md) for the auth gate, Supabase/Postgres setup, and the MCP
 server.
 

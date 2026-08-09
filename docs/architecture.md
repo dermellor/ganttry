@@ -236,24 +236,26 @@ INSERT, never an `ALTER TABLE`. How enablement is read off a file lives in
 `pluginConfig`), which knows no plugin ids; a plugin's own ids, metadata keys and
 write rules live with the plugin (for product-roadmap:
 [`src/plugins/product-roadmap/plugin.ts`](../src/plugins/product-roadmap/plugin.ts),
-imported by the client gates and by both DB drivers). A populated `file.pricing`
-auto-enables `product-roadmap` on write (`resolveWritePlugins`), and its ordered
-version list lives in that plugin's `config.versions`. Adding a further plugin needs
+imported by the client registry and by nothing else in the core). A plugin whose
+rows are in a bulk write is enabled by that alone (`pluginsForWrite`), which is a
+generic rule rather than one plugin's: storing rows nothing reads would leave the
+timeline looking empty while the data sat there. Adding a further plugin needs
 (at most) its own data — never a new core column or discriminator value.
 
-**Accepted first-cut deviations (documented, not blockers):**
-- The pricing `api*` wrappers stay in [`src/editor.ts`](../src/editor.ts) —
-  `apiAddFeature`/`apiUpdateFeature`/`apiDeleteFeature`/`apiMoveFeature`,
-  `apiAddTier`/`apiUpdateTier`/`apiDeleteTier`, `apiSetTierValue`: type-only-typed
-  fetch wrappers, so the generic entry chunk carries their URL fragments
-  (`/feature/`, `/tier/`, `/tier-value`) and nothing else. The acceptance check is
-  about the pricing *view* code — `pm-cell-ver`, `pm-cell-editable`,
-  `pricing-badge-new`, `pc-card` are all absent from the entry chunk.
-- The **server side** of the plugin (the `pricing-api` edge function, the pricing
-  MCP tools, the `pricing_*` tables + `assemblePricing` in `timeline-repo.ts`)
-  stays in place, and so does `TimelineFile.pricing` in the core types: a plugin
-  has no data channel of its own until the generic store lands
-  (<https://github.com/dermellor/zeitlines/issues/12>), so moving them now would mean
-  either breaking the pricing path or inventing a placeholder indirection. Tracked
-  as <https://github.com/dermellor/zeitlines/issues/17>, which also removes the
-  option of leaving it that way.
+**The deviations are gone, and a check keeps them gone.** The first cut of this
+seam left the plugin's server side in place: an edge function at
+`/api/pricing/<id>`, thirteen MCP tools, four `pricing_*` tables with fifteen
+methods on `TimelineRepo`, the write wrappers in `src/editor.ts`, and a `pricing`
+field on the core `TimelineFile`. Each was reasonable at the time — a plugin had
+no data channel of its own until the generic store landed — and together they
+were the thing this seam claims not to have: a privilege no third party can get.
+
+Issue #17 removed all of it, and
+[`scripts/ci/check-plugin-isolation.mjs`](../scripts/ci/check-plugin-isolation.mjs)
+asserts it stays removed: no core file imports from a plugin folder (bar the two
+registries and two dated migration modules), no plugin id appears as a literal
+outside its folder, `TimelineRepo` carries only methods on a known-generic list,
+and `index.html` links no plugin's markup. Each check was verified against a
+deliberately introduced violation. The bundle-split check
+([`check-bundle-split.sh`](../scripts/ci/check-bundle-split.sh)) covers the other
+half of the promise: a generic build downloads no plugin view code.

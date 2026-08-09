@@ -289,7 +289,7 @@ rather than names, so a rename doesn't orphan them — no migration was needed, 
 no item carried a `tier` value; and the chip colour is derived from the tier id
 (`tierColor`, an hsl hue from a hash) instead of hand-picked per tier, because
 picking colours in the code would reintroduce exactly the duplication the derived
-field removes. A tier colour that has to be chosen belongs in `pricing_tiers` as a
+field removes. A tier colour that has to be chosen belongs on the tier's own row as a
 column, not in the field definition.
 
 **Sections.** A def may carry a `group`, and the item form renders one titled

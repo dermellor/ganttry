@@ -224,7 +224,7 @@ the server. It is checked as a test, not asserted in prose:
 [`scripts/db/plugin-store-product-roadmap.test.ts`](../scripts/db/plugin-store-product-roadmap.test.ts)
 drives the real manifest through the store on both source kinds.
 
-| What Postgres does today | How it is declared |
+| What Postgres used to do | How it is declared |
 | --- | --- |
 | `pricing_features` (+ `sort`) | collection `features`, `ordered` |
 | `pricing_tiers` (+ `sort`) | collection `tiers`, `ordered` |
@@ -245,16 +245,18 @@ That replaces the hand-written loop with a declaration, and it makes the host ab
 to refuse a highlight naming a feature that does not exist — which nothing checked
 before.
 
-**What is deliberately still outside this chapter:**
+**What is outside this chapter:**
 
-- The **public endpoint** (`GET /api/pricing/<id>`) and the generic `publicRead`
-  that replaces it: issue #20.
-- **Actually moving `product-roadmap`'s data** onto this store and deleting the
-  fourteen plugin-specific repo methods, the six hardcoded sub-resources, the
-  thirteen MCP tools and the dedicated edge function: issue #17. Until then both
-  stores exist, and `plugin_data` is empty on existing instances.
-- **Installing and enabling** a plugin, and the endpoints for it: issue #13.
-  `purgePlugin` in `plugin-api.ts` is the uninstall operation, deliberately not
-  wired to a route here — uninstalling is an instance-level act with its own
-  permission question and its own confirmation, and both belong with the install
-  registry.
+- The **public read** and the three gates in front of it: „Publishing a plugin's
+  data" (docs/plugin-public-read.md).
+- **Installing and enabling** a plugin: „Installed and enabled"
+  (docs/plugin-lifecycle.md). `purgePlugin` in `plugin-api.ts` is the uninstall
+  operation, deliberately not wired to a route here — uninstalling is an
+  instance-level act with its own permission question and its own confirmation,
+  and both belong with the install registry.
+
+`product-roadmap`'s data **has** moved onto this store (`npm run migrate:pricing`),
+and the fifteen repo methods, the seven hardcoded sub-resources, the thirteen MCP
+tools and the dedicated public endpoint went with it. The four `pricing_*` tables
+are still there, unread, until a later migration drops them: a drop in the same
+migration as the copy removes the way back.

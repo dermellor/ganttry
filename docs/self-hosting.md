@@ -120,9 +120,14 @@ front" hides.
 
 Two carve-outs, both deliberate:
 
-- **`GET /api/pricing/<id>` stays public.** It is public by contract
-  (`security: []` in [`openapi.yaml`](../openapi.yaml)) and fetched by external
-  pages that have no session.
+- **`GET /api/public/plugin/<pluginId>/<id>` stays public.** It is public by
+  contract (`security: []` in [`openapi.yaml`](../openapi.yaml)) and fetched by
+  external pages that have no session. „Public" here means reachable without an
+  identity: what is actually served is decided by three gates behind it, and a
+  timeline that has not opted in answers 404 like one that does not exist (see
+  „Publishing a plugin's data" (docs/plugin-public-read.md)). The retired
+  `/api/pricing/<id>` is ungated for the same reason — so a stale consumer gets
+  its 410 rather than a login redirect it cannot follow.
 - **Static files stay ungated.** The bundle carries no timeline data, so an
   unauthenticated visitor gets a shell whose every request the API refuses, and
   gating assets breaks the redirect dance of some proxies.
@@ -147,7 +152,7 @@ See „Three runtimes, one HTTP layer" (docs/architecture.md).
 
 That matters when self-hosting because it is what makes the behaviour you read
 about in the other chapters — optimistic locking, the `409` on a stale write, the
-public pricing endpoint — true here too, rather than approximately true.
+public plugin read — true here too, rather than approximately true.
 
 ## Instances
 

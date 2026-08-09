@@ -8,53 +8,74 @@ its file when it lives in another chapter.
 
 ## Pricing
 
-> The pricing model's **client** code (matrix, cards, matrix editors) lives as a
-> timeline kind under [`src/plugins/product-roadmap/`](../src/plugins/product-roadmap/)
-> and is lazily loaded (see „Plugins" (docs/architecture.md)). The server side (tables,
-> `assemblePricing`, `pricing-api`, MCP tools) is as described below.
+> **Where this plugin lives.** All of it is under
+> [`src/plugins/product-roadmap/`](../src/plugins/product-roadmap/): the views,
+> the manifest, the model types, the composition, the write calls and the
+> Markdown export. Nothing about it is in the core any more, and a CI check
+> asserts that (`scripts/ci/check-plugin-isolation.mjs`). What follows describes
+> the model; how it is stored is „The generic store" (docs/plugin-storage.md),
+> and how it is published is „Publishing a plugin's data"
+> (docs/plugin-public-read.md).
 
-The pricing model (tiers + features, product-roadmap timelines only) is the single
-source of truth for external pricing pages. It is stored **normalised** in its own
-tables (migration `0009`, see „Schema" (docs/database.md)): `pricing_features`, `pricing_tiers`,
-`pricing_tier_values` (the matrix, per cell), `pricing_highlights`, plus the
-ordered version list in `timeline_plugins.config.versions` of the
-`product-roadmap` entry (formerly the `timelines.pricing_versions` column, moved
-in migrations `0012`/`0013`, see „Plugin registry" (docs/database.md)). The server assembles the
-`Pricing` shape described below out of those (`assemblePricing` in
-[`scripts/db/timeline-repo.ts`](../scripts/db/timeline-repo.ts)), and the viewer and
-the Markdown export see it unchanged.
+The pricing model (tiers + features) is the single source of truth for external
+pricing pages. It is stored the way **every** plugin's data is stored: four
+declared collections of undistinguished rows in `plugin_data` — `features`,
+`tiers`, `tier-values` (the matrix, one row per cell) and `highlights` — plus the
+ordered version list in the plugin's config. `src/plugins/product-roadmap/compose.ts`
+turns those rows into the `Pricing` shape described below and back, and it is the
+only place that knows a matrix cell belongs inside its tier under `values`.
 
-Reading: the viewer uses `GET /api/source/<id>` (assembled, including a
-`rowVersion` per entity), external pages use `GET /api/pricing/<id>` (public, with
-`rowVersion` stripped). Markdown mirror: `npm run export:pricing`.
+That knowledge staying in the plugin is what makes the rest generic, and it is
+also why the old public endpoint could not survive as an alias: no generic route
+can perform that folding. See „What happened to `/api/pricing/<id>`"
+(docs/plugin-public-read.md).
+
+**What this used to be**, because the shape of the model still carries traces of
+it: four `pricing_*` tables of its own, fifteen methods on `TimelineRepo` across
+two drivers, seven API sub-resources, thirteen MCP tools, a `pricing` field on
+the core `TimelineFile`, and an edge function at `/api/pricing/<id>`. All of that
+was a privilege no third-party plugin could have had, and issue #17 removed it.
+The tables are still there, unread, until a later migration drops them;
+`npm run migrate:pricing` is what moved the rows.
+
+Reading: the viewer gets the rows with `GET /api/source/<id>` (in `pluginData`,
+each row carrying its lock counter) and composes locally. External pages use
+`GET /api/public/plugin/product-roadmap/<id>`. Markdown mirror:
+`npm run export:pricing`.
 
 **Writing is granular and collision-free.** The old „replace the whole model"
-semantics are gone, because they were exactly what caused overwrites on concurrent
-edits:
-- Endpoints under `/api/source/<id>/`: `feature[/<id>]`, `tier[/<id>]`,
-  `tier-value` (PUT `{tierId, featureId, value, availableFrom?}`, where
-  `value=false/null` deletes the cell and `availableFrom` is the version label from
-  which the cell applies, otherwise from the start), `highlight[/<id>]` (each with
-  POST/PATCH/DELETE), `pversion` (PUT of the whole version list, like `phases`),
-  and `pricing` (PUT, a bulk replace for seeding). A PATCH carries the `rowVersion`
-  in the `If-Match` header and returns `409` when stale. **Important:** for
-  features the lock version comes **only** from `If-Match`, never from
-  `body.version`, where `version` is the domain field „ab Version".
-- MCP: the granular tools `add_/update_/delete_feature`, `move_feature`,
-  `…_tier`, `set_tier_value`, `…_highlight`, `set_versions` (one call each, no
-  read-modify-write, no full dump in the context). `set_pricing` remains as the
-  bulk seed/rewrite.
-- **Feature order** (the `sort` column): `add_feature` always appends to the end
-  of its group. To place one precisely, `POST …/feature-move {featureId, after? |
-  before?}` (MCP: `move_feature`) — exactly one anchor, and `after` wins if both
-  are given. The server loads the current order, repositions relative to the anchor
-  (`reorderIds`, pure and tested) and renumbers `sort`, writing only changed rows.
-  `sort` is exposed through no other write path, and a moved feature keeps its
-  `group` (to change groups, use `update_feature`).
+semantics are gone, because they were exactly what caused overwrites on
+concurrent edits. Every write goes through the generic plugin-data routes:
+
+```
+POST   /api/source/<id>/plugin/product-roadmap/<collection>
+PATCH  /api/source/<id>/plugin/product-roadmap/<collection>/<rowId>
+DELETE /api/source/<id>/plugin/product-roadmap/<collection>/<rowId>
+POST   /api/source/<id>/plugin/product-roadmap/<collection>/move
+```
+
+- A PATCH carries the row's lock counter in `If-Match` and answers `409` when
+  stale. **Important:** the counter comes **only** from the header, never from
+  `body.version` — on a feature, `version` is the domain field „ab Version".
+- A key sent as `null` in a PATCH is removed, which is how the forms clear an
+  emptied field instead of leaving the old value to reappear on reload.
+- **Deleting cascades by declaration, not by hand.** The manifest says a cell
+  belongs to its tier and its feature (`onDelete: cascade`) and that a highlight
+  merely lists feature ids (`onDelete: unlink`), and the host applies both.
+- **Feature order:** a create appends. To place one precisely, POST to
+  `…/features/move` with `{id, after? | before?}` — exactly one anchor, and
+  `after` wins if both are given. The host renumbers and returns the resulting
+  full order, which the client adopts rather than replaying the move locally.
+- **A matrix cell is atomic**, so it carries no lock counter: two people editing
+  different cells never collide. Clearing one deletes its row — „not included" is
+  the absence of a cell.
+- MCP: `read_plugin_data`, `write_plugin_data` and `configure_plugin`. Three
+  generic tools where there used to be thirteen for this plugin alone; the
+  version list is config, so it needs none of its own. See „Tools" (docs/mcp.md).
 - Client: the **matrix view is editable in the interface** (see „Editing the
-  matrix in the interface"), through those same granular endpoints — per cell, per
-  tier, per feature. **Highlights** (the card tiles) and the **version list** are
-  still maintained through the MCP.
+  matrix in the interface"), through those same routes. Since the routes are
+  implemented on the repo seam, that now includes a pricing model in a plain
+  `data/*.json` timeline, which used to answer `501`.
 
 ### Editing the matrix in the interface
 
@@ -130,9 +151,8 @@ Shape (assembled):
 - `tiers[]`: `{ id, name, tagline?, useCase?, targetGroup?, price, values, valueVersions?, rowVersion? }`.
   `values[featureId]` is `true` (✓), missing or `false` (–), or a string (a
   per-tier value). Falsy and empty cells are not stored, since they render as „–"
-  anyway. `valueVersions[featureId]` (DB column
-  `pricing_tier_values.available_from`) is the optional **cell availability from a
-  version**: the cell only counts as included from that label on and shows „–"
+  anyway. `valueVersions[featureId]` (`availableFrom` on the cell's row) is the
+  optional **cell availability from a version**: the cell only counts as included from that label on and shows „–"
   before it (cumulative, `cellActiveForVersion` in
   [`src/pricing.ts`](../src/plugins/product-roadmap/pricing.ts)). `values` remains the end state and the map
   only gates *when* it appears (a sibling of `values`, additive). Under „Alle" the
@@ -166,7 +186,7 @@ row badges:
 ### Cell versioning (tier×feature availability from a version)
 
 Where `feature.version` controls when a feature (the whole row) starts to exist,
-`tier.valueVersions[featureId]` (DB: `pricing_tier_values.available_from`)
+`tier.valueVersions[featureId]` (`availableFrom` on the cell's own row)
 controls when an **individual cell** counts as included. That is what lets you
 express „feature X is in Enterprise right away, in Scale only from v4" without
 gating the entire feature row.
@@ -185,11 +205,14 @@ gating the entire feature row.
   as included for that tier. The highlight's effective introduction version per
   tier is `valueVersions[fid] ?? feature.version` (the cell gate wins), which feeds
   `isNew` and the „ab" chip.
-- **Writing** — `set_tier_value(..., availableFrom)` via MCP, or
-  `PUT …/tier-value {availableFrom}`. Deleting the cell removes the gate with it.
-  The round-trip is tested in
-  [`src/pricingNormalize.test.ts`](../src/plugins/product-roadmap/pricingNormalize.test.ts) and the gating
-  logic in [`src/pricing.test.ts`](../src/plugins/product-roadmap/pricing.test.ts).
+- **Writing** — the gate is a field of the cell's row, so it travels with the
+  value: `POST …/plugin/product-roadmap/tier-values` with
+  `{tierId, featureId, value, availableFrom}`. Deleting the cell removes the gate
+  with it, which is why clearing a cell deletes the row rather than blanking it.
+  The rows ↔ model round trip is tested in
+  [`compose.test.ts`](../src/plugins/product-roadmap/compose.test.ts) and the
+  gating logic in
+  [`pricing.test.ts`](../src/plugins/product-roadmap/pricing.test.ts).
 
 ## Open extensions: pricing model / cards
 
