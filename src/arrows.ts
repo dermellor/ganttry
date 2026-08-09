@@ -2,7 +2,20 @@ import type { Timeline } from 'vis-timeline/standalone';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-type Anchor = { left: number; right: number; top: number; bottom: number; midY: number };
+type Anchor = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  midY: number;
+  // Where the item's finish actually sits on the time axis. For a range that is
+  // the right edge; for a milestone it is the dot, because the box around it is
+  // only as wide as its caption (see `point`).
+  finishX: number;
+  // A milestone. Its box width is a typographic accident, not a duration, so
+  // every rule that reads `right` as "the finish" is wrong for it.
+  point: boolean;
+};
 type Pt = { x: number; y: number };
 
 const STUB = 12; // horizontal lead-out/lead-in at each item edge
@@ -24,9 +37,16 @@ const ENTRY_GAP = 12; // vertical spacing between multiple arrows entering one t
 //    *left* edge at mid-height (arrow pointing right, into the start). It still
 //    reads "A must finish before B starts" without backtracking through the gap.
 //    Mirrored (leaves the top edge) when the successor sits above.
-function connector(s: Anchor, t: Anchor): string {
-  if (t.left >= s.right + 2 * STUB) {
-    const x1 = s.right;
+//
+//  • Milestone predecessor — always takes the vertical lead-out, anchored on the
+//    dot rather than on the box's right edge. A milestone has no duration: its
+//    box is as wide as its caption, so leaving at the right edge starts the arrow
+//    at a moment the milestone never occupied, and a long caption drags the
+//    departure days into the future. The horizontal elbow is unusable here for a
+//    second reason — from the dot it would have to cross the caption to get out.
+export function connector(s: Anchor, t: Anchor): string {
+  if (!s.point && t.left >= s.right + 2 * STUB) {
+    const x1 = s.finishX;
     const x2 = t.left;
     const midX = (x1 + x2) / 2;
     return roundedPath([
@@ -39,7 +59,8 @@ function connector(s: Anchor, t: Anchor): string {
 
   const down = t.midY >= s.midY;
   const sy = down ? s.bottom : s.top; // leave the bottom (or top) edge…
-  const sx = Math.max(s.left + STUB, s.right - INSET); // …near the finish (right) end
+  // …under the finish: the dot for a milestone, near the right end for a range.
+  const sx = s.point ? s.finishX : Math.max(s.left + STUB, s.right - INSET);
 
   if (sx <= t.left) {
     // A's finish sits left of B's start: drop straight down (up), then run into
@@ -73,6 +94,8 @@ function translate(a: Anchor, host: DOMRect): Anchor {
     top: a.top - host.top,
     bottom: a.bottom - host.top,
     midY: a.midY - host.top,
+    finishX: a.finishX - host.left,
+    point: a.point,
   };
 }
 
@@ -180,12 +203,26 @@ export class DependencyArrows {
     if (!dom || !dom.getBoundingClientRect) return null;
     const r = dom.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) return null;
+
+    // A point item renders as dot + caption to its right, and vis-timeline sizes
+    // the element to the caption while placing the *dot* on the date. Measuring
+    // the dot is what ties the arrow to the moment rather than to the caption's
+    // length; deriving it from the box would make a renamed milestone move its
+    // arrows.
+    const dotRect =
+      item.dom?.point && item.dom?.dot?.getBoundingClientRect
+        ? (item.dom.dot as HTMLElement).getBoundingClientRect()
+        : null;
+    const point = !!dotRect && dotRect.width > 0;
+
     return {
       left: r.left,
       right: r.right,
       top: r.top,
       bottom: r.bottom,
       midY: r.top + r.height / 2,
+      finishX: point ? dotRect!.left + dotRect!.width / 2 : r.right,
+      point,
     };
   }
 
