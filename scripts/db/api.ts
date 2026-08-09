@@ -30,6 +30,7 @@ import {
 // driver into a bundle — the drivers arrive through the glue that constructs a
 // real handle (Node factories / edge esm.sh imports). This keeps both adapters
 // resolvable from one `resolveAdapter` while the Deno edge bundle stays clean.
+import { nextItemId } from '../../src/itemId.ts';
 import { makePostgresRepo } from './timeline-repo.ts';
 import { makeSupabaseRepo } from './timeline-repo-supabase.ts';
 
@@ -154,6 +155,21 @@ export async function handleTimelineApi(repo: TimelineRepo, req: ApiRequest): Pr
         // `start` is optional (a list-created item may have no date yet); only
         // `content` is required.
         if (!item || !item.content) return err(400, 'item needs content');
+        // An id is optional too, and used not to be: without one the row reached
+        // the driver with `id: undefined` and failed there — postgres.js with
+        // UNDEFINED_VALUE, PostgREST with a not-null violation. Two error
+        // messages for one missing rule, and it contradicted the documented MCP
+        // contract, which asks only for `start` and `content`.
+        //
+        // Deriving it needs the ids already in use, hence the read. It happens
+        // only on the path that used to 500, so nothing that worked before pays
+        // for it; a repo method for "just the ids" would have to be written three
+        // times (postgres, supabase, file) to save one query on a create.
+        if (!item.id) {
+          const file = await repo.getTimeline(id);
+          if (!file) return err(404, 'not found');
+          item.id = nextItemId(file.items.map((i) => i.id).filter(Boolean) as string[]);
+        }
         return ok(await repo.addItem(id, item, req.updatedBy), 201);
       }
       if (!sub.childId) return err(400, 'item id required');

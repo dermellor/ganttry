@@ -229,7 +229,7 @@ paths:
     post:
       operationId: postSourceByIdItem
       summary: "Append an item"
-      description: "`content` is required; `start` is optional, and a date-less item shows only in the list view. `end` and `duration` are mutually exclusive, and `end` must lie after `start`."
+      description: "`content` is required; `start` is optional, and a date-less item shows only in the list view. `id` is optional too — omit it and the server assigns the next free `i<n>` for this timeline, the same scheme the viewer uses. `end` and `duration` are mutually exclusive, and `end` must lie after `start`."
       requestBody:
         required: true
         content:
