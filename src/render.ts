@@ -64,6 +64,7 @@ import { showDetailForId, hideDetail } from './detailPanel';
 import { renderListView } from './listView';
 import { repaintPluginView } from './pluginHost/views';
 import { showPhaseFormByIndex, handlePhaseEdit } from './phaseForm';
+import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 
 // Render-internal handles. `timeline` mirrors state.timeline (kept in sync on
 // every assignment) so other modules can read the current instance while this
@@ -340,6 +341,10 @@ export async function renderTimeline(view: View) {
   let sourceEditable = false;
   let sourceLive: import('./types').SourceLive = 'none';
 
+  // Cover the area for the duration of the fetch — a DB-backed source takes long
+  // enough that an untouched timeline area reads as "this view is empty".
+  showTimelineSkeleton(els.timeline);
+
   {
     try {
       const loaded = await loadSource(view.source);
@@ -347,6 +352,9 @@ export async function renderTimeline(view: View) {
       sourceEditable = loaded.editable;
       sourceLive = loaded.live;
     } catch (err) {
+      // The load failed, so nothing is on its way any more; leaving the
+      // placeholder up would promise a timeline that is never going to arrive.
+      hideTimelineSkeleton(els.timeline);
       setStatus(`Konnte Quelle ${view.source.id} nicht laden: ${err instanceof Error ? err.message : err}`);
       return;
     }
@@ -420,6 +428,11 @@ export async function renderTimeline(view: View) {
   // font and measurements so point-label widths get re-measured.
   labelFont = null;
   labelWidthCache.clear();
+
+  // The data is here and the real chart takes over from this line on. (A
+  // preceding timeline already took the placeholder with it via the
+  // `innerHTML` reset above; on a first load there was none.)
+  hideTimelineSkeleton(els.timeline);
 
   timeline = new Timeline(els.timeline, itemsDs, useGroups ? groupsDs : undefined, {
     // Vertical placement is precomputed into per-lane `subgroup`s in buildItems
