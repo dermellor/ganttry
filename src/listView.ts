@@ -12,8 +12,19 @@
 // "Ohne …" bucket. The sectioning itself is a pure, DOM-free function
 // (computeSections in listGrouping.ts) so it can be unit-tested.
 
-import { escapeHtml, tagPillsHtml, type TimelineItem } from './buildItems';
-import { iconSpanHtml } from './icons';
+import { tagColor, type TimelineItem } from './buildItems';
+import {
+  Button,
+  el,
+  Icon,
+  Table,
+  TableCell,
+  TableGroupRow,
+  TableHead,
+  TableRow,
+  Tag,
+  Text,
+} from './design-system';
 import { addNewItem, filterBuildForDisplay, displayIdsFor } from './render';
 import { showDetailForId } from './detailPanel';
 import { state, els, syncUrl, isEditableView } from './state';
@@ -21,7 +32,7 @@ import { computeSections, GROUP_DIM } from './listGrouping';
 import { metaOf, resolveGrouping, sectionContext, syncGroupByControl } from './grouping';
 import { syncFilterControl } from './filterControl';
 import { parentGroupIds } from './groupHierarchy';
-import { ownerCellHtml } from './users';
+import { ownerCell } from './users';
 
 const TYPE_LABELS: Record<TimelineItem['type'], string> = {
   point: 'Meilenstein',
@@ -44,25 +55,40 @@ function ownerOf(id: string): string {
   return typeof owner === 'string' ? owner : '';
 }
 
-function rowHtml(item: TimelineItem, selected: boolean): string {
-  const label = `${tagPillsHtml(item.tags)}${iconSpanHtml(item.icon)}${item.content ?? ''}`;
-  const owner = ownerOf(item.id);
-  return `<tr class="list-row${selected ? ' is-selected' : ''}" data-id="${escapeHtml(item.id)}" tabindex="0" role="button">
-    <td class="list-entry">${label || '<span class="list-empty">—</span>'}</td>
-    <td class="list-date">${formatDate(item.start)}</td>
-    <td class="list-date">${item.type === 'point' ? '—' : formatDate(item.end)}</td>
-    <td class="list-type">${TYPE_LABELS[item.type] ?? escapeHtml(item.type)}</td>
-    <td class="list-status">${item.status ? escapeHtml(item.status) : '<span class="list-empty">—</span>'}</td>
-    <td class="list-owner">${ownerCellHtml(owner)}</td>
-  </tr>`;
+const EMPTY = () => Text({ text: '—', tone: 'muted' });
+
+function row(item: TimelineItem, selected: boolean): HTMLElement {
+  const marks = [
+    ...(item.tags ?? []).map((tag) => Tag({ label: tag, color: tagColor(tag) })),
+    item.icon ? Icon({ name: String(item.icon) }) : null,
+  ].filter(Boolean) as Element[];
+  // `label`, not `content`: the latter is escaped markup for vis-timeline, and
+  // setting it as a text node shows the entities.
+  const content = item.label ?? '';
+
+  return TableRow({
+    interactive: true,
+    selected,
+    attrs: { 'data-id': item.id, role: 'button' },
+    children: [
+      TableCell({ primary: true, children: marks.length || content ? [marks, content] : EMPTY() }),
+      TableCell({ nowrap: true, muted: true, children: formatDate(item.start) }),
+      TableCell({ nowrap: true, muted: true, children: item.type === 'point' ? '—' : formatDate(item.end) }),
+      TableCell({ nowrap: true, muted: true, children: TYPE_LABELS[item.type] ?? item.type }),
+      TableCell({ nowrap: true, muted: true, children: item.status ? item.status : EMPTY() }),
+      TableCell({ nowrap: true, muted: true, children: ownerCell(ownerOf(item.id)) }),
+    ],
+  });
 }
+
+const COLUMNS = ['Eintrag', 'Start', 'Ende', 'Typ', 'Status', 'Owner'];
 
 // Real (non-background) items grouped by the active dimension, each section's
 // items sorted by start ascending. Phase-tint background items are omitted.
 export function renderListView(): void {
   const build = state.activeBuild;
   if (!build) {
-    els.listBody.innerHTML = '';
+    els.listBody.replaceChildren();
     return;
   }
   const { items, groups } = filterBuildForDisplay(build);
@@ -93,35 +119,37 @@ export function renderListView(): void {
   // would pin a new item to a parent.
   const parents = parentGroupIds(groups);
 
-  const body = sections
-    .map((s) => {
-      const rows = s.items.map((it) => rowHtml(it, it.id === sel)).join('');
-      const addBtn =
-        showAdd && !s.empty && !parents.has(s.id)
-          ? `<button type="button" class="list-add-item" data-add-group="${escapeHtml(s.id)}">+ Eintrag</button>`
-          : '';
-      const header = grouped
-        ? `<tr class="list-group-row"><th colspan="6" scope="colgroup"><span class="list-group-title">${escapeHtml(s.label)}</span>${addBtn}</th></tr>`
-        : '';
-      return header + rows;
-    })
-    .join('');
+  if (!entries.length) {
+    els.listBody.replaceChildren(
+      Text({ as: 'p', text: 'Keine Einträge in dieser View.', tone: 'muted' }),
+    );
+    return;
+  }
 
-  els.listBody.innerHTML = entries.length
-    ? `<table class="list-table">
-        <thead>
-          <tr>
-            <th scope="col">Eintrag</th>
-            <th scope="col">Start</th>
-            <th scope="col">Ende</th>
-            <th scope="col">Typ</th>
-            <th scope="col">Status</th>
-            <th scope="col">Owner</th>
-          </tr>
-        </thead>
-        <tbody>${body}</tbody>
-      </table>`
-    : '<p class="list-empty-msg">Keine Einträge in dieser View.</p>';
+  const body = sections.flatMap((s) => [
+    grouped
+      ? TableGroupRow({
+          title: s.label,
+          colspan: COLUMNS.length,
+          action:
+            showAdd && !s.empty && !parents.has(s.id)
+              ? Button({
+                  label: '+ Eintrag',
+                  variant: 'outline',
+                  size: 'sm',
+                  reveal: true,
+                  className: 'list-add-item',
+                  attrs: { 'data-add-group': s.id },
+                })
+              : undefined,
+        })
+      : null,
+    ...s.items.map((it) => row(it, it.id === sel)),
+  ]);
+
+  els.listBody.replaceChildren(
+    Table({ children: [TableHead({ columns: COLUMNS }), el('tbody', {}, body)] }),
+  );
 }
 
 let wired = false;
@@ -139,7 +167,7 @@ export function setupListView(): void {
       addNewItem(addBtn.dataset.addGroup ?? null);
       return;
     }
-    const row = (target as HTMLElement | null)?.closest<HTMLElement>('.list-row');
+    const row = (target as HTMLElement | null)?.closest<HTMLElement>('.ds-TableRow');
     const id = row?.dataset.id;
     if (!id) return;
     // Mirror the timeline's select behaviour: track the selection (so the URL

@@ -1,0 +1,81 @@
+/* Toolbar / ToolbarGroup / ToolbarControl / AppMark. */
+
+.ds-Toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.ds-Toolbar[hidden] {
+  display: none;
+}
+
+.ds-Toolbar[data-tone='header'] {
+  justify-content: space-between;
+  padding: 14px var(--space-2xl);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.ds-Toolbar[data-tone='view'] {
+  padding: var(--space-md) var(--space-2xl);
+  border-bottom: 1px solid var(--border);
+}
+
+.ds-Toolbar[data-tone='footer'] {
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-2xl);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.ds-ToolbarGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.ds-ToolbarGroup[data-end] {
+  margin-left: auto;
+}
+
+/* The caption's uppercase micro-type is stated here rather than reusing `.ds-Label`
+   as an element, because the labelled form *is* a `<label>` and cannot nest one. */
+.ds-ToolbarControl {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+}
+
+.ds-ToolbarControl[hidden] {
+  display: none;
+}
+
+/* The controls inside it are not micro-type — only the caption is. */
+.ds-ToolbarControl .ds-Input,
+.ds-ToolbarControl .ds-Button {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.ds-ToolbarAnchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.ds-AppMark {
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: var(--mark-radius);
+  display: inline-block;
+  flex: none;
+}

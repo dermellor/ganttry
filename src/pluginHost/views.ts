@@ -7,6 +7,7 @@
 // that the repaint path (render.ts) can reach a view's container without importing
 // the entry module and creating a cycle.
 
+import { fromHtml, SegmentedControl, ViewSection } from '../design-system';
 import { loadedPluginView, type PluginView } from './registry';
 import { parsePluginViewMode, pluginViewMode } from './viewMode';
 
@@ -25,16 +26,26 @@ export function pluginViewButton(
   const mode = pluginViewMode(pluginId, view.id);
   let btn = buttons.get(mode);
   if (!btn) {
-    btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'mode-btn';
+    // A segment of the header's view switch, so it is built with the same
+    // component the built-in Timeline and Liste segments are — a plugin view is
+    // a peer of those, and a button that merely resembled them would drift.
+    [btn] = Array.from(
+      SegmentedControl({
+        segments: [
+          {
+            value: mode,
+            label: view.label,
+            // Markup the plugin declares: inert SVG, rendered into a segment the
+            // host owns.
+            icon: fromHtml(view.icon),
+            on: { click: () => onSelect(mode) },
+          },
+        ],
+      }).querySelectorAll('button'),
+    );
     btn.dataset.mode = mode;
-    btn.title = view.label;
-    btn.setAttribute('aria-label', view.label);
-    btn.setAttribute('aria-pressed', 'false');
-    // Markup the plugin declares: inert SVG, rendered into a button the host owns.
-    btn.innerHTML = view.icon;
-    btn.addEventListener('click', () => onSelect(mode));
+    // The segments live in the host's one control, so the plugin's button is
+    // moved out of the throwaway wrapper the component built it in.
     toggle.appendChild(btn);
     buttons.set(mode, btn);
   }
@@ -49,11 +60,13 @@ export function pluginViewSection(
   const mode = pluginViewMode(pluginId, view.id);
   let section = sections.get(mode);
   if (!section) {
-    section = document.createElement('section');
-    section.id = `plugin-view-${pluginId}-${view.id}`;
-    section.className = 'plugin-view';
-    section.setAttribute('aria-label', view.label);
-    section.hidden = true;
+    // `plain`: the section claims the space and styles nothing. How the view
+    // fills it is the plugin's own stylesheet's business.
+    section = ViewSection({
+      ariaLabel: view.label,
+      hidden: true,
+      attrs: { id: `plugin-view-${pluginId}-${view.id}` },
+    });
     contentArea.appendChild(section);
     sections.set(mode, section);
   }

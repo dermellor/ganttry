@@ -4,88 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Zeitlines</title>
-    <link rel="stylesheet" href="/src/styles/base.css" />
-    <link rel="stylesheet" href="/src/styles/detail.css" />
-    <link rel="stylesheet" href="/src/styles/forms.css" />
-    <link rel="stylesheet" href="/src/styles/wysiwyg.css" />
-    <link rel="stylesheet" href="/src/styles/chips.css" />
-    <link rel="stylesheet" href="/src/styles/theme.css" />
-    <link rel="stylesheet" href="/src/styles/timeline.css" />
-    <link rel="stylesheet" href="/src/styles/list.css" />
-    <link rel="stylesheet" href="/src/styles/menu.css" />
   </head>
   <body>
-    <header class="app-header">
-      <div class="app-title">
-        <span class="app-title-mark"></span>
-        <label class="control">
-          <span>View</span>
-          <select id="view-select"></select>
-        </label>
-        <div class="mode-toggle" id="mode-toggle" role="group" aria-label="Ansicht">
-          <button type="button" id="mode-timeline" class="mode-btn" data-mode="timeline" title="Timeline" aria-label="Timeline" aria-pressed="true">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-              <line x1="4" y1="6" x2="14" y2="6" />
-              <line x1="9" y1="12" x2="20" y2="12" />
-              <line x1="4" y1="18" x2="12" y2="18" />
-            </svg>
-          </button>
-          <button type="button" id="mode-list" class="mode-btn" data-mode="list" title="Liste" aria-label="Liste" aria-pressed="false">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-              <line x1="9" y1="6" x2="20" y2="6" />
-              <line x1="9" y1="12" x2="20" y2="12" />
-              <line x1="9" y1="18" x2="20" y2="18" />
-              <circle cx="4.5" cy="6" r="1.1" fill="currentColor" stroke="none" />
-              <circle cx="4.5" cy="12" r="1.1" fill="currentColor" stroke="none" />
-              <circle cx="4.5" cy="18" r="1.1" fill="currentColor" stroke="none" />
-            </svg>
-          </button>
-        </div>
-        <label class="control control-toggle" id="milestones-control">
-          <input type="checkbox" id="milestones-only" />
-          <span>Nur Meilensteine</span>
-        </label>
-      </div>
-      <div class="app-controls">
-        <div id="presence" class="presence" aria-label="Online" hidden></div>
-        <button id="add-btn" class="export-btn add-btn" type="button" title="Neuen Eintrag hinzufügen" hidden>+ Eintrag</button>
-      </div>
-    </header>
-    <main class="app-main">
-      <div class="content-area" id="content-area">
-        <div id="view-toolbar" class="view-toolbar">
-          <label class="control" id="groupby-control">
-            <span>Gruppieren</span>
-            <select id="groupby"></select>
-          </label>
-          <div class="control filter-control" id="filter-control">
-            <span>Filter</span>
-            <select id="filter-dim" aria-label="Filter-Dimension"></select>
-            <div class="filter-values">
-              <button type="button" id="filter-toggle" class="filter-toggle" aria-haspopup="true" aria-expanded="false" hidden>Alle Werte</button>
-              <div id="filter-menu" class="filter-menu" role="group" aria-label="Filterwerte" hidden></div>
-            </div>
-          </div>
-        </div>
-        <section id="timeline" class="timeline" aria-label="Timeline"></section>
-        <section id="list" class="list-view" aria-label="Liste" hidden>
-          <div id="list-body" class="list-body"></div>
-        </section>
-      </div>
-      <aside id="detail" class="detail" hidden>
-        <div class="detail-header">
-          <button id="detail-close" class="detail-close" aria-label="Schließen">×</button>
-          <div id="detail-tools" class="detail-tools" hidden></div>
-          <h2 id="detail-title"></h2>
-        </div>
-        <dl id="detail-meta" class="detail-meta"></dl>
-        <article id="detail-body" class="detail-body"></article>
-      </aside>
-    </main>
-    <footer class="app-footer">
-      <span id="status" class="status">…</span>
-      <button id="export-btn" class="export-link" type="button" title="Aktuelle View als statische HTML-Datei herunterladen">Export HTML</button>
-    </footer>
+    <!-- The frame is built by src/appShell.ts, not written out here: the export
+         needs the same markup, and two hand-kept copies of it had already
+         drifted. See the note at the top of that file. -->
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

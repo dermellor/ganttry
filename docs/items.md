@@ -23,7 +23,7 @@ Curated key set (defined once in [`src/icons.ts`](../src/icons.ts)):
 
 Unknown values are dropped (validated by `normalizeIcon`). The base glyphs are
 defined in the `:root` block of
-[`src/styles/theme.css`](../src/styles/theme.css).
+[`src/design-system/tokens/tokens.css`](../src/design-system/tokens/tokens.css).
 
 **How to render / extend:**
 

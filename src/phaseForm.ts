@@ -1,7 +1,7 @@
 // Phase ribbon editing: drag/resize persistence (handlePhaseEdit) and the phase
 // edit form shown in the detail panel.
 
-import { escapeHtml } from './buildItems';
+import { Button, el, Field, FormActions, Select, TextInput } from './design-system';
 import { TIMELINE_ICONS } from './icons';
 import { isoDateOnly } from './editor';
 import type { PhaseEdit } from './phaseBand';
@@ -42,53 +42,74 @@ export function showPhaseForm(srcIndex: number): void {
   publishSelfPresence();
 
   setDetailTitle(phase.label || '(unbenannte Phase)');
-  els.detailMeta.innerHTML = '';
+  els.detailMeta.replaceChildren();
 
-  const iconOptions =
-    `<option value=""${!phase.icon ? ' selected' : ''}>— kein Icon —</option>` +
-    TIMELINE_ICONS.map(
-      ({ key, label }) => `<option value="${key}"${phase.icon === key ? ' selected' : ''}>${label}</option>`,
-    ).join('');
+  const durationValue =
+    typeof phase.duration === 'string' ? phase.duration : phase.duration != null ? String(phase.duration) : '';
 
-  els.detailBody.classList.add('detail-form');
-  els.detailBody.innerHTML = `
-    <form class="item-form phase-form" data-index="${srcIndex}">
-      <div class="field full">
-        <label for="p-label">Titel</label>
-        <input id="p-label" name="label" value="${escapeHtml(phase.label ?? '')}" />
-      </div>
-      <div class="field">
-        <label for="p-start">Start</label>
-        <input id="p-start" name="start" type="date" value="${isoDateOnly(phase.start)}" />
-      </div>
-      <div class="field">
-        <label for="p-end">Ende</label>
-        <input id="p-end" name="end" type="date" value="${isoDateOnly(phase.end ?? '')}" />
-      </div>
-      <div class="field">
-        <label for="p-duration">Dauer</label>
-        <input id="p-duration" name="duration" value="${escapeHtml(typeof phase.duration === 'string' ? phase.duration : phase.duration != null ? String(phase.duration) : '')}" placeholder="leer = Ende nutzen" />
-      </div>
-      <div class="field">
-        <label for="p-icon">Icon</label>
-        <select id="p-icon" name="icon">${iconOptions}</select>
-      </div>
-      <div class="field">
-        <label for="p-color">Farbe</label>
-        <input id="p-color" name="color" value="${escapeHtml(phase.color ?? '')}" placeholder="#2f0d5b" />
-      </div>
-      <div class="field">
-        <label for="p-id">ID <small>(read-only)</small></label>
-        <input id="p-id" name="id" value="${escapeHtml(phase.id ?? '')}" readonly />
-      </div>
-      <div class="form-actions">
-        <button type="submit" class="btn-primary">Speichern</button>
-        <button type="button" class="btn-danger" data-action="delete">Löschen</button>
-      </div>
-    </form>
-  `;
+  const form = el('form', { class: 'ds-FormGrid item-form phase-form', 'data-index': srcIndex }, [
+    Field({
+      label: 'Titel',
+      htmlFor: 'p-label',
+      full: true,
+      control: TextInput({ id: 'p-label', name: 'label', value: phase.label ?? '' }),
+    }),
+    Field({
+      label: 'Start',
+      htmlFor: 'p-start',
+      control: TextInput({ id: 'p-start', name: 'start', type: 'date', value: isoDateOnly(phase.start) }),
+    }),
+    Field({
+      label: 'Ende',
+      htmlFor: 'p-end',
+      control: TextInput({ id: 'p-end', name: 'end', type: 'date', value: isoDateOnly(phase.end ?? '') }),
+    }),
+    Field({
+      label: 'Dauer',
+      htmlFor: 'p-duration',
+      control: TextInput({
+        id: 'p-duration',
+        name: 'duration',
+        value: durationValue,
+        placeholder: 'leer = Ende nutzen',
+      }),
+    }),
+    Field({
+      label: 'Icon',
+      htmlFor: 'p-icon',
+      control: Select({
+        id: 'p-icon',
+        name: 'icon',
+        options: [
+          { value: '', label: '— kein Icon —', selected: !phase.icon },
+          ...TIMELINE_ICONS.map(({ key, label }) => ({
+            value: key,
+            label,
+            selected: phase.icon === key,
+          })),
+        ],
+      }),
+    }),
+    Field({
+      label: 'Farbe',
+      htmlFor: 'p-color',
+      control: TextInput({ id: 'p-color', name: 'color', value: phase.color ?? '', placeholder: '#2f0d5b' }),
+    }),
+    Field({
+      label: 'ID',
+      hint: '(read-only)',
+      htmlFor: 'p-id',
+      control: TextInput({ id: 'p-id', name: 'id', value: phase.id ?? '', readonly: true }),
+    }),
+    FormActions({
+      children: [
+        Button({ label: 'Speichern', type: 'submit' }),
+        Button({ label: 'Löschen', variant: 'danger', attrs: { 'data-action': 'delete' } }),
+      ],
+    }),
+  ]);
 
-  const form = els.detailBody.querySelector('form') as HTMLFormElement;
+  els.detailBody.replaceChildren(form);
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     savePhaseFromForm(srcIndex, form);

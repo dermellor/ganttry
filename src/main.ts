@@ -4,6 +4,12 @@
 // and DOM refs live in state.ts.
 
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
+// The two stylesheets that are not the design system: vis-timeline's own
+// furniture as this app dresses it, and the handful of app-level compositions
+// that are not components. The design system's own CSS arrives with the
+// components that use it (see src/design-system/index.ts).
+import './styles/timeline.css';
+import './styles/app.css';
 import { escapeHtml } from './buildItems';
 import type { BuiltConfig } from './types';
 import {

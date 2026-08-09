@@ -130,7 +130,7 @@
 .vis-item.vis-point.lane-2,
 .vis-item.vis-point.lane-3,
 .vis-item.vis-point.lane-4,
-.vis-item.vis-point.lane-5 { background-color: #fff !important; }
+.vis-item.vis-point.lane-5 { background-color: var(--surface) !important; }
 
 /* Guarantee a 2px gutter between back-to-back range bars at every zoom level.
    vis-timeline pins each bar to its exact date, so when one ends where the next
@@ -186,23 +186,6 @@
 .vis-item .vis-item-content {
   padding: 4px 8px;
   font-size: 12px;
-}
-
-/* The semantic icon glyph, wherever it appears: on timeline items, on phase
-   ribbon segments, and in the form's icon picker. `--item-icon` resolves to a
-   `--icon-<key>` glyph (set inline on the span, see icons.ts iconSpanHtml) and
-   the mask makes it take the surrounding text colour, so it adapts to every
-   context and theme automatically. Deliberately unscoped: three scoped copies
-   of the same declarations meant a fix landed in one and missed the others. */
-.item-icon {
-  display: inline-block;
-  width: 1em;
-  height: 1em;
-  margin-right: 0.35em;
-  vertical-align: -0.15em;
-  background-color: currentColor;
-  -webkit-mask: var(--item-icon) center / contain no-repeat;
-  mask: var(--item-icon) center / contain no-repeat;
 }
 
 /* ── Item rail: trailing marks inside the bar's right edge ─────────────────
@@ -548,9 +531,9 @@
 }
 
 .vis-item.vis-point {
-  background-color: #fff !important;
+  background-color: var(--surface) !important;
   border: 1px solid var(--accent) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-bar);
 }
 
 .vis-item.vis-point.lane-0 { border-color: var(--lane-0-border) !important; }
@@ -564,7 +547,7 @@
   border-color: var(--accent) !important;
   background: var(--accent);
   border-width: 7px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-drag);
 }
 
 .vis-item.vis-point .vis-item-content {
@@ -596,30 +579,25 @@
   box-shadow: inset -3px 0 0 0 var(--surface);
 }
 
-/* Item tag: lightweight coloured theme pill before the title */
-.vis-item .item-tag {
-  display: inline-block;
+/* Inside a bar the tag pill runs a shade smaller than it does in a table row:
+   the bar's own text is 12px, and the pill has to stay subordinate to it. */
+.vis-item .ds-Tag {
+  font-size: 9.5px;
   margin-right: 5px;
   padding: 0 5px;
-  border-radius: 3px;
-  font-size: 9.5px;
-  font-weight: 600;
-  line-height: 1.5;
-  color: #fff;
-  vertical-align: 1px;
-  white-space: nowrap;
 }
 
 /* Dense view (zoomed out): the pill text is more clutter than signal, so it
-   collapses to just its coloured dot. The inline background-color carries the
-   tag's colour; the label stays available via the item tooltip. Toggled from
-   JS (`updateTagDensity`) on the timeline container. */
-.is-tags-compact .vis-item .item-tag {
-  width: 8px;
-  height: 8px;
+   collapses to its coloured dot — the `compact` variant of the Tag component,
+   switched on here for every tag at once rather than per item, because the
+   trigger is the zoom level and not the tag. Toggled from JS
+   (`updateTagDensity`) on the timeline container. */
+.is-tags-compact .vis-item .ds-Tag {
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
   padding: 0;
   margin-right: 3px;
-  border-radius: 50%;
+  border-radius: var(--mark-radius);
   font-size: 0;
   line-height: 0;
   vertical-align: 0;
@@ -660,8 +638,8 @@
   padding: 0 10px;
   box-sizing: border-box;
   border-radius: 5px;
-  background: var(--accent, #2f0d5b);
-  color: #fff;
+  background: var(--accent);
+  color: var(--surface);
   font-family: var(--font-body);
   font-size: 11.5px;
   font-weight: 600;
@@ -772,16 +750,15 @@ body.phase-dragging {
   left: -26px;
 }
 
-/* Smaller variant of the shared avatar (base.css `.user-avatar`). */
-.presence-avatar.presence-mark {
-  width: 18px;
-  height: 18px;
-  font-size: 9px;
-  border-width: 1.5px;
+/* What an `Avatar` needs on top of its `sm` size to sit on a timeline bar: a
+   ring against the bar's own fill, a tighter overlap than the header's stack,
+   and a shadow so it reads as floating above the bar rather than painted on it. */
+.ds-Avatar.presence-mark {
+  border: 1.5px solid var(--surface);
   margin-left: -6px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-mark);
 }
 
-.presence-avatar.presence-mark.is-editing {
-  box-shadow: 0 0 0 1.5px hsl(var(--presence-hue, 260), 60%, 48%), 0 1px 2px rgba(0, 0, 0, 0.18);
+.ds-Avatar.presence-mark[data-editing] {
+  box-shadow: 0 0 0 1.5px hsl(var(--ds-avatar-hue, 260), 60%, 48%), var(--shadow-mark);
 }

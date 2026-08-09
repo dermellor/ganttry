@@ -1,0 +1,88 @@
+/* Chip / ChipBox / ChipBoxSlot. */
+
+.ds-Chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  max-width: 100%;
+  padding: 3px var(--space-2xs) 3px var(--space-sm);
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: 1.3;
+}
+
+/* An avatar sits closer to the edge than text does, so a chip that opens with
+   one needs less leading padding to look evenly inset. */
+.ds-Chip:has(> .ds-Avatar) {
+  padding-left: var(--space-2xs);
+}
+
+.ds-Chip-code {
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ds-Chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+  color: var(--fg);
+}
+
+/* A value that resolves to nothing: free text from before the field linked to a
+   directory, or a file-based source, which has no directory at all. Shown in the
+   italic voice the viewer uses for „not a real reference" rather than dropped. */
+.ds-Chip[data-unlinked] .ds-Chip-label {
+  font-style: italic;
+  color: var(--fg-muted);
+}
+
+.ds-Chip-remove {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--icon-size-md);
+  line-height: 1;
+  padding: 0 var(--space-2xs);
+  color: var(--fg-muted);
+  border-radius: var(--radius-xs);
+}
+
+.ds-Chip-remove:hover {
+  background: var(--border);
+  color: var(--fg);
+}
+
+.ds-Chip-remove:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* ---- ChipBox ---------------------------------------------------------------- */
+
+.ds-ChipBox {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-height: var(--control-lg);
+  padding: 3px var(--space-2xs);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* The box carries the focus tint on behalf of the bare input inside it. */
+.ds-ChipBox:focus-within {
+  border-color: var(--accent);
+}
+
+.ds-ChipBoxSlot {
+  display: contents;
+}

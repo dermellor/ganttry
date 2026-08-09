@@ -18,7 +18,7 @@ import {
 const GROUPS: TimelineGroup[] = [{ id: 'g', content: 'g' }];
 
 function point(id: string, start: string): TimelineItem {
-  return { id, group: 'g', start, content: id, title: '', type: 'point' };
+  return { id, group: 'g', start, content: id, label: id, title: '', type: 'point' };
 }
 
 function laneOf(items: TimelineItem[], id: string): number | undefined {
@@ -57,8 +57,8 @@ test('range items are packed by their time span, unaffected by label width', () 
   // Two non-overlapping range bars share a lane whether or not options are
   // supplied — only points reserve label width; ranges keep their time footprint.
   const ranges: TimelineItem[] = [
-    { id: 'r1', group: 'g', start: '2026-02-01', end: '2026-02-05', content: 'r1', title: '', type: 'range' },
-    { id: 'r2', group: 'g', start: '2026-02-10', end: '2026-02-15', content: 'r2', title: '', type: 'range' },
+    { id: 'r1', group: 'g', start: '2026-02-01', end: '2026-02-05', content: 'r1', label: 'r1', title: '', type: 'range' },
+    { id: 'r2', group: 'g', start: '2026-02-10', end: '2026-02-15', content: 'r2', label: 'r2', title: '', type: 'range' },
   ];
   assignLaneSubgroups(ranges, GROUPS, new Map(), opts(10));
   assert.equal(laneOf(ranges, 'r1'), laneOf(ranges, 'r2'));

@@ -6,7 +6,8 @@
 // filtering lives in filterBuildForDisplay (render.ts) via passesFilter, so every
 // consumer (timeline, list, export, status line) honours it from one place.
 
-import { escapeHtml, type TimelineItem } from './buildItems';
+import { type TimelineItem } from './buildItems';
+import { Checkbox, setSelectOptions } from './design-system';
 import { state, els, FILTER_DIM_KEY, FILTER_VALUES_KEY } from './state';
 import { filterDimensions, filterValueOptions } from './grouping';
 import { applyFilter } from './render';
@@ -42,12 +43,16 @@ export function syncFilterControl(): void {
   const entries = currentEntries();
   const dims = filterDimensions(entries);
 
-  const dimHtml =
-    `<option value="">Aus</option>` +
-    dims.map((d) => `<option value="${escapeHtml(d.key)}">${escapeHtml(d.label)}</option>`).join('');
-  if (dimSel.dataset.built !== dimHtml) {
-    dimSel.innerHTML = dimHtml;
-    dimSel.dataset.built = dimHtml;
+  // Rebuilt only when the set of dimensions actually changed: this runs on every
+  // repaint, and replacing the options unconditionally would close the dropdown
+  // under the pointer of anyone using it.
+  const signature = dims.map((d) => `${d.key}␟${d.label}`).join('|');
+  if (dimSel.dataset.built !== signature) {
+    setSelectOptions(dimSel, [
+      { value: '', label: 'Aus' },
+      ...dims.map((d) => ({ value: d.key, label: d.label })),
+    ]);
+    dimSel.dataset.built = signature;
   }
 
   // A persisted dimension that no longer exists (build changed) turns the filter
@@ -74,19 +79,23 @@ export function syncFilterControl(): void {
   els.filterToggle.hidden = !active;
   if (!active) {
     closeMenu();
-    els.filterMenu.innerHTML = '';
+    els.filterMenu.replaceChildren();
     els.filterMenu.dataset.sig = '';
     return;
   }
 
   const sig = values.map((v) => `${v.value}␟${v.label}`).join('|');
   if (els.filterMenu.dataset.sig !== sig) {
-    els.filterMenu.innerHTML = values
-      .map((v) => {
-        const checked = state.filterValues.includes(v.value) ? ' checked' : '';
-        return `<label class="filter-opt"><input type="checkbox" value="${escapeHtml(v.value)}"${checked} /><span>${escapeHtml(v.label)}</span></label>`;
-      })
-      .join('');
+    els.filterMenu.replaceChildren(
+      ...values.map((v) =>
+        Checkbox({
+          value: v.value,
+          label: v.label,
+          checked: state.filterValues.includes(v.value),
+          className: 'ds-MenuItem',
+        }),
+      ),
+    );
     els.filterMenu.dataset.sig = sig;
   }
   updateToggleLabel(values.length);

@@ -1,0 +1,232 @@
+/* Button / IconButton — see Button.ts for what each variant is *for*. */
+
+.ds-Button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast),
+    opacity var(--motion-fast);
+}
+
+.ds-Button:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.ds-Button:disabled {
+  opacity: 0.6;
+  /* `progress`, not `not-allowed`: every disabled button in the viewer is
+     disabled because it is busy (exporting, saving), never because the action is
+     forbidden. A cursor that says otherwise reads as a bug. */
+  cursor: progress;
+}
+
+.ds-Button[data-block] {
+  display: flex;
+  width: 100%;
+}
+
+.ds-Button-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.ds-Button-icon svg {
+  display: block;
+}
+
+/* ---- sizes ---------------------------------------------------------------- */
+
+.ds-Button[data-size='sm'] {
+  font-size: var(--text-sm);
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.ds-Button[data-size='md'] {
+  padding: var(--space-sm) var(--space-md);
+}
+
+/* ---- variants ------------------------------------------------------------- */
+
+.ds-Button[data-variant='primary'] {
+  color: var(--surface);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.ds-Button[data-variant='primary']:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.ds-Button[data-variant='outline'] {
+  color: var(--accent);
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.ds-Button[data-variant='outline']:hover:not(:disabled) {
+  background: var(--surface-alt);
+  border-color: var(--accent);
+}
+
+.ds-Button[data-variant='ghost'] {
+  color: var(--fg-muted);
+  background: transparent;
+}
+
+.ds-Button[data-variant='ghost']:hover:not(:disabled) {
+  color: var(--fg);
+  background: var(--hover);
+}
+
+/* Muted until hovered. The red is the confirmation that this is the destructive
+   one, so spending it before the pointer arrives makes every form look alarming. */
+.ds-Button[data-variant='danger'] {
+  color: var(--fg-muted);
+  background: transparent;
+  border-color: var(--border);
+}
+
+.ds-Button[data-variant='danger']:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.ds-Button[data-variant='link'] {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ds-Button[data-variant='link']:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.ds-Button[data-variant='link']:focus-visible {
+  border-radius: var(--radius-xs);
+}
+
+.ds-Button[data-variant='dashed'] {
+  font-size: var(--text-sm);
+  color: var(--accent);
+  background: transparent;
+  border: 1px dashed var(--border);
+}
+
+.ds-Button[data-variant='dashed']:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+/* Mirrors the look of a `<select>` in the same toolbar, because it opens the same
+   kind of thing — see Input.css `.ds-Select`. */
+.ds-Button[data-variant='trigger'] {
+  color: var(--fg);
+  background: var(--surface);
+  border-color: var(--border);
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.ds-Button[data-variant='trigger']:hover:not(:disabled),
+.ds-Button[data-variant='trigger'][aria-expanded='true'] {
+  border-color: var(--accent);
+}
+
+.ds-Button[data-variant='trigger'][aria-expanded='true'] {
+  background: var(--hover);
+}
+
+/* The caret belongs to the variant rather than to the markup: a trigger without
+   one gives no sign that it opens a panel, and remembering to pass it is exactly
+   the kind of thing that gets forgotten on the third one. */
+.ds-Button[data-variant='trigger']:not([data-icon-only])::after {
+  content: '▾';
+  margin-left: auto;
+  padding-left: var(--space-sm);
+  opacity: 0.6;
+}
+
+/* ---- reveal on container hover -------------------------------------------- */
+
+/* The list view's per-group „+ Eintrag": present but quiet until the pointer is
+   on its row, so twelve group headers do not read as twelve calls to action.
+   Never hidden outright — it stays reachable by keyboard, and focus brings it
+   to full strength like hover does. */
+.ds-Button[data-reveal] {
+  opacity: 0.55;
+}
+
+.ds-Button[data-reveal]:hover,
+.ds-Button[data-reveal]:focus-visible,
+:hover > .ds-Button[data-reveal],
+:hover > * > .ds-Button[data-reveal] {
+  opacity: 1;
+}
+
+/* ---- IconButton ----------------------------------------------------------- */
+
+.ds-IconButton {
+  padding: 0;
+  flex: none;
+}
+
+.ds-IconButton[data-box='sm'] {
+  width: var(--control-sm);
+  height: var(--control-sm);
+}
+
+.ds-IconButton[data-box='md'] {
+  width: var(--control-md);
+  height: var(--control-md);
+}
+
+.ds-IconButton[data-box='lg'] {
+  width: var(--control-lg);
+  height: var(--control-lg);
+}
+
+/* A textual glyph („×", „▾") rather than an SVG: it needs its own line-height so
+   the character sits on the box's centre instead of on its own baseline. */
+.ds-IconButton-glyph {
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+.ds-IconButton[data-box='lg'] .ds-IconButton-glyph {
+  font-size: var(--text-xl);
+}
+
+/* The outlined icon button is the picker trigger in the detail panel's header;
+   it keeps the border on hover instead of picking up a fill. */
+.ds-IconButton[data-variant='outline'] {
+  color: var(--fg);
+}
+
+.ds-IconButton[data-variant='outline']:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+.ds-IconButton[data-variant='outline'][aria-expanded='true'] {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+/* Inset ring: these sit in tight rows (the header tools, a chip's remove button)
+   where an offset ring would overlap the neighbour. */
+.ds-IconButton:focus-visible {
+  outline-offset: -2px;
+}

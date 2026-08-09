@@ -1,0 +1,130 @@
+/* FormGrid / Field / FieldError / Fieldset / Disclosure / FormActions. */
+
+.ds-FormGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+}
+
+/* A grid sitting under a tabstrip: the extra top margin is what makes the strip's
+   underline read as the panel's edge rather than as a line glued to the first
+   field. The row gap grows with it, because tabbed panels are denser. */
+.ds-FormGrid[data-inset] {
+  gap: var(--space-lg) var(--space-md);
+  margin-top: var(--space-xl);
+}
+
+.ds-Field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 0;
+  /* Anchor for a ChipBox's dropdown, which hangs off the field rather than off
+     the input (the input can be a few characters wide by then). */
+  position: relative;
+}
+
+.ds-Field[data-full] {
+  grid-column: 1 / -1;
+}
+
+/* Wins over the flex display above. */
+.ds-Field[hidden] {
+  display: none;
+}
+
+.ds-Field[data-muted] {
+  opacity: 0.6;
+}
+
+.ds-FieldError {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  color: var(--danger);
+}
+
+.ds-FieldError[hidden] {
+  display: none;
+}
+
+/* ---- Fieldset -------------------------------------------------------------- */
+
+/* A hairline plus a caption, not a box: a full frame around two fields competes
+   with the controls inside it. */
+.ds-Fieldset {
+  grid-column: 1 / -1;
+  border: none;
+  margin: var(--space-sm) 0 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.ds-Fieldset-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: 0;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--weight-semibold);
+  color: var(--fg-muted);
+}
+
+/* The rule, drawn by the legend itself so the gap around the caption is exact at
+   any width — see the note in Field.ts. */
+.ds-Fieldset-legend::before,
+.ds-Fieldset-legend::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.ds-Fieldset-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-lg) var(--space-md);
+  margin-top: var(--space-md);
+}
+
+/* ---- Disclosure ------------------------------------------------------------ */
+
+.ds-Disclosure {
+  grid-column: 1 / -1;
+}
+
+.ds-Disclosure-summary {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-3xs) 0;
+  list-style-position: inside;
+}
+
+.ds-Disclosure-summary:hover {
+  color: var(--fg);
+}
+
+.ds-Disclosure > .ds-Field {
+  margin-top: var(--space-xs);
+}
+
+/* ---- FormActions ----------------------------------------------------------- */
+
+.ds-FormActions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-2xs);
+}
+
+.ds-FormActions[data-centered] {
+  justify-content: center;
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--border);
+}

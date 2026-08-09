@@ -8,7 +8,19 @@
 // Mirrors the tags chip editor (itemForm.ts) but with a *fixed* option set:
 // multi-select suggestions are the field's declared options, not free-form.
 
-import { escapeHtml } from './buildItems';
+import {
+  Chip,
+  ChipBox,
+  ChipBoxSlot,
+  Dot,
+  Field,
+  Fieldset,
+  highlightSuggestion,
+  Select,
+  SuggestItem,
+  SuggestList,
+  TextInput,
+} from './design-system';
 import { writeListMeta } from './fieldValue';
 import { state } from './state';
 import { scheduleLiveEdit } from './persistence';
@@ -94,83 +106,89 @@ export function initCustomFieldState(meta: Record<string, unknown>): void {
   state.formCustomMulti = next;
 }
 
-// HTML for the custom-fields section of the item form (empty string when the
-// timeline declares none). Inserted into the form template by showItemForm.
+// The custom-fields part of the item form (nothing when the timeline declares
+// none). Appended to the form's first panel by showItemForm.
 //
 // Fields that declare a `group` (every plugin-contributed one does, carrying its
 // plugin's label) are collected into a titled section per group, in first-seen
 // order, after the ungrouped fields. Without that, a plugin's fields sat flat
 // among the timeline's own and nothing said they belonged together — or where
-// they came from. The sections are plain markup inside the same <form>, so
+// they came from. The sections are ordinary nodes inside the same <form>, so
 // FormData, applyCustomFields and isManagedMetaKey are untouched by the grouping.
-export function renderCustomFieldsHtml(meta: Record<string, unknown>): string {
+export function renderCustomFields(meta: Record<string, unknown>): Element[] {
   const defs = getCustomFields();
-  if (!defs.length) return '';
+  if (!defs.length) return [];
 
-  const ungrouped = defs.filter((d) => !d.group);
   const sections = new Map<string, CustomFieldDef[]>();
   for (const def of defs) {
     if (!def.group) continue;
     (sections.get(def.group) ?? sections.set(def.group, []).get(def.group)!).push(def);
   }
 
-  const groupHtml = [...sections].map(
-    ([title, fields]) =>
-      // The fields live in their own grid inside the fieldset: a `display: grid`
-      // fieldset renders its legend inconsistently across engines, so the legend
-      // stays a normal flow child and the two-column layout moves one level in.
-      `<fieldset class="cf-group">` +
-      `<legend>${escapeHtml(title)}</legend>` +
-      `<div class="cf-group-fields">${fields.map((def) => fieldHtml(def, meta)).join('')}</div>` +
-      `</fieldset>`,
-  );
-
-  return ungrouped.map((def) => fieldHtml(def, meta)).join('') + groupHtml.join('');
+  return [
+    ...defs.filter((d) => !d.group).map((def) => fieldNode(def, meta)),
+    ...[...sections].map(([legend, fields]) =>
+      Fieldset({ legend, children: fields.map((def) => fieldNode(def, meta)) }),
+    ),
+  ];
 }
 
-// One field's control markup, identical whether it ends up flat or in a section.
-// `def.width: 'full'` reuses the form's existing `.field.full` rule (span both
-// grid columns), so a definition — a plugin's or the timeline's — controls its own
-// width the same way the built-in fields do.
-function fieldHtml(def: CustomFieldDef, meta: Record<string, unknown>): string {
-  const key = escapeHtml(def.key);
-  const label = escapeHtml(def.label || def.key);
-  const wide = def.width === 'full' ? ' full' : '';
+// One field's control, identical whether it ends up flat or in a section.
+// `def.width: 'full'` maps onto the Field component's own `full` prop, so a
+// definition — a plugin's or the timeline's — controls its width the same way
+// the built-in fields do.
+function fieldNode(def: CustomFieldDef, meta: Record<string, unknown>): HTMLElement {
+  const shared = {
+    label: def.label || def.key,
+    full: def.width === 'full',
+    className: 'cf-field',
+    attrs: { 'data-cf-key': def.key },
+  };
+
   if (def.type === 'multi-select') {
-    return `
-      <div class="field cf-field${wide}" data-cf-key="${key}">
-        <label>${label}</label>
-        <div class="chip-box">
-          <div class="cf-chips" data-cf-chips="${key}"></div>
-          <div class="cf-suggest">
-            <input class="cf-input" data-cf-input="${key}" type="text" autocomplete="off" placeholder="Auswählen…" />
-            <ul class="cf-suggest-list" data-cf-list="${key}" hidden></ul>
-          </div>
-        </div>
-      </div>`;
-  }
-  if (def.type === 'select') {
-    const cur = readFieldValues(meta, def.key)[0] ?? '';
-    const opts = [`<option value=""${cur ? '' : ' selected'}>— —</option>`].concat(
-      (def.options ?? []).map((o) => {
-        const v = escapeHtml(o.value);
-        const l = escapeHtml(o.label ?? o.value);
-        return `<option value="${v}"${o.value === cur ? ' selected' : ''}>${l}</option>`;
+    return Field({
+      ...shared,
+      control: ChipBox({
+        children: [
+          ChipBoxSlot({ attrs: { 'data-cf-chips': def.key } }),
+          ChipBoxSlot({
+            children: [
+              TextInput({
+                bare: true,
+                placeholder: 'Auswählen…',
+                attrs: { autocomplete: 'off', 'data-cf-input': def.key },
+              }),
+              SuggestList({ hidden: true, attrs: { 'data-cf-list': def.key } }),
+            ],
+          }),
+        ],
       }),
-    );
-    return `
-      <div class="field cf-field${wide}" data-cf-key="${key}">
-        <label>${label}</label>
-        <select data-cf-control="${key}">${opts.join('')}</select>
-      </div>`;
+    });
   }
-  // text
-  const cur = escapeHtml(readFieldValues(meta, def.key)[0] ?? '');
-  return `
-      <div class="field cf-field${wide}" data-cf-key="${key}">
-        <label>${label}</label>
-        <input data-cf-control="${key}" type="text" value="${cur}" />
-      </div>`;
+
+  const current = readFieldValues(meta, def.key)[0] ?? '';
+
+  if (def.type === 'select') {
+    return Field({
+      ...shared,
+      control: Select({
+        attrs: { 'data-cf-control': def.key },
+        options: [
+          { value: '', label: '— —', selected: !current },
+          ...(def.options ?? []).map((o) => ({
+            value: o.value,
+            label: o.label ?? o.value,
+            selected: o.value === current,
+          })),
+        ],
+      }),
+    });
+  }
+
+  return Field({
+    ...shared,
+    control: TextInput({ value: current, attrs: { 'data-cf-control': def.key } }),
+  });
 }
 
 // ---- multi-select chip editor (one per multi-select field) -----------------
@@ -179,24 +197,20 @@ function renderCfChips(form: HTMLFormElement, def: CustomFieldDef): void {
   const wrap = form.querySelector<HTMLElement>(`[data-cf-chips="${def.key}"]`);
   if (!wrap) return;
   const values = state.formCustomMulti[def.key] ?? [];
-  wrap.innerHTML = values
-    .map(
-      (val, i) =>
-        `<span class="cf-chip" style="--cf-color:${optionColor(def, val)}">` +
-        `<span class="cf-chip-dot"></span>` +
-        `<span class="cf-chip-label">${escapeHtml(optionLabel(def, val))}</span>` +
-        `<button type="button" class="cf-chip-x" data-remove="${i}" aria-label="Entfernen">×</button>` +
-        `</span>`,
-    )
-    .join('');
-  wrap.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const idx = Number(btn.dataset.remove);
-      (state.formCustomMulti[def.key] ??= []).splice(idx, 1);
-      renderCfChips(form, def);
-      scheduleLiveEdit();
-    });
-  });
+  wrap.replaceChildren(
+    ...values.map((val, i) =>
+      Chip({
+        mark: Dot({ color: optionColor(def, val) }),
+        label: optionLabel(def, val),
+        removable: true,
+        onRemove: () => {
+          (state.formCustomMulti[def.key] ??= []).splice(i, 1);
+          renderCfChips(form, def);
+          scheduleLiveEdit();
+        },
+      }),
+    ),
+  );
 }
 
 function addCfValue(form: HTMLFormElement, def: CustomFieldDef, value: string): void {
@@ -240,11 +254,7 @@ function wireCfMultiSelect(form: HTMLFormElement, def: CustomFieldDef): void {
       );
   };
 
-  const highlight = () => {
-    list.querySelectorAll<HTMLLIElement>('.cf-suggest-item').forEach((li, i) => {
-      li.classList.toggle('is-active', i === activeIndex);
-    });
-  };
+  const highlight = () => highlightSuggestion(list, activeIndex);
 
   const pick = (i: number) => {
     const v = current[i];
@@ -261,21 +271,21 @@ function wireCfMultiSelect(form: HTMLFormElement, def: CustomFieldDef): void {
       closeList();
       return;
     }
-    list.innerHTML = vals
-      .map(
-        (v, i) =>
-          `<li class="cf-suggest-item" data-i="${i}" role="option">` +
-          `<span class="cf-suggest-dot" style="background-color:${optionColor(def, v)}"></span>` +
-          `<span class="cf-suggest-label">${escapeHtml(optionLabel(def, v))}</span>` +
-          `</li>`,
-      )
-      .join('');
-    list.querySelectorAll<HTMLLIElement>('.cf-suggest-item').forEach((li) => {
-      li.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        pick(Number(li.dataset.i));
-      });
-    });
+    list.replaceChildren(
+      ...vals.map((v, i) =>
+        SuggestItem({
+          mark: Dot({ color: optionColor(def, v) }),
+          label: optionLabel(def, v),
+          attrs: { 'data-i': i },
+          on: {
+            mousedown: (e) => {
+              e.preventDefault();
+              pick(i);
+            },
+          },
+        }),
+      ),
+    );
     list.hidden = false;
   };
 

@@ -16,7 +16,7 @@ import type { CustomFieldDef } from './types';
 // fallback without needing the DOM or app state.
 
 function item(id: string, start: string, extra: Partial<TimelineItem> = {}): TimelineItem {
-  return { id, start, content: id, title: '', type: 'range', ...extra };
+  return { id, start, content: id, label: id, title: '', type: 'range', ...extra };
 }
 
 const GROUPS = [

@@ -1,0 +1,36 @@
+/* The document layer: what is true before any component renders.
+ *
+ * Everything here applies to the page rather than to a component, which is the
+ * test for whether a rule belongs in this file. It is deliberately short — three
+ * selectors — because a growing base stylesheet is how a design system starts
+ * leaking global rules that components then have to fight.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  /* No elastic overscroll bounce at the app frame: the app fills the viewport
+     and never scrolls as a page, so the bounce only ever exposes the browser's
+     background. */
+  overscroll-behavior: none;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
