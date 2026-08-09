@@ -42,9 +42,13 @@ live site and therefore not manipulable here.
 
 The granular item and group tools run read-modify-write: the server fetches the
 timeline, mutates it in memory and writes it back with a PUT (bulk replace).
-`dependsOn` and `owner` live under `metadata`; `owner` carries the e-mail of a
-user from `list_users` (see „Item owner" (docs/items.md)), and a free-text name is stored but
-renders as unlinked. The granular **pricing** tools instead hit their row's
+`dependsOn`, `parent` and `owner` live under `metadata`; `owner` carries the
+e-mail of a user from `list_users` (see „Item owner" (docs/items.md)), and a
+free-text name is stored but renders as unlinked. `parent` is the id of the item
+this one is part of, at most one — a self-link, an unknown id or one that would
+close a cycle is dropped when the timeline is built, so a tool call that writes
+one succeeds and the link simply is not there (see „Parent and children"
+(docs/items.md)). The granular **pricing** tools instead hit their row's
 endpoint directly, with no read-modify-write and no full dump — details under
 „Pricing" (docs/pricing.md).
 

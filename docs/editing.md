@@ -386,7 +386,8 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
     custom fields. The free-form metadata JSON box sits behind an „Erweitert"
     `<details>` disclosure, collapsed unless the item actually carries extra
     metadata.
-  - **Relationships** — dependencies (`dependsOn`) and JIRA links.
+  - **Relationships** — containment (`parent`), dependencies (`dependsOn`) and
+    JIRA links.
 
   All panels stay in the DOM (inactive ones just `hidden`), so `FormData` keeps
   seeing every field and `applyItemForm` / the persist diff need no knowledge of
@@ -463,6 +464,7 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
   instead of drawing the former 2px accent ring, which read as a heavy frame
   around everything you touched. Buttons — tabs, pickers — keep a real ring, but
   only on `:focus-visible`, where there is no border to recolour.
+- **Übergeordnet** is the same autosuggest, single-valued: pick the item this one is part of (`metadata.parent`). The suggestions leave out the item itself and everything already below it — offering a pick that the build would then drop as a cycle looks exactly like a pick that did not register. Filling it hides the input behind the chip; removing the chip brings it back. Directly under it, **Untereinträge** lists the children as read-only chips, plus a line wherever they run outside the parent's own dates: the parent's dates stay authoritative and nothing is rewritten. See „Parent and children" (docs/items.md).
 - **Depends on** is a title-autosuggest field: type to search the current timeline's items by title (or id), pick to link a dependency (rendered as a removable chip). Stored as `metadata.dependsOn` IDs — the chips just show the target's title.
 - **Tags** is a chip editor with autosuggest: type to match tags already used in the timeline, or type a new label and press Enter to create one. Each chip carries its resolved colour and a remove button. Stored as `metadata.tags` (string[]); saving migrates any legacy singular `metadata.tag` into the array.
 - **Phases** render as a ribbon along the top. Drag a segment to move it, drag either edge to resize (snaps to whole days, min. 1 day), and click it (without dragging) to open the phase form in the side panel: title, start/end, duration, icon, colour. Persists on drop / Save; Delete removes the phase.
@@ -481,7 +483,12 @@ active state driven by `aria-pressed`) switches between two renderings of the
   sections along the active **grouping dimension** (items sorted by start),
   with columns Eintrag (icon + tag pills + content), Start, Ende, Typ, Status,
   Owner. Phase background items are omitted. The milestones-only filter applies
-  here too.
+  here too. Children follow their parent, indented one step per level, with the
+  same fold caret the timeline's summary bars carry (see „Parent and children"
+  (docs/items.md)) — a section that has no tree in it reserves no caret column at
+  all, since an indent only some rows take reads as a rendering bug rather than
+  as a level. A section can hold a child whose parent fell outside it (they carry
+  different tags, say); that one stays at the top level rather than disappearing.
 
 ### Loading placeholder
 

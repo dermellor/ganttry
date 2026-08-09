@@ -27,6 +27,12 @@ import {
 import type { DirectoryUser, TimelineFileItem } from './types';
 import { directoryState, displayName, resolveOwner, searchUsers, userAvatar } from './users';
 import { assignableLeaves, parentGroupIds } from './groupHierarchy';
+import {
+  PARENT_META_KEY,
+  extentOverflow,
+  readParentId,
+  wouldCreateCycle,
+} from './itemHierarchy';
 import { state, els, setStatus, revealBesidePanel, clearFormSlots } from './state';
 import { parseLocalDay, durationToMs, shiftDays } from './date';
 import { describeReversedExtent, isReversedExtent } from './itemExtent';
@@ -442,6 +448,7 @@ export function showItemForm(
   const metadata = (item.metadata ?? {}) as Record<string, unknown>;
   const dependsOn = Array.isArray(metadata.dependsOn) ? (metadata.dependsOn as unknown[]).map(String) : [];
   state.formDependsOn = [...dependsOn];
+  state.formParent = readParentId(metadata) ?? '';
   const owner = typeof metadata.owner === 'string' ? metadata.owner : '';
   state.formJiraIssues = readJiraIssues(metadata);
   state.formTags = readTags(metadata);
@@ -523,6 +530,21 @@ export function showItemForm(
       ${panelHtml(
         'rel',
         `
+      <div class="field full deps-field">
+        <label for="f-parent">Übergeordnet <small>(Teil von)</small></label>
+        <div class="chip-box">
+          <div class="deps-chips" data-role="parent-chip"></div>
+          <div class="deps-suggest">
+            <input id="f-parent" type="text" autocomplete="off" placeholder="Eintrag suchen…" />
+            <ul class="deps-suggest-list" data-role="parent-list" hidden></ul>
+          </div>
+        </div>
+      </div>
+      <div class="field full deps-field" data-role="children-field" hidden>
+        <label>Untereinträge</label>
+        <div class="deps-chips" data-role="children-chips"></div>
+        <p class="field-note" data-role="children-overflow" hidden></p>
+      </div>
       <div class="field full deps-field">
         <label for="f-deps">Depends on <small>(Einträge verknüpfen)</small></label>
         <div class="chip-box">
@@ -629,6 +651,7 @@ export function showItemForm(
   wirePickDismiss();
   wireBodyEditor(form);
   wireJiraAutosuggest(form);
+  wireParentPicker(form, id);
   wireDepsAutosuggest(form, id);
   wireTagsAutosuggest(form);
   wireOwnerPicker(form);
@@ -869,6 +892,148 @@ function wireJiraAutosuggest(form: HTMLFormElement): void {
     // Let a mousedown on a suggestion fire first, then close.
     setTimeout(closeList, 120);
   });
+}
+
+/**
+ * The „Übergeordnet" picker plus the read-only „Untereinträge" list under it —
+ * the two sides of one relationship, so they are rendered by one function and
+ * cannot end up describing different links.
+ *
+ * The suggestions leave out every item that would close a cycle (the item
+ * itself, and anything already below it). Offering those and having
+ * `resolveParents` drop the link afterwards looks exactly like a pick that did
+ * not register.
+ */
+function wireParentPicker(form: HTMLFormElement, selfId: string): void {
+  const chip = form.querySelector<HTMLElement>('[data-role="parent-chip"]');
+  const input = form.querySelector<HTMLInputElement>('#f-parent');
+  const list = form.querySelector<HTMLUListElement>('[data-role="parent-list"]');
+  if (!chip || !input || !list) return;
+
+  const renderChip = (): void => {
+    chip.innerHTML = state.formParent
+      ? `<span class="deps-chip" title="${escapeHtml(state.formParent)}">` +
+        `<span class="deps-chip-label">${escapeHtml(depLabel(state.formParent))}</span>` +
+        `<button type="button" class="deps-chip-x" data-clear-parent aria-label="Entfernen">×</button>` +
+        `</span>`
+      : '';
+    chip.querySelector<HTMLButtonElement>('[data-clear-parent]')?.addEventListener('click', () => {
+      state.formParent = '';
+      renderChip();
+      // A single-valued picker hides its input once filled; clearing brings it
+      // back, so the next parent can be typed without reopening the form.
+      input.hidden = false;
+      scheduleLiveEdit();
+    });
+    input.hidden = !!state.formParent;
+  };
+
+  const closeList = () => {
+    list.hidden = true;
+    list.innerHTML = '';
+  };
+
+  const candidates = (q: string): TimelineFileItem[] => {
+    // Read the *live* hierarchy, not the one this form was opened with: the
+    // user may have re-parented another item since.
+    const parents = state.activeBuild?.parents ?? new Map<string, string>();
+    const needle = q.toLowerCase();
+    return (state.activeSourceFile?.items ?? [])
+      .filter((it) => it.id && !wouldCreateCycle(parents, selfId, it.id))
+      .filter(
+        (it) =>
+          !needle ||
+          (it.content ?? '').toLowerCase().includes(needle) ||
+          (it.id ?? '').toLowerCase().includes(needle),
+      )
+      .slice(0, 8);
+  };
+
+  const renderList = (items: TimelineFileItem[]): void => {
+    if (!items.length) {
+      closeList();
+      return;
+    }
+    list.innerHTML = items
+      .map(
+        (it) =>
+          `<li class="deps-suggest-item" data-id="${escapeHtml(it.id ?? '')}" role="option">` +
+          `<span class="deps-suggest-label">${escapeHtml(it.content?.trim() || it.id || '')}</span>` +
+          `<span class="deps-suggest-id">${escapeHtml(it.id ?? '')}</span>` +
+          `</li>`,
+      )
+      .join('');
+    list.hidden = false;
+    list.querySelectorAll<HTMLLIElement>('.deps-suggest-item').forEach((li) => {
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        state.formParent = li.dataset.id ?? '';
+        input.value = '';
+        closeList();
+        renderChip();
+        scheduleLiveEdit();
+      });
+    });
+  };
+
+  input.addEventListener('input', () => renderList(candidates(input.value.trim())));
+  input.addEventListener('focus', () => renderList(candidates(input.value.trim())));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeList();
+  });
+  // Let a mousedown on a suggestion fire first, then close.
+  input.addEventListener('blur', () => setTimeout(closeList, 120));
+
+  renderChip();
+  renderChildren(form, selfId);
+}
+
+/**
+ * The children an item has, as read-only chips, plus the one place the rollup is
+ * stated: where the children run outside the parent's own dates.
+ *
+ * The parent's dates stay authoritative — they are maintained by hand and a
+ * rollup that overwrote them would silently replace a decision with a
+ * calculation. So this reports the discrepancy and changes nothing.
+ */
+function renderChildren(form: HTMLFormElement, selfId: string): void {
+  const field = form.querySelector<HTMLElement>('[data-role="children-field"]');
+  const chips = form.querySelector<HTMLElement>('[data-role="children-chips"]');
+  const note = form.querySelector<HTMLElement>('[data-role="children-overflow"]');
+  if (!field || !chips || !note) return;
+
+  const parents = state.activeBuild?.parents ?? new Map<string, string>();
+  const childIds = [...parents.entries()].filter(([, p]) => p === selfId).map(([c]) => c);
+  field.hidden = childIds.length === 0;
+  if (!childIds.length) return;
+
+  chips.innerHTML = childIds
+    .map(
+      (cid) =>
+        `<span class="deps-chip" title="${escapeHtml(cid)}">` +
+        `<span class="deps-chip-label">${escapeHtml(depLabel(cid))}</span>` +
+        `</span>`,
+    )
+    .join('');
+
+  const byId = new Map((state.activeSourceFile?.items ?? []).map((it) => [it.id, it]));
+  const self = byId.get(selfId);
+  const { before, after } = extentOverflow(
+    { start: self?.start, end: self?.end },
+    childIds.map((cid) => ({ start: byId.get(cid)?.start, end: byId.get(cid)?.end })),
+  );
+  const parts: string[] = [];
+  if (before) parts.push(`beginnen am ${formatDay(before)}`);
+  if (after) parts.push(`laufen bis ${formatDay(after)}`);
+  note.hidden = parts.length === 0;
+  note.textContent = parts.length ? `Untereinträge ${parts.join(' und ')}.` : '';
+}
+
+// "2026-07-16" → "16.07.2026". Same reading as the list view's dates; anything
+// unparseable falls back to the raw day so an odd value still shows something.
+function formatDay(value: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : value;
 }
 
 // Resolves a dependsOn id to a readable label (the item's title, falling back
@@ -1451,6 +1616,9 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   const meta = (item.metadata ??= {}) as Record<string, unknown>;
   if (state.formDependsOn.length) meta.dependsOn = [...state.formDependsOn];
   else delete meta.dependsOn;
+
+  if (state.formParent) meta[PARENT_META_KEY] = state.formParent;
+  else delete meta[PARENT_META_KEY];
 
   const owner = get('owner');
   if (owner) meta.owner = owner;
