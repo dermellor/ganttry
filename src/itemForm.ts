@@ -1381,28 +1381,44 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
    * platform's own "is this a partial entry" flag does not cover the case that
    * breaks. Measured, not assumed.
    *
-   * A field the user really did clear reaches the model on blur — `focusout`
-   * commits the form, and by then the control no longer holds focus.
+   * The year needs the same treatment for the opposite reason. Typing `2026`
+   * passes through the years 2, 20 and 202, and each of those is a *complete,
+   * valid* date — so an empty-value check alone does not catch it. The app took
+   * `0002-12-01` as the user's answer, flashed „das End-Datum muss nach dem
+   * Start liegen" on the first digit of the year, and reset the whole field on
+   * the next one. A year below 1000 while the control still has focus is
+   * therefore an intermediate state, not an input.
+   *
+   * Everything here is scoped to a focused control. Whatever stands in the field
+   * when the user leaves it counts, so a genuinely cleared date still reaches the
+   * model on blur (`focusout` already commits the form), and a deliberate
+   * year-999 date is applied then too.
    */
-  const beingTyped = (name: string): boolean => {
+  const isTransient = (name: string, value: string): boolean => {
     const el = form.querySelector(`[name="${name}"]`);
-    return el instanceof HTMLInputElement && el === document.activeElement;
+    if (!(el instanceof HTMLInputElement) || el !== document.activeElement) return false;
+    if (!value) return true; // segments still empty
+    const year = Number(value.slice(0, 4));
+    return !Number.isFinite(year) || year < 1000; // year still being typed
   };
 
   const item = state.activeSourceFile.items[idx];
   item.content = get('content') || item.content;
-  const startVal = get('start');
-  const endVal = get('end');
   const durVal = get('duration');
-  const startTyping = !startVal && beingTyped('start');
-  const endTyping = !endVal && beingTyped('end');
+  // A transient value counts as "no answer yet" everywhere below — including the
+  // reversed-extent check, so no error is shown for a date the user is still
+  // halfway through typing.
+  const startTyping = isTransient('start', get('start'));
+  const endTyping = isTransient('end', get('end'));
+  const startVal = startTyping ? '' : get('start');
+  const endVal = endTyping ? '' : get('end');
 
   // An `end` before (or on) its `start` renders as a hairline stripe and the
   // server rejects it outright (see src/itemExtent.ts), so it must never reach
   // the model. The form is reactive, so there is no save button to block: keep
   // the last valid dates instead and name the problem under the fields (see
-  // showExtentError). A `type=date` input yields either a complete date or
-  // nothing, so no half-typed state trips this.
+  // showExtentError). Only settled values reach this — a date still being typed
+  // is blanked above, so no keystroke on the way to a valid one trips the error.
   //
   // Rejects the extent as a whole rather than guessing which of the two dates the
   // user meant to move. To shift an item past its own end, change the end first.
@@ -1410,7 +1426,7 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   if (!extentReversed) {
     // Start is optional: clearing the field removes the date (the item then shows
     // only in the list view, hidden from the timeline). Half-typed is not
-    // cleared, though — see `beingTyped`.
+    // cleared, though — see `isTransient`.
     if (startVal) item.start = startVal;
     else if (!startTyping) delete item.start;
 
