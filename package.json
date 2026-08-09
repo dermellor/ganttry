@@ -1,5 +1,5 @@
 {
-  "name": "ganttry",
+  "name": "zeitlines",
   "private": true,
   "version": "0.0.1",
   "description": "Generic timeline/roadmap viewer (vis-timeline) with pluggable source adapters (file JSON, Postgres) and timeline kinds (generic, product-roadmap).",
@@ -13,8 +13,8 @@
     "plugin:install": "tsx scripts/plugins/install-vendored.ts",
     "migrate:pricing": "tsx scripts/db/migrate-pricing-to-plugin-data.ts",
     "db:check": "tsx scripts/db/check-pending.ts",
-    "db:local:up": "docker run -d --rm --name ganttry-pg -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:16",
-    "db:local:down": "docker stop ganttry-pg",
+    "db:local:up": "docker run -d --rm --name zeitlines-pg -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:16",
+    "db:local:down": "docker stop zeitlines-pg",
     "db:reset": "TIMELINES_DATABASE_URL=${TIMELINES_DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:55432/postgres} TIMELINES_MIGRATE_DATABASE_URL=${TIMELINES_MIGRATE_DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:55432/postgres} sh -c 'tsx scripts/db/reset.ts && tsx scripts/db/migrate.ts --allow-dirty && tsx scripts/db/import.ts example-projektplan launch-roadmap'",
     "dev": "bash scripts/dev-prep.sh && npm run db:check -- --quiet && npm run build:data && concurrently -n data,vite -c yellow,cyan \"npm run watch:data\" \"vite\"",
     "dev:local": "TIMELINES_DATABASE_URL=${TIMELINES_DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:55432/postgres} TIMELINES_DB_LIVE=poll npm run dev",
@@ -23,6 +23,7 @@
     "export": "npm run build:data && tsx scripts/export-view.ts",
     "export:pricing": "tsx src/plugins/product-roadmap/export.ts",
     "preview": "vite preview",
+    "start": "tsx scripts/serve.ts",
     "test": "TZ=Europe/Berlin node --import tsx --test '{src,scripts}/**/*.test.ts'",
     "typecheck": "tsc --noEmit",
     "schema": "tsx scripts/schema/build.ts",
@@ -39,7 +40,9 @@
     "@supabase/supabase-js": "^2.110.0",
     "marked": "^14.1.0",
     "postgres": "^3.4.9",
+    "tsx": "^4.19.0",
     "turndown": "^7.2.4",
+    "umzug": "^3.8.3",
     "vis-data": "^7.1.9",
     "vis-timeline": "^7.7.3",
     "ws": "^8.21.0",
@@ -54,9 +57,7 @@
     "concurrently": "^9.0.0",
     "gray-matter": "^4.0.3",
     "ts-json-schema-generator": "^2.9.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.5.0",
-    "umzug": "^3.8.3",
     "vite": "^5.4.0"
   }
 }

@@ -43,3 +43,33 @@ export function applyFieldPick(current: string[], value: string, multi: boolean)
   const values = value ? [value] : [];
   return { values, stored: values[0] };
 }
+
+/**
+ * Write a list-valued `metadata` key (dependsOn, jira, tags, a multi-select),
+ * where "no entries" is normally spelled by *removing* the key — see FieldPick
+ * above for why removal rather than an empty array.
+ *
+ * The exception this function exists for: an item that arrived carrying an
+ * already-empty array keeps it exactly as stored. Both spellings mean the same
+ * thing, so rewriting one into the other is not an edit — but it does change the
+ * file, and the form applies these on every commit including the one that merely
+ * opening an item triggers. `"dependsOn": []` in a source file therefore came
+ * back as a diff every time someone clicked that item, which is the same defect
+ * as a defaulted status being written back (see statusToStore).
+ *
+ * A list that *had* entries and no longer does still loses its key: that is a
+ * real edit, and the persist diff needs the removal to send an explicit null.
+ */
+export function writeListMeta(
+  meta: Record<string, unknown>,
+  key: string,
+  values: readonly unknown[],
+): void {
+  if (values.length) {
+    meta[key] = [...values];
+    return;
+  }
+  const before = meta[key];
+  if (Array.isArray(before) && before.length === 0) return;
+  delete meta[key];
+}

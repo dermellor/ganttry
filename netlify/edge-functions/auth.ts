@@ -1,18 +1,32 @@
 // Netlify Edge Function — Google OAuth gate.
 //
-// Only addresses on the configured email domains (ALLOWED_EMAIL_DOMAINS) get
-// past the gate. The code default is empty — fail-closed: gate on with no
-// domains set lets nobody in. Sessions are signed JWT-style cookies
-// (HMAC-SHA256), no external auth service required.
+// Google proves the address; what decides whether it may in depends on one
+// switch (see `admit`):
+//   - TIMELINES_ACCESS_CONTROL off — the ALLOWED_EMAIL_DOMAINS list decides, the
+//     original behaviour. Empty means nobody, which is fail-closed on purpose.
+//   - on — the member list decides and the domain is not consulted, because an
+//     invited person may sit on any domain.
+//
+// Sessions are signed JWT-style cookies (HMAC-SHA256), no external auth service.
 //
 // Required runtime env vars (set in Netlify dashboard):
-//   AUTH_REQUIRED          — "true" to enable the gate (any other value = pass through)
-//   GOOGLE_CLIENT_ID       — OAuth client (web application type)
-//   GOOGLE_CLIENT_SECRET   — OAuth client secret
-//   AUTH_SECRET            — random 32+ byte string, used to sign cookies
-//   ALLOWED_EMAIL_DOMAINS  — comma-separated allowed sign-in domains (default empty = nobody)
+//   AUTH_REQUIRED            — "true" to enable the gate (any other value = pass through)
+//   GOOGLE_CLIENT_ID         — OAuth client (web application type)
+//   GOOGLE_CLIENT_SECRET     — OAuth client secret
+//   AUTH_SECRET              — random 32+ byte string, used to sign cookies
+//   ALLOWED_EMAIL_DOMAINS    — allowed sign-in domains while access control is off
+//   TIMELINES_ACCESS_CONTROL — "true" to let the member list decide instead
+//   TIMELINES_BOOTSTRAP_ADMIN — the address that becomes the first admin
 
 import type { Context, Config } from '@netlify/edge-functions';
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
+import { accessControlEnabled, decideSignIn } from '../../src/access.ts';
+import {
+  getMember,
+  inviteMember,
+  setMemberStatus,
+  touchUser,
+} from '../../scripts/db/timeline-repo-supabase.ts';
 import {
   COOKIE_NAME,
   STATE_COOKIE,
@@ -34,6 +48,22 @@ import {
   escapeHtml,
   hasValidMcpToken,
 } from './_shared/session.ts';
+
+/**
+ * The member list's client, built once per isolate and only when it is needed.
+ *
+ * Only `admit()` touches the database, and only on the callback, so the ordinary
+ * request path never constructs this. Null when the instance has no Supabase
+ * configured, which `admit` turns into a refusal rather than a pass.
+ */
+let dbHandle: SupabaseClient | null | undefined;
+function memberDb(): SupabaseClient | null {
+  if (dbHandle !== undefined) return dbHandle;
+  const url = Deno.env.get('TIMELINES_SUPABASE_URL');
+  const key = Deno.env.get('TIMELINES_SUPABASE_SERVICE_KEY');
+  dbHandle = url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
+  return dbHandle;
+}
 
 export default async function handler(req: Request, ctx: Context): Promise<Response | void> {
   if (Deno.env.get('AUTH_REQUIRED') !== 'true') {
@@ -105,7 +135,8 @@ export const config: Config = {
   excludedPath: [
     '/favicon.ico',
     '/robots.txt',
-    // Public pricing endpoint for external marketing pages — no login gate.
+    // Retired, and still excluded so a stale consumer gets the 410 that names
+    // its successor rather than a login redirect it cannot follow.
     '/api/pricing/*',
     // The generic public read. ONE exclusion for every plugin that ever publishes,
     // rather than a line per plugin: the alternative is an auth-gate edit as part
@@ -147,8 +178,11 @@ async function handleLogin(url: URL): Promise<Response> {
     prompt: 'select_account',
     access_type: 'online',
   });
-  // Domain hint only when a single allowed domain is configured.
-  const hint = firstAllowedDomain();
+  // Domain hint only while the domain is what decides. With the member list in
+  // charge, `hd` would hide exactly the accounts an invitation was sent to: it
+  // restricts Google's account chooser, so an invited person outside the
+  // configured domain could not even offer their address.
+  const hint = accessControlEnabled(Deno.env.get('TIMELINES_ACCESS_CONTROL')) ? '' : firstAllowedDomain();
   if (hint) params.set('hd', hint);
 
   const headers = new Headers({
@@ -216,9 +250,9 @@ async function handleCallback(req: Request, url: URL): Promise<Response> {
   if (!email || !user.email_verified) {
     return redirectToError(url, 'email_unverified');
   }
-  if (!isAllowedDomain(email)) {
-    return redirectToError(url, 'domain_not_allowed');
-  }
+
+  const admitted = await admit(email, user.name ?? null);
+  if (!admitted.allow) return redirectToError(url, admitted.reason);
 
   const sessionPayload: SessionPayload = {
     email,
@@ -237,11 +271,78 @@ async function handleCallback(req: Request, url: URL): Promise<Response> {
   return new Response(null, { status: 302, headers });
 }
 
+/**
+ * May this proven address in, and record it if this is an acceptance.
+ *
+ * Two regimes, chosen by the same switch the API layer uses:
+ *
+ * - **Off** — the domain allow-list decides, exactly as before the member list
+ *   existed. Shipping the membership check unconditionally would refuse every
+ *   user of every existing instance the moment this deploys, because none of
+ *   them has a populated member list yet.
+ * - **On** — the member list decides, and the domain is no longer consulted.
+ *   An invited person may sit on any domain; that is what inviting them means.
+ *
+ * The lookup happens here and nowhere else on the request path: this is the one
+ * moment a session is minted, so page loads keep costing a signature check.
+ */
+async function admit(
+  email: string,
+  name: string | null,
+): Promise<{ allow: true } | { allow: false; reason: string }> {
+  if (!accessControlEnabled(Deno.env.get('TIMELINES_ACCESS_CONTROL'))) {
+    return isAllowedDomain(email) ? { allow: true } : { allow: false, reason: 'domain_not_allowed' };
+  }
+
+  const db = memberDb();
+  if (!db) {
+    // The switch is on and there is nothing to ask. Refusing is the only honest
+    // answer: letting everybody in would make the switch a lie, and it is the
+    // operator's own misconfiguration rather than the visitor's problem.
+    return { allow: false, reason: 'membership_unavailable' };
+  }
+
+  let member = await getMember(db, email);
+
+  // The bootstrap address is how an instance gets its first admin. Without it a
+  // fresh member list has nobody who can invite, and the instance is closed to
+  // everyone including its owner.
+  const bootstrap = (Deno.env.get('TIMELINES_BOOTSTRAP_ADMIN') ?? '').trim().toLowerCase();
+  if (!member && bootstrap && bootstrap === email) {
+    await inviteMember(db, { email, role: 'admin' });
+    member = await getMember(db, email);
+  }
+
+  const verdict = decideSignIn(member, Date.now());
+  if (!verdict.allow) return { allow: false, reason: verdict.reason };
+
+  // Accepting is the first successful sign-in, so it is recorded here rather
+  // than by opening the invitation link — somebody who was invited gets in with
+  // their address whether or not they ever clicked it.
+  if (verdict.accept) await setMemberStatus(db, email, 'active');
+  // Keep the display name fresh while we have it; `touchUser` never clears one.
+  if (name) await touchUser(db, email, name);
+  return { allow: true };
+}
+
 function handleLogout(url: URL): Response {
   const headers = new Headers({ Location: `${url.origin}/auth/login` });
   headers.append('Set-Cookie', cookieString(COOKIE_NAME, '', 0));
   return new Response(null, { status: 302, headers });
 }
+
+/**
+ * One sentence per refusal, because „Reason: not_a_member" tells a visitor
+ * nothing about what to do next, and the whole point of a closed instance is
+ * that somebody has to let them in.
+ */
+const REFUSAL_TEXT: Record<string, string> = {
+  not_a_member: 'This address has not been invited to this instance. Ask an administrator for an invitation.',
+  membership_suspended: 'This membership is suspended. Ask an administrator to restore it.',
+  membership_removed: 'This membership was removed. Ask an administrator for a new invitation.',
+  invitation_expired: 'This invitation has expired. Ask an administrator to send a new one.',
+  membership_unavailable: 'The member list is unreachable, so nobody can be let in right now. This is a server configuration problem.',
+};
 
 function errorPage(reason: string): Response {
   const allowed = allowedDomains().map((d) => `@${d}`).join(' or ');
@@ -255,7 +356,7 @@ function errorPage(reason: string): Response {
 </style>
 </head><body>
 <h1>Login failed</h1>
-<p>This timeline is restricted to ${escapeHtml(allowed)} addresses.</p>
+<p>${escapeHtml(REFUSAL_TEXT[reason] ?? (allowed ? `This timeline is restricted to ${allowed} addresses.` : 'This timeline is not open to this address.'))}</p>
 <p>Reason: <code>${escapeHtml(reason)}</code></p>
 <a class="btn" href="/auth/login">Try again</a>
 </body></html>`;

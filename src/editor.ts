@@ -1,4 +1,5 @@
 import { dataUrl } from './data-base';
+import { assignMissingItemIds, nextItemId } from './itemId';
 import type {
   SourceLive,
   TimelineFile,
@@ -143,29 +144,14 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
   );
 }
 
+// Both wrap the shared rule in ./itemId.ts, which the server's granular create
+// uses as well — the id scheme is one rule, not one per runtime.
 export function ensureItemIds(file: TimelineFile): boolean {
-  let changed = false;
-  const used = new Set(file.items.map((i) => i.id).filter(Boolean) as string[]);
-  let counter = 1;
-  for (const item of file.items) {
-    if (item.id) continue;
-    let candidate = `i${counter}`;
-    while (used.has(candidate)) {
-      counter += 1;
-      candidate = `i${counter}`;
-    }
-    item.id = candidate;
-    used.add(candidate);
-    changed = true;
-  }
-  return changed;
+  return assignMissingItemIds(file.items);
 }
 
 export function generateNewId(file: TimelineFile, prefix = 'i'): string {
-  const used = new Set(file.items.map((i) => i.id).filter(Boolean) as string[]);
-  let n = 1;
-  while (used.has(`${prefix}${n}`)) n += 1;
-  return `${prefix}${n}`;
+  return nextItemId(file.items.map((i) => i.id).filter(Boolean) as string[], prefix);
 }
 
 // Date ⇄ calendar-day conversion lives in one place — see src/date.ts. Re-export

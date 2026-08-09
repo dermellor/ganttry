@@ -3,12 +3,13 @@
 **Status: all three stages are built.** A single `local` source
 adapter replaced the former `file` kind and the separate Markdown notes pipeline,
 and made editability a property of the runtime rather than of the file format.
-What exists: a `data/*.json` timeline is editable under `npm run dev` and
-read-only on a static deploy, and a directory of Markdown files with a
-`timeline.json` in it is served as a source, read-only. Writing back into a note
-is still a proposal. Each section below says which it is.
+What exists: a `data/*.json` timeline and a directory of Markdown files with a
+`timeline.json` in it are both editable under `npm run dev` and read-only on a
+static deploy. Item writes go back into the note, one frontmatter key at a time;
+what is deliberately still missing is listed with each stage below, and id
+promotion („Staging" → stage 3) is the one design decision that was dropped.
 
-Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
 its file when it lives in another chapter.
 
@@ -43,7 +44,8 @@ their repository, and that they cannot edit in the tool built to edit it.
 
 The existing seam already models the right thing. `SourceCapabilities` is
 `{ editable, live }` on the adapter, and the DB adapter already derives its `live`
-value from the environment (`TIMELINES_DB_LIVE`) and ships it to the client in the
+value from the configured backend (`defaultLive`, overridable with
+`TIMELINES_DB_LIVE`) and ships it to the client in the
 `X-Source-Live` header. A local adapter deriving `editable` from "is there a
 writable data directory behind this request" is the same move.
 
@@ -289,14 +291,16 @@ Three stages, each shippable on its own, in increasing order of risk:
      answer `501` via a new `NotSupportedError`, because a 500 reads as „we are
      broken" and a silent success would report „Gespeichert" for a write that
      never happened.
-2. ~~**Directory sources on the read path.**~~ **Done, except the deletion.**
+2. ~~**Directory sources on the read path.**~~ **Done.**
    [`scripts/local/scan.ts`](../scripts/local/scan.ts) turns a directory into a
-   `TimelineFile`; the local adapter serves it live, `build-data.ts` materializes
-   it for a static build, and it is read-only throughout (every write answers
-   `501`, refused *before* the item lookup so the reason does not depend on
-   whether the item happened to exist). **`buildFromNotes` and `notes.json` are
-   still in place** — removing them takes the config-declared filter views with
-   them, which is a separate decision. Four things came out differently:
+   `TimelineFile`; the local adapter serves it live and `build-data.ts`
+   materializes it for a static build. As this stage shipped it was read-only
+   throughout, every write answering `501` refused *before* the item lookup so
+   the reason did not depend on whether the item happened to exist; stage 3
+   replaced that with the real write path. `buildFromNotes`, `notes.json` and
+   `src/filter.ts` went in this stage's own commit after all, rather than in the
+   separate decision anticipated here (see „What this removed" above). Five
+   things came out differently:
    - **A separate `TimelineContainer` type, not `items` made optional.**
      Optional `items` would weaken the type at the dozen call sites that iterate
      it, none of which a container file ever reaches: they all work on the
@@ -319,6 +323,13 @@ Three stages, each shippable on its own, in increasing order of risk:
      every local source to editable offered „+ Eintrag" and drag handles on a
      Markdown timeline, each ending in a `501`. An edit that looks available and
      then is not is worse than one that was never offered.
+   - **`timeline.json` is what makes a directory a source.** The degenerate case
+     above („a directory with no `timeline.json` … stays legal") was not built:
+     `isTimelineDirectory` tests for the container file, and a folder without one
+     is descended into rather than registered. Registering every folder under
+     `data/` would turn each intermediate directory on the way to a timeline into
+     an empty timeline of its own, and there is no id or name to give those. A
+     plain notes folder therefore needs one `timeline.json`, which may be `{}`.
 3. ~~**The Markdown write path.**~~ **Done.**
    [`scripts/local/frontmatter.ts`](../scripts/local/frontmatter.ts) patches one
    key at a time; everything else in the file — comments, key order, quoting, the

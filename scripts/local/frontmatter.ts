@@ -66,30 +66,66 @@ function rangeOf(lines: string[], key: string): { from: number; to: number } | n
 }
 
 /**
+ * Plain scalars that the reader resolves to something other than a string.
+ *
+ * The reader is `gray-matter`, which parses with js-yaml 3 and therefore the
+ * YAML **1.1** rules — a wider net than 1.2, and the reason a hand-picked list
+ * of „looks numeric" cases is not enough: `0211` is octal 137, `12:30` is
+ * sexagesimal 750, `1_000` is 1000, and `007` loses its zeros. A string written
+ * unquoted then comes back as a number, so the value the interface stores and
+ * the value it reads next are different types, and the field renders empty.
+ *
+ * Over-quoting costs a pair of quotes; under-quoting costs the value. So these
+ * are deliberately generous, and `frontmatter.test.ts` pins them by round-tripping
+ * through the actual parser rather than by asserting the regexes.
+ *
+ * **Dates stay out of this on purpose.** `2026-01-01` also comes back as a
+ * non-string (a `Date`), but the scanner's date cascade expects exactly that,
+ * and quoting them would rewrite the `date:` line of every note the timeline
+ * ever touches — the vault-wide diff this whole module exists to prevent.
+ */
+const YAML_CONST = /^(?:~|[Nn]ull|NULL|[Tt]rue|TRUE|[Ff]alse|FALSE)$/;
+const YAML_NUMBER =
+  /^[-+]?(?:0x[0-9a-fA-F_]+|0b[01_]+|0[0-7_]+|[0-9][0-9_]*(?::[0-5]?[0-9])+(?:\.[0-9_]*)?|(?:[0-9][0-9_]*)?\.[0-9_]+(?:[eE][-+]?[0-9]+)?|[0-9][0-9_]*\.?[0-9_]*(?:[eE][-+]?[0-9]+)?|\.(?:inf|Inf|INF|nan|NaN|NAN))$/;
+
+/**
  * Render a value as YAML.
  *
  * Deliberately narrow: strings, numbers, booleans and flat string arrays. That
  * covers every field the timeline writes back. Anything else is refused by the
  * caller rather than guessed at, because a wrong guess here corrupts a file the
  * tool does not own.
+ *
+ * `inFlow` marks the elements of a `[a, b]` sequence, where three more
+ * characters are structural.
  */
-export function toYamlValue(value: unknown): string {
+export function toYamlValue(value: unknown, inFlow = false): string {
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) return `[${value.map((v) => toYamlValue(v)).join(', ')}]`;
+  if (Array.isArray(value)) return `[${value.map((v) => toYamlValue(v, true)).join(', ')}]`;
   const s = String(value);
-  // Quote only when the plain form would parse as something else: a leading
-  // indicator character, a trailing space, a colon-space (which would start a
-  // nested mapping), or an empty string.
+  // Quote whenever the plain form would not read back as this exact string: a
+  // leading indicator character, a trailing space, a colon-space (which would
+  // start a nested mapping), a space-hash (which would start a comment and
+  // truncate the value), an empty string, or a constant/number as above.
   //
-  // `-`, `?` and `:` are indicators only when a space follows — otherwise `-1`
-  // and `2026-01-01` would come back quoted, which is noise in a file somebody
-  // reads by hand.
+  // `-`, `?` and `:` are indicators only when a space follows — otherwise
+  // `2026-01-01` would come back quoted, which is noise in a file somebody reads
+  // by hand.
+  //
+  // Inside a flow sequence, `,` and the brackets end the element wherever they
+  // appear, not just in first position. An unquoted `]` there does not merely
+  // lose the value: it makes the whole block unparseable, and the scanner skips
+  // an unparseable note, so one edit drops the item off the timeline.
   const needsQuotes =
     s === '' ||
+    YAML_CONST.test(s) ||
+    YAML_NUMBER.test(s) ||
     /^[\s>|*&!%@`"'\[\]{}#,]/.test(s) ||
     /^[-?:](\s|$)/.test(s) ||
     /:\s/.test(s) ||
-    /\s$/.test(s);
+    /\s#/.test(s) ||
+    /\s$/.test(s) ||
+    (inFlow && /[,\[\]{}]/.test(s));
   return needsQuotes ? `'${s.replace(/'/g, "''")}'` : s;
 }
 

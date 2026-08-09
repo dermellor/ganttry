@@ -1,60 +1,61 @@
-// Netlify Edge Function — the retired public pricing endpoint.
+// Netlify Edge Function — the two PUBLIC, unauthenticated routes.
 //
-// `GET /api/pricing/<id>` served one plugin's model from an address of its own.
-// That was the last piece of the privilege issue #17 removes: a plugin nobody
-// wrote into this repo could never have had a route here, so „no plugin has a
-// privilege a third party lacks" was false as long as this one did.
+// The file is still called `pricing-api` although it no longer serves a pricing
+// endpoint. An edge function's filename is its identity in the host's dashboard
+// and its logs, so renaming it is a deployment change rather than a code change
+// (AGENTS.md → „Deployment identity"). It can be renamed the day the retired
+// route below is deleted, in one commit that touches both.
 //
-// It now answers **410 Gone** and names its successor:
+// - GET /api/public/plugin/<pluginId>/<id> → the rows a plugin publishes for one
+//   timeline, as public JSON. External pages fetch it at build time.
+// - GET /api/pricing/<id> → retired, answers 410 and names its successor. It
+//   stays routed so a stale consumer gets that instead of the SPA's HTML.
 //
-//   GET /api/public/plugin/product-roadmap/<id>
+// The auth gate excludes both (see auth.ts excludedPath and scripts/admission.ts),
+// so no login and no MCP token is required. What is actually served is decided by
+// three gates inside the dispatcher, and every failure is a 404 — the route must
+// not become a way to probe which timelines exist.
 //
-// 410 rather than a redirect, and rather than an alias, because the payload
-// changed shape: the old one folded each matrix cell into its tier under
-// `values`, and that folding is the plugin's knowledge, not the host's. A
-// generic route cannot perform it, so an alias would have to be a hand-written
-// translation living outside the plugin — exactly the thing being removed. A
-// consumer that silently received a differently-shaped body would render a price
-// list with empty columns and nobody would hear about it; a 410 with the new
-// address in the body stops the build instead.
-//
-// The function stays deployed rather than being deleted with its route. A
-// deleted function makes the path fall through to the SPA, which answers 200
-// with HTML — a build-time `fetch(...).json()` then fails on a parse error that
-// says nothing about what happened. This says what happened.
-//
-// It can go once the deprecation window has passed and no consumer is left. Its
-// successor is documented in „Publishing a plugin's data" (docs/plugin-public-read.md).
+// Driver selection mirrors timelines-api.ts: TIMELINES_DATABASE_URL selects
+// postgres.js (opt-in), else TIMELINES_SUPABASE_URL + SERVICE_KEY select
+// supabase-js (the Netlify default). Both drivers are imported so the bundle
+// carries each.
 
 import type { Context, Config } from '@netlify/edge-functions';
+import postgres from 'https://esm.sh/postgres@3.4.9';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
+import type { DbConnections } from '../../scripts/db/api.ts';
+import { handleApiRequest } from '../../scripts/db/http.ts';
 
-const SUCCESSOR = '/api/public/plugin/product-roadmap/<timelineId>';
+// Module-scoped, reused handles (see timelines-api.ts) — opened once per
+// isolate, never torn down in a handler.
+let sqlHandle: ReturnType<typeof postgres> | null | undefined;
+function getSql() {
+  if (sqlHandle !== undefined) return sqlHandle;
+  const dbUrl = Deno.env.get('TIMELINES_DATABASE_URL');
+  sqlHandle = dbUrl ? postgres(dbUrl, { prepare: false }) : null;
+  return sqlHandle;
+}
 
-export default async function handler(req: Request, _ctx: Context): Promise<Response> {
-  const id = new URL(req.url).pathname.replace(/^\/api\/pricing\//, '').replace(/\/+$/, '');
-  return new Response(
-    JSON.stringify({
-      error: 'gone',
-      message:
-        'GET /api/pricing/<id> has been retired. The pricing model is served by the generic ' +
-        `public plugin route: GET ${SUCCESSOR}. The payload shape changed — matrix cells are ` +
-        'their own rows in the `tier-values` collection instead of being folded into each ' +
-        "tier's `values` map.",
-      successor: id ? `/api/public/plugin/product-roadmap/${id}` : SUCCESSOR,
-    }),
-    {
-      status: 410,
-      headers: {
-        'Content-Type': 'application/json',
-        // Not cached: a consumer that fixes its URL must not keep hitting a
-        // cached refusal, and there is nothing here worth serving from an edge.
-        'Cache-Control': 'no-store',
-        'Access-Control-Allow-Origin': '*',
-      },
-    },
-  );
+let sbHandle: ReturnType<typeof createClient> | null | undefined;
+function getSupabase() {
+  if (sbHandle !== undefined) return sbHandle;
+  const url = Deno.env.get('TIMELINES_SUPABASE_URL');
+  const key = Deno.env.get('TIMELINES_SUPABASE_SERVICE_KEY');
+  sbHandle = url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
+  return sbHandle;
+}
+
+const dbConns = (): DbConnections => ({ sql: getSql(), supabase: getSupabase() });
+
+// The routes themselves — status codes, the public cache policy and the CORS
+// header — live in the shared HTTP layer, so this function is only the driver
+// setup plus a dispatch. No auth: the gate excludes both paths on purpose.
+export default async function handler(req: Request, _ctx: Context): Promise<Response | void> {
+  const out = await handleApiRequest(req, { conns: dbConns() });
+  return out ?? undefined;
 }
 
 export const config: Config = {
-  path: '/api/pricing/*',
+  path: ['/api/public/plugin/*', '/api/pricing/*'],
 };

@@ -176,21 +176,29 @@ export function pollTimeline(
 /**
  * The live-update seam: subscribe to one timeline's changes with the impl its
  * source declares (`capabilities.live`, surfaced to the client via loadSource).
- *   'realtime' → Supabase WebSocket channel (needs the anon key; no-op without)
+ *   'realtime' → Supabase WebSocket channel, falling back to polling when this
+ *                build carries no anon key
  *   'poll'     → watermark polling (server-gated, no anon key)
  *   'none'     → no live updates (file sources)
  * Returns an unsubscribe function. `onChange` has the same shape for both impls.
+ *
+ * The fallback matters because the two halves of "realtime" are configured
+ * apart: the server advertises the mode from ITS Supabase vars, while the
+ * channel needs `VITE_SUPABASE_ANON_KEY`, which is baked in at build time and is
+ * routinely absent (a build without it, a self-hosted deployment). This used to
+ * return an inert unsubscribe, so the viewer sat there looking live and updated
+ * on reload only. Polling reaches the same server that just answered the load,
+ * so it works wherever the app does.
  */
 export function watchTimeline(
   timelineId: string,
   onChange: (c: RemoteChange) => void,
   opts: WatchOptions,
 ): () => void {
-  if (opts.live === 'realtime') {
-    if (!isRealtimeEnabled()) return () => {};
+  if (opts.live === 'realtime' && isRealtimeEnabled()) {
     return subscribeTimeline(timelineId, onChange);
   }
-  if (opts.live === 'poll') {
+  if (opts.live === 'realtime' || opts.live === 'poll') {
     return pollTimeline(timelineId, onChange, { isBusy: opts.isBusy });
   }
   return () => {};

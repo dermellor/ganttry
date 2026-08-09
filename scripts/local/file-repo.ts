@@ -44,6 +44,7 @@ import type {
   CustomFieldDef,
   DirectoryUser,
   InstalledPlugin,
+  Member,
   PluginData,
   PluginDataRow,
   PluginRef,
@@ -582,6 +583,27 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
     },
     async touchUser(): Promise<void> {
       /* nothing to record */
+    },
+
+    // Membership is a DB concept too, and a file has no instance to belong to.
+    // Reads answer "nobody", so an enforcement path that consults them denies by
+    // omission rather than crashing; the writes refuse loudly, because silently
+    // accepting an invitation nothing stores would be the worse failure — an
+    // admin would watch it succeed and never see the person appear.
+    async getMember(): Promise<null> {
+      return null;
+    },
+    async listMembers(): Promise<Member[]> {
+      return [];
+    },
+    async inviteMember(): Promise<never> {
+      throw new NotSupportedError('a local file source has no membership');
+    },
+    async updateMemberRole(): Promise<never> {
+      throw new NotSupportedError('a local file source has no membership');
+    },
+    async setMemberStatus(): Promise<never> {
+      throw new NotSupportedError('a local file source has no membership');
     },
 
     // ---- whole timeline ---------------------------------------------------

@@ -1,4 +1,5 @@
 import type { StatusKey } from './status';
+import type { MemberRole, MemberStatus } from './access';
 
 // Where a source-backed view gets its data. The `kind` is the explicit
 // discriminator that drives loading — deliberately NOT a "try the API, then
@@ -65,6 +66,35 @@ export type Watermark = { v: number; n: number; t: string | null; pv?: number; p
  * avatar and as an item's owner has to look like the same person.
  */
 export type DirectoryUser = { email: string; name?: string };
+
+/**
+ * One membership of this instance: a directory entry plus what it may do.
+ *
+ * `Member extends DirectoryUser` is the type-level statement of migration 0016's
+ * decision — the directory and the member list are one table, because once an
+ * invitation is the only way in they are the same set of people. The rules that
+ * read `role` and `status` live in [`src/access.ts`](./access.ts), which is also
+ * where the two unions come from, so a role added there cannot be forgotten here.
+ *
+ * Timestamps are ISO strings rather than `Date`, like everything else that
+ * crosses the API boundary.
+ */
+export type Member = DirectoryUser & {
+  role: MemberRole;
+  status: MemberStatus;
+  /** Who sent the invitation; absent for rows that predate membership. */
+  invitedBy?: string;
+  invitedAt?: string;
+  /** When the invitation was accepted, which is the first successful sign-in. */
+  acceptedAt?: string;
+  /**
+   * When an outstanding invitation stops being accepted at sign-in. Absent once
+   * accepted: `setMemberStatus` clears it, so a stale expiry cannot later refuse
+   * somebody who is long since active.
+   */
+  inviteExpiresAt?: string;
+  lastSeenAt?: string;
+};
 
 /**
  * One entry in the viewer's view picker. Every view names a source: since the

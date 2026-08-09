@@ -14,22 +14,12 @@
 import postgres from 'postgres';
 import { envValue } from './env.ts';
 import { MIGRATE_URL_VAR } from './sql.ts';
+import { isLocalUrl, urlHost } from './local-url.ts';
 
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
-
-/** The host a connection string points at, or null if it cannot be parsed. */
-export function urlHost(url: string): string | null {
-  try {
-    return new URL(url).hostname.replace(/^\[|\]$/g, '');
-  } catch {
-    return null;
-  }
-}
-
-export function isLocalUrl(url: string): boolean {
-  const host = urlHost(url);
-  return host !== null && LOCAL_HOSTS.has(host);
-}
+// The host rule lives in ./local-url.ts: this file runs on import (it is a
+// script), so anything else needing the same answer cannot reach it here.
+// Re-exported so existing importers of this module keep resolving them.
+export { isLocalUrl, urlHost };
 
 async function main() {
   const url = envValue(MIGRATE_URL_VAR) || envValue('TIMELINES_DATABASE_URL');

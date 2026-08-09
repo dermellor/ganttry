@@ -5,11 +5,11 @@ import { envSourcesHint, envValue, hydrateProcessEnv } from './scripts/db/env';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
 import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
-import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, parsePublicPluginPath, type DbConnections, type ApiRequest } from './scripts/db/api';
+import { type DbConnections } from './scripts/db/api';
+import { accessControlEnabled, handleApiRequest, liveOverride } from './scripts/db/http';
+import { toRequest, writeResponse } from './scripts/node-http';
 import { hasLocalTimeline, isLocalWritable, makeFileRepo } from './scripts/local/file-repo';
-import { handlePluginsApi, handlePublicPluginApi } from './scripts/db/plugin-api';
 import { parseOperators } from './scripts/db/operator';
-import { makeManifestSource } from './scripts/db/plugin-manifests';
 import { buildCsp, parseOrigins } from './src/pluginHost/csp';
 
 // Runs while Vite loads this config, before it resolves `import.meta.env`.
@@ -49,23 +49,6 @@ const dbConns = (): DbConnections => ({
   sqlFor: getSqlForSource,
   local: localSource,
 });
-const hasDb = (c: DbConnections): boolean => Boolean(c.sql || c.supabase);
-
-/**
- * A single path segment of a source or item id.
- *
- * Dots are allowed because an item in a Markdown directory source is identified
- * by its file path, and file names carry dots. `.` and `..` are excluded
- * separately: those are the only two that mean something to the filesystem, and
- * excluding them by name is exact where a character blocklist is a guess.
- *
- * This is not the containment guard. That one lives in `scripts/local/file-repo.ts`
- * and works on the RESOLVED path, which is what catches the encodings a
- * character rule misses; this check only keeps obviously malformed ids out of
- * the dispatcher.
- */
-const ID_SEGMENT = /^[a-zA-Z0-9_.-]+$/;
-const isIdSegment = (s: string): boolean => s !== '.' && s !== '..' && ID_SEGMENT.test(s);
 
 type JiraCreds = { baseUrl: string; email: string; apiToken: string };
 
@@ -137,13 +120,6 @@ function timelinesApi(): Plugin {
         res.end(JSON.stringify(json));
       };
 
-      const readBody = async (req: any): Promise<unknown> => {
-        let raw = '';
-        for await (const chunk of req) raw += chunk;
-        if (!raw.trim()) return undefined;
-        return JSON.parse(raw);
-      };
-
       // GET /api/me — current user for the header presence badge. Local dev has
       // no auth session, so everyone is the single "local" identity (matches the
       // updatedBy attribution the write path uses in dev).
@@ -164,30 +140,6 @@ function timelinesApi(): Plugin {
       server.middlewares.use('/api/me', (req, res, next) => {
         if (req.method !== 'GET') return next();
         send(res, 200, devIdentity(req));
-      });
-
-      // GET /api/users — the user directory an item's Owner links to. Serving it
-      // also registers the caller (see handleUsersApi), which locally means the
-      // `dev_user` identity — but only when it is address-shaped, so the default
-      // "local" never lands in the (live) directory. Getting a test person in:
-      //   document.cookie = 'dev_user=alice@example.com'; location.reload()
-      //
-      // Without a DB there is no directory. It answers 200 with an empty list
-      // rather than failing: the owner picker then has nothing to offer, which is
-      // the truth for a notes-only checkout, and no source is editable anyway.
-      server.middlewares.use('/api/users', async (req, res, next) => {
-        if (req.method !== 'GET') return next();
-        const repo = resolveRepo(dbConns());
-        if (!repo) return send(res, 200, { users: [] });
-        // Email only, no name: the dev identity has none, and `/api/me` reports
-        // the address *as* the name so the presence badge has something to label
-        // with. Registering that would store "alice@example.com" as Alice's
-        // display name; without it she shows as "alice" (the local part).
-        const result = await handleUsersApi(repo, {
-          method: 'GET',
-          caller: { email: devIdentity(req).email },
-        });
-        send(res, result.status, result.json);
       });
 
       // GET /<data dir>/config.json — the built viewer config, with one field
@@ -216,8 +168,10 @@ function timelinesApi(): Plugin {
         try {
           const built = JSON.parse(await readFile(resolve(__dirname, 'public', DATA_DIR, 'config.json'), 'utf8'));
           for (const view of built.views ?? []) {
-            // Per source, not blanket: a Markdown directory is served here but
-            // is not writable yet, and claiming otherwise offers edits that 501.
+            // Per source, not blanket: a local view only becomes editable if its
+            // id still resolves to something this process can reach and write
+            // (`isLocalWritable`). A stamped-but-unresolvable source flipped to
+            // editable offers „+ Eintrag" and drag handles that end in an error.
             if (view?.source?.kind === 'local') {
               view.source.editable = isLocalWritable(localDirs, view.source.id);
             }
@@ -225,50 +179,6 @@ function timelinesApi(): Plugin {
           send(res, 200, built);
         } catch {
           next(); // not built yet — let the static handler produce its own 404
-        }
-      });
-
-      // GET /api/sources — list timelines
-      server.middlewares.use('/api/sources', async (req, res, next) => {
-        if (req.method !== 'GET') return next();
-        const conns = dbConns();
-        // Without a DB the collection is still answerable from the filesystem:
-        // the local timelines ARE sources, and returning [] would hide them.
-        if (!hasDb(conns) && !conns.local) return send(res, 200, { sources: [] });
-        try {
-          const result = await resolveAdapter(conns, '').handle({ method: 'GET', id: '' });
-          send(res, result.status, result.json);
-        } catch (err) {
-          send(res, 500, { error: 'server_error', message: String(err) });
-        }
-      });
-
-      // /api/public/plugin/<pluginId>/<timelineId> — PUBLIC, no auth.
-      //
-      // The generic replacement for the bespoke pricing endpoint: any installed
-      // plugin can publish, and none of them needs an endpoint of its own. Three
-      // gates decide, and every failure is a 404 — see handlePublicPluginApi.
-      server.middlewares.use('/api/public/plugin', async (req, res, next) => {
-        const url = new URL(req.url ?? '/', 'http://localhost');
-        const parsed = parsePublicPluginPath(`/api/public/plugin${url.pathname}`);
-        if (!parsed) return next();
-        const conns = dbConns();
-        const repo = resolveRepo(conns) ?? conns.local?.repo;
-        if (!repo) return send(res, 503, { error: 'db_not_configured' });
-        try {
-          const result = await handlePublicPluginApi(repo, makeManifestSource(repo), {
-            method: req.method ?? 'GET',
-            pluginId: parsed.pluginId,
-            timelineId: parsed.timelineId,
-            collection: url.searchParams.get('collection') ?? undefined,
-          });
-          // Same headers the pricing endpoint has always sent: public, cacheable,
-          // cross-origin. Consumers fetch this at build time from another site.
-          res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=300');
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          send(res, result.status, result.json);
-        } catch (err) {
-          send(res, 500, { error: 'server_error', message: String(err) });
         }
       });
 
@@ -303,135 +213,45 @@ function timelinesApi(): Plugin {
         }
       });
 
-      // /api/plugins[/<pluginId>] — the instance's install registry.
+      // Everything else under /api/ is the shared HTTP layer: /api/sources,
+      // /api/users, /api/plugins, the public plugin read and the /api/source
+      // CRUD tree. Routing, optimistic locking, the X-Source-Live header and the
+      // error mapping used to be written out here AND in the timelines-api edge
+      // function, two copies that had already drifted; they now live once in
+      // scripts/db/http.ts and this middleware is the Node adapter in front of
+      // it.
       //
-      // Instance-level, so it is a sibling of /api/sources rather than something
-      // under a timeline: which plugins this deployment has is not a property of
-      // any one timeline. Reads are open past the auth gate (the interface shows
-      // them); writes are operator-only, and locally the dev identity is treated
-      // as one — a checkout on somebody's laptop IS its operator, and demanding a
-      // configured allowlist there would make the flow untestable without one.
-      server.middlewares.use('/api/plugins', async (req, res, next) => {
-        const method = req.method ?? 'GET';
-        const conns = dbConns();
-        const repo = resolveRepo(conns) ?? conns.local?.repo;
-        if (!repo) return send(res, 200, { plugins: [] });
-        const url = new URL(req.url ?? '/', 'http://localhost');
-        const pluginId = url.pathname.replace(/^\/+|\/+$/g, '') || undefined;
-        let body: unknown;
-        if (method !== 'GET' && method !== 'DELETE') {
-          try {
-            body = await readBody(req);
-          } catch (err) {
-            return send(res, 400, { error: 'invalid JSON', detail: String(err) });
-          }
-        }
-        try {
-          const result = await handlePluginsApi(repo, {
-            method,
-            pluginId: pluginId ? decodeURIComponent(pluginId) : undefined,
-            body,
-            params: Object.fromEntries(url.searchParams),
-            caller: { email: 'local', mcp: true },
-            operators: parseOperators(envValue('PLUGIN_OPERATOR_EMAILS')),
-          });
-          send(res, result.status, result.json);
-        } catch (err) {
-          send(res, 500, { error: 'server_error', message: String(err) });
-        }
-      });
-
-      // GET /api/pricing/<id> — PUBLIC pricing model (mirror of the edge fn).
-      server.middlewares.use('/api/pricing', async (req, res, next) => {
-        if (req.method !== 'GET') return next();
-        const repo = resolveRepo(dbConns());
-        if (!repo) return send(res, 503, { error: 'db_not_configured' });
-        const id = (req.url ?? '').replace(/\?.*$/, '').replace(/^\/+|\/+$/g, '');
-        if (!id) return send(res, 400, { error: 'id required' });
-        try {
-          const pricing = await repo.getPublicPricing(decodeURIComponent(id));
-          if (pricing) send(res, 200, pricing);
-          else send(res, 404, { error: 'not found' });
-        } catch (err) {
-          send(res, 500, { error: 'server_error', message: String(err) });
-        }
-      });
-
-      // /api/source/<id>[/item|group|phases[/<childId>]] — DB-backed CRUD
-      server.middlewares.use('/api/source', async (req, res, next) => {
-        const method = req.method ?? 'GET';
-        const rawPath = (req.url ?? '').replace(/\?.*$/, '');
-        const parsed = parseSourcePath(rawPath);
-        if (!parsed) return send(res, 400, { error: 'invalid path' });
-
-        // Validate id + childId segments. The `/plugin/…` parts are deliberately
-        // exempt, and the exemption is not a hole: none of them ever becomes a
-        // path, and each is checked against something stricter than a charset —
-        // the plugin id and the collection against the installed manifest (an
-        // allowlist), the row id by the store that holds it. A charset rule would
-        // meanwhile reject legitimate values: a scoped plugin id carries `@` and
-        // `/`, and a composite row id carries `:` and percent escapes.
-        const segs = [
-          ...parsed.id.split('/'),
-          ...(parsed.sub?.plugin ? [] : [parsed.sub?.childId]),
-        ].filter(Boolean) as string[];
-        if (!segs.every(isIdSegment)) {
-          return send(res, 400, { error: `invalid id "${parsed.id}"` });
-        }
-
-        const conns = dbConns();
-        // A local file answers for its own id whether or not a DB exists, so the
-        // "no DB" refusal below must not intercept it — that gate predates local
-        // sources and would otherwise 404 every JSON timeline on a checkout
-        // without credentials, which is the common contributor setup.
-        if (!hasDb(conns) && !conns.local?.has(parsed.id)) {
-          // No DB configured: 404 on GET (nothing to read). The client surfaces
-          // the error loudly — there is no static content fallback. Writes 503.
-          if (method === 'GET') return send(res, 404, { error: 'db_not_configured' });
-          return send(res, 503, {
-            error: 'db_not_configured',
-            detail: 'Set TIMELINES_DATABASE_URL, or TIMELINES_SUPABASE_URL + TIMELINES_SUPABASE_SERVICE_KEY.',
-          });
-        }
-
-        let body: unknown;
-        if (method !== 'GET' && method !== 'DELETE') {
-          try {
-            body = await readBody(req);
-          } catch (err) {
-            return send(res, 400, { error: 'invalid JSON', detail: String(err) });
-          }
-        }
-
-        const ifMatchHeader = req.headers['if-match'];
-        const ifMatch = ifMatchHeader ? parseInt(String(ifMatchHeader), 10) : undefined;
-
-        const apiReq: ApiRequest = {
-          method,
-          id: parsed.id,
-          sub: parsed.sub,
-          body,
-          ifMatch: Number.isFinite(ifMatch as number) ? (ifMatch as number) : undefined,
+      // Mounted globally rather than on '/api': connect strips the mount path
+      // from `req.url`, so a prefixed mount would hand the handler '/sources'
+      // and every route would miss.
+      server.middlewares.use(async (req, res, next) => {
+        if (!(req.url ?? '').startsWith('/api/')) return next();
+        const out = await handleApiRequest(await toRequest(req), {
+          conns: dbConns(),
           // Local dev has no auth session; attribute edits as "local" so they're
           // distinguishable from colleague (Netlify/Google) and MCP edits in the
-          // item audit panel. Production/MCP set updatedBy in their own runtimes.
-          updatedBy: 'local',
-        };
-
-        try {
-          // TIMELINES_DB_LIVE=poll makes DB sources advertise polling instead of
-          // Supabase Realtime (for a Postgres without Realtime enabled).
-          const live = process.env.TIMELINES_DB_LIVE === 'poll' ? 'poll' : 'realtime';
-          const adapter = resolveAdapter(conns, apiReq.id, live);
-          // Tell the client which live-update impl to use (read by loadSource).
-          res.setHeader('X-Source-Live', adapter.capabilities.live);
-          const result = await adapter.handle(apiReq);
-          // A GET 404 (source not in the DB) surfaces as a loud client error —
-          // no static content fallback (see AGENTS.md „keine Notfall-Daten").
-          send(res, result.status, result.json);
-        } catch (err) {
-          send(res, 500, { error: 'server_error', message: String(err) });
-        }
+          // item audit panel. A `dev_user` cookie overrides it (see /api/me).
+          //
+          // Email only, no name: the dev identity has none, and `/api/me` reports
+          // the address *as* the name so the presence badge has something to
+          // label with. Registering that would store "alice@example.com" as
+          // Alice's display name; without it she shows as "alice".
+          updatedBy: devIdentity(req).email,
+          caller: { email: devIdentity(req).email },
+          // Off unless a developer asks for it, and then it consults the same
+          // member list as everything else — which is the point: trying the role
+          // model out locally must exercise the real path, not a dev-only
+          // shortcut that lets every check pass.
+          accessControl: accessControlEnabled(process.env.TIMELINES_ACCESS_CONTROL),
+          // A checkout on somebody's laptop IS its own plugin operator: demanding
+          // a configured allowlist here would make installing a plugin
+          // untestable without one, and there is nobody else on this port.
+          operators: parseOperators(envValue('PLUGIN_OPERATOR_EMAILS')),
+          serviceToken: true,
+          live: liveOverride(process.env.TIMELINES_DB_LIVE),
+        });
+        if (!out) return next(); // not one of its routes (e.g. /api/me, /api/jira)
+        await writeResponse(res, out);
       });
     },
   };

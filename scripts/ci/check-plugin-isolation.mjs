@@ -52,6 +52,7 @@ const IMPORT_ALLOWLIST = new Map([
 const LITERAL_ALLOWLIST = new Map([
   ['scripts/db/legacy-pricing.ts', 'dated: see above'],
   ['scripts/db/migrate-pricing-to-plugin-data.ts', 'dated: see above'],
+  ['scripts/db/retired-pricing-route.ts', 'dated: a retired route names the plugin it used to serve'],
 ]);
 
 /**
@@ -63,6 +64,7 @@ const LITERAL_ALLOWLIST = new Map([
 const REPO_METHODS = [
   'listTimelines', 'getTimeline', 'getWatermark',
   'listUsers', 'touchUser',
+  'getMember', 'listMembers', 'inviteMember', 'updateMemberRole', 'setMemberStatus',
   'replaceTimeline', 'updateMeta', 'updatePhases',
   'addItem', 'updateItem', 'getItem', 'deleteItem',
   'upsertGroup', 'deleteGroup',

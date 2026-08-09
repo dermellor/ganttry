@@ -41,6 +41,7 @@ const SCHEMA_TYPES = [
   'CustomFieldDef',
   'Watermark',
   'DirectoryUser',
+  'Member',
   'PluginRef',
   'PluginDataRow',
   'PluginStatus',
@@ -216,7 +217,7 @@ function toYaml(value: unknown, indent = 0): string {
 const spec = {
   openapi: '3.1.0',
   info: {
-    title: 'Ganttry HTTP API',
+    title: 'Zeitlines HTTP API',
     version: '0.1.0',
     description:
       'Read and write timelines. Served identically by the Vite dev middleware and the deployed edge function: both dispatch through handleTimelineApi in scripts/db/api.ts.\n\nAuthentication: every endpoint sits behind the auth gate when AUTH_REQUIRED=true, except the public plugin read route and the retired GET /api/pricing/{id}. An MCP client may bypass the gate with a valid X-MCP-Token header.\n\nConcurrency: a PATCH sends the row version in If-Match and gets 409 on a mismatch. A PATCH only touches keys present in the body, so clearing an optional field requires sending it as an explicit null.\n\nThis file is generated — payload schemas come from src/types.ts. See scripts/schema/openapi.ts.',

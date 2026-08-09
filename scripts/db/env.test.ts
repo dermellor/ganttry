@@ -18,7 +18,7 @@ test('envFilePaths: a bare ~ is the home directory itself', () => {
 });
 
 test('envFilePaths: absolute paths pass through', () => {
-  assert.deepEqual(envFilePaths('/etc/ganttry/.env', HOME), ['/etc/ganttry/.env']);
+  assert.deepEqual(envFilePaths('/etc/zeitlines/.env', HOME), ['/etc/zeitlines/.env']);
 });
 
 test('envFilePaths: splits on ":" and keeps order', () => {
@@ -41,26 +41,26 @@ test('envFilePaths: a "~" inside a path is not expanded', () => {
 test('instanceFilePath: a name resolves under the default profile directory', () => {
   assert.equal(
     instanceFilePath('acme', undefined, HOME),
-    '/home/tester/.config/ganttry/instances/acme.env',
+    '/home/tester/.config/zeitlines/instances/acme.env',
   );
 });
 
 test('instanceFilePath: an explicit directory wins, with ~/ expansion', () => {
   assert.equal(instanceFilePath('acme', '~/profiles', HOME), '/home/tester/profiles/acme.env');
-  assert.equal(instanceFilePath('acme', '/etc/ganttry', HOME), '/etc/ganttry/acme.env');
+  assert.equal(instanceFilePath('acme', '/etc/zeitlines', HOME), '/etc/zeitlines/acme.env');
 });
 
 test('instanceFilePath: a blank directory falls back to the default', () => {
   assert.equal(
     instanceFilePath('acme', '  ', HOME),
-    '/home/tester/.config/ganttry/instances/acme.env',
+    '/home/tester/.config/zeitlines/instances/acme.env',
   );
 });
 
 test('instanceFilePath: surrounding whitespace in the name is trimmed', () => {
   assert.equal(
     instanceFilePath('  acme  ', undefined, HOME),
-    '/home/tester/.config/ganttry/instances/acme.env',
+    '/home/tester/.config/zeitlines/instances/acme.env',
   );
 });
 

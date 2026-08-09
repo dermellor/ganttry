@@ -18,10 +18,14 @@ import type { Context, Config } from '@netlify/edge-functions';
 import postgres from 'https://esm.sh/postgres@3.4.9';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { readSession, hasValidMcpToken } from './_shared/session.ts';
-import { handlePluginsApi, handlePublicPluginApi } from '../../scripts/db/plugin-api.ts';
-import { makeManifestSource } from '../../scripts/db/plugin-manifests.ts';
+import { resolveRepo, type DbConnections } from '../../scripts/db/api.ts';
 import { parseOperators } from '../../scripts/db/operator.ts';
-import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, parsePublicPluginPath, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
+import {
+  accessControlEnabled,
+  handleApiRequest,
+  liveOverride,
+  serviceRoleFrom,
+} from '../../scripts/db/http.ts';
 
 // Module-scoped, reused postgres.js connection. Opened once per isolate and
 // reused across invocations — NEVER call sql.end() in a handler (it throws a
@@ -63,44 +67,9 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
   // and the client surfaces a loud error — no static content fallback).
   if (!resolveRepo(conns)) return;
 
-  const reqUrl = new URL(req.url);
-  const isCollection = reqUrl.pathname === '/api/sources';
-  const isUsers = reqUrl.pathname === '/api/users';
-  // The instance's install registry. A sibling of /api/sources rather than
-  // something under a timeline: which plugins this deployment has is not a
-  // property of any one of them.
-  const isPlugins = reqUrl.pathname === '/api/plugins' || reqUrl.pathname.startsWith('/api/plugins/');
-  // Public and unauthenticated. Handled BEFORE the gate below, because it is
-  // excluded from the gate anyway (auth.ts) and must answer for a caller with no
-  // session at all.
-  const publicPlugin = reqUrl.pathname.startsWith('/api/public/plugin/')
-    ? parsePublicPluginPath(reqUrl.pathname)
-    : null;
-  const parsed =
-    isCollection || isUsers || isPlugins || publicPlugin
-      ? { id: '' }
-      : parseSourcePath(reqUrl.pathname.replace(/^\/api\/source/, ''));
-  if (!parsed) return; // not our route → fall through
-
-  if (publicPlugin) {
-    const repo = resolveRepo(conns);
-    if (!repo) return json({ error: 'db_not_configured' }, 503);
-    const result = await handlePublicPluginApi(repo, makeManifestSource(repo), {
-      method: req.method ?? 'GET',
-      pluginId: publicPlugin.pluginId,
-      timelineId: publicPlugin.timelineId,
-      collection: reqUrl.searchParams.get('collection') ?? undefined,
-    });
-    const headers = new Headers({
-      // The same contract the pricing endpoint has always offered: cacheable and
-      // cross-origin, because consumers fetch it at build time from another site.
-      'Cache-Control': 'public, max-age=300, s-maxage=300',
-      'Access-Control-Allow-Origin': '*',
-    });
-    return json(result.json, result.status, headers);
-  }
-
-  // Auth gate: valid session or MCP service token.
+  // Auth gate: valid session or MCP service token. This is what stays here —
+  // everything after it is the shared HTTP layer, so the routing, locking and
+  // error semantics cannot drift from the other two runtimes.
   const mcp = hasValidMcpToken(req);
   const session = mcp ? null : await readSession(req);
   if (!mcp && !session) {
@@ -111,73 +80,27 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
   // The user directory (`/api/users`) rides along in this function rather than in
   // its own: it needs exactly this driver setup and this auth gate, and a second
   // edge bundle importing both drivers to serve one read would be a copy of the
-  // 40 lines above. Serving it registers the caller — see handleUsersApi.
-  if (isUsers) {
-    const repo = resolveRepo(conns);
-    if (!repo) return json({ users: [] });
-    const result = await handleUsersApi(repo, {
-      method: req.method ?? 'GET',
-      caller: session ? { email: session.email, name: session.name ?? null } : undefined,
-    });
-    return json(result.json, result.status);
-  }
-
-  const method = req.method ?? 'GET';
-  let body: unknown;
-  if (method !== 'GET' && method !== 'DELETE') {
-    try {
-      body = await req.json();
-    } catch {
-      return json({ error: 'invalid JSON' }, 400);
-    }
-  }
-
-  // Reads are open past the gate above; every write is operator-only, which is a
-  // different permission from „may edit a timeline" — see scripts/db/operator.ts.
-  if (isPlugins) {
-    const repo = resolveRepo(conns);
-    if (!repo) return json({ plugins: [] });
-    const pluginId = reqUrl.pathname.slice('/api/plugins'.length).replace(/^\/+|\/+$/g, '');
-    const result = await handlePluginsApi(repo, {
-      method,
-      pluginId: pluginId ? decodeURIComponent(pluginId) : undefined,
-      body,
-      params: Object.fromEntries(reqUrl.searchParams),
-      caller: { email: session?.email ?? null, mcp },
-      operators: parseOperators(Deno.env.get('PLUGIN_OPERATOR_EMAILS')),
-    });
-    return json(result.json, result.status);
-  }
-
-  const ifMatchHeader = req.headers.get('if-match');
-  const ifMatch = ifMatchHeader ? parseInt(ifMatchHeader, 10) : undefined;
-
-  const apiReq: ApiRequest = {
-    method,
-    id: parsed.id,
-    sub: (parsed as { sub?: ApiRequest['sub'] }).sub,
-    body,
-    ifMatch: Number.isFinite(ifMatch as number) ? (ifMatch as number) : undefined,
+  // 40 lines above.
+  const out = await handleApiRequest(req, {
+    conns,
     updatedBy: mcp ? 'mcp' : session?.email,
-  };
-
-  try {
-    // TIMELINES_DB_LIVE=poll makes DB sources advertise polling instead of
-    // Supabase Realtime (for a Postgres without Realtime enabled).
-    const live = Deno.env.get('TIMELINES_DB_LIVE') === 'poll' ? 'poll' : 'realtime';
-    const adapter = resolveAdapter(conns, apiReq.id, live);
-    const result = await adapter.handle(apiReq);
-    // Tell the client which live-update impl to use (read by loadSource).
-    const headers = new Headers();
-    headers.set('X-Source-Live', adapter.capabilities.live);
-    // A GET 404 (source not in the DB) surfaces as a loud client error —
-    // no static content fallback (see AGENTS.md „keine Notfall-Daten").
-    return json(result.json, result.status, headers);
-  } catch (err) {
-    return json({ error: 'server_error', message: String(err) }, 500);
-  }
+    caller: session ? { email: session.email, name: session.name ?? null } : undefined,
+    accessControl: accessControlEnabled(Deno.env.get('TIMELINES_ACCESS_CONTROL')),
+    // The service token authenticates a program: there is no membership row to
+    // find, so its role is configured rather than looked up. Defaulting to
+    // `editor` is what keeps existing automations working the day the switch is
+    // turned on.
+    serviceRole: mcp ? serviceRoleFrom(Deno.env.get('MCP_TOKEN_ROLE')) : undefined,
+    // Who may install or uninstall a plugin instance-wide. A deployment
+    // property, so it comes from the host's env rather than the member list.
+    operators: parseOperators(Deno.env.get('PLUGIN_OPERATOR_EMAILS')),
+    serviceToken: mcp,
+    live: liveOverride(Deno.env.get('TIMELINES_DB_LIVE')),
+  });
+  // null → not one of our routes; fall through to the rest of the stack.
+  return out ?? undefined;
 }
 
 export const config: Config = {
-  path: ['/api/source/*', '/api/sources', '/api/users', '/api/plugins', '/api/plugins/*', '/api/public/plugin/*'],
+  path: ['/api/source/*', '/api/sources', '/api/users'],
 };
