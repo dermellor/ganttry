@@ -108,7 +108,10 @@ The HTTP API is described in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1, genera
 from the TypeScript types), including the public, unauthenticated pricing endpoint
 and the optimistic-locking contract.
 
-Each subsystem is documented with its reasoning in [`docs/`](docs/) — data model,
+[`docs/overview.md`](docs/overview.md) maps the layers onto each other: the path a
+request takes from the viewer down to a store, and how one timeline type is laid
+out as Postgres rows, as a single JSON file, or as a directory of Markdown. Each
+subsystem is then documented with its reasoning in [`docs/`](docs/) — data model,
 items, editing, database, MCP, deploy, pricing — and [`AGENTS.md`](AGENTS.md) is the
 index plus the conventions that apply everywhere.
 
