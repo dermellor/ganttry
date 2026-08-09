@@ -286,3 +286,20 @@ test('paths we do not own are never refused, only passed through', async () => {
     assert.equal(await call(path, undefined, { accessControl: true }), null, path);
   }
 });
+
+test('administration is refused while access control is off, database or not', async () => {
+  // The switch means „membership decides"; off, there is nothing to decide with,
+  // so a route needing `manage` cannot be satisfied. Letting it through because
+  // „the checks are off" served the whole member roster to anyone past the auth
+  // gate and let them invite an admin.
+  for (const ctx of [withLocal(), asMember(MEMBERS, 'admin@example.test')]) {
+    const res = (await call('/api/members', undefined, { ...ctx, accessControl: false }))!;
+    assert.equal(res.status, 503);
+    assert.equal(((await res.json()) as any).error, 'access_control_disabled');
+  }
+  const write = (await call('/api/members', { method: 'POST', body: '{}' }, {
+    ...asMember(MEMBERS, 'admin@example.test'),
+    accessControl: false,
+  }))!;
+  assert.equal(write.status, 503, 'inviting is refused for the same reason');
+});

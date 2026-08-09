@@ -164,6 +164,28 @@ function requiredCapability(path: string, method: string): Capability {
 }
 
 async function authorize(path: string, method: string, ctx: ApiContext): Promise<Response | null> {
+  // Administration is never ungated, and the switch does NOT open it.
+  //
+  // The switch means „membership decides what people may do". Off, there are no
+  // roles to decide with — so a route that needs `manage` cannot be satisfied,
+  // and letting it through „because the checks are off" served the whole member
+  // roster to anyone past the auth gate and let them invite an admin. That is
+  // what this branch prevents, and it has to sit ABOVE the switch: below it, the
+  // early return has already happened.
+  //
+  // 503 rather than 403: nothing is wrong with the caller, the instance has not
+  // enabled the feature. A 403 would send an admin looking for their missing
+  // permission instead of at TIMELINES_ACCESS_CONTROL.
+  if (path === '/api/members' && !ctx.accessControl) {
+    return json(
+      {
+        error: 'access_control_disabled',
+        message:
+          'Membership administration is off on this instance. Set TIMELINES_ACCESS_CONTROL=true to enable it.',
+      },
+      503,
+    );
+  }
   if (!ctx.accessControl) return null;
 
   const capability: Capability = requiredCapability(path, method);
