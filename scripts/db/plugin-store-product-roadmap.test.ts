@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { before, describe, test } from 'node:test';
 
-import { handlePluginApi, MOVE_SEGMENT, purgePlugin } from './plugin-api.ts';
+import { handlePluginApi, MOVE_SEGMENT, purgePlugin, type ManifestSource } from './plugin-api.ts';
 import { makeMemoryStore } from './plugin-store-memory.ts';
 import { validateManifest } from '../../src/pluginHost/manifest.ts';
 import { productRoadmapManifest, PRICING_COLLECTIONS } from '../../src/plugins/product-roadmap/manifest.ts';
@@ -28,7 +28,8 @@ import { makeFileRepo, type FileRepoDirs } from '../local/file-repo.ts';
 import type { TimelineRepo } from './repo.ts';
 
 const PLUGIN = productRoadmapManifest.id;
-const manifests = (id: string) => (id === PLUGIN ? productRoadmapManifest : null);
+const manifests: ManifestSource = async (id) =>
+  id === PLUGIN ? { manifest: productRoadmapManifest, enabled: true } : null;
 
 /** The four tables, as the manifest claims to express them. */
 const { features, tiers, tierValues, highlights } = PRICING_COLLECTIONS;

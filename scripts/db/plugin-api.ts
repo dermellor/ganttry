@@ -8,13 +8,23 @@
 // they all arrive through this dispatcher.
 //
 // Nothing here names a plugin. What a plugin may store comes from its manifest,
-// which the runtime supplies through a lookup; today that lookup reads the
-// in-tree manifests, and issue #13 swaps it for the instance's install registry
-// without this file changing.
+// which arrives through a lookup over the instance's install registry
+// (./plugin-manifests.ts).
+//
+// The file carries three levels of the same subject, which is why they are
+// together: the rows a plugin owns (`handlePluginApi`), whether a plugin is on
+// for one timeline (`handlePluginLifecycle`), and whether the instance has it at
+// all (`handlePluginsApi`). Splitting them would put the „is it installed" check
+// in one file and the „may it write" check in another, and those two answers have
+// to stay consistent.
 
-import type { PluginData, PluginDataRow } from '../../src/types';
+import type { InstalledPlugin, PluginData, PluginDataRow } from '../../src/types';
 import type { PluginManifest } from '../../src/pluginHost/manifest';
-import { grants } from '../../src/pluginHost/manifest.ts';
+import { grants, validateManifest } from '../../src/pluginHost/manifest.ts';
+import { validateRow } from '../../src/pluginHost/dataSchema.ts';
+import { pluginStatus } from '../../src/pluginHost/installed.ts';
+import { installedPluginStatuses, makeManifestSource, type ManifestSource } from './plugin-manifests.ts';
+import { isOperator, operatorRefusal, type Caller } from './operator.ts';
 import {
   cascadeFor,
   collectionOf,
@@ -25,10 +35,9 @@ import {
   rowIdFor,
   rowProblems,
 } from '../../src/pluginHost/dataStore.ts';
-import { ConflictError, NotFoundError, ValidationError, type TimelineRepo } from './repo.ts';
+import { ConflictError, NotFoundError, NotSupportedError, ValidationError, type TimelineRepo } from './repo.ts';
 
-/** Where the dispatcher looks up what a plugin declared. Null = not installed. */
-export type ManifestSource = (pluginId: string) => PluginManifest | null;
+export type { ManifestSource } from './plugin-manifests.ts';
 
 export type PluginPath = { pluginId: string; collection?: string; rowId?: string };
 
@@ -126,11 +135,21 @@ export async function handlePluginApi(
   req: PluginApiRequest,
 ): Promise<PluginApiResult> {
   const { method, timelineId, path } = req;
-  const manifest = manifests(path.pluginId);
-  if (!manifest) return err(404, 'unknown_plugin', { message: `no plugin „${path.pluginId}" is installed` });
+  const installed = await manifests(path.pluginId);
+  if (!installed) return err(404, 'unknown_plugin', { message: `no plugin „${path.pluginId}" is installed` });
+  const { manifest } = installed;
   if (!grants(manifest, 'data:own')) {
     return err(403, 'capability_missing', {
       message: `plugin „${path.pluginId}" did not declare the "data:own" capability`,
+    });
+  }
+  // Switched off instance-wide: reads stay open so the data can still be
+  // inspected — before an uninstall, that is exactly when someone looks at it —
+  // but writes stop, because „off" has to mean something. Refusing the read too
+  // would leave an operator deciding about data they cannot see.
+  if (!installed.enabled && method !== 'GET') {
+    return err(403, 'plugin_disabled', {
+      message: `plugin „${path.pluginId}" is switched off for this instance; its data is readable but not writable`,
     });
   }
   if (!path.collection) return err(400, 'collection required');
@@ -288,6 +307,259 @@ export async function handlePluginApi(
     if (e instanceof NotFoundError) return err(404, 'not found');
     if (e instanceof ValidationError) return err(400, 'invalid_request', { message: e.message });
     throw e; // the caller's catch maps NotSupportedError and the 500 case
+  }
+}
+
+/**
+ * Turning one plugin on or off for ONE timeline.
+ *
+ * The path this closes is the one that only existed as „now run some SQL": until
+ * now, enabling a single plugin without rewriting the whole timeline meant direct
+ * SQL or a bulk `replace_timeline`, and a bulk write is exactly what loses a
+ * concurrent edit. It is documented as an open follow-up in docs/database.md.
+ *
+ *   GET    → is it enabled here, and with what config
+ *   PUT    → enable, or replace the config
+ *   DELETE → disable, keeping every row the plugin owns
+ *
+ * A plugin has to be INSTALLED before it can be enabled anywhere, which is why an
+ * unknown id is a 404 rather than a row quietly created for a plugin nothing can
+ * load.
+ */
+export async function handlePluginLifecycle(
+  repo: TimelineRepo,
+  manifests: ManifestSource,
+  req: PluginApiRequest,
+): Promise<PluginApiResult> {
+  const { method, timelineId, path } = req;
+  const installed = await manifests(path.pluginId);
+  if (!installed) {
+    return err(404, 'unknown_plugin', {
+      message: `no plugin „${path.pluginId}" is installed on this instance; install it before enabling it on a timeline`,
+    });
+  }
+
+  try {
+    if (method === 'GET') {
+      const file = await repo.getTimeline(timelineId);
+      if (!file) return err(404, 'not found');
+      const ref = (file.plugins ?? []).find((p) => p.id === path.pluginId);
+      return ok({
+        pluginId: path.pluginId,
+        installed: true,
+        instanceEnabled: installed.enabled,
+        enabled: !!ref,
+        config: ref?.config ?? {},
+      });
+    }
+
+    if (method === 'PUT' || method === 'POST' || method === 'PATCH') {
+      if (!installed.enabled) {
+        return err(403, 'plugin_disabled', {
+          message: `plugin „${path.pluginId}" is switched off for this instance; switch it on before enabling it on a timeline`,
+        });
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      // Accept either `{ config: {...} }` or the bare bag. A caller that sends the
+      // config directly is not wrong, and a 400 there would be pedantry.
+      const config = (isPlainObject(body.config) ? body.config : body) as Record<string, unknown>;
+      const problems = configProblems(installed.manifest, config);
+      if (problems.length) {
+        return err(400, 'invalid_config', { message: problems.join('; ') });
+      }
+      await repo.setTimelinePlugin(timelineId, path.pluginId, config);
+      return ok({ ok: true, pluginId: path.pluginId, enabled: true, config });
+    }
+
+    if (method === 'DELETE') {
+      // Deliberately not idempotency-checked: „it was already off" and „it is off
+      // now" are the same state, and a 404 for the first would make a retry look
+      // like a failure.
+      await repo.removeTimelinePlugin(timelineId, path.pluginId);
+      return ok({ ok: true, pluginId: path.pluginId, enabled: false });
+    }
+
+    return err(405, 'method not allowed');
+  } catch (e) {
+    if (e instanceof ConflictError) return err(409, 'version_conflict', { message: e.message });
+    if (e instanceof NotFoundError) return err(404, 'not found');
+    if (e instanceof ValidationError) return err(400, 'invalid_request', { message: e.message });
+    throw e;
+  }
+}
+
+/**
+ * Problems with a plugin's config bag, against the `configSchema` its manifest
+ * declares.
+ *
+ * Checked at the API rather than left to the plugin, because the alternative is a
+ * bad config failing inside a render — where it reads as a broken plugin, and the
+ * person who typed the config is not the person looking at the stack trace.
+ */
+export function configProblems(manifest: PluginManifest, config: unknown): string[] {
+  if (manifest.configSchema == null) return [];
+  return validateRow(manifest.configSchema, config ?? {}, 'config');
+}
+
+// ---------------------------------------------------------------------------
+// The instance's registry: /api/plugins
+// ---------------------------------------------------------------------------
+
+export type PluginsApiRequest = {
+  method: string;
+  /** Present for the single-plugin operations. */
+  pluginId?: string;
+  body?: unknown;
+  /** Query parameters, which is where a DELETE carries its confirmation. */
+  params?: Record<string, string>;
+  caller: Caller;
+  /** The configured operator list, read from the env by the runtime glue. */
+  operators: string[];
+};
+
+/**
+ * List, install, switch off and uninstall plugins for the whole instance.
+ *
+ * Reading is open to anyone past the auth gate, because it is what the interface
+ * shows: which plugins exist, which are off, which the host outgrew. Every WRITE
+ * is operator-only — see ./operator.ts for why that cannot be the same permission
+ * as editing a timeline.
+ */
+export async function handlePluginsApi(
+  repo: TimelineRepo,
+  req: PluginsApiRequest,
+): Promise<PluginApiResult> {
+  const { method, pluginId } = req;
+
+  if (method === 'GET' && !pluginId) {
+    return ok({ plugins: await installedPluginStatuses(repo) });
+  }
+
+  const mayWrite = isOperator(req.caller, req.operators);
+  if (!mayWrite) return err(403, 'forbidden', { message: operatorRefusal(req.operators) });
+
+  try {
+    // ---- install / re-install ----------------------------------------------
+    if (method === 'POST' && !pluginId) {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const raw = isPlainObject(body.manifest) ? body.manifest : null;
+      if (!raw) return err(400, 'invalid_request', { message: 'install needs a "manifest" object' });
+
+      // Validated against THIS host before anything is stored. An artifact whose
+      // contract range the host cannot satisfy is refused at install rather than
+      // written and then refused at every boot — the second reads as a broken
+      // plugin, and the reason is a scroll away from where it is noticed.
+      const result = validateManifest(raw);
+      if (!result.ok) {
+        return err(400, 'invalid_manifest', { message: result.problems.join('; ') });
+      }
+      const manifest = result.manifest;
+
+      const artifact = isPlainObject(body.artifact) ? body.artifact : {};
+      const kind = typeof artifact.kind === 'string' ? artifact.kind : 'builtin';
+      if (!(['builtin', 'url', 'package', 'vendored'] as string[]).includes(kind)) {
+        return err(400, 'invalid_request', { message: `unknown artifact kind "${kind}"` });
+      }
+      // An artifact that is fetched has to say from where, and a remote one has to
+      // be pinned: without an integrity hash „version 1.2.0" names whatever that
+      // URL serves today, which is not a version at all.
+      if (kind !== 'builtin' && typeof artifact.source !== 'string') {
+        return err(400, 'invalid_request', { message: `artifact kind "${kind}" needs a source` });
+      }
+      if (kind === 'url' && typeof artifact.integrity !== 'string') {
+        return err(400, 'invalid_request', {
+          message: 'a url artifact needs an integrity hash, or the pinned version means nothing',
+        });
+      }
+
+      // Capabilities are GRANTED, not claimed: the stored list is what the
+      // operator allowed, and a plugin that later declares more does not get more.
+      // Without an explicit grant the manifest's own list is taken as approved,
+      // which is the same thing the install dialog will show.
+      const granted = Array.isArray(body.capabilities)
+        ? body.capabilities.filter((c): c is string => typeof c === 'string')
+        : [...(manifest.capabilities ?? [])];
+      const overreach = (manifest.capabilities ?? []).filter((c) => !granted.includes(c));
+      if (overreach.length) {
+        return err(400, 'capability_missing', {
+          message:
+            `plugin „${manifest.id}" declares ${overreach.join(', ')}, which this install does not grant. ` +
+            'Grant them or install a plugin that does not need them — a plugin running with less than it ' +
+            'declared fails somewhere far from the cause.',
+        });
+      }
+
+      const stored = await repo.installPlugin(
+        {
+          id: manifest.id,
+          version: manifest.version,
+          apiVersion: manifest.apiVersion,
+          artifact: {
+            kind: kind as InstalledPlugin['artifact']['kind'],
+            ...(typeof artifact.source === 'string' ? { source: artifact.source } : {}),
+            ...(typeof artifact.integrity === 'string' ? { integrity: artifact.integrity } : {}),
+          },
+          capabilities: granted,
+          manifest: manifest as unknown as Record<string, unknown>,
+          enabled: body.enabled !== false,
+        },
+        req.caller.email ?? (req.caller.mcp ? 'mcp' : undefined),
+      );
+      return ok(pluginStatus(stored), 201);
+    }
+
+    if (!pluginId) return err(405, 'method not allowed');
+
+    // ---- the instance-level off switch -------------------------------------
+    if (method === 'PATCH' || method === 'PUT') {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      if (typeof body.enabled !== 'boolean') {
+        return err(400, 'invalid_request', { message: 'send { "enabled": true | false }' });
+      }
+      await repo.setPluginInstalledEnabled(
+        pluginId,
+        body.enabled,
+        req.caller.email ?? (req.caller.mcp ? 'mcp' : undefined),
+      );
+      return ok({ ok: true, pluginId, enabled: body.enabled });
+    }
+
+    // ---- uninstall ---------------------------------------------------------
+    if (method === 'DELETE') {
+      // The confirmation is the plugin's own id, echoed back. A boolean flag is
+      // too easy to send by accident from a script iterating a list, and this is
+      // the one operation that can delete data nothing else can recover.
+      const confirm = req.params?.confirm;
+      if (confirm !== pluginId) {
+        return err(400, 'confirmation_required', {
+          message: `uninstalling removes „${pluginId}" from this instance; repeat its id as ?confirm=${pluginId}`,
+        });
+      }
+      // Purging is opt-IN. The default keeps the rows, so an uninstall meant as
+      // „stop running this" cannot silently discard a pricing model; an operator
+      // who wants it gone says so.
+      const purgeData = req.params?.purgeData === 'true';
+      const record = await makeManifestSource(repo)(pluginId);
+      let purged: { metadataKeysStrippedFrom: number } | null = null;
+      if (purgeData && record) purged = await purgePlugin(repo, record.manifest);
+      await repo.removeInstalledPlugin(pluginId);
+      return ok({
+        ok: true,
+        pluginId,
+        dataPurged: purgeData,
+        ...(purged ? { metadataKeysStrippedFrom: purged.metadataKeysStrippedFrom } : {}),
+        ...(purgeData
+          ? {}
+          : { note: 'the rows this plugin owned were kept; re-installing it makes them visible again' }),
+      });
+    }
+
+    return err(405, 'method not allowed');
+  } catch (e) {
+    if (e instanceof NotFoundError) return err(404, 'not found', { message: `plugin „${pluginId}" is not installed` });
+    if (e instanceof ValidationError) return err(400, 'invalid_request', { message: e.message });
+    if (e instanceof NotSupportedError) return err(501, 'not_supported', { message: e.message });
+    return err(500, 'server_error', { message: e instanceof Error ? e.message : String(e) });
   }
 }
 

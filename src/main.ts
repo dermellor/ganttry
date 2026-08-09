@@ -35,6 +35,7 @@ import {
   displayIdsFor,
 } from './render';
 import { GROUP_DIM } from './listGrouping';
+import { loadPluginStatuses, renderPluginList } from './pluginPanel';
 import { commitItemForm } from './persistence';
 import type { PresenceUser } from './presence';
 import { loadUserDirectory } from './users';
@@ -324,6 +325,28 @@ async function bootstrap() {
   });
   els.addBtn.addEventListener('click', () => addNewItem());
   els.exportBtn.addEventListener('click', handleExport);
+
+  // The plugin list answers „why is that view not there?", so it is built fresh
+  // on open: the registry can change under a long-lived tab (an operator installs
+  // something), and the timeline it reports on changes with every view switch.
+  els.pluginsBtn.addEventListener('click', async () => {
+    const open = !els.pluginsPanel.hidden;
+    if (open) {
+      els.pluginsPanel.hidden = true;
+      els.pluginsBtn.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    els.pluginsPanel.hidden = false;
+    els.pluginsBtn.setAttribute('aria-expanded', 'true');
+    renderPluginList(els.pluginsPanel, await loadPluginStatuses(state.config?.plugins), state.activeSourceFile);
+  });
+  document.addEventListener('click', (e) => {
+    if (els.pluginsPanel.hidden) return;
+    const target = e.target as Node;
+    if (els.pluginsPanel.contains(target) || els.pluginsBtn.contains(target)) return;
+    els.pluginsPanel.hidden = true;
+    els.pluginsBtn.setAttribute('aria-expanded', 'false');
+  });
 
   // Delete key (and Mac's ⌫) removes the item whose edit form is open — as long
   // as focus is not inside a form field. deleteItem() shows its own confirm.

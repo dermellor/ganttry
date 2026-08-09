@@ -44,8 +44,10 @@ import {
 import type {
   CustomFieldDef,
   DirectoryUser,
+  InstalledPlugin,
   PluginData,
   PluginDataRow,
+  PluginRef,
   TimelineContainer,
   TimelineFile,
   TimelineFileItem,
@@ -744,6 +746,61 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       for (const key of ['name', 'description', 'groupBy', 'customFields'] as const) {
         if (key in meta && meta[key] !== undefined) (next as any)[key] = meta[key];
       }
+      await persist(loaded, next);
+    },
+
+    // ---- the instance's install registry -----------------------------------
+    //
+    // Not implemented here, and that is a statement rather than a gap. „Installed"
+    // is instance state about CODE: which artifact was fetched, what hash pins it,
+    // which capabilities an operator granted. A bare data directory has nowhere to
+    // record that and no loader to act on it, so a filesystem-only instance can
+    // genuinely only run the plugins its build shipped with — the server reads
+    // those from the build (scripts/db/plugin-manifests.ts).
+    //
+    // Answering `501` for the writes says so. Returning success would report a
+    // plugin as installed that nothing could ever load. The vendored / offline
+    // install path is <https://github.com/dermellor/ganttry/issues/14>, which is
+    // also where the loader that would use this arrives.
+    //
+    // Enablement PER TIMELINE is a different matter and is implemented below: it
+    // is data on the timeline, so it must work on every source kind, exactly as
+    // the generic store does.
+    async listInstalledPlugins(): Promise<InstalledPlugin[]> {
+      return [];
+    },
+    async installPlugin(): Promise<InstalledPlugin> {
+      return unsupported('installing plugins on a file-backed instance');
+    },
+    async setPluginInstalledEnabled(): Promise<void> {
+      return unsupported('enabling a plugin instance-wide on a file-backed instance');
+    },
+    async removeInstalledPlugin(): Promise<void> {
+      return unsupported('uninstalling plugins on a file-backed instance');
+    },
+
+    // ---- a plugin's enablement on one timeline -----------------------------
+
+    async setTimelinePlugin(id: string, pluginId: string, config: Record<string, unknown>): Promise<void> {
+      const loaded = await loadForWrite(dirs, id);
+      const plugins = [...(loaded.file.plugins ?? [])];
+      const at = plugins.findIndex((p) => p.id === pluginId);
+      const ref: PluginRef = Object.keys(config ?? {}).length ? { id: pluginId, config } : { id: pluginId };
+      if (at >= 0) plugins[at] = ref;
+      else plugins.push(ref);
+      await persist(loaded, { ...loaded.file, plugins });
+    },
+
+    async removeTimelinePlugin(id: string, pluginId: string): Promise<void> {
+      const loaded = await loadForWrite(dirs, id);
+      const plugins = (loaded.file.plugins ?? []).filter((p) => p.id !== pluginId);
+      const next = { ...loaded.file };
+      // An empty array is dropped rather than left behind: this is a file people
+      // read, and `"plugins": []` reads as „something was here and broke".
+      if (plugins.length) next.plugins = plugins;
+      else delete next.plugins;
+      // The plugin's rows stay. Disabling is reversible by design; the destructive
+      // operation is the instance-level uninstall, and that one asks.
       await persist(loaded, next);
     },
 

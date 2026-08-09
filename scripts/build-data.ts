@@ -119,6 +119,35 @@ async function collectDbSources(): Promise<unknown[]> {
   return views;
 }
 
+/**
+ * The instance's install registry, baked into the built config.
+ *
+ * It has to travel this way because a static deploy has no API to ask: the same
+ * reason a plugin's rows are folded into the timeline file rather than fetched
+ * (docs/plugin-storage.md). A served instance re-reads it live from
+ * `GET /api/plugins`; this copy is what a build-only deploy has, and it is
+ * metadata about which plugins exist — never a snapshot of anybody's content, so
+ * it does not touch „No fallback data, ever".
+ *
+ * A failing read is NOT fatal here, unlike the timeline list: a deploy with no
+ * registry still runs the plugins its build shipped with, which is what the
+ * fallback in `installedPluginStatuses` returns.
+ */
+async function collectPlugins(): Promise<unknown[]> {
+  try {
+    const { resolveRepoFromEnv } = (await import('./db/repo-node.ts')) as any;
+    const { installedPluginStatuses } = (await import('./db/plugin-manifests.ts')) as any;
+    const repo = resolveRepoFromEnv();
+    // Without a DB there is no registry to read; the client falls back to the
+    // built-ins the same way the server does.
+    if (!repo) return [];
+    return await installedPluginStatuses(repo);
+  } catch (err) {
+    console.warn('[build-data] plugin registry skipped:', err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
 async function buildOnce(): Promise<void> {
   const config = await loadConfig();
   await mkdir(OUT_DIR, { recursive: true });
@@ -138,12 +167,13 @@ async function buildOnce(): Promise<void> {
   const defaultView = views.some((v: any) => v.id === declared)
     ? declared
     : ((views[0] as any)?.id ?? declared);
-  const mergedConfig = { ...config, defaultView, views };
+  const plugins = await collectPlugins();
+  const mergedConfig = { ...config, defaultView, views, plugins };
   const configOut = join(OUT_DIR, 'config.json');
   const configChanged = await writeIfChanged(configOut, JSON.stringify(mergedConfig, null, 2));
 
   if (configChanged) {
-    console.log(`[build-data] wrote ${views.length} source(s)`);
+    console.log(`[build-data] wrote ${views.length} source(s), ${plugins.length} plugin(s)`);
   }
 }
 

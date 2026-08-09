@@ -40,7 +40,10 @@ const NO_STORAGE: PluginManifest = {
   capabilities: ['items:read'],
 };
 
-const manifests: ManifestSource = (id) => (id === 'demo' ? DEMO : id === 'viewer' ? NO_STORAGE : null);
+const manifests: ManifestSource = async (id) => {
+  const manifest = id === 'demo' ? DEMO : id === 'viewer' ? NO_STORAGE : null;
+  return manifest ? { manifest, enabled: true } : null;
+};
 
 const TL = 'plan';
 
@@ -197,7 +200,7 @@ describe('handlePluginApi: references', () => {
     store.seed(TL, 'demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
     store.seed(TL, 'demo', 'cells', [{ id: 'pro:calls', data: { tierId: 'pro', featureId: 'calls' } }]);
 
-    const res = await handlePluginApi(store.repo, () => restrictive, {
+    const res = await handlePluginApi(store.repo, async () => ({ manifest: restrictive, enabled: true }), {
       method: 'DELETE',
       timelineId: TL,
       path: { pluginId: 'demo', collection: 'tiers', rowId: 'pro' },

@@ -17,6 +17,7 @@
 import type {
   CustomFieldDef,
   DirectoryUser,
+  InstalledPlugin,
   PluginData,
   PluginDataRow,
   Pricing,
@@ -137,6 +138,44 @@ export interface TimelineRepo {
       customFields?: CustomFieldDef[];
     },
   ): Promise<void>;
+
+  // ---- the instance's install registry ------------------------------------
+  // Instance-level, not timeline-level, which is why none of these takes a
+  // timeline id. „Installed" is „this instance has the code"; „enabled" is a
+  // `timeline_plugins` row and stays where it is.
+
+  /** Every installed plugin, enabled or not, ordered by id. */
+  listInstalledPlugins(): Promise<InstalledPlugin[]>;
+  /**
+   * Install or re-install one plugin (upsert by id). Re-installing is how a
+   * version is changed, so it keeps the row's identity rather than making the
+   * caller delete first — a delete-then-insert would take the plugin's data with
+   * it through the purge, which is not what „update" means.
+   */
+  installPlugin(plugin: InstalledPlugin, updatedBy?: string): Promise<InstalledPlugin>;
+  /** The instance-level off switch. Keeps the row and everything the plugin stored. */
+  setPluginInstalledEnabled(pluginId: string, enabled: boolean, updatedBy?: string): Promise<void>;
+  /**
+   * Remove the registry row. The plugin's DATA is not touched here — purging it
+   * is a separate, explicit step (`purgePlugin`), so that the destructive half of
+   * an uninstall is never a side effect of the bookkeeping half.
+   */
+  removeInstalledPlugin(pluginId: string): Promise<void>;
+
+  // ---- a plugin's enablement on ONE timeline ------------------------------
+
+  /**
+   * Enable a plugin on a timeline, or replace its config. Upsert, because
+   * „enable" and „reconfigure" are the same write from the caller's side and
+   * splitting them would only add a 404 nobody can act on.
+   */
+  setTimelinePlugin(timelineId: string, pluginId: string, config: Record<string, unknown>): Promise<void>;
+  /**
+   * Disable a plugin on a timeline. Deliberately keeps every row the plugin owns,
+   * so re-enabling is lossless — the destructive operation is the instance-level
+   * uninstall, and that one asks.
+   */
+  removeTimelinePlugin(timelineId: string, pluginId: string): Promise<void>;
 
   // ---- plugin-owned rows (the generic store) ------------------------------
   // Eight methods that together replace the per-plugin ones below: a plugin

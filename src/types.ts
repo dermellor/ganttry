@@ -271,6 +271,80 @@ export type Pricing = {
 export type PluginRef = { id: string; config?: Record<string, unknown> };
 
 /**
+ * Where a plugin's code came from.
+ *
+ * Recorded rather than inferred, because uninstalling, re-verifying and
+ * reinstalling all need to know: a URL can be refetched, a package resolved
+ * again, a vendored directory re-read. `builtin` is the honest label for a plugin
+ * that shipped inside the build and has no artifact of its own — an instance can
+ * only run what it shipped with until the loader exists (issue #14), and calling
+ * that anything else would invite a reinstall of something that was never
+ * fetched.
+ */
+export type PluginArtifactKind = 'builtin' | 'url' | 'package' | 'vendored';
+
+/**
+ * One installed plugin, at INSTANCE level.
+ *
+ * Two levels, deliberately separate: installed (here) is „this instance has this
+ * plugin's code and granted it these capabilities", enabled is a `PluginRef` on
+ * one timeline. A plugin has to be installed before it can be enabled anywhere,
+ * and disabling it on a timeline says nothing about the install.
+ *
+ * `manifest` is stored, not re-derived: the host has to be able to list, verify
+ * and version-check a plugin without executing it, and it is also what the write
+ * path enforces a plugin's collections against (docs/plugin-storage.md). Keeping
+ * the copy that was validated at install time is what makes those checks
+ * independent of whether the artifact is reachable right now.
+ */
+export type InstalledPlugin = {
+  id: string;
+  /** The artifact's own version, as its manifest declared it. */
+  version: string;
+  /** The host contract range the artifact was built against, e.g. `^1`. */
+  apiVersion: string;
+  artifact: { kind: PluginArtifactKind; source?: string; integrity?: string };
+  /** Capabilities granted at install time — never widened by the plugin itself. */
+  capabilities: string[];
+  manifest: Record<string, unknown>;
+  /**
+   * Instance-level off switch. Distinct from „not enabled on this timeline": this
+   * one stops the plugin everywhere without discarding what it stored, which is
+   * what makes turning it back on lossless.
+   */
+  enabled: boolean;
+  installedAt?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+/**
+ * An installed plugin plus what the host currently thinks of it — the shape the
+ * interface and the loader read.
+ *
+ * `problem` is a sentence for the person who installed it, not a code. A version
+ * error nobody can read is indistinguishable from a broken plugin and gets
+ * reported as one.
+ */
+export type PluginStatus = InstalledPlugin & {
+  /** May the host run this plugin's code? False when `problem` is set. */
+  loadable: boolean;
+  /**
+   * Why not, as a code the interface can word itself. Absent when the plugin is
+   * fine.
+   *
+   * It exists alongside `problem` because the two have different readers: this
+   * one is for the viewer, which is German and must not print a server's English
+   * sentence at a user; `problem` is the diagnostic, which carries detail no
+   * fixed phrase can (which version, which manifest field) and goes into logs
+   * and to whoever wrote the plugin.
+   */
+  reason?: 'disabled' | 'api-version' | 'invalid-manifest';
+  /** Why not, in one sentence with the specifics. Absent when the plugin is fine. */
+  problem?: string;
+};
+
+/**
  * One row of a collection a plugin owns, in the shape it travels in everywhere:
  * the wire, the host API, and the section a local file carries.
  *
@@ -377,4 +451,16 @@ export type Config = {
  * validated against `schema/config.schema.json`; this one is a build artefact
  * and needs no schema.
  */
-export type BuiltConfig = Config & { views: View[] };
+export type BuiltConfig = Config & {
+  views: View[];
+  /**
+   * The instance's install registry as of the build.
+   *
+   * Baked in for the same reason a plugin's rows travel inside the timeline file:
+   * a static deploy has no API to ask. A served instance re-reads it from
+   * `GET /api/plugins`, so this copy is a starting point rather than the truth —
+   * and it is metadata about which plugins exist, never anybody's content, which
+   * is what keeps it clear of „No fallback data, ever".
+   */
+  plugins?: PluginStatus[];
+};

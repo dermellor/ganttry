@@ -7,6 +7,8 @@ import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
 import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
 import { hasLocalTimeline, isLocalWritable, makeFileRepo } from './scripts/local/file-repo';
+import { handlePluginsApi } from './scripts/db/plugin-api';
+import { parseOperators } from './scripts/db/operator';
 
 // Runs while Vite loads this config, before it resolves `import.meta.env`.
 // Vite reads VITE_* from repo-local .env files and from process.env only, so
@@ -233,6 +235,44 @@ function timelinesApi(): Plugin {
         if (!hasDb(conns) && !conns.local) return send(res, 200, { sources: [] });
         try {
           const result = await resolveAdapter(conns, '').handle({ method: 'GET', id: '' });
+          send(res, result.status, result.json);
+        } catch (err) {
+          send(res, 500, { error: 'server_error', message: String(err) });
+        }
+      });
+
+      // /api/plugins[/<pluginId>] — the instance's install registry.
+      //
+      // Instance-level, so it is a sibling of /api/sources rather than something
+      // under a timeline: which plugins this deployment has is not a property of
+      // any one timeline. Reads are open past the auth gate (the interface shows
+      // them); writes are operator-only, and locally the dev identity is treated
+      // as one — a checkout on somebody's laptop IS its operator, and demanding a
+      // configured allowlist there would make the flow untestable without one.
+      server.middlewares.use('/api/plugins', async (req, res, next) => {
+        const method = req.method ?? 'GET';
+        const conns = dbConns();
+        const repo = resolveRepo(conns) ?? conns.local?.repo;
+        if (!repo) return send(res, 200, { plugins: [] });
+        const url = new URL(req.url ?? '/', 'http://localhost');
+        const pluginId = url.pathname.replace(/^\/+|\/+$/g, '') || undefined;
+        let body: unknown;
+        if (method !== 'GET' && method !== 'DELETE') {
+          try {
+            body = await readBody(req);
+          } catch (err) {
+            return send(res, 400, { error: 'invalid JSON', detail: String(err) });
+          }
+        }
+        try {
+          const result = await handlePluginsApi(repo, {
+            method,
+            pluginId: pluginId ? decodeURIComponent(pluginId) : undefined,
+            body,
+            params: Object.fromEntries(url.searchParams),
+            caller: { email: 'local', mcp: true },
+            operators: parseOperators(envValue('PLUGIN_OPERATOR_EMAILS')),
+          });
           send(res, result.status, result.json);
         } catch (err) {
           send(res, 500, { error: 'server_error', message: String(err) });

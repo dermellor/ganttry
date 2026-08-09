@@ -16,6 +16,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   CustomFieldDef,
   DirectoryUser,
+  InstalledPlugin,
   PluginData,
   PluginDataRow,
   PluginRef,
@@ -1102,6 +1103,120 @@ export async function replacePluginRows(db: SupabaseClient, id: string, plugins:
   if (ins.error) throw new Error(`replacePluginRows insert: ${ins.error.message}`);
 }
 
+// ---- the instance's install registry ---------------------------------------
+
+const INSTALLED_SELECT =
+  'plugin_id, version, api_version, artifact_kind, artifact, integrity, capabilities, manifest, enabled, installed_at, updated_at, updated_by';
+
+function rowToInstalled(row: Record<string, any>): InstalledPlugin {
+  const out: InstalledPlugin = {
+    id: row.plugin_id,
+    version: row.version,
+    apiVersion: row.api_version,
+    artifact: { kind: row.artifact_kind },
+    capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
+    manifest: (row.manifest ?? {}) as Record<string, unknown>,
+    enabled: row.enabled !== false,
+  };
+  if (row.artifact != null) out.artifact.source = row.artifact;
+  if (row.integrity != null) out.artifact.integrity = row.integrity;
+  if (row.installed_at != null) out.installedAt = row.installed_at;
+  if (row.updated_at != null) out.updatedAt = row.updated_at;
+  if (row.updated_by != null) out.updatedBy = row.updated_by;
+  return out;
+}
+
+export async function listInstalledPlugins(db: SupabaseClient): Promise<InstalledPlugin[]> {
+  const { data, error } = await db
+    .from('installed_plugins')
+    .select(INSTALLED_SELECT)
+    .order('plugin_id', { ascending: true });
+  if (error) throw new Error(`listInstalledPlugins: ${error.message}`);
+  return (data ?? []).map(rowToInstalled);
+}
+
+export async function installPlugin(
+  db: SupabaseClient,
+  plugin: InstalledPlugin,
+  updatedBy?: string,
+): Promise<InstalledPlugin> {
+  // `installed_at` is left out of the payload so the column default fills it on
+  // insert and an upsert leaves the existing value alone — re-installing to change
+  // a version must not reset the date the plugin first arrived.
+  const { data, error } = await db
+    .from('installed_plugins')
+    .upsert(
+      {
+        plugin_id: plugin.id,
+        version: plugin.version,
+        api_version: plugin.apiVersion,
+        artifact_kind: plugin.artifact.kind,
+        artifact: plugin.artifact.source ?? null,
+        integrity: plugin.artifact.integrity ?? null,
+        capabilities: plugin.capabilities ?? [],
+        manifest: plugin.manifest ?? {},
+        enabled: plugin.enabled !== false,
+        updated_at: new Date().toISOString(),
+        updated_by: updatedBy ?? null,
+      },
+      { onConflict: 'plugin_id' },
+    )
+    .select(INSTALLED_SELECT)
+    .single();
+  if (error) throw new Error(`installPlugin: ${error.message}`);
+  return rowToInstalled(data);
+}
+
+export async function setPluginInstalledEnabled(
+  db: SupabaseClient,
+  pluginId: string,
+  enabled: boolean,
+  updatedBy?: string,
+): Promise<void> {
+  const { data, error } = await db
+    .from('installed_plugins')
+    .update({ enabled, updated_at: new Date().toISOString(), updated_by: updatedBy ?? null })
+    .eq('plugin_id', pluginId)
+    .select('plugin_id');
+  if (error) throw new Error(`setPluginInstalledEnabled: ${error.message}`);
+  if (!data || data.length === 0) throw new NotFoundError(`plugin „${pluginId}" is not installed`);
+}
+
+export async function removeInstalledPlugin(db: SupabaseClient, pluginId: string): Promise<void> {
+  const { error } = await db.from('installed_plugins').delete().eq('plugin_id', pluginId);
+  if (error) throw new Error(`removeInstalledPlugin: ${error.message}`);
+}
+
+// ---- a plugin's enablement on one timeline ---------------------------------
+
+export async function setTimelinePlugin(
+  db: SupabaseClient,
+  timelineId: string,
+  pluginId: string,
+  config: Record<string, unknown>,
+): Promise<void> {
+  const { data: exists } = await db.from('timelines').select('id').eq('id', timelineId).maybeSingle();
+  if (!exists) throw new NotFoundError(`timeline „${timelineId}" not found`);
+  const { error } = await db.from('timeline_plugins').upsert(
+    { timeline_id: timelineId, plugin_id: pluginId, config: config ?? {}, updated_at: new Date().toISOString() },
+    { onConflict: 'timeline_id,plugin_id' },
+  );
+  if (error) throw new Error(`setTimelinePlugin: ${error.message}`);
+}
+
+export async function removeTimelinePlugin(
+  db: SupabaseClient,
+  timelineId: string,
+  pluginId: string,
+): Promise<void> {
+  const { error } = await db
+    .from('timeline_plugins')
+    .delete()
+    .eq('timeline_id', timelineId)
+    .eq('plugin_id', pluginId);
+  if (error) throw new Error(`removeTimelinePlugin: ${error.message}`);
+}
+
 // ---- plugin-owned rows (the generic store) ---------------------------------
 //
 // Mirror of the same section in ./timeline-repo.ts, over PostgREST. Three places
@@ -1488,6 +1603,13 @@ export function makeSupabaseRepo(db: SupabaseClient): TimelineRepo {
     deleteGroup: (timelineId, groupId) => deleteGroup(db, timelineId, groupId),
     updatePhases: (id, phases) => updatePhases(db, id, phases),
     updateMeta: (id, meta) => updateMeta(db, id, meta),
+    listInstalledPlugins: () => listInstalledPlugins(db),
+    installPlugin: (plugin, updatedBy) => installPlugin(db, plugin, updatedBy),
+    setPluginInstalledEnabled: (pluginId, enabled, updatedBy) =>
+      setPluginInstalledEnabled(db, pluginId, enabled, updatedBy),
+    removeInstalledPlugin: (pluginId) => removeInstalledPlugin(db, pluginId),
+    setTimelinePlugin: (timelineId, pluginId, config) => setTimelinePlugin(db, timelineId, pluginId, config),
+    removeTimelinePlugin: (timelineId, pluginId) => removeTimelinePlugin(db, timelineId, pluginId),
     listPluginRows: (timelineId, pluginId, collection) => listPluginRows(db, timelineId, pluginId, collection),
     listPluginData: (timelineId, pluginIds) => listPluginData(db, timelineId, pluginIds),
     putPluginRow: (timelineId, pluginId, collection, row, expectedVersion, updatedBy) =>

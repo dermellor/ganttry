@@ -84,7 +84,13 @@
     </main>
     <footer class="app-footer">
       <span id="status" class="status">…</span>
-      <button id="export-btn" class="export-link" type="button" title="Aktuelle View als statische HTML-Datei herunterladen">Export HTML</button>
+      <div class="footer-actions">
+        <div class="plugin-panel-wrap">
+          <button id="plugins-btn" class="export-link" type="button" aria-haspopup="true" aria-expanded="false" title="Installierte Plugins und ihr Zustand">Plugins</button>
+          <div id="plugins-panel" class="plugin-panel" role="group" aria-label="Plugins" hidden></div>
+        </div>
+        <button id="export-btn" class="export-link" type="button" title="Aktuelle View als statische HTML-Datei herunterladen">Export HTML</button>
+      </div>
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>

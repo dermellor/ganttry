@@ -12,7 +12,7 @@
 // Not a test file, because two suites use it (the dispatcher's and the
 // product-roadmap proof) and the test glob would otherwise run it as one.
 
-import type { PluginData, PluginDataRow } from '../../src/types';
+import type { InstalledPlugin, PluginData, PluginDataRow, TimelineFile } from '../../src/types';
 import { ConflictError, NotFoundError, type TimelineRepo } from './repo.ts';
 
 type Stored = { data: Record<string, unknown>; version: number; sort: number; updatedBy?: string };
@@ -23,6 +23,10 @@ export type MemoryStore = {
   seed(timelineId: string, pluginId: string, collection: string, rows: { id: string; data: Record<string, unknown> }[]): void;
   /** Raw view of one collection, for asserting on what the store actually holds. */
   dump(timelineId: string, pluginId: string, collection: string): PluginDataRow[];
+  /** Make a timeline exist, so enablement has something to attach to. */
+  seedTimeline(timelineId: string): void;
+  /** Put a plugin in the registry directly, bypassing the install checks. */
+  seedInstalled(plugin: InstalledPlugin): void;
 };
 
 export function makeMemoryStore(): MemoryStore {
@@ -44,7 +48,46 @@ export function makeMemoryStore(): MemoryStore {
       .sort((a, b) => a[1].sort - b[1].sort || (a[0] < b[0] ? -1 : 1))
       .map(([id, row]) => ({ id, data: row.data, version: row.version, ...(row.updatedBy ? { updatedBy: row.updatedBy } : {}) }));
 
+  // The install registry and per-timeline enablement, so the lifecycle handlers
+  // can be tested against the same faithful double.
+  const installed = new Map<string, InstalledPlugin>();
+  const enabled = new Map<string, Map<string, Record<string, unknown>>>();
+  const timelines = new Set<string>();
+
   const repo = {
+    async listInstalledPlugins() {
+      return [...installed.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
+    },
+    async installPlugin(plugin: InstalledPlugin) {
+      const previous = installed.get(plugin.id);
+      const stored = { ...plugin, installedAt: previous?.installedAt ?? '2026-01-01T00:00:00.000Z' };
+      installed.set(plugin.id, stored);
+      return stored;
+    },
+    async setPluginInstalledEnabled(pluginId: string, on: boolean) {
+      const row = installed.get(pluginId);
+      if (!row) throw new NotFoundError(`plugin „${pluginId}" is not installed`);
+      installed.set(pluginId, { ...row, enabled: on });
+    },
+    async removeInstalledPlugin(pluginId: string) {
+      installed.delete(pluginId);
+    },
+    async getTimeline(timelineId: string) {
+      if (!timelines.has(timelineId)) return null;
+      const refs = [...(enabled.get(timelineId) ?? new Map())].map(([id, config]) =>
+        Object.keys(config).length ? { id, config } : { id },
+      );
+      return { items: [], ...(refs.length ? { plugins: refs } : {}) } as TimelineFile;
+    },
+    async setTimelinePlugin(timelineId: string, pluginId: string, config: Record<string, unknown>) {
+      if (!timelines.has(timelineId)) throw new NotFoundError(`timeline „${timelineId}" not found`);
+      const byPlugin = enabled.get(timelineId) ?? new Map();
+      enabled.set(timelineId, byPlugin);
+      byPlugin.set(pluginId, config ?? {});
+    },
+    async removeTimelinePlugin(timelineId: string, pluginId: string) {
+      enabled.get(timelineId)?.delete(pluginId);
+    },
     async listPluginRows(timelineId, pluginId, collection) {
       return ordered(collectionMap(timelineId, pluginId, collection));
     },
@@ -118,6 +161,12 @@ export function makeMemoryStore(): MemoryStore {
     },
     dump(timelineId, pluginId, collection) {
       return ordered(collectionMap(timelineId, pluginId, collection));
+    },
+    seedTimeline(timelineId) {
+      timelines.add(timelineId);
+    },
+    seedInstalled(plugin) {
+      installed.set(plugin.id, plugin);
     },
   };
 }

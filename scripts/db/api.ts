@@ -32,8 +32,8 @@ import {
 // resolvable from one `resolveAdapter` while the Deno edge bundle stays clean.
 import { makePostgresRepo } from './timeline-repo.ts';
 import { makeSupabaseRepo } from './timeline-repo-supabase.ts';
-import { handlePluginApi, type ManifestSource, type PluginPath } from './plugin-api.ts';
-import { installedManifest } from './plugin-manifests.ts';
+import { handlePluginApi, handlePluginLifecycle, type PluginPath } from './plugin-api.ts';
+import { makeManifestSource, type ManifestSource } from './plugin-manifests.ts';
 
 /** Sub-resource kinds addressable under /api/source/<id>/. */
 /**
@@ -218,14 +218,20 @@ export async function handleTimelineApi(repo: TimelineRepo, req: ApiRequest): Pr
     // interpreting segments once it has seen `plugin`.
     if (sub.kind === 'plugin') {
       if (!sub.plugin) return err(400, 'plugin id required');
-      return handlePluginApi(repo, req.manifests ?? installedManifest, {
+      const pluginReq = {
         method,
         timelineId: id,
         path: sub.plugin,
         body: req.body,
         ifMatch: req.ifMatch,
         updatedBy: req.updatedBy,
-      });
+      };
+      const manifests = req.manifests ?? makeManifestSource(repo);
+      // With no collection the request is about the plugin ITSELF on this timeline
+      // (enable / reconfigure / disable); with one it is about the rows it owns.
+      return sub.plugin.collection
+        ? handlePluginApi(repo, manifests, pluginReq)
+        : handlePluginLifecycle(repo, manifests, pluginReq);
     }
 
     // ---- pricing: whole model (bulk seed / rewrite) ----------------------

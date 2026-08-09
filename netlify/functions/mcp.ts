@@ -15,7 +15,7 @@ import type { Config } from '@netlify/functions';
 import { getSql } from '../../scripts/db/sql.ts';
 import { getServiceClient } from '../../scripts/db/client.ts';
 import { resolveAdapter, resolveRepo, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
-import { MOVE_SEGMENT } from '../../scripts/db/plugin-api.ts';
+import { MOVE_SEGMENT, handlePluginsApi, type PluginsApiRequest } from '../../scripts/db/plugin-api.ts';
 
 const ACCESS_TTL = 12 * 3600; // must match mcp-oauth.ts
 
@@ -85,6 +85,21 @@ function buildServer(updatedBy: string): McpServer {
     }
     return result.json;
   };
+  // The instance registry is not timeline-scoped, so it does not go through
+  // `resolveAdapter` (which resolves a source). Presenting the MCP token already
+  // proves operator access — it is a server-side secret — so `caller.mcp` is true
+  // here; see scripts/db/operator.ts for why that equivalence is deliberate.
+  const runPlugins = async (req: Omit<PluginsApiRequest, 'caller' | 'operators'>) => {
+    const repo = resolveRepo(conns);
+    if (!repo) throw new Error('Database not configured on the server.');
+    const result = await handlePluginsApi(repo, { ...req, caller: { mcp: true }, operators: [] });
+    if (result.status >= 400) {
+      const msg = result.json as { error?: string; message?: string };
+      throw new Error(msg.message || msg.error || `error ${result.status}`);
+    }
+    return result.json;
+  };
+
   const ok = (data: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] });
 
   server.tool('list_timelines', 'List all DB-backed timelines (id, name, description).', {}, async () =>
@@ -139,6 +154,77 @@ function buildServer(updatedBy: string): McpServer {
       if (type !== undefined) await run({ method: 'PATCH', id, body: { type } });
       return ok(await run({ method: 'PUT', id, sub: { kind: 'pricing' }, body: { pricing } }));
     },
+  );
+
+  // ---- plugin lifecycle ----------------------------------------------------
+  //
+  // Two levels, and the tools keep them apart because conflating them is how a
+  // plugin gets uninstalled when somebody meant to switch it off on one timeline.
+  // `enable_plugin` / `disable_plugin` are per timeline and reversible;
+  // `install_plugin` / `uninstall_plugin` are instance-wide and operator-only —
+  // the MCP token is operator access, which is why they are reachable here at all.
+
+  server.tool(
+    'list_plugins',
+    'List the plugins this instance has installed, with the host\'s verdict on each: whether it can be ' +
+      'loaded, and if not, why (switched off, or a contract version this host does not satisfy).',
+    {},
+    async () => ok(await runPlugins({ method: 'GET' })),
+  );
+  server.tool(
+    'enable_plugin',
+    'Enable one plugin on ONE timeline, or replace its config. The plugin must already be installed on ' +
+      'the instance. Config is validated against the plugin\'s declared configSchema, so a bad key fails ' +
+      'here rather than inside a render. This does not touch other timelines.',
+    { id: z.string(), pluginId: z.string(), config: z.record(z.any()).optional() },
+    async ({ id, pluginId, config }) =>
+      ok(await run({ method: 'PUT', id, sub: { kind: 'plugin', plugin: { pluginId } }, body: { config: config ?? {} } })),
+  );
+  server.tool(
+    'disable_plugin',
+    'Disable one plugin on ONE timeline. Everything it stored is KEPT, so enabling it again is lossless. ' +
+      'To remove a plugin from the whole instance use uninstall_plugin.',
+    { id: z.string(), pluginId: z.string() },
+    async ({ id, pluginId }) =>
+      ok(await run({ method: 'DELETE', id, sub: { kind: 'plugin', plugin: { pluginId } } })),
+  );
+  server.tool(
+    'install_plugin',
+    'Install a plugin on the INSTANCE, making it available to enable on timelines. Takes the plugin\'s ' +
+      'manifest, which is validated against this host\'s contract version before anything is stored. ' +
+      'artifact describes where the code comes from ({ kind: "builtin" | "url" | "package" | "vendored", ' +
+      'source?, integrity? }); a url artifact must carry an integrity hash. capabilities is what you GRANT ' +
+      'it — omit to grant exactly what the manifest declares.',
+    {
+      manifest: z.record(z.any()),
+      artifact: z.record(z.any()).optional(),
+      capabilities: z.array(z.string()).optional(),
+    },
+    async ({ manifest, artifact, capabilities }) =>
+      ok(await runPlugins({ method: 'POST', body: { manifest, artifact, capabilities } })),
+  );
+  server.tool(
+    'set_plugin_installed',
+    'Switch a plugin on or off for the WHOLE instance without uninstalling it. Off means its code stops ' +
+      'loading everywhere and its data becomes read-only; nothing is discarded.',
+    { pluginId: z.string(), enabled: z.boolean() },
+    async ({ pluginId, enabled }) => ok(await runPlugins({ method: 'PATCH', pluginId, body: { enabled } })),
+  );
+  server.tool(
+    'uninstall_plugin',
+    'Remove a plugin from the instance. Destructive and guarded: repeat the plugin id as `confirm`. ' +
+      'purgeData defaults to false, which KEEPS every row the plugin owned so a reinstall finds them; ' +
+      'passing true also deletes those rows and strips the item metadata keys the plugin declared, and ' +
+      'that cannot be undone.',
+    { pluginId: z.string(), confirm: z.string(), purgeData: z.boolean().optional() },
+    async ({ pluginId, confirm, purgeData }) =>
+      ok(
+        await runPlugins({
+          method: 'DELETE',
+          pluginId,
+          params: { confirm, purgeData: purgeData ? 'true' : 'false' },
+        }),
+      ),
   );
 
   // ---- plugin-owned rows: two tools for every plugin ----------------------

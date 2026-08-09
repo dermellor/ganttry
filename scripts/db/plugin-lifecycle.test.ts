@@ -1,0 +1,370 @@
+// Installing a plugin on the instance, and switching it on per timeline.
+//
+// Two levels that must not be confusable: „off for this timeline" is reversible
+// bookkeeping, „uninstalled with a purge" deletes data nothing can recover. Most
+// of what is asserted here is the boundary between them.
+
+import { strict as assert } from 'node:assert';
+import { describe, test } from 'node:test';
+
+import { handlePluginApi, handlePluginLifecycle, handlePluginsApi } from './plugin-api.ts';
+import { makeManifestSource } from './plugin-manifests.ts';
+import { makeMemoryStore, type MemoryStore } from './plugin-store-memory.ts';
+import type { InstalledPlugin } from '../../src/types.ts';
+import type { PluginManifest } from '../../src/pluginHost/manifest.ts';
+
+const TL = 'plan';
+const OPERATORS = ['alice@example.com'];
+
+const DEMO: PluginManifest = {
+  id: 'demo',
+  name: 'Demo',
+  version: '1.2.0',
+  apiVersion: '^1',
+  capabilities: ['items:read', 'data:own'],
+  configSchema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { versions: { type: 'array', items: { type: 'string' } } },
+  },
+  collections: [{ id: 'entries', ordered: true }],
+  metadataKeys: ['demoKey'],
+};
+
+const installedRow = (over: Partial<InstalledPlugin> = {}): InstalledPlugin => ({
+  id: DEMO.id,
+  version: DEMO.version,
+  apiVersion: DEMO.apiVersion,
+  artifact: { kind: 'builtin' },
+  capabilities: [...(DEMO.capabilities ?? [])],
+  manifest: DEMO as unknown as Record<string, unknown>,
+  enabled: true,
+  ...over,
+});
+
+function arrange(opts: { install?: boolean } = { install: true }) {
+  const store = makeMemoryStore();
+  store.seedTimeline(TL);
+  if (opts.install !== false) store.seedInstalled(installedRow());
+
+  const registry = (
+    method: string,
+    o: { pluginId?: string; body?: unknown; params?: Record<string, string>; caller?: { email?: string | null; mcp?: boolean } } = {},
+  ) =>
+    handlePluginsApi(store.repo, {
+      method,
+      pluginId: o.pluginId,
+      body: o.body,
+      params: o.params,
+      caller: o.caller ?? { email: 'alice@example.com' },
+      operators: OPERATORS,
+    });
+
+  const lifecycle = (method: string, pluginId: string, body?: unknown) =>
+    handlePluginLifecycle(store.repo, makeManifestSource(store.repo), {
+      method,
+      timelineId: TL,
+      path: { pluginId },
+      body,
+    });
+
+  const data = (method: string, collection: string, body?: unknown) =>
+    handlePluginApi(store.repo, makeManifestSource(store.repo), {
+      method,
+      timelineId: TL,
+      path: { pluginId: DEMO.id, collection },
+      body,
+    });
+
+  return { store, registry, lifecycle, data };
+}
+
+describe('the install registry: who may write to it', () => {
+  test('reading is open past the auth gate — it is what the interface shows', async () => {
+    const { registry } = arrange();
+    const res = await registry('GET', { caller: { email: 'carol@example.com' } });
+    assert.equal(res.status, 200);
+    assert.equal((res.json as { plugins: unknown[] }).plugins.length, 1);
+  });
+
+  test('a signed-in non-operator cannot install', async () => {
+    const { registry } = arrange({ install: false });
+    const res = await registry('POST', { caller: { email: 'carol@example.com' }, body: { manifest: DEMO } });
+    assert.equal(res.status, 403);
+    assert.equal((res.json as { error: string }).error, 'forbidden');
+  });
+
+  test('the refusal names the variable to set, so it is actionable', async () => {
+    const store = makeMemoryStore();
+    const res = await handlePluginsApi(store.repo, {
+      method: 'POST',
+      body: { manifest: DEMO },
+      caller: { email: 'alice@example.com' },
+      operators: [],
+    });
+    assert.match((res.json as { message: string }).message, /PLUGIN_OPERATOR_EMAILS/);
+  });
+
+  test('the MCP token installs without being on any list', async () => {
+    const { registry } = arrange({ install: false });
+    const res = await registry('POST', { caller: { mcp: true }, body: { manifest: DEMO } });
+    assert.equal(res.status, 201);
+  });
+});
+
+describe('the install registry: what it refuses to store', () => {
+  test('a manifest that does not validate never reaches the registry', async () => {
+    const { registry } = arrange({ install: false });
+    const res = await registry('POST', { body: { manifest: { id: 'demo' } } });
+    assert.equal(res.status, 400);
+    assert.equal((res.json as { error: string }).error, 'invalid_manifest');
+    assert.equal((await registry('GET')).status, 200);
+    assert.equal(((await registry('GET')).json as { plugins: unknown[] }).plugins.length, 1, 'built-in only');
+  });
+
+  test('a contract range this host cannot satisfy is refused at install, not at boot', async () => {
+    const { registry } = arrange({ install: false });
+    const res = await registry('POST', { body: { manifest: { ...DEMO, apiVersion: '^2' } } });
+    assert.equal(res.status, 400);
+    assert.match((res.json as { message: string }).message, /apiVersion/);
+  });
+
+  test('a fetched artifact has to say where from', async () => {
+    const { registry } = arrange({ install: false });
+    const res = await registry('POST', { body: { manifest: DEMO, artifact: { kind: 'vendored' } } });
+    assert.equal(res.status, 400);
+    assert.match((res.json as { message: string }).message, /needs a source/);
+  });
+
+  test('a url artifact without an integrity hash is refused: the version would name nothing', async () => {
+    const { registry } = arrange({ install: false });
+    const res = await registry('POST', {
+      body: { manifest: DEMO, artifact: { kind: 'url', source: 'https://example.com/p.js' } },
+    });
+    assert.equal(res.status, 400);
+    assert.match((res.json as { message: string }).message, /integrity/);
+  });
+
+  test('granting less than the manifest declares is refused rather than silently narrowed', async () => {
+    // A plugin running with less than it declared fails far from the cause, which
+    // is the same reason register() refuses an invalid manifest.
+    const { registry } = arrange({ install: false });
+    const res = await registry('POST', { body: { manifest: DEMO, capabilities: ['items:read'] } });
+    assert.equal(res.status, 400);
+    assert.match((res.json as { message: string }).message, /data:own/);
+  });
+
+  test('omitting capabilities grants exactly what the manifest declares', async () => {
+    const { registry } = arrange({ install: false });
+    const res = await registry('POST', { body: { manifest: DEMO } });
+    assert.deepEqual((res.json as { capabilities: string[] }).capabilities, ['items:read', 'data:own']);
+  });
+
+  test('re-installing keeps the date the plugin first arrived', async () => {
+    const { registry } = arrange();
+    const res = await registry('POST', { body: { manifest: { ...DEMO, version: '2.0.0' } } });
+    assert.equal((res.json as { version: string }).version, '2.0.0');
+    assert.equal((res.json as { installedAt?: string }).installedAt, '2026-01-01T00:00:00.000Z');
+  });
+});
+
+describe('the instance-level off switch', () => {
+  test('switching off keeps the row and reports why the plugin is not loadable', async () => {
+    const { registry } = arrange();
+    assert.equal((await registry('PATCH', { pluginId: 'demo', body: { enabled: false } })).status, 200);
+    const [status] = ((await registry('GET')).json as { plugins: { loadable: boolean; problem?: string }[] }).plugins;
+    assert.equal(status.loadable, false);
+    assert.match(status.problem!, /switched off/);
+  });
+
+  test('a plugin that is off keeps its data readable but refuses writes', async () => {
+    const { registry, data } = arrange();
+    await data('POST', 'entries', { id: 'e1', data: { a: 1 } });
+    await registry('PATCH', { pluginId: 'demo', body: { enabled: false } });
+
+    const read = await data('GET', 'entries');
+    assert.equal(read.status, 200, 'an operator deciding about data has to be able to see it');
+    const write = await data('POST', 'entries', { id: 'e2', data: {} });
+    assert.equal(write.status, 403);
+    assert.equal((write.json as { error: string }).error, 'plugin_disabled');
+  });
+
+  test('switching a plugin that is not installed is a 404', async () => {
+    const { registry } = arrange({ install: false });
+    assert.equal((await registry('PATCH', { pluginId: 'ghost', body: { enabled: false } })).status, 404);
+  });
+
+  test('a missing enabled flag is a 400, not a guess', async () => {
+    const { registry } = arrange();
+    assert.equal((await registry('PATCH', { pluginId: 'demo', body: {} })).status, 400);
+  });
+});
+
+describe('uninstalling', () => {
+  async function withRows(): Promise<{ store: MemoryStore; registry: ReturnType<typeof arrange>['registry'] }> {
+    const { store, registry, data } = arrange();
+    await data('POST', 'entries', { id: 'e1', data: { a: 1 } });
+    return { store, registry };
+  }
+
+  test('it refuses without the plugin id echoed back', async () => {
+    const { registry } = await withRows();
+    const res = await registry('DELETE', { pluginId: 'demo' });
+    assert.equal(res.status, 400);
+    assert.equal((res.json as { error: string }).error, 'confirmation_required');
+  });
+
+  test('a wrong confirmation is refused too', async () => {
+    const { registry } = await withRows();
+    assert.equal((await registry('DELETE', { pluginId: 'demo', params: { confirm: 'demo2' } })).status, 400);
+  });
+
+  test('by default the rows are KEPT, and the answer says so', async () => {
+    const { store, registry } = await withRows();
+    const res = await registry('DELETE', { pluginId: 'demo', params: { confirm: 'demo' } });
+    assert.equal(res.status, 200);
+    assert.equal((res.json as { dataPurged: boolean }).dataPurged, false);
+    assert.match((res.json as { note: string }).note, /were kept/);
+    assert.equal(store.dump(TL, 'demo', 'entries').length, 1, 'an uninstall must not silently discard a model');
+  });
+
+  test('purging is opt-in and takes the rows with it', async () => {
+    const { store, registry } = await withRows();
+    const res = await registry('DELETE', { pluginId: 'demo', params: { confirm: 'demo', purgeData: 'true' } });
+    assert.equal(res.status, 200);
+    assert.equal((res.json as { dataPurged: boolean }).dataPurged, true);
+    assert.equal(store.dump(TL, 'demo', 'entries').length, 0);
+  });
+
+  test('a non-operator cannot uninstall even with a correct confirmation', async () => {
+    const { registry } = await withRows();
+    const res = await registry('DELETE', {
+      pluginId: 'demo',
+      params: { confirm: 'demo', purgeData: 'true' },
+      caller: { email: 'carol@example.com' },
+    });
+    assert.equal(res.status, 403);
+  });
+});
+
+describe('enabling a plugin on one timeline', () => {
+  test('a plugin that is not installed cannot be enabled anywhere', async () => {
+    const { lifecycle } = arrange({ install: false });
+    const res = await lifecycle('PUT', 'ghost', { config: {} });
+    assert.equal(res.status, 404);
+    assert.match((res.json as { message: string }).message, /install it before enabling/);
+  });
+
+  test('enable, read back, then disable', async () => {
+    const { lifecycle } = arrange();
+    assert.equal((await lifecycle('PUT', 'demo', { config: { versions: ['1.0'] } })).status, 200);
+    const state = await lifecycle('GET', 'demo');
+    assert.equal((state.json as { enabled: boolean }).enabled, true);
+    assert.deepEqual((state.json as { config: unknown }).config, { versions: ['1.0'] });
+
+    assert.equal((await lifecycle('DELETE', 'demo')).status, 200);
+    assert.equal(((await lifecycle('GET', 'demo')).json as { enabled: boolean }).enabled, false);
+  });
+
+  test('disabling keeps every row, so enabling again is lossless', async () => {
+    const { store, lifecycle, data } = arrange();
+    await lifecycle('PUT', 'demo', { config: {} });
+    await data('POST', 'entries', { id: 'e1', data: { a: 1 } });
+    await lifecycle('DELETE', 'demo');
+    assert.equal(store.dump(TL, 'demo', 'entries').length, 1);
+    await lifecycle('PUT', 'demo', { config: {} });
+    assert.deepEqual(((await data('GET', 'entries')).json as { rows: { id: string }[] }).rows.map((r) => r.id), ['e1']);
+  });
+
+  test('disabling twice is not an error: the second call describes the same state', async () => {
+    const { lifecycle } = arrange();
+    await lifecycle('PUT', 'demo', { config: {} });
+    assert.equal((await lifecycle('DELETE', 'demo')).status, 200);
+    assert.equal((await lifecycle('DELETE', 'demo')).status, 200);
+  });
+
+  test('a config the schema rejects fails here, not inside a render', async () => {
+    const { lifecycle } = arrange();
+    const res = await lifecycle('PUT', 'demo', { config: { versions: 'nope', typo: 1 } });
+    assert.equal(res.status, 400);
+    assert.equal((res.json as { error: string }).error, 'invalid_config');
+    const message = (res.json as { message: string }).message;
+    assert.match(message, /versions: expected array/);
+    assert.match(message, /unknown property "typo"/);
+  });
+
+  test('a bare bag is accepted as the config, since sending it directly is not wrong', async () => {
+    const { lifecycle } = arrange();
+    assert.equal((await lifecycle('PUT', 'demo', { versions: ['2.0'] })).status, 200);
+    assert.deepEqual(((await lifecycle('GET', 'demo')).json as { config: unknown }).config, { versions: ['2.0'] });
+  });
+
+  test('a plugin switched off instance-wide cannot be enabled on a timeline', async () => {
+    const { registry, lifecycle } = arrange();
+    await registry('PATCH', { pluginId: 'demo', body: { enabled: false } });
+    const res = await lifecycle('PUT', 'demo', { config: {} });
+    assert.equal(res.status, 403);
+    assert.equal((res.json as { error: string }).error, 'plugin_disabled');
+  });
+
+  test('enabling on an unknown timeline is a 404 rather than a row for nothing', async () => {
+    const store = makeMemoryStore();
+    store.seedInstalled(installedRow());
+    const res = await handlePluginLifecycle(store.repo, makeManifestSource(store.repo), {
+      method: 'PUT',
+      timelineId: 'nope',
+      path: { pluginId: 'demo' },
+      body: { config: {} },
+    });
+    assert.equal(res.status, 404);
+  });
+});
+
+describe('the registry as the manifest source', () => {
+  test('an empty registry falls back to what the build ships', async () => {
+    // A filesystem-only instance has nowhere to record an install, so „the plugins
+    // in this build" is the truthful installed set there — and the data routes of
+    // a built-in plugin must keep working.
+    const store = makeMemoryStore();
+    const record = await makeManifestSource(store.repo)('product-roadmap');
+    assert.equal(record?.manifest.id, 'product-roadmap');
+    assert.equal(record?.enabled, true);
+  });
+
+  test('once the registry holds anything, it is authoritative', async () => {
+    // Per-id fallback would make uninstalling a built-in impossible: it would
+    // reappear the moment its row was gone.
+    const store = makeMemoryStore();
+    store.seedInstalled(installedRow());
+    const source = makeManifestSource(store.repo);
+    assert.equal((await source('demo'))?.manifest.id, 'demo');
+    assert.equal(await source('product-roadmap'), null);
+  });
+
+  test('a seeded row carrying no manifest defers to the build', async () => {
+    // What migration 0017 writes: installed, manifest known from the build. Its
+    // data must stay writable rather than 404 as „not installed".
+    const store = makeMemoryStore();
+    store.seedInstalled({
+      id: 'product-roadmap',
+      version: '0.0.0',
+      apiVersion: '^1',
+      artifact: { kind: 'builtin' },
+      capabilities: [],
+      manifest: {},
+      enabled: true,
+    });
+    const record = await makeManifestSource(store.repo)('product-roadmap');
+    assert.equal(record?.manifest.name, 'Produkt');
+  });
+
+  test('a repo that cannot answer falls back rather than taking the data routes down', async () => {
+    const broken = {
+      async listInstalledPlugins() {
+        throw new Error('relation "installed_plugins" does not exist');
+      },
+    } as unknown as Parameters<typeof makeManifestSource>[0];
+    const record = await makeManifestSource(broken)('product-roadmap');
+    assert.equal(record?.manifest.id, 'product-roadmap');
+  });
+});

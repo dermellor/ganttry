@@ -628,3 +628,80 @@ describe('plugin data: a directory keeps it in the container', () => {
     assert.equal((await repo.listPluginRows('pd-dir', 'demo', 'tiers')).length, 1);
   });
 });
+
+
+describe('plugin enablement on a local timeline', () => {
+  test('enabling writes a plugin ref into the file, and the config with it', async () => {
+    await seed('pe-on');
+    const repo = makeFileRepo(dirs);
+    await repo.setTimelinePlugin('pe-on', 'demo', { versions: ['1.0'] });
+    assert.deepEqual((await raw('pe-on')).plugins, [{ id: 'demo', config: { versions: ['1.0'] } }]);
+  });
+
+  test('an empty config leaves the ref bare rather than storing an empty object', async () => {
+    await seed('pe-bare');
+    const repo = makeFileRepo(dirs);
+    await repo.setTimelinePlugin('pe-bare', 'demo', {});
+    assert.deepEqual((await raw('pe-bare')).plugins, [{ id: 'demo' }]);
+  });
+
+  test('enabling twice reconfigures instead of adding a second ref', async () => {
+    await seed('pe-twice');
+    const repo = makeFileRepo(dirs);
+    await repo.setTimelinePlugin('pe-twice', 'demo', { a: 1 });
+    await repo.setTimelinePlugin('pe-twice', 'demo', { a: 2 });
+    assert.deepEqual((await raw('pe-twice')).plugins, [{ id: 'demo', config: { a: 2 } }]);
+  });
+
+  test('disabling removes the ref and keeps the rows the plugin owns', async () => {
+    await seed('pe-off');
+    const repo = makeFileRepo(dirs);
+    await repo.setTimelinePlugin('pe-off', 'demo', {});
+    await repo.putPluginRow('pe-off', 'demo', 'entries', { id: 'e1', data: { a: 1 } });
+    await repo.removeTimelinePlugin('pe-off', 'demo');
+    const onDisk = await raw('pe-off');
+    // Reversible by design: the destructive operation is the instance-level
+    // uninstall, and that one asks.
+    assert.ok(!('plugins' in onDisk), 'an empty array reads as \u201esomething broke here"');
+    assert.equal(onDisk.pluginData?.demo?.entries?.length, 1);
+  });
+
+  test('disabling one plugin leaves the others enabled', async () => {
+    await seed('pe-other');
+    const repo = makeFileRepo(dirs);
+    await repo.setTimelinePlugin('pe-other', 'a', {});
+    await repo.setTimelinePlugin('pe-other', 'b', {});
+    await repo.removeTimelinePlugin('pe-other', 'a');
+    assert.deepEqual((await raw('pe-other')).plugins, [{ id: 'b' }]);
+  });
+
+  test('a directory source keeps the refs in its container', async () => {
+    const dir = await seedDir('pe-dir', {}, { 'a.md': NOTE_A });
+    const repo = makeFileRepo(dirs);
+    await repo.setTimelinePlugin('pe-dir', 'demo', { x: 1 });
+    const container = JSON.parse(await readFile(join(dir, 'timeline.json'), 'utf8'));
+    assert.deepEqual(container.plugins, [{ id: 'demo', config: { x: 1 } }]);
+  });
+
+  test('installing instance-wide is refused on a file-backed instance, truthfully', async () => {
+    // A bare data directory has nowhere to record which artifact was fetched and
+    // no loader to act on it, so reporting success would list a plugin as
+    // installed that nothing could ever load.
+    const repo = makeFileRepo(dirs);
+    assert.deepEqual(await repo.listInstalledPlugins(), []);
+    await assert.rejects(
+      () =>
+        repo.installPlugin({
+          id: 'x',
+          version: '1.0.0',
+          apiVersion: '^1',
+          artifact: { kind: 'builtin' },
+          capabilities: [],
+          manifest: {},
+          enabled: true,
+        }),
+      NotSupportedError,
+    );
+    await assert.rejects(() => repo.removeInstalledPlugin('x'), NotSupportedError);
+  });
+});

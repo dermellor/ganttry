@@ -18,6 +18,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/database.md`](docs/database.md) | Postgres as the data source: schema, the two drivers, optimistic locking, live updates, presence. |
 | [`docs/local-sources.md`](docs/local-sources.md) | Files the user owns as a source: a JSON file or a directory of Markdown. Editability is decided by the runtime, not by the format. |
 | [`docs/plugin-storage.md`](docs/plugin-storage.md) | The generic store for the rows a plugin owns, on every source kind, and the rules the host enforces in place of columns and foreign keys. |
+| [`docs/plugin-lifecycle.md`](docs/plugin-lifecycle.md) | Installed (instance) versus enabled (timeline), who may install, version pinning, and what an uninstall does to the data. |
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server and its tools. |
 | [`docs/deploy.md`](docs/deploy.md) | The Netlify deploy, the auth gate, JIRA linking. |
 | [`docs/pricing.md`](docs/pricing.md) | The pricing model of a product-roadmap timeline. |

@@ -18,6 +18,8 @@ import type { Context, Config } from '@netlify/edge-functions';
 import postgres from 'https://esm.sh/postgres@3.4.9';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { readSession, hasValidMcpToken } from './_shared/session.ts';
+import { handlePluginsApi } from '../../scripts/db/plugin-api.ts';
+import { parseOperators } from '../../scripts/db/operator.ts';
 import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
 
 // Module-scoped, reused postgres.js connection. Opened once per isolate and
@@ -63,8 +65,12 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
   const reqUrl = new URL(req.url);
   const isCollection = reqUrl.pathname === '/api/sources';
   const isUsers = reqUrl.pathname === '/api/users';
+  // The instance's install registry. A sibling of /api/sources rather than
+  // something under a timeline: which plugins this deployment has is not a
+  // property of any one of them.
+  const isPlugins = reqUrl.pathname === '/api/plugins' || reqUrl.pathname.startsWith('/api/plugins/');
   const parsed =
-    isCollection || isUsers
+    isCollection || isUsers || isPlugins
       ? { id: '' }
       : parseSourcePath(reqUrl.pathname.replace(/^\/api\/source/, ''));
   if (!parsed) return; // not our route → fall through
@@ -101,6 +107,23 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
     }
   }
 
+  // Reads are open past the gate above; every write is operator-only, which is a
+  // different permission from „may edit a timeline" — see scripts/db/operator.ts.
+  if (isPlugins) {
+    const repo = resolveRepo(conns);
+    if (!repo) return json({ plugins: [] });
+    const pluginId = reqUrl.pathname.slice('/api/plugins'.length).replace(/^\/+|\/+$/g, '');
+    const result = await handlePluginsApi(repo, {
+      method,
+      pluginId: pluginId ? decodeURIComponent(pluginId) : undefined,
+      body,
+      params: Object.fromEntries(reqUrl.searchParams),
+      caller: { email: session?.email ?? null, mcp },
+      operators: parseOperators(Deno.env.get('PLUGIN_OPERATOR_EMAILS')),
+    });
+    return json(result.json, result.status);
+  }
+
   const ifMatchHeader = req.headers.get('if-match');
   const ifMatch = ifMatchHeader ? parseInt(ifMatchHeader, 10) : undefined;
 
@@ -131,5 +154,5 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
 }
 
 export const config: Config = {
-  path: ['/api/source/*', '/api/sources', '/api/users'],
+  path: ['/api/source/*', '/api/sources', '/api/users', '/api/plugins', '/api/plugins/*'],
 };

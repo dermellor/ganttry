@@ -139,6 +139,15 @@ The contract is re-exported as one import from
 from the app. Publishing it as a package belongs with distribution
 (<https://github.com/dermellor/ganttry/issues/15>).
 
+**Which plugins an instance HAS is a row, not a build.** `installed_plugins`
+records the artifact, its pinned version, the capabilities an operator granted and
+the manifest that was validated at install time — and that stored manifest is what
+the write path enforces against, so the checks keep working when the artifact's
+origin is unreachable. Enabling one on a timeline stays a separate, reversible
+act. Installing is operator-only, because loading third-party code into everyone's
+session cannot share a permission with „may change an item". The chapter is
+[`plugin-lifecycle.md`](plugin-lifecycle.md).
+
 **A plugin's own rows are stored generically, on every source kind.** A plugin
 installed at runtime cannot ship a migration, so what Postgres would enforce for it
 — the column shape, the foreign keys, the row order, a composite primary key — is

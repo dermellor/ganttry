@@ -37,6 +37,8 @@ const SCHEMA_TYPES = [
   'Watermark',
   'DirectoryUser',
   'PluginRef',
+  'PluginDataRow',
+  'PluginStatus',
 ];
 
 /**

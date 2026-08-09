@@ -287,13 +287,17 @@ no `ALTER TABLE`. The only place that knows plugin ids is
   `plugins: [{ id, config }]`, or direct SQL/PATCH. Identical locally and in
   production (same `api.ts` dispatcher, same DB).
 
+- **Enabling (granular).** `PUT` / `DELETE /api/source/<id>/plugin/<pluginId>`,
+  plus the MCP `enable_plugin` / `disable_plugin`. Turning one plugin on or off no
+  longer means rewriting the whole timeline — which was the path that lost a
+  concurrent edit. The config is validated against the plugin's declared
+  `configSchema` on write. See [`plugin-lifecycle.md`](plugin-lifecycle.md).
+- **Installed (instance level).** `installed_plugins` (migration 0017) plus
+  `/api/plugins`, which is what makes „install a plugin" a row rather than a new
+  build.
+
 **What is NOT generic (yet):**
 
-- **No granular enable path.** The API sub-kinds carry no `plugin`, and the MCP
-  has no `enable_plugin`. Turning a single plugin on or off without the rest of
-  the timeline only works via SQL or a bulk `replace_timeline`. (Open follow-up:
-  `PUT/DELETE /api/source/<id>/plugin/<pluginId>` plus MCP
-  `enable_/disable_plugin`.)
 - **Behaviour is code-coupled.** `resolveWritePlugins` / `updateVersions` /
   `getPublicPricing` are hard-wired to `product-roadmap`, and client-side
   the plugin registry ([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)) lists only

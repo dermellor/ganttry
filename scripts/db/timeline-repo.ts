@@ -21,6 +21,7 @@ import type { Sql } from 'postgres';
 import type {
   CustomFieldDef,
   DirectoryUser,
+  InstalledPlugin,
   PluginData,
   PluginDataRow,
   PluginRef,
@@ -1085,6 +1086,107 @@ export async function replacePluginRows(sql: Sql, id: string, plugins: PluginRef
   await sql`insert into timeline_plugins ${sql(rows, 'timeline_id', 'plugin_id', 'config', 'updated_at')}`;
 }
 
+// ---- the instance's install registry ---------------------------------------
+
+const INSTALLED_SELECT =
+  'plugin_id, version, api_version, artifact_kind, artifact, integrity, capabilities, manifest, enabled, installed_at, updated_at, updated_by';
+
+function rowToInstalled(row: Record<string, any>): InstalledPlugin {
+  const out: InstalledPlugin = {
+    id: row.plugin_id,
+    version: row.version,
+    apiVersion: row.api_version,
+    artifact: { kind: row.artifact_kind },
+    capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
+    manifest: (row.manifest ?? {}) as Record<string, unknown>,
+    enabled: row.enabled !== false,
+  };
+  if (row.artifact != null) out.artifact.source = row.artifact;
+  if (row.integrity != null) out.artifact.integrity = row.integrity;
+  const installed = toIso(row.installed_at);
+  if (installed != null) out.installedAt = installed;
+  const updated = toIso(row.updated_at);
+  if (updated != null) out.updatedAt = updated;
+  if (row.updated_by != null) out.updatedBy = row.updated_by;
+  return out;
+}
+
+export async function listInstalledPlugins(sql: Sql): Promise<InstalledPlugin[]> {
+  const rows = await sql`select ${sql.unsafe(INSTALLED_SELECT)} from installed_plugins order by plugin_id asc`;
+  return rows.map(rowToInstalled);
+}
+
+/**
+ * Upsert one registry row. `installed_at` is set only on insert, so re-installing
+ * to change a version keeps the date the plugin first arrived — which is the one
+ * an operator is looking for when they ask how long it has been here.
+ */
+export async function installPlugin(
+  sql: Sql,
+  plugin: InstalledPlugin,
+  updatedBy?: string,
+): Promise<InstalledPlugin> {
+  const [data] = await sql`
+    insert into installed_plugins
+      (plugin_id, version, api_version, artifact_kind, artifact, integrity, capabilities, manifest, enabled, updated_by)
+    values (
+      ${plugin.id}, ${plugin.version}, ${plugin.apiVersion}, ${plugin.artifact.kind},
+      ${plugin.artifact.source ?? null}, ${plugin.artifact.integrity ?? null},
+      ${jsonBag(sql, plugin.capabilities ?? [])}, ${jsonBag(sql, plugin.manifest ?? {})},
+      ${plugin.enabled !== false}, ${updatedBy ?? null}
+    )
+    on conflict (plugin_id) do update set
+      version = excluded.version,
+      api_version = excluded.api_version,
+      artifact_kind = excluded.artifact_kind,
+      artifact = excluded.artifact,
+      integrity = excluded.integrity,
+      capabilities = excluded.capabilities,
+      manifest = excluded.manifest,
+      enabled = excluded.enabled,
+      updated_at = now(),
+      updated_by = excluded.updated_by
+    returning ${sql.unsafe(INSTALLED_SELECT)}`;
+  return rowToInstalled(data);
+}
+
+export async function setPluginInstalledEnabled(
+  sql: Sql,
+  pluginId: string,
+  enabled: boolean,
+  updatedBy?: string,
+): Promise<void> {
+  const rows = await sql`
+    update installed_plugins set enabled = ${enabled}, updated_at = now(), updated_by = ${updatedBy ?? null}
+    where plugin_id = ${pluginId} returning plugin_id`;
+  if (rows.length === 0) throw new NotFoundError(`plugin „${pluginId}" is not installed`);
+}
+
+export async function removeInstalledPlugin(sql: Sql, pluginId: string): Promise<void> {
+  await sql`delete from installed_plugins where plugin_id = ${pluginId}`;
+}
+
+// ---- a plugin's enablement on one timeline ---------------------------------
+
+export async function setTimelinePlugin(
+  sql: Sql,
+  timelineId: string,
+  pluginId: string,
+  config: Record<string, unknown>,
+): Promise<void> {
+  const [exists] = await sql`select id from timelines where id = ${timelineId}`;
+  if (!exists) throw new NotFoundError(`timeline „${timelineId}" not found`);
+  await sql`
+    insert into timeline_plugins (timeline_id, plugin_id, config, updated_at)
+    values (${timelineId}, ${pluginId}, ${jsonBag(sql, config ?? {})}, now())
+    on conflict (timeline_id, plugin_id) do update
+      set config = excluded.config, updated_at = now()`;
+}
+
+export async function removeTimelinePlugin(sql: Sql, timelineId: string, pluginId: string): Promise<void> {
+  await sql`delete from timeline_plugins where timeline_id = ${timelineId} and plugin_id = ${pluginId}`;
+}
+
 // ---- plugin-owned rows (the generic store) ---------------------------------
 //
 // One table for every plugin (`plugin_data`, migration 0016). The shape rules,
@@ -1429,6 +1531,13 @@ export function makePostgresRepo(sql: Sql): TimelineRepo {
     deleteGroup: (timelineId, groupId) => deleteGroup(sql, timelineId, groupId),
     updatePhases: (id, phases) => updatePhases(sql, id, phases),
     updateMeta: (id, meta) => updateMeta(sql, id, meta),
+    listInstalledPlugins: () => listInstalledPlugins(sql),
+    installPlugin: (plugin, updatedBy) => installPlugin(sql, plugin, updatedBy),
+    setPluginInstalledEnabled: (pluginId, enabled, updatedBy) =>
+      setPluginInstalledEnabled(sql, pluginId, enabled, updatedBy),
+    removeInstalledPlugin: (pluginId) => removeInstalledPlugin(sql, pluginId),
+    setTimelinePlugin: (timelineId, pluginId, config) => setTimelinePlugin(sql, timelineId, pluginId, config),
+    removeTimelinePlugin: (timelineId, pluginId) => removeTimelinePlugin(sql, timelineId, pluginId),
     listPluginRows: (timelineId, pluginId, collection) => listPluginRows(sql, timelineId, pluginId, collection),
     listPluginData: (timelineId, pluginIds) => listPluginData(sql, timelineId, pluginIds),
     putPluginRow: (timelineId, pluginId, collection, row, expectedVersion, updatedBy) =>

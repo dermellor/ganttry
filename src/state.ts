@@ -43,6 +43,8 @@ export const els = {
   presence: document.getElementById('presence') as HTMLDivElement,
   addBtn: document.getElementById('add-btn') as HTMLButtonElement,
   exportBtn: document.getElementById('export-btn') as HTMLButtonElement,
+  pluginsBtn: document.getElementById('plugins-btn') as HTMLButtonElement,
+  pluginsPanel: document.getElementById('plugins-panel') as HTMLDivElement,
   status: document.getElementById('status') as HTMLSpanElement,
   detail: document.getElementById('detail') as HTMLElement,
   detailTitle: document.getElementById('detail-title') as HTMLHeadingElement,

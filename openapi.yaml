@@ -618,6 +618,409 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
+  "/api/plugins":
+    get:
+      operationId: getPlugins
+      summary: "The instance's installed plugins"
+      description: "Each with the host's verdict: `loadable`, and a `problem` sentence when it is not (switched off instance-wide, or a contract version this host does not satisfy). Readable by anyone past the auth gate — it is what the interface shows. On an instance with no registry the plugins the build shipped with are listed, because that is its truthful installed set."
+      responses:
+        "200":
+          description: "The registry."
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - plugins
+                properties:
+                  plugins:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/PluginStatus"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    post:
+      operationId: postPlugins
+      summary: "Install a plugin on the instance"
+      description: "Operator-only. Body is `{ manifest, artifact?, capabilities? }`. The manifest is validated against this host's contract version before anything is stored, so an incompatible artifact is refused here rather than at every boot. A non-builtin artifact must name a source, and a `url` one must carry an integrity hash — without it the pinned version names whatever that URL serves today. `capabilities` is what you GRANT; granting less than the manifest declares is refused rather than silently narrowed."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - manifest
+              properties:
+                manifest:
+                  type: object
+                artifact:
+                  type: object
+                  properties:
+                    kind:
+                      type: string
+                      enum:
+                        - builtin
+                        - url
+                        - package
+                        - vendored
+                    source:
+                      type: string
+                    integrity:
+                      type: string
+                capabilities:
+                  type: array
+                  items:
+                    type: string
+                enabled:
+                  type: boolean
+      responses:
+        "201":
+          description: "The installed plugin with its status."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/PluginStatus"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "403":
+          description: "forbidden — the caller is not an operator of this instance."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+  "/api/plugins/{pluginId}":
+    parameters:
+      - name: pluginId
+        in: path
+        required: true
+        description: "Plugin id, percent-encoded."
+        schema:
+          type: string
+    patch:
+      operationId: patchPluginsByPluginId
+      summary: "Switch a plugin on or off for the whole instance"
+      description: "Operator-only. Body is `{ enabled }`. Off stops the code loading everywhere and makes the plugin's data read-only; nothing is discarded, so switching back on is lossless."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - enabled
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: "The new state."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "403":
+          description: "forbidden — the caller is not an operator of this instance."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    delete:
+      operationId: deletePluginsByPluginId
+      summary: "Uninstall a plugin from the instance"
+      description: "Operator-only and guarded: repeat the plugin id as `?confirm=<pluginId>`, because this is the one operation that can delete data nothing else recovers. `?purgeData=true` also deletes every row the plugin owned and strips the item metadata keys it declared; the default keeps them, so an uninstall meant as „stop running this\" cannot silently discard a model."
+      responses:
+        "200":
+          description: "Uninstalled, saying whether the data went with it."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        "400":
+          description: "confirmation_required — the `confirm` parameter did not repeat the plugin id."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "403":
+          description: "forbidden — the caller is not an operator of this instance."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+  "/api/source/{id}/plugin/{pluginId}":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
+        schema:
+          type: string
+      - name: pluginId
+        in: path
+        required: true
+        description: "Plugin id, percent-encoded (a scoped id such as `@acme/sprints` arrives as `%40acme%2Fsprints`)."
+        schema:
+          type: string
+    get:
+      operationId: getSourceByIdPluginByPluginId
+      summary: "Is this plugin enabled on this timeline"
+      description: "Reports whether the instance has it installed, whether it is switched on instance-wide, whether this timeline enables it, and with what config."
+      responses:
+        "200":
+          description: "The state on this timeline."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pluginId:
+                    type: string
+                  installed:
+                    type: boolean
+                  instanceEnabled:
+                    type: boolean
+                  enabled:
+                    type: boolean
+                  config:
+                    type: object
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    put:
+      operationId: putSourceByIdPluginByPluginId
+      summary: "Enable a plugin on this timeline, or reconfigure it"
+      description: "The granular path that previously only existed as SQL or a bulk `replace_timeline` — and a bulk write is what loses a concurrent edit. Body is `{ config }` (a bare bag is accepted too). The config is validated against the plugin's declared `configSchema`, so a bad key fails here rather than inside a render. The plugin must be installed on the instance first."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                config:
+                  type: object
+      responses:
+        "200":
+          description: "Enabled, with the stored config."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "403":
+          description: "plugin_disabled — the plugin is switched off for this instance."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    delete:
+      operationId: deleteSourceByIdPluginByPluginId
+      summary: "Disable a plugin on this timeline"
+      description: "Keeps every row the plugin owns, so enabling it again is lossless — the destructive operation is the instance-level uninstall. Disabling something already off is not an error: both calls describe the same state."
+      responses:
+        "200":
+          description: Disabled.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
   "/api/source/{id}/plugin/{pluginId}/{collection}":
     parameters:
       - name: id
@@ -1936,9 +2339,9 @@ components:
       additionalProperties:
         "$ref": "#/components/schemas/PluginCollectionData"
     PluginCollectionData:
-      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-13517-14693-src_types.ts-0-181101108268078"
+      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-16727-17903-src_types.ts-0-218011108268078"
       description: "A plugin's collections, keyed by the collection id its manifest declares."
-    Recordstringdef-alias-src_types.ts-13517-14693-src_types.ts-0-181101108268078:
+    Recordstringdef-alias-src_types.ts-16727-17903-src_types.ts-0-218011108268078:
       type: object
       additionalProperties:
         type: array
@@ -2287,6 +2690,86 @@ components:
           One entry of the user directory (`app_users`, served by `GET /api/users`). The e-mail is the identity an item's `metadata.owner` stores; `name` is only for display and may be missing (a row backfilled from edit attribution knows the address but not the name until that person's next visit).
 
           Structurally a `PresenceUser` (src/presenceModel.ts), which is why the label / initials / hue helpers there serve both: the same person shown as a presence avatar and as an item's owner has to look like the same person.
+    PluginArtifactKind:
+      type: string
+      enum:
+        - builtin
+        - url
+        - package
+        - vendored
+      description: |-
+          Where a plugin's code came from.
+
+          Recorded rather than inferred, because uninstalling, re-verifying and reinstalling all need to know: a URL can be refetched, a package resolved again, a vendored directory re-read. `builtin` is the honest label for a plugin that shipped inside the build and has no artifact of its own — an instance can only run what it shipped with until the loader exists (issue #14), and calling that anything else would invite a reinstall of something that was never fetched.
+    PluginStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        loadable:
+          type: boolean
+          description: "May the host run this plugin's code? False when `problem` is set."
+        reason:
+          type: string
+          enum:
+            - disabled
+            - api-version
+            - invalid-manifest
+          description: |-
+              Why not, as a code the interface can word itself. Absent when the plugin is fine.
+
+              It exists alongside `problem` because the two have different readers: this one is for the viewer, which is German and must not print a server's English sentence at a user; `problem` is the diagnostic, which carries detail no fixed phrase can (which version, which manifest field) and goes into logs and to whoever wrote the plugin.
+        problem:
+          type: string
+          description: "Why not, in one sentence with the specifics. Absent when the plugin is fine."
+        id:
+          type: string
+        version:
+          type: string
+          description: "The artifact's own version, as its manifest declared it."
+        apiVersion:
+          type: string
+          description: "The host contract range the artifact was built against, e.g. `^1`."
+        artifact:
+          type: object
+          properties:
+            kind:
+              "$ref": "#/components/schemas/PluginArtifactKind"
+            source:
+              type: string
+            integrity:
+              type: string
+          required:
+            - kind
+          additionalProperties: false
+        capabilities:
+          type: array
+          items:
+            type: string
+          description: "Capabilities granted at install time — never widened by the plugin itself."
+        manifest:
+          "$ref": "#/components/schemas/Recordstringunknown"
+        enabled:
+          type: boolean
+          description: "Instance-level off switch. Distinct from „not enabled on this timeline\": this one stops the plugin everywhere without discarding what it stored, which is what makes turning it back on lossless."
+        installedAt:
+          type: string
+        updatedAt:
+          type: string
+        updatedBy:
+          type: string
+      required:
+        - apiVersion
+        - artifact
+        - capabilities
+        - enabled
+        - id
+        - loadable
+        - manifest
+        - version
+      description: |-
+          An installed plugin plus what the host currently thinks of it — the shape the interface and the loader read.
+
+          `problem` is a sentence for the person who installed it, not a code. A version error nobody can read is indistinguishable from a broken plugin and gets reported as one.
     Error:
       type: object
       required:

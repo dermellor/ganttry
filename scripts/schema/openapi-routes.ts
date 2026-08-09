@@ -186,6 +186,92 @@ export const ROUTES: RouteDef[] = [
     ],
   },
   {
+    path: '/api/plugins',
+    operations: [
+      {
+        method: 'GET',
+        summary: "The instance's installed plugins",
+        description: 'Each with the host\'s verdict: `loadable`, and a `problem` sentence when it is not (switched off instance-wide, or a contract version this host does not satisfy). Readable by anyone past the auth gate — it is what the interface shows. On an instance with no registry the plugins the build shipped with are listed, because that is its truthful installed set.',
+        responses: {
+          '200': { description: 'The registry.', schema: { type: 'object', required: ['plugins'], properties: { plugins: { type: 'array', items: ref('PluginStatus') } } } },
+          ...commonErrors(),
+        },
+      },
+      {
+        method: 'POST',
+        summary: 'Install a plugin on the instance',
+        description: 'Operator-only. Body is `{ manifest, artifact?, capabilities? }`. The manifest is validated against this host\'s contract version before anything is stored, so an incompatible artifact is refused here rather than at every boot. A non-builtin artifact must name a source, and a `url` one must carry an integrity hash — without it the pinned version names whatever that URL serves today. `capabilities` is what you GRANT; granting less than the manifest declares is refused rather than silently narrowed.',
+        requestBody: { type: 'object', required: ['manifest'], properties: { manifest: { type: 'object' }, artifact: { type: 'object', properties: { kind: { type: 'string', enum: ['builtin', 'url', 'package', 'vendored'] }, source: { type: 'string' }, integrity: { type: 'string' } } }, capabilities: { type: 'array', items: { type: 'string' } }, enabled: { type: 'boolean' } } },
+        responses: {
+          '201': { description: 'The installed plugin with its status.', schema: ref('PluginStatus') },
+          '403': { description: 'forbidden — the caller is not an operator of this instance.', schema: ERROR },
+          ...commonErrors(),
+        },
+      },
+    ],
+  },
+  {
+    path: '/api/plugins/{pluginId}',
+    pathParams: [{ name: 'pluginId', description: 'Plugin id, percent-encoded.' }],
+    operations: [
+      {
+        method: 'PATCH',
+        summary: 'Switch a plugin on or off for the whole instance',
+        description: 'Operator-only. Body is `{ enabled }`. Off stops the code loading everywhere and makes the plugin\'s data read-only; nothing is discarded, so switching back on is lossless.',
+        requestBody: { type: 'object', required: ['enabled'], properties: { enabled: { type: 'boolean' } } },
+        responses: {
+          '200': { description: 'The new state.', schema: OK },
+          '403': { description: 'forbidden — the caller is not an operator of this instance.', schema: ERROR },
+          ...commonErrors(),
+        },
+      },
+      {
+        method: 'DELETE',
+        summary: 'Uninstall a plugin from the instance',
+        description: 'Operator-only and guarded: repeat the plugin id as `?confirm=<pluginId>`, because this is the one operation that can delete data nothing else recovers. `?purgeData=true` also deletes every row the plugin owned and strips the item metadata keys it declared; the default keeps them, so an uninstall meant as „stop running this" cannot silently discard a model.',
+        responses: {
+          '200': { description: 'Uninstalled, saying whether the data went with it.', schema: OK },
+          ...commonErrors({
+            '400': { description: 'confirmation_required — the `confirm` parameter did not repeat the plugin id.', schema: ERROR },
+          }),
+          '403': { description: 'forbidden — the caller is not an operator of this instance.', schema: ERROR },
+        },
+      },
+    ],
+  },
+  {
+    path: '/api/source/{id}/plugin/{pluginId}',
+    pathParams: [...timelineId, { name: 'pluginId', description: 'Plugin id, percent-encoded (a scoped id such as `@acme/sprints` arrives as `%40acme%2Fsprints`).' }],
+    operations: [
+      {
+        method: 'GET',
+        summary: 'Is this plugin enabled on this timeline',
+        description: 'Reports whether the instance has it installed, whether it is switched on instance-wide, whether this timeline enables it, and with what config.',
+        responses: {
+          '200': { description: 'The state on this timeline.', schema: { type: 'object', properties: { pluginId: { type: 'string' }, installed: { type: 'boolean' }, instanceEnabled: { type: 'boolean' }, enabled: { type: 'boolean' }, config: { type: 'object' } } } },
+          ...commonErrors(),
+        },
+      },
+      {
+        method: 'PUT',
+        summary: 'Enable a plugin on this timeline, or reconfigure it',
+        description: 'The granular path that previously only existed as SQL or a bulk `replace_timeline` — and a bulk write is what loses a concurrent edit. Body is `{ config }` (a bare bag is accepted too). The config is validated against the plugin\'s declared `configSchema`, so a bad key fails here rather than inside a render. The plugin must be installed on the instance first.',
+        requestBody: { type: 'object', properties: { config: { type: 'object' } } },
+        responses: {
+          '200': { description: 'Enabled, with the stored config.', schema: OK },
+          '403': { description: 'plugin_disabled — the plugin is switched off for this instance.', schema: ERROR },
+          ...commonErrors(),
+        },
+      },
+      {
+        method: 'DELETE',
+        summary: 'Disable a plugin on this timeline',
+        description: 'Keeps every row the plugin owns, so enabling it again is lossless — the destructive operation is the instance-level uninstall. Disabling something already off is not an error: both calls describe the same state.',
+        responses: { '200': { description: 'Disabled.', schema: OK }, ...commonErrors() },
+      },
+    ],
+  },
+  {
     path: '/api/source/{id}/plugin/{pluginId}/{collection}',
     pathParams: [...timelineId, ...pluginPath],
     operations: [

@@ -412,6 +412,82 @@ body {
   color: var(--fg-muted, #646464);
 }
 
+/* The footer's right-hand group: the plugin list sits next to the export link
+   rather than in its own corner, because both are about the deploy rather than
+   about the timeline being viewed. */
+.footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.plugin-panel-wrap {
+  position: relative;
+}
+
+/* Anchored above the button rather than below it: the footer is the last row on
+   screen, so a panel opening downwards would be clipped by the viewport. */
+.plugin-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  min-width: 280px;
+  max-width: 420px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--mark-radius, 4px);
+  background: var(--surface, #fff);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  text-align: left;
+}
+
+.plugin-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugin-line {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 8px;
+  padding: 6px 4px;
+}
+
+.plugin-line + .plugin-line {
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.06));
+}
+
+.plugin-line-name {
+  font-weight: 600;
+}
+
+.plugin-line-version {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--fg-muted, #646464);
+}
+
+/* The reason a plugin is not running is the sentence worth reading, so it spans
+   both columns instead of being truncated into the version's slot. */
+.plugin-line-state {
+  grid-column: 1 / -1;
+  color: var(--fg-muted, #646464);
+}
+
+.plugin-line-problem .plugin-line-name,
+.plugin-line-problem .plugin-line-state {
+  color: var(--danger, #b3261e);
+}
+
+.plugin-empty {
+  margin: 0;
+  padding: 6px 4px;
+  color: var(--fg-muted, #646464);
+}
+
 .export-link {
   font: inherit;
   font-size: 12px;
