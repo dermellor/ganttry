@@ -239,6 +239,66 @@ which is content-sized, so it cannot anchor to the bar's right edge. If it needs
 behaviour (a click), it needs a real element from JS — the pattern in
 [`src/itemPresence.ts`](../src/itemPresence.ts) / [`src/itemRail.ts`](../src/itemRail.ts).
 
+## Milestone rail (the head of the timeline)
+
+A one-line strip of diamonds at the top of the center panel, one per milestone
+(`type: "point"`), each at its own date
+([`src/milestoneRail.ts`](../src/milestoneRail.ts) + the milestone-rail block in
+`styles/timeline.css`).
+
+It answers a question the lanes cannot. A point item lives in its track's lane, so
+reading the whole set of milestones means scanning vertically across every track —
+and past a handful of tracks that means scrolling, at which point a milestone near
+the bottom is simply missed. The rail collects them onto one row without moving
+them off their dates.
+
+- **Colour is the item's lane colour**, taken from the `lane-N` class
+  `assignLanes` already stamps on the item, so a mark and the point it stands for
+  read as the same thing. `className` also carries status marks, hence the lane is
+  picked out of it rather than used whole. A build with no groups has no lane
+  classes and the marks fall back to `--accent`.
+- **Clicking a mark selects that item** — highlight, URL, presence, detail panel —
+  through `selectItemById` in [`src/render.ts`](../src/render.ts), the same
+  function the timeline's own `select` handler calls. The rail's whole point is to
+  behave like the item it stands for; a second copy of those steps is how the two
+  drift apart, and the ones that drift silently (a forgotten
+  `publishSelfPresence`) only surface on somebody else's screen.
+- **The title lives in the tooltip**, together with the date. Labelling every mark
+  inline was the alternative and costs a second row plus collision handling, for
+  information the rail is not trying to carry: it says *which* milestones exist and
+  *when*, and the item itself is one click away.
+- **Coincident marks are fanned apart** (`spreadCoincident`). Two milestones on the
+  same day land on the same x, and one diamond then hides the other completely — the
+  rail would claim a milestone does not exist, which is the one thing it exists to
+  prevent. Drawing at the exact x was tried first and rejected for that reason. A run
+  is spread symmetrically **around its own centre**, not by pushing each colliding
+  mark right: pushing right accumulates, so a dense cluster walks steadily off its
+  dates and the drift grows with every member. The exact date stays in the tooltip,
+  and zooming in separates the marks for real.
+- **It reads the display set**, the same post-filter, post-regroup item list the
+  timeline is fed, so it follows „Nur Meilensteine" and the value filter without a
+  second derivation of what is visible. When a tag/custom-field regroup clones a
+  multi-valued item across lanes, the clones collapse back to one mark.
+- **Positioning goes through vis's own conversion**
+  ([`src/visGeometry.ts`](../src/visGeometry.ts)), shared with the phase ribbon —
+  re-deriving the time→pixel mapping from `getWindow()` and a border-box width
+  drifts right of the items, further toward the right edge. It redraws on
+  `changed` / `rangechange` / `rangechanged` plus a `ResizeObserver`.
+- **It is created with the timeline, not with the data.** The ribbon is built only
+  when the source has phases; the rail cannot be, because its count changes with the
+  *filter* — a view showing no milestones now may show some a moment later. So the
+  rail always exists and hides itself while the count is 0, releasing the row
+  reserve with it.
+
+**Vertical room.** The rail and the phase ribbon both sit inside
+`.vis-panel.vis-center`, above the items, so the group set has to be padded down by
+their combined height — `margin.axis` only offsets the first *item*, which leaves an
+empty parent/nested group header sitting behind the band. Each container class
+contributes its own height (`--phase-band-h`, `--milestone-rail-h`) and the padding
+is their sum, so the two stack instead of one landing on top of the other; the
+rail's `top` reads the same variable, which is what keeps it and the padding from
+disagreeing about the ribbon's height.
+
 ## Item context menu (right-click quick actions)
 
 Right-clicking an item on the timeline opens a small menu of the actions worth

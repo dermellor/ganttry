@@ -638,17 +638,29 @@
   overflow: hidden;
 }
 
-/* Reserve vertical room for the ribbon so the first group row starts *below*
-   it instead of sitting behind it. Padding the whole group set — labels, item
-   foreground, and the full-height phase tints — keeps left and center panels in
-   vertical lockstep (scroll stays synced). `content-box` makes the padding add
-   to the height rather than eat into vis-timeline's computed content area, so
-   the bottom row is never clipped. Toggled by `has-phase-band` in render.ts. */
+/* Reserve vertical room for the overlays pinned to the top of the center panel
+   so the first group row starts *below* them instead of sitting behind them.
+   Padding the whole group set — labels, item foreground, and the full-height
+   phase tints — keeps left and center panels in vertical lockstep (scroll stays
+   synced). `content-box` makes the padding add to the height rather than eat
+   into vis-timeline's computed content area, so the bottom row is never clipped.
+
+   The two overlays stack, so the reserve is a sum rather than a fixed height:
+   each class contributes its own band height and the unset ones fall back to 0.
+   Hardcoding one number instead means adding the second overlay silently drops
+   the first row behind it. `has-phase-band` is toggled in render.ts,
+   `has-milestone-rail` by the rail itself (its count follows the filter). */
+.timeline.has-phase-band { --phase-band-h: 30px; }
+.timeline.has-milestone-rail { --milestone-rail-h: 22px; }
+
 .timeline.has-phase-band .vis-labelset,
 .timeline.has-phase-band .vis-foreground,
-.timeline.has-phase-band .vis-itemset > .vis-background {
+.timeline.has-phase-band .vis-itemset > .vis-background,
+.timeline.has-milestone-rail .vis-labelset,
+.timeline.has-milestone-rail .vis-foreground,
+.timeline.has-milestone-rail .vis-itemset > .vis-background {
   box-sizing: content-box;
-  padding-top: 30px;
+  padding-top: calc(var(--phase-band-h, 0px) + var(--milestone-rail-h, 0px));
 }
 
 .phase-seg {
@@ -711,6 +723,56 @@
 body.phase-dragging {
   user-select: none;
 }
+
+/* ── Milestone rail — one row of marks at the head of the center panel ────────
+   Written by src/milestoneRail.ts. Sits directly under the phase ribbon when
+   there is one, hence `top` following the same variable the row reserve uses:
+   the rail and the padding below it can then never disagree about the ribbon's
+   height. */
+.milestone-rail {
+  position: absolute;
+  top: var(--phase-band-h, 0px);
+  left: 0;
+  right: 0;
+  height: var(--milestone-rail-h, 22px);
+  z-index: 4;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* A diamond, centred on its date: the rotation is what makes a plain square read
+   as a milestone, and `translate(-50%, -50%)` puts its centre — not its corner —
+   on the item's x, so the mark and the point in the lane line up. */
+.milestone-mark {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: var(--accent, #2f0d5b);
+  /* Milestones sharing a date are fanned apart by `spreadCoincident` until they
+     are MARK_PITCH_PX apart, which is this diamond plus its ring. The ring is
+     what keeps two fanned neighbours from reading as one wide blob, so its width
+     is part of that pitch — changing it means changing MARK_PITCH_PX with it. */
+  border: 1px solid var(--bg, #fff);
+  border-radius: 2px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.milestone-mark:hover,
+.milestone-mark:focus-visible {
+  outline: none;
+  transform: translate(-50%, -50%) rotate(45deg) scale(1.25);
+}
+
+.milestone-mark.lane-0 { background: var(--lane-0-border); }
+.milestone-mark.lane-1 { background: var(--lane-1-border); }
+.milestone-mark.lane-2 { background: var(--lane-2-border); }
+.milestone-mark.lane-3 { background: var(--lane-3-border); }
+.milestone-mark.lane-4 { background: var(--lane-4-border); }
+.milestone-mark.lane-5 { background: var(--lane-5-border); }
 
 /* ── Per-item presence (who else is on this item) ─────────────────────────────
    Marks written onto vis-timeline's own item elements by src/itemPresence.ts:

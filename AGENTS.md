@@ -14,7 +14,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/architecture.md`](docs/architecture.md) | The two extension seams: source adapters (where data comes from) and plugins (what a timeline carries beyond items). Start here. |
 | [`docs/data-model.md`](docs/data-model.md) | The timeline file format, date extraction, and `timelines.config.json`. |
 | [`docs/items.md`](docs/items.md) | What an item carries beyond dates: icons, status, owner, custom fields. |
-| [`docs/editing.md`](docs/editing.md) | Editing in the interface: the item rail, the context menu, drag and form behaviour, the two view modes, URL state. |
+| [`docs/editing.md`](docs/editing.md) | Editing in the interface: the item rail, the milestone rail, the context menu, drag and form behaviour, the two view modes, URL state. |
 | [`docs/database.md`](docs/database.md) | Postgres as the data source: schema, the two drivers, optimistic locking, live updates, presence. |
 | [`docs/local-sources.md`](docs/local-sources.md) | Files the user owns as a source: a JSON file or a directory of Markdown. Editability is decided by the runtime, not by the format. |
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server and its tools. |

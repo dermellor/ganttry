@@ -19,11 +19,12 @@ import {
   type SectionContext,
 } from './listGrouping';
 
-// U+241F (␟, "unit separator") can't occur in a real item/group id, so it is a
-// safe delimiter for synthetic regroup ids: it lets us map a display id back to
-// its real item by a plain string split, no lookup table needed as a fallback.
-const CLONE_SEP = '␟';
-const GROUP_PREFIX = `grp${CLONE_SEP}`;
+// The synthetic-id vocabulary lives in cloneId.ts (DOM-free) so a consumer that
+// only needs the display-id → item-id mapping does not have to import this
+// module and, with it, the app state and the dropdown. Re-exported because
+// `realIdOf` has always been part of this module's surface.
+export { realIdOf } from './cloneId';
+import { CLONE_SEP, GROUP_PREFIX } from './cloneId';
 
 // Frontmatter/metadata of a build item, keyed by id. Shared by the list
 // sectioning and the timeline regroup so both read custom-field values the same
@@ -103,12 +104,6 @@ export function syncGroupByControl(options: GroupByOption[], dim: string): void 
     sel.dataset.built = desired;
   }
   sel.value = dim;
-}
-
-// Map a timeline display id back to its real item id (strips the clone suffix).
-export function realIdOf(displayId: string): string {
-  const i = displayId.indexOf(CLONE_SEP);
-  return i === -1 ? displayId : displayId.slice(0, i);
 }
 
 export type RegroupResult = {
