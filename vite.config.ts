@@ -6,7 +6,7 @@ import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/
 import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
 import { type DbConnections } from './scripts/db/api';
-import { handleApiRequest, liveOverride } from './scripts/db/http';
+import { accessControlEnabled, handleApiRequest, liveOverride } from './scripts/db/http';
 import { toRequest, writeResponse } from './scripts/node-http';
 import { hasLocalTimeline, isLocalWritable, makeFileRepo } from './scripts/local/file-repo';
 
@@ -204,6 +204,11 @@ function timelinesApi(): Plugin {
           // Alice's display name; without it she shows as "alice".
           updatedBy: devIdentity(req).email,
           caller: { email: devIdentity(req).email },
+          // Off unless a developer asks for it, and then it consults the same
+          // member list as everything else — which is the point: trying the role
+          // model out locally must exercise the real path, not a dev-only
+          // shortcut that lets every check pass.
+          accessControl: accessControlEnabled(process.env.TIMELINES_ACCESS_CONTROL),
           live: liveOverride(process.env.TIMELINES_DB_LIVE),
         });
         if (!out) return next(); // not one of its routes (e.g. /api/me, /api/jira)

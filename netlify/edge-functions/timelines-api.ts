@@ -19,7 +19,12 @@ import postgres from 'https://esm.sh/postgres@3.4.9';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { readSession, hasValidMcpToken } from './_shared/session.ts';
 import { resolveRepo, type DbConnections } from '../../scripts/db/api.ts';
-import { handleApiRequest, liveOverride } from '../../scripts/db/http.ts';
+import {
+  accessControlEnabled,
+  handleApiRequest,
+  liveOverride,
+  serviceRoleFrom,
+} from '../../scripts/db/http.ts';
 
 // Module-scoped, reused postgres.js connection. Opened once per isolate and
 // reused across invocations — NEVER call sql.end() in a handler (it throws a
@@ -79,6 +84,12 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
     conns,
     updatedBy: mcp ? 'mcp' : session?.email,
     caller: session ? { email: session.email, name: session.name ?? null } : undefined,
+    accessControl: accessControlEnabled(Deno.env.get('TIMELINES_ACCESS_CONTROL')),
+    // The service token authenticates a program: there is no membership row to
+    // find, so its role is configured rather than looked up. Defaulting to
+    // `editor` is what keeps existing automations working the day the switch is
+    // turned on.
+    serviceRole: mcp ? serviceRoleFrom(Deno.env.get('MCP_TOKEN_ROLE')) : undefined,
     live: liveOverride(Deno.env.get('TIMELINES_DB_LIVE')),
   });
   // null → not one of our routes; fall through to the rest of the stack.

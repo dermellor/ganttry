@@ -29,7 +29,12 @@ import { decideAccess, parseDomains, type AccessConfig } from './admission.ts';
 import { envValue, hydrateProcessEnv } from './db/env.ts';
 import { getSql, getSqlForSource } from './db/sql.ts';
 import { getServiceClient } from './db/client.ts';
-import { handleApiRequest, liveOverride, type ApiContext } from './db/http.ts';
+import {
+  accessControlEnabled,
+  handleApiRequest,
+  liveOverride,
+  type ApiContext,
+} from './db/http.ts';
 import type { DbConnections } from './db/api.ts';
 
 hydrateProcessEnv();
@@ -149,6 +154,11 @@ const server = createServer((req, res) => {
           // one per request would make the audit panel lie. One honest label for
           // "this deployment does not know who edits".
           updatedBy: email ?? 'self-hosted',
+          // Admission (above) asked whether a trusted identity is present at
+          // all; this asks what that identity may do. Both are opt-in, and
+          // turning this one on without an identity header refuses everything,
+          // which is the honest outcome of asking for roles without a caller.
+          accessControl: accessControlEnabled(envValue('TIMELINES_ACCESS_CONTROL')),
           live: liveOverride(envValue('TIMELINES_DB_LIVE')),
         };
         const out = await handleApiRequest(await toRequest(req), ctx);

@@ -143,3 +143,127 @@ test('an empty body is undefined rather than a parse error', async () => {
   const res = (await call('/api/source/plan', { method: 'PATCH', body: '' }, withLocal()))!;
   assert.notEqual(res.status, 400);
 });
+
+// ---- access control (TIMELINES_ACCESS_CONTROL) ------------------------------
+// The switch is what makes this shippable ahead of the member list: with it off
+// every case below has to behave exactly as it did before the role model
+// existed, and that is asserted rather than assumed.
+
+/**
+ * Just enough PostgREST to answer `getMember`.
+ *
+ * Deliberately a fake of the CLIENT rather than of the repo: `resolveRepo` builds
+ * the real `makeSupabaseRepo` from whatever handle it is given, so a repo-shaped
+ * stub would never be reached and the test would prove nothing about the path
+ * the deploy actually takes.
+ */
+function fakeDb(members: Record<string, { email: string; role: string; status: string }>) {
+  return {
+    from: () => ({
+      select: () => ({
+        ilike: (_col: string, value: string) => ({
+          maybeSingle: async () => ({ data: members[value] ?? null, error: null }),
+        }),
+      }),
+    }),
+  };
+}
+
+const asMember = (
+  members: Record<string, { email: string; role: string; status: string }>,
+  email: string,
+): Partial<ApiContext> => ({
+  conns: { supabase: fakeDb(members) } as unknown as DbConnections,
+  accessControl: true,
+  caller: { email },
+});
+
+const MEMBERS = {
+  'admin@example.test': { email: 'admin@example.test', role: 'admin', status: 'active' },
+  'editor@example.test': { email: 'editor@example.test', role: 'editor', status: 'active' },
+  'viewer@example.test': { email: 'viewer@example.test', role: 'viewer', status: 'active' },
+  'gone@example.test': { email: 'gone@example.test', role: 'admin', status: 'suspended' },
+};
+
+const write = (ctx: Partial<ApiContext>) =>
+  call('/api/source/plan/item/a1', { method: 'PATCH', body: JSON.stringify({ content: 'B' }) }, ctx);
+
+test('with the switch off nothing is refused, whoever asks', async () => {
+  // No caller, no member list, a write: exactly the pre-role-model behaviour.
+  const res = (await write(withLocal()))!;
+  assert.equal(res.status, 200);
+});
+
+test('a viewer may read and may not write', async () => {
+  const denied = (await write(asMember(MEMBERS, 'viewer@example.test')))!;
+  assert.equal(denied.status, 403);
+  assert.equal(((await denied.json()) as any).capability, 'write');
+
+  const read = (await call('/api/sources', undefined, asMember(MEMBERS, 'viewer@example.test')))!;
+  assert.notEqual(read.status, 403);
+});
+
+test('an editor may write', async () => {
+  const res = (await write(asMember(MEMBERS, 'editor@example.test')))!;
+  assert.notEqual(res.status, 403);
+});
+
+test('a suspended member is refused even at the highest role', async () => {
+  // The status decides before the role does; an admin who was suspended is out.
+  const res = (await call('/api/sources', undefined, asMember(MEMBERS, 'gone@example.test')))!;
+  assert.equal(res.status, 403);
+});
+
+test('somebody with no membership row is refused, reading included', async () => {
+  const res = (await call('/api/sources', undefined, asMember(MEMBERS, 'stranger@example.test')))!;
+  assert.equal(res.status, 403);
+});
+
+test('the refusal does not say whether the address is known', async () => {
+  // „No such member" and „wrong role" answer the same way: the difference is
+  // only useful to somebody probing which addresses exist.
+  const stranger = (await write(asMember(MEMBERS, 'stranger@example.test')))!;
+  const viewer = (await write(asMember(MEMBERS, 'viewer@example.test')))!;
+  assert.equal(stranger.status, viewer.status);
+  assert.equal(((await stranger.json()) as any).error, ((await viewer.json()) as any).error);
+});
+
+test('with the switch on and no identity at all, a request is refused', async () => {
+  const res = (await call('/api/sources', undefined, { ...withLocal(), accessControl: true }))!;
+  assert.equal(res.status, 403);
+  assert.equal(((await res.json()) as any).error, 'forbidden');
+});
+
+test('the switch without a database says so instead of denying everybody', async () => {
+  const res = (await call('/api/sources', undefined, {
+    ...withLocal(),
+    accessControl: true,
+    caller: { email: 'someone@example.test' },
+  }))!;
+  assert.equal(res.status, 503);
+  assert.equal(((await res.json()) as any).error, 'access_control_without_database');
+});
+
+test('a service token acts with its configured role', async () => {
+  const viewer = (await write({ ...withLocal(), accessControl: true, serviceRole: 'viewer' }))!;
+  assert.equal(viewer.status, 403, 'a viewer token may not write');
+
+  const editor = (await write({ ...withLocal(), accessControl: true, serviceRole: 'editor' }))!;
+  assert.equal(editor.status, 200, 'an editor token may, without any member row');
+});
+
+test('the public pricing route stays reachable with the switch on', async () => {
+  // Public by contract (`security: []` in openapi.yaml). A gate that swallows it
+  // breaks the one integration the API explicitly promises.
+  const res = (await call('/api/pricing/x', undefined, { accessControl: true }))!;
+  assert.notEqual(res.status, 403);
+  assert.equal(res.headers.get('Access-Control-Allow-Origin'), '*');
+});
+
+test('paths we do not own are never refused, only passed through', async () => {
+  // The check must sit behind „is this ours", or a 403 lands on /api/me and the
+  // presence badge dies the moment the switch goes on.
+  for (const path of ['/api/me', '/api/jira/search?q=x', '/index.html']) {
+    assert.equal(await call(path, undefined, { accessControl: true }), null, path);
+  }
+});
