@@ -31,7 +31,12 @@ import { openCellEditor, closeCellEditor } from './cellEditor';
 import { anchorRect, layerFor } from './popover';
 import { renderCardsHtml } from './pricingCards';
 import { workDotHtml } from './pricingWork';
-import { type TimelineFile, type PricingFeature } from '../../types';
+import {
+  type TimelineFile,
+} from '../../types';
+import {
+  type PricingFeature,
+} from './types';
 import { hasPlugin } from '../../pluginHost/plugins';
 import { PRODUCT_ROADMAP_PLUGIN } from './plugin';
 import { currentPricing, hasPricingModel } from './compose';

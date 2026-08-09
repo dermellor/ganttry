@@ -20,10 +20,6 @@ import type {
   InstalledPlugin,
   PluginData,
   PluginDataRow,
-  Pricing,
-  PricingFeature,
-  PricingHighlight,
-  PricingTier,
   TimelineFile,
   TimelineFileItem,
   TimelinePhase,
@@ -39,7 +35,6 @@ export type TimelineGroupDecl = {
 
 export type TimelineMeta = { id: string; name?: string; description?: string; groupBy?: string };
 
-export type PublicPricing = { id: string; name?: string; pricing: Pricing };
 
 // Error classes are shared (not re-defined per driver) so `instanceof` in the
 // dispatcher's catch block works regardless of which driver threw — two
@@ -86,16 +81,22 @@ export class ValidationError extends Error {
  * Every storage operation with the DB client already bound. The two driver
  * factories return an object satisfying this; `handleTimelineApi` dispatches
  * through it and never sees the underlying client. Pure helpers (row mappers,
- * `reorderIds`, `stripRowVersions`, `enforceExtentExclusivity`,
- * `assemblePricing`) stay as standalone functions in the impl modules — they are
- * DB-shape utilities, not part of the request-serving surface.
+ * `reorderIds`, `enforceExtentExclusivity`) stay as standalone functions in the
+ * impl modules — they are DB-shape utilities, not part of the request-serving
+ * surface.
+ *
+ * **No method here names a plugin, and a CI check asserts it.** For four years
+ * this interface carried fifteen `addFeature` / `setTierValue` / `replacePricing`
+ * methods for one plugin, which meant a third-party plugin could not store
+ * anything without a change to every driver — the privilege issue #17 removed.
+ * The generic plugin-store methods above are what replaced them: a plugin
+ * declares its collections, and the store does not care what they mean.
  */
 export interface TimelineRepo {
   // reads
   listTimelines(): Promise<TimelineMeta[]>;
   getTimeline(id: string): Promise<TimelineFile | null>;
   getWatermark(id: string): Promise<Watermark>;
-  getPublicPricing(id: string): Promise<PublicPricing | null>;
 
   // user directory (`app_users`) — not timeline-scoped, like listTimelines()
   /** The whole directory, ordered for a picker (named users first, then by name). */
@@ -259,53 +260,4 @@ export interface TimelineRepo {
    */
   purgeItemMetadata(keys: string[], timelineId?: string | null): Promise<number>;
 
-  // pricing — features
-  addFeature(timelineId: string, feature: PricingFeature, updatedBy?: string): Promise<PricingFeature>;
-  updateFeature(
-    timelineId: string,
-    featureId: string,
-    patch: Partial<PricingFeature>,
-    expectedVersion?: number,
-    updatedBy?: string,
-  ): Promise<PricingFeature>;
-  deleteFeature(timelineId: string, featureId: string): Promise<void>;
-  moveFeature(
-    timelineId: string,
-    featureId: string,
-    anchor: { after?: string; before?: string },
-    updatedBy?: string,
-  ): Promise<string[]>;
-
-  // pricing — tiers + matrix cells
-  addTier(timelineId: string, tier: PricingTier, updatedBy?: string): Promise<PricingTier>;
-  updateTier(
-    timelineId: string,
-    tierId: string,
-    patch: Partial<PricingTier>,
-    expectedVersion?: number,
-    updatedBy?: string,
-  ): Promise<PricingTier>;
-  deleteTier(timelineId: string, tierId: string): Promise<void>;
-  setTierValue(
-    timelineId: string,
-    tierId: string,
-    featureId: string,
-    value: string | boolean | null | undefined,
-    updatedBy?: string,
-    availableFrom?: string | null,
-  ): Promise<void>;
-  clearTierValue(timelineId: string, tierId: string, featureId: string): Promise<void>;
-
-  // pricing — highlights + versions + bulk
-  addHighlight(timelineId: string, highlight: PricingHighlight, updatedBy?: string): Promise<PricingHighlight>;
-  updateHighlight(
-    timelineId: string,
-    highlightId: string,
-    patch: Partial<PricingHighlight>,
-    expectedVersion?: number,
-    updatedBy?: string,
-  ): Promise<PricingHighlight>;
-  deleteHighlight(timelineId: string, highlightId: string): Promise<void>;
-  updateVersions(id: string, versions: string[]): Promise<void>;
-  replacePricing(id: string, pricing: Pricing): Promise<void>;
 }

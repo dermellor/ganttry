@@ -28,11 +28,16 @@ import { PRODUCT_ROADMAP_PLUGIN } from '../../src/plugins/product-roadmap/plugin
 import { collectionsFromPricing, pricingFromCollections } from '../../src/plugins/product-roadmap/compose.ts';
 import { versionsFromConfig } from '../../src/plugins/product-roadmap/plugin.ts';
 import { resolveRepoFromEnv } from './repo-node.ts';
+import { getSql } from './sql.ts';
+import { getServiceClient } from './client.ts';
+import { makePostgresRepo } from './timeline-repo.ts';
+import { makeSupabaseRepo } from './timeline-repo-supabase.ts';
+import { readLegacyPricingSql, readLegacyPricingSupabase } from './legacy-pricing.ts';
 import { makeFileRepo } from '../local/file-repo.ts';
 import { envValue } from './env.ts';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Pricing } from '../../src/types.ts';
+import type { Pricing } from '../../src/plugins/product-roadmap/types.ts';
 import type { TimelineRepo } from './repo.ts';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -66,14 +71,21 @@ function comparable(pricing: Pricing): Pricing {
 
 type Report = { id: string; rows: number; ok: boolean; detail?: string };
 
-async function migrateOne(repo: TimelineRepo, id: string): Promise<Report | null> {
-  // Read the legacy model through `getPublicPricing`, NOT through `getTimeline`.
-  // Both return it today, but `getTimeline` stops assembling it the moment the
-  // read path switches to the generic store — and a migration that cannot read
-  // its own source once the new code is deployed is a migration nobody can run.
-  // This method exists on all three repos and survives until the final cleanup.
-  const legacy = await repo.getPublicPricing(id);
-  const pricing = legacy?.pricing;
+/** Where a store's OLD model comes from. Each store answers for its own storage. */
+type LegacyReader = (id: string) => Promise<Pricing | null>;
+
+/**
+ * The old shape of a local timeline file.
+ *
+ * `TimelineFile` no longer has a `pricing` field — that was the core type
+ * knowing one plugin, and #17 removed it. The migration still has to read files
+ * written before that, so it names the old shape here rather than keeping the
+ * field alive in the type everything else uses.
+ */
+type LegacyFile = { pricing?: Pricing };
+
+async function migrateOne(repo: TimelineRepo, legacyOf: LegacyReader, id: string): Promise<Report | null> {
+  const pricing = await legacyOf(id);
   if (!pricing || (!pricing.features?.length && !pricing.tiers?.length)) return null;
 
   const collections = collectionsFromPricing(pricing);
@@ -110,18 +122,43 @@ async function migrateOne(repo: TimelineRepo, id: string): Promise<Report | null
   return { id, rows: rowCount, ok: true };
 }
 
-/** Every store this instance has, labelled so the report says where a row went. */
-function stores(): { label: string; repo: TimelineRepo }[] {
-  const out: { label: string; repo: TimelineRepo }[] = [];
-  const db = resolveRepoFromEnv();
-  if (db) out.push({ label: 'db', repo: db });
+/**
+ * Every store this instance has, labelled so the report says where a row went,
+ * each with the reader for its own legacy storage.
+ *
+ * The legacy readers are NOT repo methods: `TimelineRepo` carries nothing
+ * plugin-specific any more. A DB store reads the four `pricing_*` tables through
+ * its driver's `readLegacyPricing`; a file store reads the `pricing` block that
+ * used to sit in the JSON. Both go away with the migration that drops the
+ * tables.
+ */
+function stores(): { label: string; repo: TimelineRepo; legacy: LegacyReader }[] {
+  const out: { label: string; repo: TimelineRepo; legacy: LegacyReader }[] = [];
+
+  // Which driver answers is the same decision resolveRepoFromEnv makes; it is
+  // repeated here because the legacy reader is driver-specific and the repo
+  // object no longer reveals which one it is.
+  if (envValue('TIMELINES_DATABASE_URL')) {
+    const sql = getSql();
+    if (sql) out.push({ label: 'db', repo: makePostgresRepo(sql), legacy: (id) => readLegacyPricingSql(sql, id) });
+  } else {
+    const db = getServiceClient();
+    if (db) {
+      out.push({ label: 'db', repo: makeSupabaseRepo(db), legacy: (id) => readLegacyPricingSupabase(db, id) });
+    }
+  }
 
   // The same two paths the dev server derives: `data/` anchors the ids, and a
   // scoped instance narrows the scan. Always included — a checkout with no
   // database still has local timelines to move.
   const root = resolve(ROOT, 'data');
   const subdir = envValue('TIMELINES_SOURCES_SUBDIR').replace(/^\/+|\/+$/g, '');
-  out.push({ label: 'local', repo: makeFileRepo({ root, scope: subdir ? resolve(root, subdir) : root }) });
+  const repo = makeFileRepo({ root, scope: subdir ? resolve(root, subdir) : root });
+  out.push({
+    label: 'local',
+    repo,
+    legacy: async (id) => ((await repo.getTimeline(id)) as LegacyFile | null)?.pricing ?? null,
+  });
   return out;
 }
 
@@ -129,7 +166,7 @@ async function main(): Promise<void> {
   const reports: Report[] = [];
   let aborted = false;
 
-  for (const { label, repo } of stores()) {
+  for (const { label, repo, legacy } of stores()) {
     if (aborted) break;
     let timelines: { id: string }[];
     try {
@@ -139,7 +176,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     for (const { id } of timelines) {
-      const report = await migrateOne(repo, id);
+      const report = await migrateOne(repo, legacy, id);
       if (!report) continue;
       reports.push(report);
       const mark = report.ok ? 'ok  ' : 'FAIL';

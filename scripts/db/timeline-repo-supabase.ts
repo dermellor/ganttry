@@ -20,10 +20,6 @@ import type {
   PluginData,
   PluginDataRow,
   PluginRef,
-  Pricing,
-  PricingFeature,
-  PricingHighlight,
-  PricingTier,
   TimelineFile,
   TimelineFileItem,
   TimelinePhase,
@@ -38,7 +34,6 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
-  type PublicPricing,
   type TimelineGroupDecl,
   type TimelineMeta,
   type TimelineRepo,
@@ -47,7 +42,7 @@ import {
 // Shared seam types/classes (single definition — see ./repo.ts). Re-exported for
 // symmetry with ./timeline-repo.ts.
 export { ConflictError, NotFoundError, ValidationError };
-export type { PublicPricing, TimelineGroupDecl, TimelineMeta };
+export type { TimelineGroupDecl, TimelineMeta };
 
 const ITEM_SELECT =
   'id, start, "end", duration, content, "group", type, body, icon, status, class_name, metadata, version, sort, created_at, created_by, updated_at, updated_by';
@@ -303,157 +298,8 @@ export async function getWatermark(db: SupabaseClient, id: string): Promise<Wate
 
 // ---- public pricing (marketing sites consume this) -------------------------
 
-/**
- * Pricing-only view of a product timeline for public consumption (e.g. the Astro
- * pricing page). Returns just name + the pricing model — never roadmap items or
- * status. Null when the timeline isn't a product timeline or has no pricing, so
- * the caller can 404. This is the single source of truth for external pages.
- */
-export async function getPublicPricing(db: SupabaseClient, id: string): Promise<PublicPricing | null> {
-  const { data, error } = await db
-    .from('timelines')
-    .select('name')
-    .eq('id', id)
-    .maybeSingle();
-  if (error) throw new Error(`getPublicPricing: ${error.message}`);
-  if (!data) return null;
-  const { data: plugin, error: plgErr } = await db
-    .from('timeline_plugins')
-    .select('config')
-    .eq('timeline_id', id)
-    .eq('plugin_id', PRODUCT_ROADMAP_PLUGIN)
-    .maybeSingle();
-  if (plgErr) throw new Error(`getPublicPricing plugin: ${plgErr.message}`);
-  if (!plugin) return null;
-  const versions = versionsFromConfig(plugin.config as Record<string, unknown>);
-  const pricing = await assemblePricing(db, id, versions);
-  if (!pricing || !pricing.tiers.length) return null;
-  // Public consumers don't need the internal lock counters.
-  stripRowVersions(pricing);
-  const out: PublicPricing = { id, pricing };
-  if (data.name != null) out.name = data.name;
-  return out;
-}
-
 // ---- pricing assembly (normalized tables → the Pricing shape) --------------
 
-function rowToFeature(row: Record<string, any>): PricingFeature {
-  const f: PricingFeature = { id: row.id, name: row.name ?? '' };
-  if (row.group != null) f.group = row.group;
-  if (row.description != null) f.description = row.description;
-  if (row.available_from != null) f.version = row.available_from;
-  if (row.name_by_version && Object.keys(row.name_by_version).length) f.nameByVersion = row.name_by_version;
-  if (row.description_by_version && Object.keys(row.description_by_version).length)
-    f.descriptionByVersion = row.description_by_version;
-  if (row.version != null) f.rowVersion = row.version;
-  return f;
-}
-
-function rowToTier(
-  row: Record<string, any>,
-  values: Record<string, string | boolean>,
-  valueVersions?: Record<string, string>,
-): PricingTier {
-  const t: PricingTier = { id: row.id, name: row.name ?? '', price: row.price ?? '', values };
-  if (row.tagline != null) t.tagline = row.tagline;
-  if (row.use_case != null) t.useCase = row.use_case;
-  if (row.target_group != null) t.targetGroup = row.target_group;
-  if (valueVersions && Object.keys(valueVersions).length) t.valueVersions = valueVersions;
-  if (row.version != null) t.rowVersion = row.version;
-  return t;
-}
-
-function rowToHighlight(row: Record<string, any>): PricingHighlight {
-  const h: PricingHighlight = {
-    id: row.id,
-    label: row.label ?? '',
-    featureIds: Array.isArray(row.feature_ids) ? row.feature_ids : [],
-  };
-  if (row.section != null) h.section = row.section;
-  if (row.icon != null) h.icon = row.icon;
-  if (row.description != null) h.description = row.description;
-  if (row.label_by_version && Object.keys(row.label_by_version).length) h.labelByVersion = row.label_by_version;
-  if (row.version != null) h.rowVersion = row.version;
-  return h;
-}
-
-/** Drop the server-managed rowVersion counters (public output / diffs). */
-export function stripRowVersions(pricing: Pricing): void {
-  for (const f of pricing.features) delete f.rowVersion;
-  for (const t of pricing.tiers) delete t.rowVersion;
-  for (const h of pricing.highlights ?? []) delete h.rowVersion;
-}
-
-const FEATURE_SELECT =
-  'id, name, "group", description, available_from, name_by_version, description_by_version, sort, version';
-const TIER_SELECT = 'id, name, tagline, use_case, target_group, price, sort, version';
-const HIGHLIGHT_SELECT = 'id, label, section, icon, feature_ids, description, label_by_version, sort, version';
-
-/**
- * Pure reconstruction of the Pricing shape from the normalized rows. Kept
- * DB-free so it can be unit-tested for a lossless round-trip against the *ToRow
- * mappers. `valueRows` are the (tier_id, feature_id, value) cells.
- */
-export function rowsToPricing(
-  featureRows: Record<string, any>[],
-  tierRows: Record<string, any>[],
-  valueRows: { tier_id: string; feature_id: string; value: string | boolean; available_from?: string | null }[],
-  highlightRows: Record<string, any>[],
-  versions: string[],
-): Pricing {
-  const valuesByTier = new Map<string, Record<string, string | boolean>>();
-  const versionsByTier = new Map<string, Record<string, string>>();
-  for (const v of valueRows) {
-    let bucket = valuesByTier.get(v.tier_id);
-    if (!bucket) valuesByTier.set(v.tier_id, (bucket = {}));
-    bucket[v.feature_id] = v.value;
-    if (v.available_from != null) {
-      let vb = versionsByTier.get(v.tier_id);
-      if (!vb) versionsByTier.set(v.tier_id, (vb = {}));
-      vb[v.feature_id] = v.available_from;
-    }
-  }
-  const pricing: Pricing = {
-    features: featureRows.map(rowToFeature),
-    tiers: tierRows.map((t) => rowToTier(t, valuesByTier.get(t.id) ?? {}, versionsByTier.get(t.id))),
-  };
-  const highlights = highlightRows.map(rowToHighlight);
-  if (highlights.length) pricing.highlights = highlights;
-  if (versions.length) pricing.versions = versions;
-  return pricing;
-}
-
-/**
- * Reassemble the full Pricing model from the normalized tables. `versions` is
- * passed in from the `timelines.pricing_versions` column (the caller already
- * fetched the row). An empty model comes back as { features: [], tiers: [] } so
- * callers can decide whether to surface it. rowVersion is included on the
- * editable path (getTimeline) and stripped for public output (getPublicPricing).
- */
-export async function assemblePricing(
-  db: SupabaseClient,
-  id: string,
-  versions: string[],
-): Promise<Pricing> {
-  const [featRes, tierRes, valRes, hlRes] = await Promise.all([
-    db.from('pricing_features').select(FEATURE_SELECT).eq('timeline_id', id).order('sort', { ascending: true, nullsFirst: true }),
-    db.from('pricing_tiers').select(TIER_SELECT).eq('timeline_id', id).order('sort', { ascending: true, nullsFirst: true }),
-    db.from('pricing_tier_values').select('tier_id, feature_id, value, available_from').eq('timeline_id', id),
-    db.from('pricing_highlights').select(HIGHLIGHT_SELECT).eq('timeline_id', id).order('sort', { ascending: true, nullsFirst: true }),
-  ]);
-  if (featRes.error) throw new Error(`assemblePricing features: ${featRes.error.message}`);
-  if (tierRes.error) throw new Error(`assemblePricing tiers: ${tierRes.error.message}`);
-  if (valRes.error) throw new Error(`assemblePricing values: ${valRes.error.message}`);
-  if (hlRes.error) throw new Error(`assemblePricing highlights: ${hlRes.error.message}`);
-
-  return rowsToPricing(
-    featRes.data ?? [],
-    tierRes.data ?? [],
-    (valRes.data ?? []) as { tier_id: string; feature_id: string; value: string | boolean; available_from?: string | null }[],
-    hlRes.data ?? [],
-    versions,
-  );
-}
 
 // ---- whole-timeline replace (import, MCP bulk, PUT fallback) ---------------
 
@@ -485,8 +331,6 @@ export async function replaceTimeline(db: SupabaseClient, id: string, file: Time
   // enabled, or the write stores data nothing reads.
   await replacePluginRows(db, id, pluginsForWrite(file));
 
-  // Pricing tables (wipe + re-insert).
-  await replacePricingRows(db, id, file.pricing);
 
   // Plugin-owned rows, so a GET → PUT round trip preserves them rather than
   // silently emptying a collection the request never mentioned.
@@ -726,138 +570,7 @@ async function nextSortFor(db: SupabaseClient, table: string, timelineId: string
   return typeof top === 'number' ? top + 1 : 0;
 }
 
-export function featureToRow(timelineId: string, f: PricingFeature, sort?: number): Record<string, any> {
-  const row: Record<string, any> = {
-    timeline_id: timelineId,
-    id: f.id,
-    name: f.name ?? '',
-    group: f.group ?? null,
-    description: f.description ?? null,
-    available_from: f.version ?? null,
-    name_by_version: f.nameByVersion ?? {},
-    description_by_version: f.descriptionByVersion ?? {},
-  };
-  if (sort != null) row.sort = sort;
-  return row;
-}
-
-export function tierToRow(timelineId: string, t: PricingTier, sort?: number): Record<string, any> {
-  const row: Record<string, any> = {
-    timeline_id: timelineId,
-    id: t.id,
-    name: t.name ?? '',
-    tagline: t.tagline ?? null,
-    use_case: t.useCase ?? null,
-    target_group: t.targetGroup ?? null,
-    price: t.price ?? '',
-  };
-  if (sort != null) row.sort = sort;
-  return row;
-}
-
-export function highlightToRow(timelineId: string, h: PricingHighlight, sort?: number): Record<string, any> {
-  const row: Record<string, any> = {
-    timeline_id: timelineId,
-    id: h.id,
-    label: h.label ?? '',
-    section: h.section ?? null,
-    icon: h.icon ?? null,
-    feature_ids: h.featureIds ?? [],
-    description: h.description ?? null,
-    label_by_version: h.labelByVersion ?? {},
-  };
-  if (sort != null) row.sort = sort;
-  return row;
-}
-
-/**
- * Shared optimistic-lock UPDATE for a versioned pricing row. Applies `set`
- * (already column-keyed) to (timeline_id, id), gated on `version` when
- * `expectedVersion` is given, and disambiguates row-gone (NotFound) from stale
- * (Conflict) exactly like updateItem.
- */
-async function updatePricingRow(
-  db: SupabaseClient,
-  table: string,
-  select: string,
-  timelineId: string,
-  rowId: string,
-  set: Record<string, any>,
-  expectedVersion: number | undefined,
-): Promise<Record<string, any>> {
-  if (Object.keys(set).length === 0) {
-    const { data } = await db.from(table).select(select).eq('timeline_id', timelineId).eq('id', rowId).maybeSingle();
-    if (!data) throw new NotFoundError();
-    return data as Record<string, any>;
-  }
-  let q = db.from(table).update(set).eq('timeline_id', timelineId).eq('id', rowId);
-  if (expectedVersion != null) q = q.eq('version', expectedVersion);
-  const { data, error } = await q.select(select);
-  if (error) throw new Error(`update ${table}: ${error.message}`);
-  if (!data || data.length === 0) {
-    const { data: exists } = await db.from(table).select('id').eq('timeline_id', timelineId).eq('id', rowId).maybeSingle();
-    if (!exists) throw new NotFoundError();
-    throw new ConflictError(`${table} ${rowId} changed since version ${expectedVersion}`);
-  }
-  return data[0] as Record<string, any>;
-}
-
 // -- features --
-
-export async function addFeature(
-  db: SupabaseClient,
-  timelineId: string,
-  feature: PricingFeature,
-  updatedBy?: string,
-): Promise<PricingFeature> {
-  const row = featureToRow(timelineId, feature, await nextSortFor(db, 'pricing_features', timelineId));
-  if (updatedBy) row.updated_by = updatedBy;
-  const { data, error } = await db.from('pricing_features').insert(row).select(FEATURE_SELECT).single();
-  if (error) throw new Error(`addFeature: ${error.message}`);
-  return rowToFeature(data);
-}
-
-export async function updateFeature(
-  db: SupabaseClient,
-  timelineId: string,
-  featureId: string,
-  patch: Partial<PricingFeature>,
-  expectedVersion?: number,
-  updatedBy?: string,
-): Promise<PricingFeature> {
-  const set: Record<string, any> = {};
-  if ('name' in patch) set.name = patch.name ?? '';
-  if ('group' in patch) set.group = patch.group ?? null;
-  if ('description' in patch) set.description = patch.description ?? null;
-  if ('version' in patch) set.available_from = patch.version ?? null;
-  if ('nameByVersion' in patch) set.name_by_version = patch.nameByVersion ?? {};
-  if ('descriptionByVersion' in patch) set.description_by_version = patch.descriptionByVersion ?? {};
-  if (updatedBy) set.updated_by = updatedBy;
-  const data = await updatePricingRow(db, 'pricing_features', FEATURE_SELECT, timelineId, featureId, set, expectedVersion);
-  return rowToFeature(data);
-}
-
-export async function deleteFeature(db: SupabaseClient, timelineId: string, featureId: string): Promise<void> {
-  // Value rows cascade away via FK; highlights keep raw id arrays (not
-  // FK-enforced), so strip the id from any highlight that referenced it.
-  const { data: hls, error: hlErr } = await db
-    .from('pricing_highlights')
-    .select('id, feature_ids')
-    .eq('timeline_id', timelineId)
-    .contains('feature_ids', [featureId]);
-  if (hlErr) throw new Error(`deleteFeature scan highlights: ${hlErr.message}`);
-  for (const h of hls ?? []) {
-    const next = (h.feature_ids as string[]).filter((x) => x !== featureId);
-    const { error } = await db
-      .from('pricing_highlights')
-      .update({ feature_ids: next })
-      .eq('timeline_id', timelineId)
-      .eq('id', h.id);
-    if (error) throw new Error(`deleteFeature strip highlight ${h.id}: ${error.message}`);
-  }
-  const { error } = await db.from('pricing_features').delete().eq('timeline_id', timelineId).eq('id', featureId);
-  if (error) throw new Error(`deleteFeature: ${error.message}`);
-}
 
 /**
  * Pure reorder: return `ids` with `moveId` repositioned immediately after
@@ -878,220 +591,13 @@ export function reorderIds(ids: string[], moveId: string, anchor: { after?: stri
   return without;
 }
 
-/**
- * Reposition a feature in the matrix row order relative to another feature.
- * Loads the current order (by `sort`), computes the new sequence via
- * `reorderIds`, and renumbers `sort` to a contiguous 0..n-1 — writing only the
- * rows whose position actually changed (each write bumps the row version).
- * Returns the new ordered id list.
- */
-export async function moveFeature(
-  db: SupabaseClient,
-  timelineId: string,
-  featureId: string,
-  anchor: { after?: string; before?: string },
-  updatedBy?: string,
-): Promise<string[]> {
-  const { data, error } = await db
-    .from('pricing_features')
-    .select('id, sort')
-    .eq('timeline_id', timelineId)
-    .order('sort', { ascending: true, nullsFirst: true });
-  if (error) throw new Error(`moveFeature load: ${error.message}`);
-  const rows = (data ?? []) as { id: string; sort: number | null }[];
-  const currentSort = new Map(rows.map((r) => [r.id, r.sort]));
-  const nextOrder = reorderIds(rows.map((r) => r.id), featureId, anchor);
-  for (let i = 0; i < nextOrder.length; i++) {
-    const fid = nextOrder[i];
-    if (currentSort.get(fid) === i) continue; // unchanged → skip write
-    const set: Record<string, any> = { sort: i };
-    if (updatedBy) set.updated_by = updatedBy;
-    const { error: upErr } = await db
-      .from('pricing_features')
-      .update(set)
-      .eq('timeline_id', timelineId)
-      .eq('id', fid);
-    if (upErr) throw new Error(`moveFeature renumber ${fid}: ${upErr.message}`);
-  }
-  return nextOrder;
-}
-
 // -- tiers --
-
-export async function addTier(
-  db: SupabaseClient,
-  timelineId: string,
-  tier: PricingTier,
-  updatedBy?: string,
-): Promise<PricingTier> {
-  const row = tierToRow(timelineId, tier, await nextSortFor(db, 'pricing_tiers', timelineId));
-  if (updatedBy) row.updated_by = updatedBy;
-  const { data, error } = await db.from('pricing_tiers').insert(row).select(TIER_SELECT).single();
-  if (error) throw new Error(`addTier: ${error.message}`);
-  // Seed any values supplied with the tier (e.g. from a bulk-ish add).
-  const values = tier.values ?? {};
-  const valueVersions = tier.valueVersions ?? {};
-  for (const [featureId, value] of Object.entries(values)) {
-    await setTierValue(db, timelineId, tier.id, featureId, value, updatedBy, valueVersions[featureId]);
-  }
-  return rowToTier(data, values, valueVersions);
-}
-
-export async function updateTier(
-  db: SupabaseClient,
-  timelineId: string,
-  tierId: string,
-  patch: Partial<PricingTier>,
-  expectedVersion?: number,
-  updatedBy?: string,
-): Promise<PricingTier> {
-  const set: Record<string, any> = {};
-  if ('name' in patch) set.name = patch.name ?? '';
-  if ('tagline' in patch) set.tagline = patch.tagline ?? null;
-  if ('useCase' in patch) set.use_case = patch.useCase ?? null;
-  if ('targetGroup' in patch) set.target_group = patch.targetGroup ?? null;
-  if ('price' in patch) set.price = patch.price ?? '';
-  if (updatedBy) set.updated_by = updatedBy;
-  const data = await updatePricingRow(db, 'pricing_tiers', TIER_SELECT, timelineId, tierId, set, expectedVersion);
-  // `values` are not tier columns — apply any provided cells individually. A
-  // provided `valueVersions[fid]` gates that cell's availability (see setTierValue).
-  if (patch.values) {
-    const vv = patch.valueVersions ?? {};
-    for (const [featureId, value] of Object.entries(patch.values)) {
-      await setTierValue(db, timelineId, tierId, featureId, value, updatedBy, vv[featureId]);
-    }
-  }
-  const { data: valRows } = await db
-    .from('pricing_tier_values')
-    .select('feature_id, value, available_from')
-    .eq('timeline_id', timelineId)
-    .eq('tier_id', tierId);
-  const values: Record<string, string | boolean> = {};
-  const valueVersions: Record<string, string> = {};
-  for (const v of valRows ?? []) {
-    values[v.feature_id] = v.value as string | boolean;
-    if (v.available_from != null) valueVersions[v.feature_id] = v.available_from as string;
-  }
-  return rowToTier(data, values, valueVersions);
-}
-
-export async function deleteTier(db: SupabaseClient, timelineId: string, tierId: string): Promise<void> {
-  // Value rows cascade away via FK.
-  const { error } = await db.from('pricing_tiers').delete().eq('timeline_id', timelineId).eq('id', tierId);
-  if (error) throw new Error(`deleteTier: ${error.message}`);
-}
 
 // -- tier×feature values (cell-granular) --
 
-/**
- * Set one matrix cell. A boolean `true` or a non-empty string is stored; a
- * `false` / `null` / empty value clears the cell (deletes the row) — both render
- * as "–" anyway, so there's no reason to keep a falsy row around.
- *
- * `availableFrom` gates *when* the cell counts as included (a version label, or
- * null/undefined = from the start). It rides along with the value on the same
- * row, so it is dropped automatically when the cell is cleared.
- */
-export async function setTierValue(
-  db: SupabaseClient,
-  timelineId: string,
-  tierId: string,
-  featureId: string,
-  value: string | boolean | null | undefined,
-  updatedBy?: string,
-  availableFrom?: string | null,
-): Promise<void> {
-  if (value === false || value === null || value === undefined || value === '') {
-    await clearTierValue(db, timelineId, tierId, featureId);
-    return;
-  }
-  const { error } = await db.from('pricing_tier_values').upsert({
-    timeline_id: timelineId,
-    tier_id: tierId,
-    feature_id: featureId,
-    value,
-    available_from: availableFrom ?? null,
-    updated_at: new Date().toISOString(),
-    updated_by: updatedBy ?? null,
-  });
-  if (error) throw new Error(`setTierValue: ${error.message}`);
-}
-
-export async function clearTierValue(
-  db: SupabaseClient,
-  timelineId: string,
-  tierId: string,
-  featureId: string,
-): Promise<void> {
-  const { error } = await db
-    .from('pricing_tier_values')
-    .delete()
-    .eq('timeline_id', timelineId)
-    .eq('tier_id', tierId)
-    .eq('feature_id', featureId);
-  if (error) throw new Error(`clearTierValue: ${error.message}`);
-}
-
 // -- highlights --
 
-export async function addHighlight(
-  db: SupabaseClient,
-  timelineId: string,
-  highlight: PricingHighlight,
-  updatedBy?: string,
-): Promise<PricingHighlight> {
-  const row = highlightToRow(timelineId, highlight, await nextSortFor(db, 'pricing_highlights', timelineId));
-  if (updatedBy) row.updated_by = updatedBy;
-  const { data, error } = await db.from('pricing_highlights').insert(row).select(HIGHLIGHT_SELECT).single();
-  if (error) throw new Error(`addHighlight: ${error.message}`);
-  return rowToHighlight(data);
-}
-
-export async function updateHighlight(
-  db: SupabaseClient,
-  timelineId: string,
-  highlightId: string,
-  patch: Partial<PricingHighlight>,
-  expectedVersion?: number,
-  updatedBy?: string,
-): Promise<PricingHighlight> {
-  const set: Record<string, any> = {};
-  if ('label' in patch) set.label = patch.label ?? '';
-  if ('section' in patch) set.section = patch.section ?? null;
-  if ('icon' in patch) set.icon = patch.icon ?? null;
-  if ('featureIds' in patch) set.feature_ids = patch.featureIds ?? [];
-  if ('description' in patch) set.description = patch.description ?? null;
-  if ('labelByVersion' in patch) set.label_by_version = patch.labelByVersion ?? {};
-  if (updatedBy) set.updated_by = updatedBy;
-  const data = await updatePricingRow(db, 'pricing_highlights', HIGHLIGHT_SELECT, timelineId, highlightId, set, expectedVersion);
-  return rowToHighlight(data);
-}
-
-export async function deleteHighlight(db: SupabaseClient, timelineId: string, highlightId: string): Promise<void> {
-  const { error } = await db.from('pricing_highlights').delete().eq('timeline_id', timelineId).eq('id', highlightId);
-  if (error) throw new Error(`deleteHighlight: ${error.message}`);
-}
-
 // -- versions (ordered label list, whole-replaced like phases) --
-
-export async function updateVersions(db: SupabaseClient, id: string, versions: string[]): Promise<void> {
-  // The version list lives in the product-roadmap plugin's config now (was the
-  // dropped pricing_versions column). Merge it into any existing config and
-  // upsert, so setting versions on a timeline without a plugin row enables the
-  // plugin (seeding pricing reaches here via replacePricing).
-  const { data: existing, error: readErr } = await db
-    .from('timeline_plugins')
-    .select('config')
-    .eq('timeline_id', id)
-    .eq('plugin_id', PRODUCT_ROADMAP_PLUGIN)
-    .maybeSingle();
-  if (readErr) throw new Error(`updateVersions read: ${readErr.message}`);
-  const config = { ...((existing?.config as Record<string, unknown>) ?? {}), versions: versions ?? [] };
-  const { error } = await db
-    .from('timeline_plugins')
-    .upsert({ timeline_id: id, plugin_id: PRODUCT_ROADMAP_PLUGIN, config, updated_at: new Date().toISOString() });
-  if (error) throw new Error(`updateVersions: ${error.message}`);
-}
 
 /** Replace all plugin registrations for a timeline (wipe + insert). */
 export async function replacePluginRows(db: SupabaseClient, id: string, plugins: PluginRef[]): Promise<void> {
@@ -1551,76 +1057,6 @@ export async function purgeItemMetadata(
 
 // -- bulk replace (import, MCP set_pricing seed, PUT) --
 
-/**
- * Wipe and re-insert every pricing row for a timeline from a full Pricing model.
- * Does NOT touch the `pricing_versions` column (callers set it alongside). Used
- * by replaceTimeline and the MCP bulk `set_pricing` seed.
- */
-export async function replacePricingRows(
-  db: SupabaseClient,
-  id: string,
-  pricing: Pricing | undefined,
-): Promise<void> {
-  // Values first (FK children), then the parents + highlights.
-  for (const table of ['pricing_tier_values', 'pricing_features', 'pricing_tiers', 'pricing_highlights']) {
-    const { error } = await db.from(table).delete().eq('timeline_id', id);
-    if (error) throw new Error(`replacePricingRows clear ${table}: ${error.message}`);
-  }
-  if (!pricing) return;
-
-  const featureRows = (pricing.features ?? [])
-    .filter((f) => f.id)
-    .map((f, i) => featureToRow(id, f, i));
-  if (featureRows.length) {
-    const { error } = await db.from('pricing_features').insert(featureRows);
-    if (error) throw new Error(`replacePricingRows insert features: ${error.message}`);
-  }
-
-  const tierRows = (pricing.tiers ?? [])
-    .filter((t) => t.id)
-    .map((t, i) => tierToRow(id, t, i));
-  if (tierRows.length) {
-    const { error } = await db.from('pricing_tiers').insert(tierRows);
-    if (error) throw new Error(`replacePricingRows insert tiers: ${error.message}`);
-  }
-
-  // Value cells: only those whose feature id exists, so a dangling ref in the
-  // source model can't abort the insert on the FK.
-  const featureIds = new Set((pricing.features ?? []).map((f) => f.id));
-  const valueRows: Record<string, any>[] = [];
-  for (const t of pricing.tiers ?? []) {
-    if (!t.id) continue;
-    const vv = t.valueVersions ?? {};
-    for (const [featureId, value] of Object.entries(t.values ?? {})) {
-      if (value === false || value == null || value === '') continue; // falsy = not-included
-      if (!featureIds.has(featureId)) continue;
-      valueRows.push({ timeline_id: id, tier_id: t.id, feature_id: featureId, value, available_from: vv[featureId] ?? null });
-    }
-  }
-  if (valueRows.length) {
-    const { error } = await db.from('pricing_tier_values').insert(valueRows);
-    if (error) throw new Error(`replacePricingRows insert values: ${error.message}`);
-  }
-
-  const highlightRows = (pricing.highlights ?? [])
-    .filter((h) => h.id)
-    .map((h, i) => highlightToRow(id, h, i));
-  if (highlightRows.length) {
-    const { error } = await db.from('pricing_highlights').insert(highlightRows);
-    if (error) throw new Error(`replacePricingRows insert highlights: ${error.message}`);
-  }
-}
-
-/** Full pricing replace incl. the versions array — used by the MCP set_pricing seed. */
-export async function replacePricing(
-  db: SupabaseClient,
-  id: string,
-  pricing: Pricing,
-): Promise<void> {
-  await updateVersions(db, id, pricing.versions ?? []);
-  await replacePricingRows(db, id, pricing);
-}
-
 // ---- TimelineRepo factory (supabase-js) ------------------------------------
 
 /**
@@ -1635,7 +1071,6 @@ export function makeSupabaseRepo(db: SupabaseClient): TimelineRepo {
     touchUser: (email, name) => touchUser(db, email, name),
     getTimeline: (id) => getTimeline(db, id),
     getWatermark: (id) => getWatermark(db, id),
-    getPublicPricing: (id) => getPublicPricing(db, id),
     replaceTimeline: (id, file) => replaceTimeline(db, id, file),
     addItem: (timelineId, item, updatedBy) => addItem(db, timelineId, item, updatedBy),
     updateItem: (timelineId, itemId, patch, expectedVersion, updatedBy) =>
@@ -1667,24 +1102,5 @@ export function makeSupabaseRepo(db: SupabaseClient): TimelineRepo {
       orderPluginRows(db, timelineId, pluginId, collection, orderedIds, updatedBy),
     purgePluginData: (pluginId, timelineId) => purgePluginData(db, pluginId, timelineId),
     purgeItemMetadata: (keys, timelineId) => purgeItemMetadata(db, keys, timelineId),
-    addFeature: (timelineId, feature, updatedBy) => addFeature(db, timelineId, feature, updatedBy),
-    updateFeature: (timelineId, featureId, patch, expectedVersion, updatedBy) =>
-      updateFeature(db, timelineId, featureId, patch, expectedVersion, updatedBy),
-    deleteFeature: (timelineId, featureId) => deleteFeature(db, timelineId, featureId),
-    moveFeature: (timelineId, featureId, anchor, updatedBy) =>
-      moveFeature(db, timelineId, featureId, anchor, updatedBy),
-    addTier: (timelineId, tier, updatedBy) => addTier(db, timelineId, tier, updatedBy),
-    updateTier: (timelineId, tierId, patch, expectedVersion, updatedBy) =>
-      updateTier(db, timelineId, tierId, patch, expectedVersion, updatedBy),
-    deleteTier: (timelineId, tierId) => deleteTier(db, timelineId, tierId),
-    setTierValue: (timelineId, tierId, featureId, value, updatedBy, availableFrom) =>
-      setTierValue(db, timelineId, tierId, featureId, value, updatedBy, availableFrom),
-    clearTierValue: (timelineId, tierId, featureId) => clearTierValue(db, timelineId, tierId, featureId),
-    addHighlight: (timelineId, highlight, updatedBy) => addHighlight(db, timelineId, highlight, updatedBy),
-    updateHighlight: (timelineId, highlightId, patch, expectedVersion, updatedBy) =>
-      updateHighlight(db, timelineId, highlightId, patch, expectedVersion, updatedBy),
-    deleteHighlight: (timelineId, highlightId) => deleteHighlight(db, timelineId, highlightId),
-    updateVersions: (id, versions) => updateVersions(db, id, versions),
-    replacePricing: (id, pricing) => replacePricing(db, id, pricing),
   };
 }

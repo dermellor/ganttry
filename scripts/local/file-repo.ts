@@ -36,7 +36,6 @@ import {
   NotFoundError,
   NotSupportedError,
   ValidationError,
-  type PublicPricing,
   type TimelineGroupDecl,
   type TimelineMeta,
   type TimelineRepo,
@@ -518,12 +517,12 @@ async function persist(loaded: Loaded, file: TimelineFile): Promise<number> {
  * owns — see „plugin-owned rows" below and
  * [`docs/plugin-storage.md`](../../docs/plugin-storage.md).
  *
- * The `product-roadmap`-specific sub-resources (pricing features, tiers, cells,
- * highlights, versions) still throw `NotSupportedError` → `501`. They predate the
- * generic store and go away when that plugin's data moves onto it
- * (<https://github.com/dermellor/ganttry/issues/17>); until then answering 501 says
- * so, where returning a silent success would let the interface report
- * „Gespeichert" for a write that never happened.
+ * There used to be sixteen `NotSupportedError` → `501` answers here, one per
+ * `product-roadmap` sub-resource: a pricing model in a JSON file was readable and
+ * not editable, because those methods needed four tables. They are gone with the
+ * methods (#17). A plugin's rows now go through the generic store above, which
+ * this repo implements like everything else — so the matrix is editable on a file
+ * the user owns, with no database involved.
  */
 export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
   const unsupported = (what: string) => {
@@ -573,12 +572,6 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
     async getWatermark(id: string): Promise<Watermark> {
       const loaded = await load(dirs, id);
       return { v: loaded.version, n: loaded.file.items.length, t: new Date(loaded.version).toISOString() };
-    },
-
-    async getPublicPricing(id: string): Promise<PublicPricing | null> {
-      const file = await this.getTimeline(id);
-      if (!file?.pricing) return null;
-      return { id, name: file.name, pricing: file.pricing };
     },
 
     // The user directory is a DB concept (`app_users`). A local file carries no
@@ -988,49 +981,6 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       return changed;
     },
 
-    // ---- pricing (plugin surface, first cut: 501) --------------------------
-    async addFeature() {
-      return unsupported('adding pricing features');
-    },
-    async updateFeature() {
-      return unsupported('editing pricing features');
-    },
-    async deleteFeature() {
-      return unsupported('deleting pricing features');
-    },
-    async moveFeature() {
-      return unsupported('reordering pricing features');
-    },
-    async addTier() {
-      return unsupported('adding pricing tiers');
-    },
-    async updateTier() {
-      return unsupported('editing pricing tiers');
-    },
-    async deleteTier() {
-      return unsupported('deleting pricing tiers');
-    },
-    async setTierValue() {
-      return unsupported('editing pricing cells');
-    },
-    async clearTierValue() {
-      return unsupported('clearing pricing cells');
-    },
-    async addHighlight() {
-      return unsupported('adding pricing highlights');
-    },
-    async updateHighlight() {
-      return unsupported('editing pricing highlights');
-    },
-    async deleteHighlight() {
-      return unsupported('deleting pricing highlights');
-    },
-    async updateVersions() {
-      return unsupported('editing pricing versions');
-    },
-    async replacePricing() {
-      return unsupported('replacing the pricing model');
-    },
   } as TimelineRepo;
 }
 

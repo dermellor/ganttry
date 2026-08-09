@@ -8,7 +8,9 @@ import {
   PRICING_TIER_META_KEY,
   PRODUCT_ROADMAP_PLUGIN,
 } from '../plugins/product-roadmap/plugin';
-import type { CustomFieldDef, Pricing, TimelineFile } from '../types';
+import { collectionsFromPricing } from '../plugins/product-roadmap/compose';
+import type { Pricing } from '../plugins/product-roadmap/types';
+import type { CustomFieldDef, TimelineFile } from '../types';
 
 // pluginFieldDefs is the seam the generic custom-field machinery reads plugin
 // fields through: each enabled kind's `fields(file)`, stamped with the kind's
@@ -25,11 +27,25 @@ const pricing = (over: Partial<Pricing> = {}): Pricing => ({
   ...over,
 });
 
-const enabled = (over: Partial<Pricing> = {}): TimelineFile =>
-  file({ plugins: [{ id: PRODUCT_ROADMAP_PLUGIN }], pricing: pricing(over) });
+// The model as the host stores it: four collections of undistinguished rows.
+// There is no `file.pricing` any more — the core file format stopped carrying one
+// plugin's data by name (#17) — so a fixture builds rows, exactly like a real
+// timeline does.
+const withModel = (over: Partial<Pricing> = {}): Partial<TimelineFile> => {
+  const model = pricing(over);
+  return {
+    pluginData: { [PRODUCT_ROADMAP_PLUGIN]: collectionsFromPricing(model) },
+    plugins: [{ id: PRODUCT_ROADMAP_PLUGIN, config: { versions: model.versions ?? [] } }],
+  };
+};
+
+const enabled = (over: Partial<Pricing> = {}): TimelineFile => file(withModel(over));
 
 test('no plugin enabled ⇒ no contributed fields', () => {
-  assert.deepEqual(pluginFieldDefs(file({ pricing: pricing() })), []);
+  // Rows present, plugin not enabled: still nothing, because enablement is the
+  // gate rather than the presence of data.
+  const { pluginData } = withModel();
+  assert.deepEqual(pluginFieldDefs(file({ pluginData })), []);
   assert.deepEqual(pluginFieldDefs(file()), []);
   assert.deepEqual(pluginFieldDefs(null), []);
 });

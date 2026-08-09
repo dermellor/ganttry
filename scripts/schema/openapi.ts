@@ -24,16 +24,21 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = resolve(REPO_ROOT, 'openapi.yaml');
 const check = process.argv.includes('--check');
 
-/** Types whose schemas the spec references. Generated, never hand-written. */
+/**
+ * Types whose schemas the spec references. Generated, never hand-written.
+ *
+ * All of them come from `src/types.ts`, and no plugin's types are here any more:
+ * `Pricing`, `PricingFeature`, `PricingTier` and `PricingHighlight` were in this
+ * list while the core file format carried one plugin's model, and they left with
+ * it (#17). A plugin's rows are documented generically, as `PluginDataRow` —
+ * what a row may contain is its manifest's business and is checked at runtime,
+ * not something this spec can or should restate.
+ */
 const SCHEMA_TYPES = [
   'TimelineFile',
   'TimelineFileItem',
   'TimelinePhase',
   'CustomFieldDef',
-  'Pricing',
-  'PricingFeature',
-  'PricingTier',
-  'PricingHighlight',
   'Watermark',
   'DirectoryUser',
   'PluginRef',
@@ -126,9 +131,13 @@ function pathsFrom(routes: RouteDef[]): Record<string, unknown> {
         operationId: operationId(op.method, r.path),
         summary: op.summary,
         ...(op.description ? { description: op.description } : {}),
-        // An empty list means "no auth", which is how the public pricing
+        // An empty list means "no auth", which is how a deliberately public
         // endpoint is expressed machine-readably rather than only in prose.
         ...(r.public ? { security: [] } : {}),
+        // Generated clients strike a deprecated operation through, which is the
+        // point: the retired route still answers, so nothing else would signal
+        // that it must not be called any more.
+        ...(r.deprecated ? { deprecated: true } : {}),
         ...(op.optimisticLock
           ? {
               parameters: [
@@ -210,11 +219,11 @@ const spec = {
     title: 'Ganttry HTTP API',
     version: '0.1.0',
     description:
-      'Read and write timelines. Served identically by the Vite dev middleware and the deployed edge function: both dispatch through handleTimelineApi in scripts/db/api.ts.\n\nAuthentication: every endpoint sits behind the auth gate when AUTH_REQUIRED=true, except GET /api/pricing/{id}, which is deliberately public. An MCP client may bypass the gate with a valid X-MCP-Token header.\n\nConcurrency: a PATCH sends the row version in If-Match and gets 409 on a mismatch. A PATCH only touches keys present in the body, so clearing an optional field requires sending it as an explicit null.\n\nThis file is generated — payload schemas come from src/types.ts. See scripts/schema/openapi.ts.',
+      'Read and write timelines. Served identically by the Vite dev middleware and the deployed edge function: both dispatch through handleTimelineApi in scripts/db/api.ts.\n\nAuthentication: every endpoint sits behind the auth gate when AUTH_REQUIRED=true, except the public plugin read route and the retired GET /api/pricing/{id}. An MCP client may bypass the gate with a valid X-MCP-Token header.\n\nConcurrency: a PATCH sends the row version in If-Match and gets 409 on a mismatch. A PATCH only touches keys present in the body, so clearing an optional field requires sending it as an explicit null.\n\nThis file is generated — payload schemas come from src/types.ts. See scripts/schema/openapi.ts.',
     license: { name: 'MIT', identifier: 'MIT' },
   },
   servers: [{ url: '/', description: 'Same origin as the viewer' }],
-  // Applies to every operation; the public pricing endpoint overrides it with an
+  // Applies to every operation; a public endpoint overrides it with an
   // empty list. Either credential is enough: a browser session, or the MCP token
   // that lets a non-interactive client through the same gate.
   security: [{ sessionCookie: [] }, { mcpToken: [] }],

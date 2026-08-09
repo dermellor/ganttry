@@ -21,7 +21,8 @@ import { apiJson, ConflictError } from '../../editor';
 import { PRICING_COLLECTIONS } from './manifest';
 import { cellId } from './compose';
 import { PRODUCT_ROADMAP_PLUGIN } from './plugin';
-import type { PluginDataRow, PricingFeature, PricingHighlight, PricingTier } from '../../types';
+import type { PluginDataRow } from '../../types';
+import type { PricingFeature, PricingHighlight, PricingTier } from './types';
 
 export { ConflictError };
 

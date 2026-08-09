@@ -1,9 +1,10 @@
 // What a plugin may publish, and what the host removes before publishing it.
 //
-// `GET /api/pricing/<id>` is public, unauthenticated and consumed by external
-// pages, and it is served by a dedicated endpoint plus a repo method that strips
-// the internal lock counters by hand. A third-party plugin cannot have any of
-// that, so publishing becomes a declared capability of the generic layer.
+// `GET /api/pricing/<id>` was public, unauthenticated and consumed by external
+// pages, served by a dedicated edge function plus a repo method that stripped the
+// internal lock counters by hand. A third-party plugin could have none of that,
+// so publishing became a declared capability of the generic layer. That endpoint
+// now answers 410 and names its successor here (#17).
 //
 // Pure, and that matters more here than elsewhere: this is the code that decides
 // what leaves the building. A projection with a database call in the middle is one
@@ -13,8 +14,9 @@
 // Three fields are ALWAYS removed, whatever a plugin declares. They are
 // host-managed bookkeeping (`version`, `updatedAt`, `updatedBy`), and `updatedBy`
 // in particular is an e-mail address: publishing it would leak who works on a
-// timeline to anyone who fetches the endpoint. `stripRowVersions` does the first
-// of those three by hand today, for one plugin.
+// timeline to anyone who fetches the endpoint. A hand-written `stripRowVersions`
+// used to do the first of the three, for one plugin; this does all three, for
+// every plugin, in one place.
 
 import { grants, type PluginManifest } from './manifest.ts';
 import type { PluginCollectionData, PluginDataRow } from '../types';
@@ -114,11 +116,11 @@ export function projectCollections(
  * dropped. The alternative is publishing rows whose public projection nobody can
  * evaluate, and „we could not check" must not resolve to „ship it".
  *
- * NOTE the one thing this does not touch: `file.pricing`. That is
- * `product-roadmap`'s data in its pre-generic shape, and it has always been
- * materialized as-is. It comes under this rule when that plugin moves onto the
- * generic store (issue #17); until then, a local timeline's pricing model is as
- * public as its file is.
+ * It covers every plugin's rows without exception. It used to have one: the
+ * pricing model sat in a `pricing` field of its own and was materialized as-is,
+ * so a local timeline's prices were as public as its file was, whatever anybody
+ * had decided. That field is gone (#17) and its rows go through the check here
+ * like everybody else's.
  */
 export function stripFileForPublication<T extends { plugins?: { id: string; public?: boolean }[]; pluginData?: Record<string, PluginCollectionData> }>(
   file: T,

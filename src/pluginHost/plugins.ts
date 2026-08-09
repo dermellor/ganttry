@@ -30,10 +30,10 @@ export function pluginConfig(
  * write that brought a plugin's data but not its registration would store rows
  * nothing reads, and the timeline would look empty while the data sat there.
  *
- * Generic on purpose. This used to be `resolveWritePlugins` inside
- * product-roadmap, keyed on `file.pricing`, and imported by BOTH database
- * drivers — which is a core file importing from a plugin folder, the coupling
- * issue #17 removes. The rule was never plugin-specific; only its old trigger was.
+ * Generic on purpose. This used to be `resolveWritePlugins` inside one plugin,
+ * keyed on a field that plugin owned, and imported by BOTH database drivers —
+ * which is a core file importing from a plugin folder, the coupling issue #17
+ * removes. The rule was never plugin-specific; only its old trigger was.
  */
 export function pluginsForWrite(file: TimelineFile): PluginRef[] {
   const plugins: PluginRef[] = (file.plugins ?? []).map((p) => ({

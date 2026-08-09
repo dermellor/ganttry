@@ -8,7 +8,7 @@
 // of the same column from colliding.
 
 import { escapeHtml } from '../../buildItems';
-import type { PricingTier } from '../../types';
+import type { PricingTier } from './types';
 import { state, els, setStatus, clearFormSlots } from '../../state';
 import { apiAddTier, apiUpdateTier, apiDeleteTier, ConflictError } from './api';
 import { hideDetail, setDetailTitle } from '../../detailPanel';

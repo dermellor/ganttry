@@ -10,7 +10,7 @@ import { describe, test } from 'node:test';
 
 import { cellId, collectionsFromPricing, pricingFromCollections } from './compose.ts';
 import { PRICING_COLLECTIONS } from './manifest.ts';
-import type { Pricing } from '../../types.ts';
+import type { Pricing } from './types';
 
 const { features: FEATURES, tiers: TIERS, tierValues: CELLS, highlights: HIGHLIGHTS } = PRICING_COLLECTIONS;
 

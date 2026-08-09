@@ -21,7 +21,7 @@
     "dev:worktree": "npm run build:data && vite --strictPort --port ${WT_PORT:-31200}",
     "build": "npm run build:data && vite build",
     "export": "npm run build:data && tsx scripts/export-view.ts",
-    "export:pricing": "tsx scripts/pricing-export.ts",
+    "export:pricing": "tsx src/plugins/product-roadmap/export.ts",
     "preview": "vite preview",
     "test": "TZ=Europe/Berlin node --import tsx --test '{src,scripts}/**/*.test.ts'",
     "typecheck": "tsc --noEmit",

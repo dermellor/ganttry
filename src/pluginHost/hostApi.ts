@@ -20,13 +20,13 @@ import { grants, type PluginManifest } from './manifest';
 
 /**
  * The timeline as a plugin sees it. Pinned to the file shape the viewer already
- * loads, which now carries `pluginData` — so a plugin's own rows arrive with the
+ * loads, which carries `pluginData` — so a plugin's own rows arrive with the
  * snapshot rather than through a second request.
  *
- * `TimelineFile.pricing` is still on it, and that is the last plugin-specific
- * field: it goes when product-roadmap moves onto the generic store
- * (<https://github.com/dermellor/ganttry/issues/17>), at which point this alias
- * becomes a narrower type rather than a rename.
+ * It is an alias of `TimelineFile` and no longer a lossy one: the file format
+ * carries no plugin-specific field any more. `pricing` was the last of them and
+ * went with #17, so what a plugin sees here is exactly the core format plus the
+ * rows it owns.
  */
 export type TimelineSnapshot = TimelineFile;
 

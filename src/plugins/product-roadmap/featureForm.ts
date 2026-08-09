@@ -7,7 +7,7 @@
 
 import { escapeHtml } from '../../buildItems';
 import { createMarkdownEditor } from '../../wysiwyg';
-import type { PricingFeature } from '../../types';
+import type { PricingFeature } from './types';
 import { state, els, setStatus, clearFormSlots } from '../../state';
 import { apiAddFeature, apiUpdateFeature, apiDeleteFeature, apiMoveFeature, ConflictError } from './api';
 import { slugId } from './pricing';

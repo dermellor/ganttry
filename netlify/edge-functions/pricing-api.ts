@@ -1,73 +1,58 @@
-// Netlify Edge Function — PUBLIC pricing endpoint.
+// Netlify Edge Function — the retired public pricing endpoint.
 //
-// GET /api/pricing/<id> → the pricing model (name, tiers, features, highlights,
-// versions) of a product timeline as public JSON. This is the single source of
-// truth consumed by external marketing pages (e.g. the Astro pricing page),
-// which fetch it at build time. Deliberately public and cacheable: it exposes
-// only the pricing model, never roadmap items or status.
+// `GET /api/pricing/<id>` served one plugin's model from an address of its own.
+// That was the last piece of the privilege issue #17 removes: a plugin nobody
+// wrote into this repo could never have had a route here, so „no plugin has a
+// privilege a third party lacks" was false as long as this one did.
 //
-// The auth gate excludes /api/pricing/* (see auth.ts excludedPath), so no login
-// or MCP token is required.
+// It now answers **410 Gone** and names its successor:
 //
-// Driver selection mirrors timelines-api.ts: TIMELINES_DATABASE_URL selects
-// postgres.js (opt-in), else TIMELINES_SUPABASE_URL + SERVICE_KEY select
-// supabase-js (the Netlify default). Both drivers are imported so the bundle
-// carries each; the resolved repo serves getPublicPricing.
+//   GET /api/public/plugin/product-roadmap/<id>
+//
+// 410 rather than a redirect, and rather than an alias, because the payload
+// changed shape: the old one folded each matrix cell into its tier under
+// `values`, and that folding is the plugin's knowledge, not the host's. A
+// generic route cannot perform it, so an alias would have to be a hand-written
+// translation living outside the plugin — exactly the thing being removed. A
+// consumer that silently received a differently-shaped body would render a price
+// list with empty columns and nobody would hear about it; a 410 with the new
+// address in the body stops the build instead.
+//
+// The function stays deployed rather than being deleted with its route. A
+// deleted function makes the path fall through to the SPA, which answers 200
+// with HTML — a build-time `fetch(...).json()` then fails on a parse error that
+// says nothing about what happened. This says what happened.
+//
+// It can go once the deprecation window has passed and no consumer is left. Its
+// successor is documented in „Publishing a plugin's data" (docs/plugin-public-read.md).
 
 import type { Context, Config } from '@netlify/edge-functions';
-import postgres from 'https://esm.sh/postgres@3.4.9';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
-import { resolveRepo, type DbConnections } from '../../scripts/db/api.ts';
 
-// Module-scoped, reused handles (see timelines-api.ts) — opened once per
-// isolate, never torn down in a handler.
-let sqlHandle: ReturnType<typeof postgres> | null | undefined;
-function getSql() {
-  if (sqlHandle !== undefined) return sqlHandle;
-  const dbUrl = Deno.env.get('TIMELINES_DATABASE_URL');
-  sqlHandle = dbUrl ? postgres(dbUrl, { prepare: false }) : null;
-  return sqlHandle;
-}
+const SUCCESSOR = '/api/public/plugin/product-roadmap/<timelineId>';
 
-let sbHandle: ReturnType<typeof createClient> | null | undefined;
-function getSupabase() {
-  if (sbHandle !== undefined) return sbHandle;
-  const url = Deno.env.get('TIMELINES_SUPABASE_URL');
-  const key = Deno.env.get('TIMELINES_SUPABASE_SERVICE_KEY');
-  sbHandle = url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
-  return sbHandle;
-}
-
-const dbConns = (): DbConnections => ({ sql: getSql(), supabase: getSupabase() });
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      // Public + cacheable: fine to serve stale briefly; consumers fetch at build.
-      'Cache-Control': 'public, max-age=300, s-maxage=300',
-      'Access-Control-Allow-Origin': '*',
-    },
-  });
-}
-
-export default async function handler(req: Request, _ctx: Context): Promise<Response | void> {
-  if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405);
-
-  const repo = resolveRepo(dbConns());
-  if (!repo) return json({ error: 'db_not_configured' }, 503);
-
-  // Path: /api/pricing/<id> — id may contain slashes (e.g. "acme/foo").
+export default async function handler(req: Request, _ctx: Context): Promise<Response> {
   const id = new URL(req.url).pathname.replace(/^\/api\/pricing\//, '').replace(/\/+$/, '');
-  if (!id) return json({ error: 'id required' }, 400);
-
-  try {
-    const pricing = await repo.getPublicPricing(decodeURIComponent(id));
-    return pricing ? json(pricing) : json({ error: 'not found' }, 404);
-  } catch (err) {
-    return json({ error: 'server_error', message: String(err) }, 500);
-  }
+  return new Response(
+    JSON.stringify({
+      error: 'gone',
+      message:
+        'GET /api/pricing/<id> has been retired. The pricing model is served by the generic ' +
+        `public plugin route: GET ${SUCCESSOR}. The payload shape changed — matrix cells are ` +
+        'their own rows in the `tier-values` collection instead of being folded into each ' +
+        "tier's `values` map.",
+      successor: id ? `/api/public/plugin/product-roadmap/${id}` : SUCCESSOR,
+    }),
+    {
+      status: 410,
+      headers: {
+        'Content-Type': 'application/json',
+        // Not cached: a consumer that fixes its URL must not keep hitting a
+        // cached refusal, and there is nothing here worth serving from an edge.
+        'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
+      },
+    },
+  );
 }
 
 export const config: Config = {

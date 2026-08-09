@@ -27,6 +27,11 @@ export type RouteDef = {
   pathParams?: { name: string; description: string }[];
   /** Bypasses the auth gate on purpose; emits `security: []` for its operations. */
   public?: boolean;
+  /**
+   * Retired, but still answered so a stale consumer gets a message instead of
+   * whatever the SPA fallback returns. Emits `deprecated: true` per operation.
+   */
+  deprecated?: boolean;
   operations: Operation[];
 };
 
@@ -356,123 +361,6 @@ export const ROUTES: RouteDef[] = [
     ],
   },
   {
-    path: '/api/source/{id}/pricing',
-    pathParams: timelineId,
-    operations: [
-      {
-        method: 'PUT',
-        summary: 'Replace the pricing model wholesale',
-        description: 'Bulk seed. Enables the product-roadmap plugin automatically. For edits prefer the granular feature/tier/tier-value/highlight endpoints, which do not clobber concurrent changes.',
-        requestBody: ref('Pricing'),
-        responses: { '200': { description: 'Stored.', schema: OK }, ...commonErrors() },
-      },
-    ],
-  },
-  {
-    path: '/api/source/{id}/feature',
-    pathParams: timelineId,
-    operations: [
-      {
-        method: 'POST',
-        summary: 'Add a pricing feature',
-        description: 'Appends to the end of its group. Use feature-move to position it.',
-        requestBody: ref('PricingFeature'),
-        responses: { '201': { description: 'The created feature.', schema: ref('PricingFeature') }, ...commonErrors() },
-      },
-    ],
-  },
-  {
-    path: '/api/source/{id}/feature/{featureId}',
-    pathParams: [...timelineId, { name: 'featureId', description: 'Feature id.' }],
-    operations: [
-      {
-        method: 'PATCH',
-        summary: 'Update a pricing feature',
-        description: "The lock version comes **only** from If-Match here, never from `body.version`: on a feature, `version` is the domain field 'available from'.",
-        optimisticLock: true,
-        requestBody: ref('PricingFeature'),
-        responses: { '200': { description: 'The updated feature.', schema: ref('PricingFeature') }, ...commonErrors(CONFLICT) },
-      },
-      { method: 'DELETE', summary: 'Delete a pricing feature', responses: { '200': { description: 'Deleted.', schema: OK }, ...commonErrors() } },
-    ],
-  },
-  {
-    path: '/api/source/{id}/feature-move',
-    pathParams: timelineId,
-    operations: [
-      {
-        method: 'POST',
-        summary: 'Reorder a feature',
-        description: 'Exactly one anchor; `after` wins if both are given. The server renumbers `sort` and returns the resulting order, which the client adopts rather than replaying the move locally. PUT behaves identically.',
-        requestBody: { type: 'object', required: ['featureId'], properties: { featureId: { type: 'string' }, after: { type: 'string' }, before: { type: 'string' } } },
-        responses: { '200': { description: 'The new order.', schema: { type: 'object' } }, ...commonErrors() },
-      },
-    ],
-  },
-  {
-    path: '/api/source/{id}/tier',
-    pathParams: timelineId,
-    operations: [
-      { method: 'POST', summary: 'Add a tier', requestBody: ref('PricingTier'), responses: { '201': { description: 'The created tier.', schema: ref('PricingTier') }, ...commonErrors() } },
-    ],
-  },
-  {
-    path: '/api/source/{id}/tier/{tierId}',
-    pathParams: [...timelineId, { name: 'tierId', description: 'Tier id.' }],
-    operations: [
-      {
-        method: 'PATCH',
-        summary: 'Update a tier',
-        description: 'Touches no matrix cells: the response re-reads and returns them in full, so the column values survive.',
-        optimisticLock: true,
-        requestBody: ref('PricingTier'),
-        responses: { '200': { description: 'The updated tier, cells included.', schema: ref('PricingTier') }, ...commonErrors(CONFLICT) },
-      },
-      { method: 'DELETE', summary: 'Delete a tier', responses: { '200': { description: 'Deleted.', schema: OK }, ...commonErrors() } },
-    ],
-  },
-  {
-    path: '/api/source/{id}/tier-value',
-    pathParams: timelineId,
-    operations: [
-      {
-        method: 'PUT',
-        summary: 'Set one matrix cell',
-        description: 'A cell is atomic, so there is no locking here and two people can edit different cells freely. A falsy `value` deletes the cell. `availableFrom` gates when the cell counts as included; `value` stays the end state. POST behaves identically.',
-        requestBody: { type: 'object', required: ['tierId', 'featureId'], properties: { tierId: { type: 'string' }, featureId: { type: 'string' }, value: { oneOf: [{ type: 'boolean' }, { type: 'string' }, { type: 'null' }] }, availableFrom: { type: 'string', description: 'Version label from which the cell applies.' } } },
-        responses: { '200': { description: 'Stored.', schema: OK }, ...commonErrors() },
-      },
-    ],
-  },
-  {
-    path: '/api/source/{id}/highlight',
-    pathParams: timelineId,
-    operations: [
-      { method: 'POST', summary: 'Add a card highlight', requestBody: ref('PricingHighlight'), responses: { '201': { description: 'The created highlight.', schema: ref('PricingHighlight') }, ...commonErrors() } },
-    ],
-  },
-  {
-    path: '/api/source/{id}/highlight/{highlightId}',
-    pathParams: [...timelineId, { name: 'highlightId', description: 'Highlight id.' }],
-    operations: [
-      { method: 'PATCH', summary: 'Update a card highlight', optimisticLock: true, requestBody: ref('PricingHighlight'), responses: { '200': { description: 'The updated highlight.', schema: ref('PricingHighlight') }, ...commonErrors(CONFLICT) } },
-      { method: 'DELETE', summary: 'Delete a card highlight', responses: { '200': { description: 'Deleted.', schema: OK }, ...commonErrors() } },
-    ],
-  },
-  {
-    path: '/api/source/{id}/pversion',
-    pathParams: timelineId,
-    operations: [
-      {
-        method: 'PUT',
-        summary: 'Replace the ordered version list',
-        description: 'Writes only the plugin config and migrates **no** references. Renaming a version therefore orphans every gate that named it, which is why there is no version editor in the UI.',
-        requestBody: { type: 'array', items: { type: 'string' } },
-        responses: { '200': { description: 'Stored.', schema: OK }, ...commonErrors() },
-      },
-    ],
-  },
-  {
     path: '/api/users',
     operations: [
       {
@@ -498,12 +386,13 @@ export const ROUTES: RouteDef[] = [
     path: '/api/pricing/{id}',
     pathParams: timelineId,
     public: true,
+    deprecated: true,
     operations: [
       {
         method: 'GET',
-        summary: 'Public pricing model',
-        description: '**Deliberately unauthenticated**, for external pages. Serves only the pricing model, never roadmap items, and strips the internal `rowVersion` from every entity.',
-        responses: { '200': { description: 'The pricing model, without lock versions.', schema: ref('Pricing') }, '404': { description: 'Unknown timeline, or not a product timeline.', schema: ERROR }, '500': { description: 'server_error.', schema: ERROR } },
+        summary: 'Retired: the public pricing model',
+        description: 'Answers **410 Gone** and names its successor, `GET /api/public/plugin/product-roadmap/{id}`.\n\nIt served one plugin from an address of its own, which is the privilege issue #17 removes: a plugin nobody wrote into this repo could never have had a route here. Not an alias and not a redirect, because the payload changed shape — a matrix cell is now its own row in the `tier-values` collection instead of being folded into each tier\'s `values` map, and that folding is the plugin\'s knowledge rather than the host\'s. A consumer silently handed the new shape would render empty columns; a 410 stops its build instead.',
+        responses: { '410': { description: 'Gone. The body carries the successor URL.', schema: ERROR } },
       },
     ],
   },

@@ -14,14 +14,8 @@
 
 import { PRICING_COLLECTIONS } from './manifest';
 import { PRODUCT_ROADMAP_PLUGIN, versionsFromConfig } from './plugin.ts';
-import type {
-  Pricing,
-  PricingFeature,
-  PricingHighlight,
-  PricingTier,
-  PluginCollectionData,
-  PluginDataRow,
-} from '../../types';
+import type { PluginCollectionData, PluginDataRow } from '../../types';
+import type { Pricing, PricingFeature, PricingHighlight, PricingTier } from './types';
 
 const { features: FEATURES, tiers: TIERS, tierValues: CELLS, highlights: HIGHLIGHTS } = PRICING_COLLECTIONS;
 

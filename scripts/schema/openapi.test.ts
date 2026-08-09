@@ -58,11 +58,21 @@ test('openapi routes: each operation declares a success and the auth failure', (
   for (const route of ROUTES) {
     for (const op of route.operations) {
       const codes = Object.keys(op.responses);
-      const success = codes.filter((c) => c.startsWith('2'));
-      assert.ok(
-        success.length > 0,
-        `${op.method} ${route.path} declares no 2xx response`,
-      );
+      // A retired route has no success case by definition — it exists to refuse.
+      // Demanding a 2xx of it would force a documented response the server never
+      // sends, which is worse than the gap this test guards.
+      if (!route.deprecated) {
+        const success = codes.filter((c) => c.startsWith('2'));
+        assert.ok(
+          success.length > 0,
+          `${op.method} ${route.path} declares no 2xx response`,
+        );
+      } else {
+        assert.ok(
+          codes.some((c) => c.startsWith('4')),
+          `${op.method} ${route.path} is deprecated but documents no refusal`,
+        );
+      }
       // A route that declares itself public is excluded from the auth gate on
       // purpose, so it has no 401 to document. Read from the declaration rather
       // than from a hardcoded path: there is more than one public endpoint now,

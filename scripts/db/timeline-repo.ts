@@ -25,10 +25,6 @@ import type {
   PluginData,
   PluginDataRow,
   PluginRef,
-  Pricing,
-  PricingFeature,
-  PricingHighlight,
-  PricingTier,
   TimelineFile,
   TimelineFileItem,
   TimelinePhase,
@@ -43,7 +39,6 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
-  type PublicPricing,
   type TimelineGroupDecl,
   type TimelineMeta,
   type TimelineRepo,
@@ -52,7 +47,7 @@ import {
 // Re-export the shared seam types/classes so existing importers of this module
 // (api.ts, mcp/server.ts, the backfill scripts) keep resolving them here.
 export { ConflictError, NotFoundError, ValidationError };
-export type { PublicPricing, TimelineGroupDecl, TimelineMeta };
+export type { TimelineGroupDecl, TimelineMeta };
 
 const ITEM_SELECT =
   'id, start, "end", duration, content, "group", type, body, icon, status, class_name, metadata, version, sort, created_at, created_by, updated_at, updated_by';
@@ -319,145 +314,6 @@ export async function getWatermark(sql: Sql, id: string): Promise<Watermark> {
   return wm;
 }
 
-// ---- public pricing (marketing sites consume this) -------------------------
-
-/**
- * Pricing-only view of a product timeline for public consumption (e.g. the Astro
- * pricing page). Returns just name + the pricing model — never roadmap items or
- * status. Null when the timeline isn't a product timeline or has no pricing, so
- * the caller can 404. This is the single source of truth for external pages.
- */
-export async function getPublicPricing(sql: Sql, id: string): Promise<PublicPricing | null> {
-  const [data] = await sql`select name from timelines where id = ${id}`;
-  if (!data) return null;
-  const [plugin] = await sql`
-    select config from timeline_plugins where timeline_id = ${id} and plugin_id = ${PRODUCT_ROADMAP_PLUGIN}`;
-  if (!plugin) return null;
-  const versions = versionsFromConfig(plugin.config as Record<string, unknown>);
-  const pricing = await assemblePricing(sql, id, versions);
-  if (!pricing || !pricing.tiers.length) return null;
-  // Public consumers don't need the internal lock counters.
-  stripRowVersions(pricing);
-  const out: PublicPricing = { id, pricing };
-  if (data.name != null) out.name = data.name;
-  return out;
-}
-
-// ---- pricing assembly (normalized tables → the Pricing shape) --------------
-
-function rowToFeature(row: Record<string, any>): PricingFeature {
-  const f: PricingFeature = { id: row.id, name: row.name ?? '' };
-  if (row.group != null) f.group = row.group;
-  if (row.description != null) f.description = row.description;
-  if (row.available_from != null) f.version = row.available_from;
-  if (row.name_by_version && Object.keys(row.name_by_version).length) f.nameByVersion = row.name_by_version;
-  if (row.description_by_version && Object.keys(row.description_by_version).length)
-    f.descriptionByVersion = row.description_by_version;
-  if (row.version != null) f.rowVersion = row.version;
-  return f;
-}
-
-function rowToTier(
-  row: Record<string, any>,
-  values: Record<string, string | boolean>,
-  valueVersions?: Record<string, string>,
-): PricingTier {
-  const t: PricingTier = { id: row.id, name: row.name ?? '', price: row.price ?? '', values };
-  if (row.tagline != null) t.tagline = row.tagline;
-  if (row.use_case != null) t.useCase = row.use_case;
-  if (row.target_group != null) t.targetGroup = row.target_group;
-  if (valueVersions && Object.keys(valueVersions).length) t.valueVersions = valueVersions;
-  if (row.version != null) t.rowVersion = row.version;
-  return t;
-}
-
-function rowToHighlight(row: Record<string, any>): PricingHighlight {
-  const h: PricingHighlight = {
-    id: row.id,
-    label: row.label ?? '',
-    featureIds: Array.isArray(row.feature_ids) ? row.feature_ids : [],
-  };
-  if (row.section != null) h.section = row.section;
-  if (row.icon != null) h.icon = row.icon;
-  if (row.description != null) h.description = row.description;
-  if (row.label_by_version && Object.keys(row.label_by_version).length) h.labelByVersion = row.label_by_version;
-  if (row.version != null) h.rowVersion = row.version;
-  return h;
-}
-
-/** Drop the server-managed rowVersion counters (public output / diffs). */
-export function stripRowVersions(pricing: Pricing): void {
-  for (const f of pricing.features) delete f.rowVersion;
-  for (const t of pricing.tiers) delete t.rowVersion;
-  for (const h of pricing.highlights ?? []) delete h.rowVersion;
-}
-
-const FEATURE_SELECT =
-  'id, name, "group", description, available_from, name_by_version, description_by_version, sort, version';
-const TIER_SELECT = 'id, name, tagline, use_case, target_group, price, sort, version';
-const HIGHLIGHT_SELECT = 'id, label, section, icon, feature_ids, description, label_by_version, sort, version';
-
-/**
- * Pure reconstruction of the Pricing shape from the normalized rows. Kept
- * DB-free so it can be unit-tested for a lossless round-trip against the *ToRow
- * mappers. `valueRows` are the (tier_id, feature_id, value) cells.
- */
-export function rowsToPricing(
-  featureRows: Record<string, any>[],
-  tierRows: Record<string, any>[],
-  valueRows: { tier_id: string; feature_id: string; value: string | boolean; available_from?: string | null }[],
-  highlightRows: Record<string, any>[],
-  versions: string[],
-): Pricing {
-  const valuesByTier = new Map<string, Record<string, string | boolean>>();
-  const versionsByTier = new Map<string, Record<string, string>>();
-  for (const v of valueRows) {
-    let bucket = valuesByTier.get(v.tier_id);
-    if (!bucket) valuesByTier.set(v.tier_id, (bucket = {}));
-    bucket[v.feature_id] = v.value;
-    if (v.available_from != null) {
-      let vb = versionsByTier.get(v.tier_id);
-      if (!vb) versionsByTier.set(v.tier_id, (vb = {}));
-      vb[v.feature_id] = v.available_from;
-    }
-  }
-  const pricing: Pricing = {
-    features: featureRows.map(rowToFeature),
-    tiers: tierRows.map((t) => rowToTier(t, valuesByTier.get(t.id) ?? {}, versionsByTier.get(t.id))),
-  };
-  const highlights = highlightRows.map(rowToHighlight);
-  if (highlights.length) pricing.highlights = highlights;
-  if (versions.length) pricing.versions = versions;
-  return pricing;
-}
-
-/**
- * Reassemble the full Pricing model from the normalized tables. `versions` is
- * passed in from the `timelines.pricing_versions` column (the caller already
- * fetched the row). An empty model comes back as { features: [], tiers: [] } so
- * callers can decide whether to surface it. rowVersion is included on the
- * editable path (getTimeline) and stripped for public output (getPublicPricing).
- */
-export async function assemblePricing(
-  sql: Sql,
-  id: string,
-  versions: string[],
-): Promise<Pricing> {
-  const [featRows, tierRows, valRows, hlRows] = await Promise.all([
-    sql`select ${sql.unsafe(FEATURE_SELECT)} from pricing_features where timeline_id = ${id} order by sort asc nulls first`,
-    sql`select ${sql.unsafe(TIER_SELECT)} from pricing_tiers where timeline_id = ${id} order by sort asc nulls first`,
-    sql`select tier_id, feature_id, value, available_from from pricing_tier_values where timeline_id = ${id}`,
-    sql`select ${sql.unsafe(HIGHLIGHT_SELECT)} from pricing_highlights where timeline_id = ${id} order by sort asc nulls first`,
-  ]);
-
-  return rowsToPricing(
-    featRows as Record<string, any>[],
-    tierRows as Record<string, any>[],
-    valRows as unknown as { tier_id: string; feature_id: string; value: string | boolean; available_from?: string | null }[],
-    hlRows as Record<string, any>[],
-    versions,
-  );
-}
 
 // ---- whole-timeline replace (import, MCP bulk, PUT fallback) ---------------
 
@@ -489,8 +345,6 @@ export async function replaceTimeline(sql: Sql, id: string, file: TimelineFile):
   // enabled, or the write stores data nothing reads.
   await replacePluginRows(sql, id, pluginsForWrite(file));
 
-  // Pricing tables (wipe + re-insert).
-  await replacePricingRows(sql, id, file.pricing);
 
   // Plugin-owned rows. Same wipe-and-reinsert as everything else here, so a
   // round trip through GET → PUT preserves a plugin's data instead of dropping
@@ -724,132 +578,7 @@ async function nextSortFor(sql: Sql, table: string, timelineId: string): Promise
   return typeof top?.sort === 'number' ? top.sort + 1 : 0;
 }
 
-export function featureToRow(timelineId: string, f: PricingFeature, sort?: number): Record<string, any> {
-  const row: Record<string, any> = {
-    timeline_id: timelineId,
-    id: f.id,
-    name: f.name ?? '',
-    group: f.group ?? null,
-    description: f.description ?? null,
-    available_from: f.version ?? null,
-    name_by_version: f.nameByVersion ?? {},
-    description_by_version: f.descriptionByVersion ?? {},
-  };
-  if (sort != null) row.sort = sort;
-  return row;
-}
-
-export function tierToRow(timelineId: string, t: PricingTier, sort?: number): Record<string, any> {
-  const row: Record<string, any> = {
-    timeline_id: timelineId,
-    id: t.id,
-    name: t.name ?? '',
-    tagline: t.tagline ?? null,
-    use_case: t.useCase ?? null,
-    target_group: t.targetGroup ?? null,
-    price: t.price ?? '',
-  };
-  if (sort != null) row.sort = sort;
-  return row;
-}
-
-export function highlightToRow(timelineId: string, h: PricingHighlight, sort?: number): Record<string, any> {
-  const row: Record<string, any> = {
-    timeline_id: timelineId,
-    id: h.id,
-    label: h.label ?? '',
-    section: h.section ?? null,
-    icon: h.icon ?? null,
-    feature_ids: h.featureIds ?? [],
-    description: h.description ?? null,
-    label_by_version: h.labelByVersion ?? {},
-  };
-  if (sort != null) row.sort = sort;
-  return row;
-}
-
-/**
- * Shared optimistic-lock UPDATE for a versioned pricing row. Applies `set`
- * (already column-keyed, jsonb values already sql.json-wrapped) to
- * (timeline_id, id), gated on `version` when `expectedVersion` is given, and
- * disambiguates row-gone (NotFound) from stale (Conflict) exactly like updateItem.
- */
-async function updatePricingRow(
-  sql: Sql,
-  table: string,
-  select: string,
-  timelineId: string,
-  rowId: string,
-  set: Record<string, any>,
-  expectedVersion: number | undefined,
-): Promise<Record<string, any>> {
-  if (Object.keys(set).length === 0) {
-    const [data] = await sql`select ${sql.unsafe(select)} from ${sql(table)} where timeline_id = ${timelineId} and id = ${rowId}`;
-    if (!data) throw new NotFoundError();
-    return data as Record<string, any>;
-  }
-  const versionCond = expectedVersion != null ? sql`and version = ${expectedVersion}` : sql``;
-  const data = await sql`
-    update ${sql(table)} set ${sql(set, ...Object.keys(set))}
-    where timeline_id = ${timelineId} and id = ${rowId} ${versionCond}
-    returning ${sql.unsafe(select)}`;
-  if (data.length === 0) {
-    const [exists] = await sql`select id from ${sql(table)} where timeline_id = ${timelineId} and id = ${rowId}`;
-    if (!exists) throw new NotFoundError();
-    throw new ConflictError(`${table} ${rowId} changed since version ${expectedVersion}`);
-  }
-  return data[0] as Record<string, any>;
-}
-
 // -- features --
-
-export async function addFeature(
-  sql: Sql,
-  timelineId: string,
-  feature: PricingFeature,
-  updatedBy?: string,
-): Promise<PricingFeature> {
-  const row = featureToRow(timelineId, feature, await nextSortFor(sql, 'pricing_features', timelineId));
-  if (updatedBy) row.updated_by = updatedBy;
-  const cols = Object.keys(row);
-  const [data] = await sql`
-    insert into pricing_features ${sql(jsonRow(sql, row, 'name_by_version', 'description_by_version'), ...cols)}
-    returning ${sql.unsafe(FEATURE_SELECT)}`;
-  return rowToFeature(data);
-}
-
-export async function updateFeature(
-  sql: Sql,
-  timelineId: string,
-  featureId: string,
-  patch: Partial<PricingFeature>,
-  expectedVersion?: number,
-  updatedBy?: string,
-): Promise<PricingFeature> {
-  const set: Record<string, any> = {};
-  if ('name' in patch) set.name = patch.name ?? '';
-  if ('group' in patch) set.group = patch.group ?? null;
-  if ('description' in patch) set.description = patch.description ?? null;
-  if ('version' in patch) set.available_from = patch.version ?? null;
-  if ('nameByVersion' in patch) set.name_by_version = sql.json(patch.nameByVersion ?? {});
-  if ('descriptionByVersion' in patch) set.description_by_version = sql.json(patch.descriptionByVersion ?? {});
-  if (updatedBy) set.updated_by = updatedBy;
-  const data = await updatePricingRow(sql, 'pricing_features', FEATURE_SELECT, timelineId, featureId, set, expectedVersion);
-  return rowToFeature(data);
-}
-
-export async function deleteFeature(sql: Sql, timelineId: string, featureId: string): Promise<void> {
-  // Value rows cascade away via FK; highlights keep raw id arrays (not
-  // FK-enforced), so strip the id from any highlight that referenced it.
-  const hls = await sql`
-    select id, feature_ids from pricing_highlights
-    where timeline_id = ${timelineId} and ${featureId} = any(feature_ids)`;
-  for (const h of hls) {
-    const next = (h.feature_ids as string[]).filter((x) => x !== featureId);
-    await sql`update pricing_highlights set feature_ids = ${next} where timeline_id = ${timelineId} and id = ${h.id}`;
-  }
-  await sql`delete from pricing_features where timeline_id = ${timelineId} and id = ${featureId}`;
-}
 
 /**
  * Pure reorder: return `ids` with `moveId` repositioned immediately after
@@ -870,203 +599,13 @@ export function reorderIds(ids: string[], moveId: string, anchor: { after?: stri
   return without;
 }
 
-/**
- * Reposition a feature in the matrix row order relative to another feature.
- * Loads the current order (by `sort`), computes the new sequence via
- * `reorderIds`, and renumbers `sort` to a contiguous 0..n-1 — writing only the
- * rows whose position actually changed (each write bumps the row version).
- * Returns the new ordered id list.
- */
-export async function moveFeature(
-  sql: Sql,
-  timelineId: string,
-  featureId: string,
-  anchor: { after?: string; before?: string },
-  updatedBy?: string,
-): Promise<string[]> {
-  const rows = await sql`
-    select id, sort from pricing_features
-    where timeline_id = ${timelineId} order by sort asc nulls first`;
-  const currentSort = new Map(rows.map((r) => [r.id as string, r.sort as number | null]));
-  const nextOrder = reorderIds(rows.map((r) => r.id as string), featureId, anchor);
-  for (let i = 0; i < nextOrder.length; i++) {
-    const fid = nextOrder[i];
-    if (currentSort.get(fid) === i) continue; // unchanged → skip write
-    const set: Record<string, any> = { sort: i };
-    if (updatedBy) set.updated_by = updatedBy;
-    await sql`update pricing_features set ${sql(set, ...Object.keys(set))} where timeline_id = ${timelineId} and id = ${fid}`;
-  }
-  return nextOrder;
-}
-
 // -- tiers --
-
-export async function addTier(
-  sql: Sql,
-  timelineId: string,
-  tier: PricingTier,
-  updatedBy?: string,
-): Promise<PricingTier> {
-  const row = tierToRow(timelineId, tier, await nextSortFor(sql, 'pricing_tiers', timelineId));
-  if (updatedBy) row.updated_by = updatedBy;
-  const cols = Object.keys(row);
-  const [data] = await sql`
-    insert into pricing_tiers ${sql(row, ...cols)}
-    returning ${sql.unsafe(TIER_SELECT)}`;
-  // Seed any values supplied with the tier (e.g. from a bulk-ish add).
-  const values = tier.values ?? {};
-  const valueVersions = tier.valueVersions ?? {};
-  for (const [featureId, value] of Object.entries(values)) {
-    await setTierValue(sql, timelineId, tier.id, featureId, value, updatedBy, valueVersions[featureId]);
-  }
-  return rowToTier(data, values, valueVersions);
-}
-
-export async function updateTier(
-  sql: Sql,
-  timelineId: string,
-  tierId: string,
-  patch: Partial<PricingTier>,
-  expectedVersion?: number,
-  updatedBy?: string,
-): Promise<PricingTier> {
-  const set: Record<string, any> = {};
-  if ('name' in patch) set.name = patch.name ?? '';
-  if ('tagline' in patch) set.tagline = patch.tagline ?? null;
-  if ('useCase' in patch) set.use_case = patch.useCase ?? null;
-  if ('targetGroup' in patch) set.target_group = patch.targetGroup ?? null;
-  if ('price' in patch) set.price = patch.price ?? '';
-  if (updatedBy) set.updated_by = updatedBy;
-  const data = await updatePricingRow(sql, 'pricing_tiers', TIER_SELECT, timelineId, tierId, set, expectedVersion);
-  // `values` are not tier columns — apply any provided cells individually. A
-  // provided `valueVersions[fid]` gates that cell's availability (see setTierValue).
-  if (patch.values) {
-    const vv = patch.valueVersions ?? {};
-    for (const [featureId, value] of Object.entries(patch.values)) {
-      await setTierValue(sql, timelineId, tierId, featureId, value, updatedBy, vv[featureId]);
-    }
-  }
-  const valRows = await sql`
-    select feature_id, value, available_from from pricing_tier_values
-    where timeline_id = ${timelineId} and tier_id = ${tierId}`;
-  const values: Record<string, string | boolean> = {};
-  const valueVersions: Record<string, string> = {};
-  for (const v of valRows) {
-    values[v.feature_id] = v.value as string | boolean;
-    if (v.available_from != null) valueVersions[v.feature_id] = v.available_from as string;
-  }
-  return rowToTier(data, values, valueVersions);
-}
-
-export async function deleteTier(sql: Sql, timelineId: string, tierId: string): Promise<void> {
-  // Value rows cascade away via FK.
-  await sql`delete from pricing_tiers where timeline_id = ${timelineId} and id = ${tierId}`;
-}
 
 // -- tier×feature values (cell-granular) --
 
-/**
- * Set one matrix cell. A boolean `true` or a non-empty string is stored; a
- * `false` / `null` / empty value clears the cell (deletes the row) — both render
- * as "–" anyway, so there's no reason to keep a falsy row around.
- *
- * `availableFrom` gates *when* the cell counts as included (a version label, or
- * null/undefined = from the start). It rides along with the value on the same
- * row, so it is dropped automatically when the cell is cleared.
- */
-export async function setTierValue(
-  sql: Sql,
-  timelineId: string,
-  tierId: string,
-  featureId: string,
-  value: string | boolean | null | undefined,
-  updatedBy?: string,
-  availableFrom?: string | null,
-): Promise<void> {
-  if (value === false || value === null || value === undefined || value === '') {
-    await clearTierValue(sql, timelineId, tierId, featureId);
-    return;
-  }
-  const row = {
-    timeline_id: timelineId,
-    tier_id: tierId,
-    feature_id: featureId,
-    value: sql.json(value),
-    available_from: availableFrom ?? null,
-    updated_at: new Date().toISOString(),
-    updated_by: updatedBy ?? null,
-  };
-  await sql`
-    insert into pricing_tier_values ${sql(row, 'timeline_id', 'tier_id', 'feature_id', 'value', 'available_from', 'updated_at', 'updated_by')}
-    on conflict (timeline_id, tier_id, feature_id) do update set ${sql(row, 'value', 'available_from', 'updated_at', 'updated_by')}`;
-}
-
-export async function clearTierValue(
-  sql: Sql,
-  timelineId: string,
-  tierId: string,
-  featureId: string,
-): Promise<void> {
-  await sql`
-    delete from pricing_tier_values
-    where timeline_id = ${timelineId} and tier_id = ${tierId} and feature_id = ${featureId}`;
-}
-
 // -- highlights --
 
-export async function addHighlight(
-  sql: Sql,
-  timelineId: string,
-  highlight: PricingHighlight,
-  updatedBy?: string,
-): Promise<PricingHighlight> {
-  const row = highlightToRow(timelineId, highlight, await nextSortFor(sql, 'pricing_highlights', timelineId));
-  if (updatedBy) row.updated_by = updatedBy;
-  const cols = Object.keys(row);
-  const [data] = await sql`
-    insert into pricing_highlights ${sql(jsonRow(sql, row, 'label_by_version'), ...cols)}
-    returning ${sql.unsafe(HIGHLIGHT_SELECT)}`;
-  return rowToHighlight(data);
-}
-
-export async function updateHighlight(
-  sql: Sql,
-  timelineId: string,
-  highlightId: string,
-  patch: Partial<PricingHighlight>,
-  expectedVersion?: number,
-  updatedBy?: string,
-): Promise<PricingHighlight> {
-  const set: Record<string, any> = {};
-  if ('label' in patch) set.label = patch.label ?? '';
-  if ('section' in patch) set.section = patch.section ?? null;
-  if ('icon' in patch) set.icon = patch.icon ?? null;
-  if ('featureIds' in patch) set.feature_ids = patch.featureIds ?? [];
-  if ('description' in patch) set.description = patch.description ?? null;
-  if ('labelByVersion' in patch) set.label_by_version = sql.json(patch.labelByVersion ?? {});
-  if (updatedBy) set.updated_by = updatedBy;
-  const data = await updatePricingRow(sql, 'pricing_highlights', HIGHLIGHT_SELECT, timelineId, highlightId, set, expectedVersion);
-  return rowToHighlight(data);
-}
-
-export async function deleteHighlight(sql: Sql, timelineId: string, highlightId: string): Promise<void> {
-  await sql`delete from pricing_highlights where timeline_id = ${timelineId} and id = ${highlightId}`;
-}
-
 // -- versions (ordered label list, whole-replaced like phases) --
-
-export async function updateVersions(sql: Sql, id: string, versions: string[]): Promise<void> {
-  // The version list lives in the product-roadmap plugin's config now (was the
-  // dropped pricing_versions column). Upsert so setting versions on a timeline
-  // that has no plugin row yet enables the plugin (seeding pricing goes through
-  // here via replacePricing).
-  await sql`
-    insert into timeline_plugins (timeline_id, plugin_id, config, updated_at)
-    values (${id}, ${PRODUCT_ROADMAP_PLUGIN}, ${sql.json({ versions: versions ?? [] })}, ${new Date().toISOString()})
-    on conflict (timeline_id, plugin_id) do update
-      set config = timeline_plugins.config || ${sql.json({ versions: versions ?? [] })},
-          updated_at = ${new Date().toISOString()}`;
-}
 
 /**
  * Replace the plugin registrations for a timeline (wipe + insert). The `||`
@@ -1452,83 +991,6 @@ export async function purgeItemMetadata(sql: Sql, keys: string[], timelineId?: s
 
 // -- bulk replace (import, MCP set_pricing seed, PUT) --
 
-/**
- * Wipe and re-insert every pricing row for a timeline from a full Pricing model.
- * Does NOT touch the `pricing_versions` column (callers set it alongside). Used
- * by replaceTimeline and the MCP bulk `set_pricing` seed.
- */
-export async function replacePricingRows(
-  sql: Sql,
-  id: string,
-  pricing: Pricing | undefined,
-): Promise<void> {
-  // Values first (FK children), then the parents + highlights.
-  for (const table of ['pricing_tier_values', 'pricing_features', 'pricing_tiers', 'pricing_highlights']) {
-    await sql`delete from ${sql(table)} where timeline_id = ${id}`;
-  }
-  if (!pricing) return;
-
-  const featureRows = (pricing.features ?? [])
-    .filter((f) => f.id)
-    .map((f, i) => jsonRow(sql, featureToRow(id, f, i), 'name_by_version', 'description_by_version'));
-  if (featureRows.length) {
-    await sql`insert into pricing_features ${sql(
-      featureRows,
-      'timeline_id', 'id', 'name', 'group', 'description', 'available_from', 'name_by_version', 'description_by_version', 'sort',
-    )}`;
-  }
-
-  const tierRows = (pricing.tiers ?? [])
-    .filter((t) => t.id)
-    .map((t, i) => tierToRow(id, t, i));
-  if (tierRows.length) {
-    await sql`insert into pricing_tiers ${sql(
-      tierRows,
-      'timeline_id', 'id', 'name', 'tagline', 'use_case', 'target_group', 'price', 'sort',
-    )}`;
-  }
-
-  // Value cells: only those whose feature id exists, so a dangling ref in the
-  // source model can't abort the insert on the FK.
-  const featureIds = new Set((pricing.features ?? []).map((f) => f.id));
-  const valueRows: Record<string, any>[] = [];
-  for (const t of pricing.tiers ?? []) {
-    if (!t.id) continue;
-    const vv = t.valueVersions ?? {};
-    for (const [featureId, value] of Object.entries(t.values ?? {})) {
-      if (value === false || value == null || value === '') continue; // falsy = not-included
-      if (!featureIds.has(featureId)) continue;
-      valueRows.push({ timeline_id: id, tier_id: t.id, feature_id: featureId, value: sql.json(value), available_from: vv[featureId] ?? null });
-    }
-  }
-  if (valueRows.length) {
-    await sql`insert into pricing_tier_values ${sql(
-      valueRows,
-      'timeline_id', 'tier_id', 'feature_id', 'value', 'available_from',
-    )}`;
-  }
-
-  const highlightRows = (pricing.highlights ?? [])
-    .filter((h) => h.id)
-    .map((h, i) => jsonRow(sql, highlightToRow(id, h, i), 'label_by_version'));
-  if (highlightRows.length) {
-    await sql`insert into pricing_highlights ${sql(
-      highlightRows,
-      'timeline_id', 'id', 'label', 'section', 'icon', 'feature_ids', 'description', 'label_by_version', 'sort',
-    )}`;
-  }
-}
-
-/** Full pricing replace incl. the versions array — used by the MCP set_pricing seed. */
-export async function replacePricing(
-  sql: Sql,
-  id: string,
-  pricing: Pricing,
-): Promise<void> {
-  await updateVersions(sql, id, pricing.versions ?? []);
-  await replacePricingRows(sql, id, pricing);
-}
-
 // ---- TimelineRepo factory (postgres.js) ------------------------------------
 
 /**
@@ -1544,7 +1006,6 @@ export function makePostgresRepo(sql: Sql): TimelineRepo {
     touchUser: (email, name) => touchUser(sql, email, name),
     getTimeline: (id) => getTimeline(sql, id),
     getWatermark: (id) => getWatermark(sql, id),
-    getPublicPricing: (id) => getPublicPricing(sql, id),
     replaceTimeline: (id, file) => replaceTimeline(sql, id, file),
     addItem: (timelineId, item, updatedBy) => addItem(sql, timelineId, item, updatedBy),
     updateItem: (timelineId, itemId, patch, expectedVersion, updatedBy) =>
@@ -1576,24 +1037,5 @@ export function makePostgresRepo(sql: Sql): TimelineRepo {
       orderPluginRows(sql, timelineId, pluginId, collection, orderedIds, updatedBy),
     purgePluginData: (pluginId, timelineId) => purgePluginData(sql, pluginId, timelineId),
     purgeItemMetadata: (keys, timelineId) => purgeItemMetadata(sql, keys, timelineId),
-    addFeature: (timelineId, feature, updatedBy) => addFeature(sql, timelineId, feature, updatedBy),
-    updateFeature: (timelineId, featureId, patch, expectedVersion, updatedBy) =>
-      updateFeature(sql, timelineId, featureId, patch, expectedVersion, updatedBy),
-    deleteFeature: (timelineId, featureId) => deleteFeature(sql, timelineId, featureId),
-    moveFeature: (timelineId, featureId, anchor, updatedBy) =>
-      moveFeature(sql, timelineId, featureId, anchor, updatedBy),
-    addTier: (timelineId, tier, updatedBy) => addTier(sql, timelineId, tier, updatedBy),
-    updateTier: (timelineId, tierId, patch, expectedVersion, updatedBy) =>
-      updateTier(sql, timelineId, tierId, patch, expectedVersion, updatedBy),
-    deleteTier: (timelineId, tierId) => deleteTier(sql, timelineId, tierId),
-    setTierValue: (timelineId, tierId, featureId, value, updatedBy, availableFrom) =>
-      setTierValue(sql, timelineId, tierId, featureId, value, updatedBy, availableFrom),
-    clearTierValue: (timelineId, tierId, featureId) => clearTierValue(sql, timelineId, tierId, featureId),
-    addHighlight: (timelineId, highlight, updatedBy) => addHighlight(sql, timelineId, highlight, updatedBy),
-    updateHighlight: (timelineId, highlightId, patch, expectedVersion, updatedBy) =>
-      updateHighlight(sql, timelineId, highlightId, patch, expectedVersion, updatedBy),
-    deleteHighlight: (timelineId, highlightId) => deleteHighlight(sql, timelineId, highlightId),
-    updateVersions: (id, versions) => updateVersions(sql, id, versions),
-    replacePricing: (id, pricing) => replacePricing(sql, id, pricing),
   };
 }

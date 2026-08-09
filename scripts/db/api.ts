@@ -6,10 +6,6 @@
 import type { Sql } from 'postgres';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  Pricing,
-  PricingFeature,
-  PricingHighlight,
-  PricingTier,
   SourceCapabilities,
   SourceLive,
   TimelineFile,
@@ -48,13 +44,6 @@ export const SUB_KINDS = [
   'phases',
   'watermark',
   'plugin',
-  'pricing',
-  'feature',
-  'feature-move',
-  'tier',
-  'tier-value',
-  'highlight',
-  'pversion',
 ] as const;
 
 export type SubKind = (typeof SUB_KINDS)[number];
@@ -63,7 +52,7 @@ export type ApiRequest = {
   method: string;
   /** timeline id, e.g. "acme/foo"; empty string means the collection (/api/sources) */
   id: string;
-  /** sub-resource: item / group / phases / pricing entities, with optional child id */
+  /** sub-resource: item / group / phases / watermark / a plugin's rows, with optional child id */
   sub?: { kind: SubKind; childId?: string; plugin?: PluginPath };
   body?: unknown;
   /** optimistic-lock version (from If-Match header or body.version) */
@@ -234,122 +223,6 @@ export async function handleTimelineApi(repo: TimelineRepo, req: ApiRequest): Pr
         : handlePluginLifecycle(repo, manifests, pluginReq);
     }
 
-    // ---- pricing: whole model (bulk seed / rewrite) ----------------------
-    if (sub.kind === 'pricing') {
-      if (method === 'PUT') {
-        // Accept either the bare Pricing object or { pricing: … }.
-        const raw = (req.body ?? {}) as Record<string, unknown>;
-        const pricing = ('features' in raw ? raw : (raw.pricing as unknown)) as Pricing | undefined;
-        if (!pricing || !Array.isArray(pricing.tiers) || !Array.isArray(pricing.features)) {
-          return err(400, 'pricing needs features[] and tiers[]');
-        }
-        await repo.replacePricing(id, pricing);
-        return ok({ ok: true });
-      }
-      return err(405, 'method not allowed');
-    }
-
-    // ---- pricing: features -----------------------------------------------
-    // NOTE: the optimistic-lock version for pricing entities comes ONLY from the
-    // If-Match header, never body.version — for features `version` is the domain
-    // "available from" label, not the lock counter. So the patch body is passed
-    // through untouched.
-    if (sub.kind === 'feature') {
-      if (method === 'POST') {
-        const f = req.body as PricingFeature;
-        if (!f || !f.id) return err(400, 'feature needs id');
-        return ok(await repo.addFeature(id, f, req.updatedBy), 201);
-      }
-      if (!sub.childId) return err(400, 'feature id required');
-      if (method === 'PATCH') {
-        return ok(await repo.updateFeature(id, sub.childId, (req.body ?? {}) as Partial<PricingFeature>, req.ifMatch, req.updatedBy));
-      }
-      if (method === 'DELETE') {
-        await repo.deleteFeature(id, sub.childId);
-        return ok({ ok: true });
-      }
-      return err(405, 'method not allowed');
-    }
-
-    // ---- pricing: reorder a feature (relative to another) -----------------
-    // POST { featureId, after? | before? }. Exactly one anchor; `after` wins if
-    // both are sent. Renumbers the matrix row order server-side.
-    if (sub.kind === 'feature-move') {
-      if (method === 'POST' || method === 'PUT') {
-        const b = (req.body ?? {}) as { featureId?: string; after?: string; before?: string };
-        if (!b.featureId) return err(400, 'feature-move needs featureId');
-        if (!b.after && !b.before) return err(400, 'feature-move needs after or before');
-        const order = await repo.moveFeature(id, b.featureId, { after: b.after, before: b.before }, req.updatedBy);
-        return ok({ ok: true, order });
-      }
-      return err(405, 'method not allowed');
-    }
-
-    // ---- pricing: tiers ---------------------------------------------------
-    if (sub.kind === 'tier') {
-      if (method === 'POST') {
-        const t = req.body as PricingTier;
-        if (!t || !t.id) return err(400, 'tier needs id');
-        return ok(await repo.addTier(id, t, req.updatedBy), 201);
-      }
-      if (!sub.childId) return err(400, 'tier id required');
-      if (method === 'PATCH') {
-        return ok(await repo.updateTier(id, sub.childId, (req.body ?? {}) as Partial<PricingTier>, req.ifMatch, req.updatedBy));
-      }
-      if (method === 'DELETE') {
-        await repo.deleteTier(id, sub.childId);
-        return ok({ ok: true });
-      }
-      return err(405, 'method not allowed');
-    }
-
-    // ---- pricing: a single matrix cell (tier × feature) -------------------
-    // PUT the value; a false/null/empty value clears the cell. Body carries the
-    // coordinates so no dotted ids ever land in the path.
-    if (sub.kind === 'tier-value') {
-      if (method === 'PUT' || method === 'POST') {
-        const b = (req.body ?? {}) as {
-          tierId?: string;
-          featureId?: string;
-          value?: string | boolean | null;
-          availableFrom?: string | null;
-        };
-        if (!b.tierId || !b.featureId) return err(400, 'tier-value needs tierId and featureId');
-        await repo.setTierValue(id, b.tierId, b.featureId, b.value ?? null, req.updatedBy, b.availableFrom ?? null);
-        return ok({ ok: true });
-      }
-      return err(405, 'method not allowed');
-    }
-
-    // ---- pricing: highlights ----------------------------------------------
-    if (sub.kind === 'highlight') {
-      if (method === 'POST') {
-        const h = req.body as PricingHighlight;
-        if (!h || !h.id) return err(400, 'highlight needs id');
-        return ok(await repo.addHighlight(id, h, req.updatedBy), 201);
-      }
-      if (!sub.childId) return err(400, 'highlight id required');
-      if (method === 'PATCH') {
-        return ok(await repo.updateHighlight(id, sub.childId, (req.body ?? {}) as Partial<PricingHighlight>, req.ifMatch, req.updatedBy));
-      }
-      if (method === 'DELETE') {
-        await repo.deleteHighlight(id, sub.childId);
-        return ok({ ok: true });
-      }
-      return err(405, 'method not allowed');
-    }
-
-    // ---- pricing: versions (ordered label list, replaced as a unit) -------
-    if (sub.kind === 'pversion') {
-      if (method === 'PUT') {
-        const body = req.body as { versions?: string[] } | string[];
-        const versions = Array.isArray(body) ? body : (body?.versions ?? []);
-        await repo.updateVersions(id, versions);
-        return ok({ ok: true });
-      }
-      return err(405, 'method not allowed');
-    }
-
     return err(404, 'unknown sub-resource');
   } catch (e) {
     if (e instanceof ConflictError) return err(409, 'version_conflict', { message: e.message });
@@ -511,8 +384,8 @@ export function parseSourcePath(path: string): { id: string; sub?: ApiRequest['s
 
   // `plugin` opens a namespace: everything after it is named by the plugin, so
   // it must NOT be matched against the sub-resource list. A collection called
-  // `tier` would otherwise be read as the pricing sub-resource and the timeline
-  // id would swallow `…/plugin/<pluginId>`. The rightmost occurrence wins, for
+  // `item` would otherwise be read as the core sub-resource and the timeline id
+  // would swallow `…/plugin/<pluginId>`. The rightmost occurrence wins, for
   // the same reason the loop below scans from the right — a timeline id may
   // itself contain a segment that looks like a marker.
   const pluginAt = segs.lastIndexOf('plugin');

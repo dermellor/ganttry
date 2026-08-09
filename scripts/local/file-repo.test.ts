@@ -282,24 +282,29 @@ describe('makeFileRepo: containment', () => {
   });
 });
 
-describe('makeFileRepo: the plugin surface says so instead of pretending', () => {
-  test('a pricing write reports not-supported', async () => {
+describe('makeFileRepo: a plugin writes to a file the user owns', () => {
+  // This block used to assert the opposite: sixteen pricing methods answered 501
+  // here, so a pricing model in a JSON file was readable and not editable. The
+  // generic store removed the distinction — a plugin's rows go through the same
+  // path as everything else, so „editable" is now a property of the source and
+  // not of which plugin is asking.
+  test('a row survives a write and comes back with a version', async () => {
     await seed('plug-1');
     const repo = makeFileRepo(dirs);
-    await assert.rejects(
-      () => repo.addFeature('plug-1', { id: 'f1', name: 'Feature' } as any),
-      NotSupportedError,
-    );
+    const written = await repo.putPluginRow('plug-1', 'sprints', 'entries', { id: 'e1', data: { name: 'Sprint 1' } });
+    assert.equal(written.id, 'e1');
+    assert.ok(written.version, 'the store hands back a counter to send as If-Match');
+    const rows = await repo.listPluginRows('plug-1', 'sprints', 'entries');
+    assert.deepEqual(rows.map((r) => r.data), [{ name: 'Sprint 1' }]);
   });
 
-  test('a pricing model in the file is still readable', async () => {
-    await seed('plug-2', {
-      ...BASE,
-      pricing: { features: [{ id: 'f1', name: 'Feature' }], tiers: [{ id: 't1', name: 'Basis' }] },
-    } as TimelineFile);
-    const pub = await makeFileRepo(dirs).getPublicPricing('plug-2');
-    assert.ok(pub);
-    assert.equal(pub!.pricing.features.length, 1);
+  test('a deleted row is gone from the file, not just from the answer', async () => {
+    await seed('plug-2');
+    const repo = makeFileRepo(dirs);
+    await repo.putPluginRow('plug-2', 'sprints', 'entries', { id: 'e1', data: {} });
+    await repo.deletePluginRow('plug-2', 'sprints', 'entries', 'e1');
+    const reread = makeFileRepo(dirs);
+    assert.deepEqual(await reread.listPluginRows('plug-2', 'sprints', 'entries'), []);
   });
 });
 
