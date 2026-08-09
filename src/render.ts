@@ -111,6 +111,41 @@ function displayParents(): Map<string, string> {
   return regroupedMode ? new Map() : state.activeBuild?.parents ?? new Map();
 }
 
+/**
+ * An empty first row that reserves the phase ribbon's strip.
+ *
+ * The ribbon is pinned to the top of the center panel, so without a reservation
+ * it sits on the first track. Reserving the strip with CSS padding on the group
+ * set is what this replaces, and the reason is that vis cannot see padding: it
+ * derives its content height *and* its vertical scroll range from the sum of the
+ * group heights, so the panel ended up holding more than vis knew about. The
+ * scroll then stopped short by the height of the reserve and `.vis-timeline`
+ * (fixed height, `overflow: hidden`) cut off whatever hung below — always the
+ * last track, which is exactly where a folded summary item leaves a single short
+ * row.
+ *
+ * A group costs nothing to account for, because counting groups is what vis
+ * already does. It carries no items, so nothing can be assigned to it, and it is
+ * added *after* filtering and lane assignment: `pruneGroupsToItems` would drop an
+ * item-less group, and `assignLanes` colours lanes by index, so prepending
+ * earlier would shift every track's colour.
+ */
+export const BAND_SPACER_GROUP_ID = '__phase_band_spacer';
+
+function withBandSpacer(groups: TimelineGroup[]): TimelineGroup[] {
+  // Keyed off the phases themselves, not off the `has-phase-band` class: the
+  // class is toggled further down in renderTimeline, after computeDisplay has
+  // already run, so the first render would come out without the reservation.
+  const hasPhases = (state.activeBuild?.phases.length ?? 0) > 0;
+  if (!hasPhases || groups.length === 0) return groups;
+  // A strut, not an empty string: vis measures the label to get the group's
+  // height, so the reserve has to be something it can measure.
+  return [
+    { id: BAND_SPACER_GROUP_ID, content: '<div class="band-spacer-strut"></div>', className: 'band-spacer' },
+    ...groups,
+  ];
+}
+
 // vis-timeline editable config for the active source. When regrouped, the lanes
 // are derived values (tags / custom-field), not the item's editable group — so a
 // vertical drag between lanes (updateGroup) and double-click-to-add (which would
@@ -167,7 +202,8 @@ function computeDisplay(): { items: TimelineItem[]; groups: TimelineGroup[] } {
   // into, and those clone ids are not what the parent map is keyed by.
   assignLaneSubgroups(displayItems, displayGroups, displayDeps, displayParents());
   assignLanes(displayItems, displayGroups);
-  return { items: displayItems, groups: displayGroups };
+  // The spacer is added last, on the way out — see withBandSpacer.
+  return { items: displayItems, groups: withBandSpacer(displayGroups) };
 }
 
 // Point-label measurement (see repackLanes). A single off-DOM canvas measures
