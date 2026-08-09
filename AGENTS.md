@@ -380,8 +380,20 @@ check).
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to
 `main` and on every pull request, over a Node 22 + 24 matrix: `npm ci`,
-`npm test`, `npm run schema:check`, `npm run openapi:check`, `npm run build`, then
-the bundle-split check below.
+`npm test`, `npm run schema:check`, `npm run openapi:check`, the env-var check,
+`npm run build`, then the bundle-split check below.
+
+**Documented env vars are actually read**
+([`scripts/ci/check-env-docs.sh`](scripts/ci/check-env-docs.sh)): every variable
+named in README's Configuration table has to appear in some tracked file that is
+not documentation. A knob nothing reads is invisible to every other check here,
+and `TIMELINES_NOTES_DIR` plus `TIMELINES_STATIC_ONLY` survived the removal of the
+Markdown notes pipeline by several releases because of it, in the README table and
+in `.env.example` both. Only that table is parsed: `docs/` names retired variables
+on purpose in its „what used to be here" sections, and a checker that cannot tell
+a historical note from a live claim needs an ignore list that goes stale by itself.
+`.env.example` and the script's own comments are excluded from the search side for
+the same reason, which is what makes it fail on the bug it was written for.
 
 **Node 22 is the floor** (`engines.node` in `package.json`), and that is a real
 constraint rather than a preference: the test script hands a glob
