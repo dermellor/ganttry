@@ -35,3 +35,10 @@ data/*/
 # depends on which Supabase/JIRA/plugin origins THIS deploy allows, so a
 # committed copy would be one instance's policy imposed on every other.
 public/_headers
+
+# Vendored plugin artifacts. WHICH plugins a deployment carries is instance
+# state, exactly like `data/<subdir>/`, so the artifacts stay out of the public
+# history — and a stray `git add plugins` cannot publish somebody's private
+# plugin. `plugins/README.md` is the committed explanation of the directory.
+plugins/*/
+public/plugins/

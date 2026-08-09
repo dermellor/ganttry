@@ -10,6 +10,7 @@
     "watch:data": "tsx scripts/build-data.ts --watch",
     "db:import": "tsx scripts/db/import.ts",
     "db:migrate": "tsx scripts/db/migrate.ts",
+    "plugin:install": "tsx scripts/plugins/install-vendored.ts",
     "db:check": "tsx scripts/db/check-pending.ts",
     "db:local:up": "docker run -d --rm --name ganttry-pg -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:16",
     "db:local:down": "docker stop ganttry-pg",

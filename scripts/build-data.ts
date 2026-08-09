@@ -173,6 +173,42 @@ async function writeHeaders(): Promise<void> {
   await writeIfChanged(join(ROOT, 'public', '_headers'), body);
 }
 
+/**
+ * Copy vendored plugin artifacts into the build output.
+ *
+ * This is the air-gapped install path, and it is a requirement rather than a
+ * nicety: an instance with no outbound network has to be able to run a plugin. An
+ * artifact under `plugins/<id>/` is served from the deploy's own origin, which
+ * means no request leaves the machine at boot and the default `script-src 'self'`
+ * already covers it — an operator installing this way needs no CSP change.
+ *
+ * The sha384 of each file is logged, because that is the value an operator pastes
+ * into the install call to pin it. Computing it by hand is the step people skip.
+ */
+async function collectVendoredPlugins(): Promise<void> {
+  const from = envValue('TIMELINES_PLUGINS_DIR') || join(ROOT, 'plugins');
+  if (!existsSync(from)) return;
+  const to = join(ROOT, 'public', 'plugins');
+  let copied = 0;
+  for (const entry of await readdir(from, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = join(from, entry.name);
+    for (const file of await readdir(dir, { withFileTypes: true })) {
+      if (!file.isFile()) continue;
+      const bytes = await readFile(join(dir, file.name));
+      const outPath = join(to, entry.name, file.name);
+      await mkdir(dirname(outPath), { recursive: true });
+      await writeIfChanged(outPath, bytes);
+      copied++;
+      if (file.name.endsWith('.js')) {
+        const hash = createHash('sha384').update(bytes).digest('base64');
+        console.log(`[build-data] vendored /plugins/${entry.name}/${file.name}  sha384-${hash}`);
+      }
+    }
+  }
+  if (copied) console.log(`[build-data] copied ${copied} vendored plugin file(s)`);
+}
+
 async function buildOnce(): Promise<void> {
   const config = await loadConfig();
   await mkdir(OUT_DIR, { recursive: true });
@@ -193,6 +229,7 @@ async function buildOnce(): Promise<void> {
     ? declared
     : ((views[0] as any)?.id ?? declared);
   await writeHeaders();
+  await collectVendoredPlugins();
   const plugins = await collectPlugins();
   const mergedConfig = { ...config, defaultView, views, plugins };
   const configOut = join(OUT_DIR, 'config.json');
@@ -203,16 +240,24 @@ async function buildOnce(): Promise<void> {
   }
 }
 
-async function writeIfChanged(path: string, content: string): Promise<boolean> {
-  const newHash = createHash('sha1').update(content).digest('hex');
+/**
+ * Write only when the bytes differ, so the dev server's watcher does not fire on
+ * a rebuild that produced the same output.
+ *
+ * Compared as BYTES rather than as a utf8 string: a vendored plugin directory may
+ * hold a source map, a wasm module or an image, and reading one of those as utf8
+ * would both mis-compare it and rewrite it corrupted.
+ */
+async function writeIfChanged(path: string, content: string | Uint8Array): Promise<boolean> {
+  const bytes = typeof content === 'string' ? Buffer.from(content, 'utf8') : Buffer.from(content);
+  const newHash = createHash('sha1').update(bytes).digest('hex');
   try {
-    const existing = await readFile(path, 'utf8');
-    const existingHash = createHash('sha1').update(existing).digest('hex');
-    if (existingHash === newHash) return false;
+    const existing = await readFile(path);
+    if (createHash('sha1').update(existing).digest('hex') === newHash) return false;
   } catch {
     // file does not exist
   }
-  await writeFile(path, content);
+  await writeFile(path, bytes);
   return true;
 }
 

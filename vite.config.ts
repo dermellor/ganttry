@@ -1,5 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
-import { resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { envSourcesHint, envValue, hydrateProcessEnv } from './scripts/db/env';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
@@ -239,6 +239,37 @@ function timelinesApi(): Plugin {
           send(res, result.status, result.json);
         } catch (err) {
           send(res, 500, { error: 'server_error', message: String(err) });
+        }
+      });
+
+      // /plugins/<id>/<file> — vendored plugin artifacts, served RAW.
+      //
+      // Its own middleware rather than letting the static handler do it, because
+      // Vite appends an inline source map to any `.js` it serves. That makes the
+      // dev server's bytes differ from the deploy's, and a pinned artifact then
+      // fails its integrity check locally while being fine in production — a
+      // dev/prod divergence that pinning is what surfaced. Serving from the SOURCE
+      // directory also means editing a plugin and reloading is enough, with no
+      // build step in between.
+      server.middlewares.use('/plugins', async (req, res, next) => {
+        if (req.method !== 'GET') return next();
+        const rel = decodeURIComponent((req.url ?? '').replace(/\?.*$/, '')).replace(/^\/+/, '');
+        if (!rel) return next();
+        const base = resolve(envValue('TIMELINES_PLUGINS_DIR') || resolve(__dirname, 'plugins'));
+        const file = resolve(base, rel);
+        // Containment on the RESOLVED path: the URL is attacker-controlled, and a
+        // `..` segment would otherwise serve any file this process can read.
+        if (file !== base && !file.startsWith(base + sep)) {
+          res.statusCode = 403;
+          return res.end('forbidden');
+        }
+        try {
+          const bytes = await readFile(file);
+          res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : 'application/octet-stream');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end(bytes);
+        } catch {
+          next(); // not a vendored artifact — let the static handler try
         }
       });
 

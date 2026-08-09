@@ -103,11 +103,16 @@ export function pluginLines(
         name,
         version: plugin.version,
         enabledHere: enabledIds.includes(plugin.id),
-        // With no outcome the loader has not run yet (the panel can open during
-        // boot). Falling back to the host's willingness is the closest true
-        // statement; claiming „not running" would be a failure report for
-        // something that has not been tried.
-        running: outcome ? outcome.loaded : plugin.loadable,
+        // Three cases, and collapsing the last two is a real trap: it once made
+        // this panel report „active" for a plugin whose artifact had failed its
+        // integrity check.
+        //   - an outcome for this plugin  → what the loader actually did;
+        //   - no outcomes at all          → the loader has not run (the panel can
+        //                                   open during boot), so the host's
+        //                                   willingness is the closest true thing;
+        //   - outcomes, but none for this plugin → it was installed AFTER boot, so
+        //                                   it is demonstrably not running.
+        running: outcome ? outcome.loaded : outcomes.length === 0 && plugin.loadable,
       };
       // The loader's verdict wins where it has one, because it is both later and
       // more specific. `skipped` is the exception: it means the loader did not

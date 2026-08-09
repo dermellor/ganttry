@@ -117,3 +117,23 @@ describe('pluginLines: folding in what the loader actually did', () => {
     assert.equal(line.reason, 'integrity');
   });
 });
+
+describe('pluginLines: a plugin installed after boot', () => {
+  const ok = status({ id: 'demo', manifest: { name: 'Demo' } });
+  const other = status({ id: 'product-roadmap', manifest: { name: 'Produkt' } });
+
+  test('is not reported as running just because the host would be willing', () => {
+    // The trap this closes, found while testing the loader by hand: the panel
+    // claimed „active" for a plugin whose artifact had failed its integrity
+    // check, because the page it was reading had booted before the install.
+    const lines = pluginLines([other, ok], [], [{ pluginId: 'product-roadmap', loaded: true }]);
+    const demo = lines.find((l) => l.id === 'demo')!;
+    assert.equal(demo.running, false);
+  });
+
+  test('but with no outcomes at all, willingness is still the closest true thing', () => {
+    // The loader has not run yet; reporting a failure would be a claim about
+    // something that has not been attempted.
+    assert.equal(pluginLines([ok], [], [])[0].running, true);
+  });
+});
