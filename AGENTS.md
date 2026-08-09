@@ -22,6 +22,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/plugin-storage.md`](docs/plugin-storage.md) | The generic store for the rows a plugin owns, on every source kind, and the rules the host enforces in place of columns and foreign keys. |
 | [`docs/plugin-lifecycle.md`](docs/plugin-lifecycle.md) | Installed (instance) versus enabled (timeline), who may install, version pinning, and what an uninstall does to the data. |
 | [`docs/plugin-public-read.md`](docs/plugin-public-read.md) | Publishing a plugin's data without an endpoint of its own: the three gates, what is stripped, and why a local source inverts the question. |
+| [`docs/plugin-authoring.md`](docs/plugin-authoring.md) | Writing a plugin outside this repository: what it exports, the host API it is handed, how to declare data, and how an instance installs it. |
 | [`docs/plugin-isolation.md`](docs/plugin-isolation.md) | Where plugin code runs, why the sandbox was rejected, what protects an instance instead, and what would bring the decision back. |
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server and its tools. |
 | [`docs/deploy.md`](docs/deploy.md) | The Netlify deploy, the auth gate, JIRA linking. |

@@ -12,7 +12,7 @@ plugins/
     index.js          an ES module exporting renderView() and/or fields()
 ```
 
-Install one:
+Install one **on an instance with a database**:
 
 ```bash
 npm run plugin:install -- <plugin-id>
@@ -20,7 +20,14 @@ npm run plugin:install -- <plugin-id>
 
 That validates the manifest against **this** host's contract version, hashes the
 entry file, and writes the registry row. Then enable it on a timeline
-(`enable_plugin` over MCP, or `PUT /api/source/<id>/plugin/<plugin-id>`).
+(`configure_plugin` over MCP, or `PUT /api/source/<id>/plugin/<plugin-id>`).
+
+**On an instance with no database this directory IS the registry.** Drop the
+directory in, run `npm run build:data` (or `npm run build`), and it is installed:
+the build validates every manifest, pins each artifact by hash and registers it,
+and the served instance answers `GET /api/plugins` from the same scan. That is
+the whole install flow for that shape, and it is the reason the epic's „no central
+service involved" constraint holds for a static deploy too.
 
 `npm run build` copies these directories into the build output and logs each
 artifact's `sha384-…`, which is the value to paste into an install call made over

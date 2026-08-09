@@ -40,6 +40,10 @@ const PORT = Number(envValue('TIMELINES_PORT')) || 3120;
 const localDirs = {
   root: resolve(__dirname, 'data'),
   scope: resolve(__dirname, 'data', (process.env.TIMELINES_SOURCES_SUBDIR ?? '').replace(/^\/+|\/+$/g, '')),
+  // The same directory the raw-artifact middleware serves from and the build
+  // registers from. Without it `GET /api/plugins` answers `[]` and shadows what
+  // the build registered, because the client prefers the live answer.
+  pluginsDir: resolve(envValue('TIMELINES_PLUGINS_DIR') || resolve(__dirname, 'plugins')),
 };
 const localSource = { has: (id: string) => hasLocalTimeline(localDirs, id), repo: makeFileRepo(localDirs) };
 

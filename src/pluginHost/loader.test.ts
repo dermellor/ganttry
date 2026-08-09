@@ -235,7 +235,9 @@ describe('descriptorFor', () => {
       append(...nodes: any[]) { appended.push(...nodes); },
     } as unknown as HTMLElement;
 
-    mod.renderView(container, 'board'); // must not throw out of the repaint path
+    // The host object is irrelevant to this test and deliberately a stub: what
+    // is asserted is that a throwing plugin cannot escape the repaint path.
+    mod.renderView(container, 'board', {} as never);
     assert.equal(errors.length, 1);
     // Whatever the plugin managed to paint is cleared: a half-painted view reads
     // as a broken page rather than a broken plugin.

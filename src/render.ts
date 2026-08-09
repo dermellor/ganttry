@@ -63,6 +63,7 @@ import { deleteItem, setItemFieldValue, setItemStatus, showItemForm } from './it
 import { showDetailForId, hideDetail } from './detailPanel';
 import { renderListView } from './listView';
 import { repaintPluginView } from './pluginHost/views';
+import { notifyTimelineChanged } from './pluginHost/changes';
 import { showPhaseFormByIndex, handlePhaseEdit } from './phaseForm';
 import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 
@@ -653,6 +654,13 @@ export async function renderTimeline(view: View) {
   // A plugin view is loaded lazily; once entered it is cached, so this repaint
   // no-ops during the brief pre-load window.
   else repaintPluginView(state.viewMode);
+
+  // „The timeline changed", for any plugin holding derived state
+  // (src/pluginHost/changes.ts). Fired here rather than per write because this
+  // is the one place that also covers a change arriving from somebody else
+  // through the realtime channel, and after the repaint because a listener
+  // calling `timeline()` must see the file this render used.
+  notifyTimelineChanged();
 }
 
 // Toggle the compact tag mode based on how much horizontal room a day of the

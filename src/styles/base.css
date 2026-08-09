@@ -285,6 +285,19 @@ body {
   display: none;
 }
 
+/* The host renders a plugin into a detached element and swaps it in when the
+   call settles (pluginHost/views.ts), so there is one wrapper between the section
+   and whatever the plugin painted. It has to be transparent to layout, or a view
+   that used to size itself against `.plugin-view`'s flex column suddenly cannot:
+   the wrapper would resolve min-height:auto to min-content and the view would
+   overflow the viewport instead of scrolling inside its section. */
+.plugin-view-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Grouping toolbar shared by the timeline and list views — identical header row
    in both. A plugin view has to opt in (PluginView.toolbar), so it is hidden
    there by default. */

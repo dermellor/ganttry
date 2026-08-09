@@ -143,9 +143,9 @@ export function descriptorFor(manifest: PluginManifest, mod: unknown, onError: (
       }
     },
     load: async () => ({
-      renderView: (container, viewId) => {
+      renderView: (container, viewId, host) => {
         try {
-          m.renderView?.(container, viewId);
+          m.renderView?.(container, viewId, host);
         } catch (e) {
           onError(e);
           renderViewFailure(container, manifest, e);

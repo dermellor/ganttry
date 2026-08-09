@@ -43,3 +43,14 @@ export {
 } from './hostApi';
 
 export { pluginViewMode, parsePluginViewMode, type PluginViewMode, type ViewMode } from './viewMode';
+
+/**
+ * What an artifact exports. A plugin implements this; the host calls it.
+ *
+ * `fields(file)` is optional and synchronous, because it runs on the item form's
+ * path where an await would show an empty form first. `renderView` receives the
+ * gated `HostApi` as its third argument rather than importing anything, which is
+ * what lets an artifact be a file fetched from a URL with nothing to resolve at
+ * load time.
+ */
+export type { PluginModule } from './registry';

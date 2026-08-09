@@ -29,6 +29,7 @@ import {
   type ScanOptions,
 } from './scan.ts';
 import { patchFrontmatter, setBody, type Patch } from './frontmatter.ts';
+import { scanVendoredPlugins } from '../plugins/vendored.ts';
 import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
 import { describeReversedExtent, findReversedExtent, hasReversedExtent } from '../../src/itemExtent.ts';
 import {
@@ -62,7 +63,18 @@ import type {
  * exactly when TIMELINES_SOURCES_SUBDIR is set; `build-data.ts` derives its two
  * paths the same way and for the same reason.
  */
-export type FileRepoDirs = { root: string; scope?: string; scanOptions?: ScanOptions };
+export type FileRepoDirs = {
+  root: string;
+  scope?: string;
+  scanOptions?: ScanOptions;
+  /**
+   * Where vendored plugin artifacts live. Supplied, not defaulted: this repo is
+   * constructed from several places and a silent default would make one of them
+   * answer from a directory nobody meant. Absent means „no registry", which is
+   * the truthful answer for an instance that carries no plugins.
+   */
+  pluginsDir?: string;
+};
 
 type Loaded = { file: TimelineFile; version: number; path: string; isDir?: boolean };
 
@@ -781,11 +793,30 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
     // Enablement PER TIMELINE is a different matter and is implemented below: it
     // is data on the timeline, so it must work on every source kind, exactly as
     // the generic store does.
+    /**
+     * The `plugins/` directory IS the registry here.
+     *
+     * Answering `[]` was the bug: `GET /api/plugins` then shadowed what the build
+     * had registered, because the client prefers the live answer and an empty
+     * live answer is indistinguishable from „nothing installed". A vendored
+     * plugin was copied into the deploy, listed in the built config, and never
+     * loaded — with nothing anywhere saying why.
+     */
     async listInstalledPlugins(): Promise<InstalledPlugin[]> {
-      return [];
+      if (!dirs.pluginsDir) return [];
+      const { plugins, skipped } = await scanVendoredPlugins(dirs.pluginsDir);
+      for (const problem of skipped) {
+        console.warn(`[plugins] ${problem.plugin}: ${problem.problem} — not registered`);
+      }
+      return plugins;
     },
     async installPlugin(): Promise<InstalledPlugin> {
-      return unsupported('installing plugins on a file-backed instance');
+      // Installing here means putting a directory under `plugins/` and rebuilding.
+      // A write path would have to invent somewhere to put the artifact and then
+      // disagree with the directory scan above about which is authoritative.
+      return unsupported(
+        'installing plugins over the API on a file-backed instance; put the artifact in the plugins directory instead',
+      );
     },
     async setPluginInstalledEnabled(): Promise<void> {
       return unsupported('enabling a plugin instance-wide on a file-backed instance');

@@ -20,6 +20,7 @@ import type { CustomFieldDef, TimelineFile } from '../types';
 import { pluginViewMode, type PluginViewMode } from './viewMode';
 import { validateManifest, type ManifestView, type PluginManifest } from './manifest';
 import { productRoadmapDescriptor } from '../plugins/product-roadmap/descriptor';
+import type { HostApi } from './hostApi';
 
 /**
  * One view a plugin adds to the header's mode toggle. Declared in the manifest,
@@ -32,8 +33,16 @@ export interface PluginModule {
   /**
    * Render `viewId` into the container the host created for it. Called on entry
    * and on every repaint, so it has to be idempotent.
+   *
+   * `host` is the plugin's gated API (`createHostApi`): the timeline, its own
+   * config, its own rows, and a change signal. It arrives as an ARGUMENT rather
+   * than through an import, which is the whole reason a plugin can be a file
+   * fetched from a URL — there is nothing for it to resolve at load time. It is
+   * a third parameter rather than a new export so an artifact written against
+   * the two-parameter shape keeps working: JavaScript ignores what it does not
+   * take.
    */
-  renderView(container: HTMLElement, viewId: string): void;
+  renderView(container: HTMLElement, viewId: string, host: HostApi): void | Promise<void>;
 }
 
 export interface PluginDescriptor {
@@ -110,6 +119,17 @@ export function pluginViews(plugin: PluginDescriptor): PluginView[] {
 register(productRoadmapDescriptor);
 
 /** Every registered plugin, in registration order. */
+/**
+ * One registered plugin by id, or null.
+ *
+ * The render path needs it to build that plugin's gated host API, which is
+ * derived from its manifest — so the lookup has to be by id rather than by
+ * descriptor, since a view mode carries the id and nothing else.
+ */
+export function pluginById(pluginId: string): PluginDescriptor | null {
+  return allPlugins().find((p) => p.manifest.id === pluginId) ?? null;
+}
+
 export function allPlugins(): readonly PluginDescriptor[] {
   return PLUGINS;
 }

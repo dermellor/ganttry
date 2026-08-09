@@ -58,10 +58,12 @@ import {
   pluginViewButton,
   pluginViewButtons,
   pluginViewSection,
+  renderPluginViewInto,
   showOnlyPluginSection,
 } from './pluginHost/views';
 import { dataUrl } from './data-base';
 import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
+import { hostApiFor } from './pluginHost/hostBackend';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -194,7 +196,9 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
     // mode by the time it resolves (the user may have switched away).
     const container = pluginViewSection(els.contentArea, parsed.pluginId, target.view);
     void ensurePluginLoaded(target.plugin).then((m) => {
-      if (state.viewMode === mode) m.renderView(container, target.view.id);
+      if (state.viewMode === mode) {
+        renderPluginViewInto(container, parsed.pluginId, target.view.id, m, hostApiFor(target.plugin.manifest));
+      }
     });
   } else {
     // The timeline was display:none while the list showed, so vis-timeline

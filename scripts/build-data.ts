@@ -134,20 +134,43 @@ async function collectDbSources(): Promise<unknown[]> {
  * A failing read is NOT fatal here, unlike the timeline list: a deploy with no
  * registry still runs the plugins its build shipped with, which is what the
  * fallback in `installedPluginStatuses` returns.
+ *
+ * **Without a database the registry is the `plugins/` directory itself.** That is
+ * not a convenience: the epic's constraint is that a self-hosted instance can
+ * install a plugin with no central service involved, and until this existed a
+ * file-backed instance could not install one at all — the artifact was copied
+ * into the build and then registered nowhere, so nothing ever loaded it. Dropping
+ * a directory in and rebuilding is the whole install flow for that shape.
  */
 async function collectPlugins(): Promise<unknown[]> {
   try {
     const { resolveRepoFromEnv } = (await import('./db/repo-node.ts')) as any;
     const { installedPluginStatuses } = (await import('./db/plugin-manifests.ts')) as any;
     const repo = resolveRepoFromEnv();
-    // Without a DB there is no registry to read; the client falls back to the
-    // built-ins the same way the server does.
-    if (!repo) return [];
-    return await installedPluginStatuses(repo);
+    if (repo) return await installedPluginStatuses(repo);
   } catch (err) {
     console.warn('[build-data] plugin registry skipped:', err instanceof Error ? err.message : err);
-    return [];
   }
+  return vendoredPluginStatuses();
+}
+
+/**
+ * The `plugins/` directory as an install registry, for an instance with no
+ * database. One scan, shared with the file repo, so the build and the API cannot
+ * answer differently (`scripts/plugins/vendored.ts`).
+ */
+async function vendoredPluginStatuses(): Promise<unknown[]> {
+  const { scanVendoredPlugins } = await import('./plugins/vendored.ts');
+  const { pluginStatus } = await import('../src/pluginHost/installed.ts');
+  const dir = envValue('TIMELINES_PLUGINS_DIR') || join(ROOT, 'plugins');
+  const { plugins, skipped } = await scanVendoredPlugins(dir);
+  for (const problem of skipped) {
+    console.warn(`[build-data] plugin ${problem.plugin}: ${problem.problem} — skipped`);
+  }
+  for (const plugin of plugins) {
+    console.log(`[build-data] registered vendored plugin ${plugin.id} ${plugin.version} (pinned)`);
+  }
+  return plugins.map((plugin) => pluginStatus(plugin));
 }
 
 /**

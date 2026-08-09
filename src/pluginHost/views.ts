@@ -7,7 +7,9 @@
 // that the repaint path (render.ts) can reach a view's container without importing
 // the entry module and creating a cycle.
 
-import { loadedPluginView, type PluginView } from './registry';
+import { loadedPluginView, pluginById, type PluginView } from './registry';
+import { hostApiFor } from './hostBackend';
+import { renderPluginViewInto } from './renderView';
 import { parsePluginViewMode, pluginViewMode } from './viewMode';
 
 // Keyed by the addressable mode id, created once and reused: availability is
@@ -74,10 +76,16 @@ export function showOnlyPluginSection(mode: string | null): void {
  * the plugin's chunk is still loading (it renders on arrival anyway) and for the
  * built-in modes, which keeps the call sites in render.ts to one line.
  */
+export { renderPluginViewInto };
+
 export function repaintPluginView(mode: string): void {
   const parsed = parsePluginViewMode(mode);
   if (!parsed) return;
   const section = sections.get(mode);
   if (!section) return;
-  loadedPluginView(parsed.pluginId)?.renderView(section, parsed.viewId);
+  const plugin = pluginById(parsed.pluginId);
+  if (!plugin) return;
+  const mod = loadedPluginView(parsed.pluginId);
+  if (!mod) return;
+  renderPluginViewInto(section, parsed.pluginId, parsed.viewId, mod, hostApiFor(plugin.manifest));
 }
