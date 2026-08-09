@@ -87,21 +87,29 @@ measuring anything.
 Two vis-timeline collisions the rail has to defeat, both worth knowing before
 touching it. The mark needs `z-index` above `.vis-drag-center` /
 `.vis-drag-right` (vis appends those to the same item box *after* it, so they
-would swallow the click). And the right-edge **resize handle** is moved inward by
-`--rail-w` so „drag the right edge to resize" and „click × to delete" don't fight
-over the same pixels — but **only on a bar wide enough for them to collide**. vis
-caps that handle at `max-width: 20%`, so on a narrow bar it is a sliver sitting
-*past* the bar's right edge and it clears the mark by itself; the two start to
-overlap once the handle grows beyond 10px, i.e. above a 50px bar. Below that the
-shift would be actively wrong (24px inward on a 29px bar lands the grab zone in
-the bar's left third). Asking each bar about its own width is what a **container
-query** is for: `.vis-item.vis-range` is a `container-type: inline-size` query
-container — safe, because vis sets a range bar's width inline from its dates, so
-inline-size containment has nothing to break (verified: it moves no bar by a
-pixel). Milestones and boxes are deliberately excluded, since containment would
-cut off content-sized items. The `56px` threshold is a literal (container queries
-can't read custom properties) — keep it in step with the rail vars. One threshold
-covers a marked bar too, because its rail is no wider (the marks share a slot).
+would swallow the click). And the right-edge **resize handle** has to share the
+edge with the mark: vis pins it to `right: -4px` at 24px wide, which is exactly
+the rail's slot, so at that width „drag the right edge to resize" and „click × to
+delete" fight over the same pixels.
+
+The handle is therefore **narrowed, not moved** — it keeps `right: -4px` and ends
+where the mark begins, a band straddling the bar's border. It used to be shifted
+inward by `--rail-w` instead, and that is what made a bar resizable at its *left*
+edge only: the outermost pixels became `.vis-drag-center`, the next ~18 the mark
+(which swallows `mousedown`), and the grab zone started ~27px in, so aiming at the
+visible right edge moved the bar or hit „×" and never resized it. The cost of the
+current version is width, not reach: 10px on the right against vis's 24px on the
+left, which is what it costs to keep the mark inside the bar. The width is
+derived from `--bar-gutter` + `--rail-inset` (where the mark starts), so moving
+the rail moves the handle with it, and vis's own `max-width: 20%` shrinks it
+further on a narrow bar — no width threshold is involved either way.
+
+`.vis-item.vis-range` stays a `container-type: inline-size` query container for
+the **status mark**, which hides itself below 23px (see below). It is safe,
+because vis sets a range bar's width inline from its dates, so inline-size
+containment has nothing to break (verified: it moves no bar by a pixel).
+Milestones and boxes are deliberately excluded, since containment would cut off
+content-sized items.
 
 ### The status mark
 
@@ -368,7 +376,7 @@ module. **Adding a value picker** needs no menu change at all — flag the field
 
 When the active view points to a **DB-backed** source (the timeline exists in Supabase, so `GET /api/source/<id>` returns it), the viewer is editable. A **local** source (a `data/*.json` file, or a directory of Markdown notes) is editable when a process with filesystem access serves it, which means the dev server; editing a directory patches the individual notes' frontmatter and moves a deleted one to `.trash/` rather than removing it; on a static deploy the same file loads read-only, because there is nothing there to write with. Whether the running build is one or the other was decided when it was built (see „Source kinds" (docs/architecture.md)).
 
-- **Drag** an item left/right to move start, drag the right edge to resize, drag vertically to switch group. Persists on drop. On a selected bar the resize handle sits just inside the rail (see „Item rail"), not right at the edge.
+- **Drag** an item left/right to move start, drag either edge to resize, drag vertically to switch group. Persists on drop. Both handles sit on the bar's edge; the right one is the narrower of the two because it shares that edge with the rail's „×" (see „Item rail").
 - **Delete** an item via the „×" mark at the bar's right edge, which appears on hover and while the item is selected — inside the bar on a bar wide enough for it, just outside on a narrow one. Clicking it neither selects the item nor opens its form. See „Item rail".
 - **Right-click** an item for quick actions without opening the form: set the
   status, set any custom field that declared `contextMenu: true` (each a submenu of

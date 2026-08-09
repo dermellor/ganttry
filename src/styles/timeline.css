@@ -593,34 +593,45 @@
   opacity: 1;
 }
 
-/* Move the right-edge resize handle inward by the rail width. vis pins it to
-   the bar edge (`right: -4px`, 24px wide), which is exactly where the rail is —
-   and vis appends it after the mark, so without this the handle covers it and
-   "drag the right edge to resize" and "click × to delete" fight over the same
-   pixels. The handle only exists on a selected item.
-
-   Only on a bar wide enough for the two to actually collide. vis caps the handle
-   at `max-width: 20%`, so on a narrow bar it is a sliver sitting *past* the bar's
-   right edge (`right: -4px` puts its right edge 4px beyond) and it clears the
-   mark on its own: they start to overlap once the handle grows past 10px, i.e.
-   above a 50px bar. Below that the shift would be actively wrong — 24px inward
-   on a 29px bar lands the grab zone in the bar's left third. The 56px literal is
-   that 50px plus a little margin; container queries can't read custom
-   properties, so keep it in step with the rail vars if those change.
-
-   Asking each bar about its own width is what a container query is for.
-   `.vis-item` is safe to make a query container — vis sets a range bar's width
-   inline from its dates, so inline-size containment has nothing to break (and
-   measurably moves nothing). Scoped to ranges: milestones and boxes size to
-   their content, which containment would cut off. */
+/* A range bar is its own container query context, which is what lets a mark ask
+   about the width of the bar it sits on (see the status mark's `max-width: 23px`
+   query above). `.vis-item` is safe to make a query container — vis sets a range
+   bar's width inline from its dates, so inline-size containment has nothing to
+   break (and measurably moves nothing). Scoped to ranges: milestones and boxes
+   size to their content, which containment would cut off. */
 .timeline .vis-item.vis-range {
   container-type: inline-size;
 }
 
-@container (min-width: 56px) {
-  .timeline .vis-item.vis-range:has(> .rail-delete).vis-selected .vis-drag-right {
-    right: calc(var(--rail-w) - 4px);
-  }
+/* Keep the right-edge resize handle *on* the edge and narrow it until it clears
+   the rail. vis pins the handle to the bar edge (`right: -4px`, 24px wide),
+   which is exactly the rail's slot — the delete mark sits from `--bar-gutter +
+   --rail-inset` to that plus `--rail-mark` inside the edge — and vis appends the
+   handle after the mark, so at vis's width the two fight over the same pixels.
+   The handle only exists on a selected item.
+
+   This used to be solved by shifting the whole handle inward by the rail width.
+   That cleared the mark and gave up the bar's right edge with it: the outermost
+   pixels became `.vis-drag-center`, the next ~18 the mark (which swallows
+   mousedown in the capture phase, see itemRail.ts), and the grab zone only
+   started ~27px in. Aiming at the visible right edge therefore moved the bar or
+   hit „×" and never resized it, so a bar could be dragged longer at its *left*
+   edge only — which is how the bug was reported.
+
+   Narrowing instead keeps the edge and spends width: the handle spans 4px
+   outside the bar to the mark's outer edge, a band straddling the border, and
+   nothing moves when an item is selected. The left handle keeps vis's 24px, so
+   the two edges have different grab widths — that is the price of the mark
+   living inside the bar rather than outside it.
+
+   The width is derived from where the mark starts rather than written as a
+   literal, so moving the rail moves the handle with it. No container query is
+   needed any more: the handle no longer depends on the bar being wide enough for
+   a 24px shift, and vis's own `max-width: 20%` shrinks it further on a narrow
+   bar. */
+.timeline .vis-item.vis-range:has(> .rail-delete).vis-selected .vis-drag-right {
+  right: -4px;
+  width: calc(4px + var(--bar-gutter) + var(--rail-inset));
 }
 
 .vis-item.vis-point {
