@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assignLaneSubgroups,
+  withHierarchyMarks,
   type LanePackOptions,
   type TimelineGroup,
   type TimelineItem,
@@ -117,4 +118,42 @@ test('a parent outside the track leaves the layout alone', () => {
   assignLaneSubgroups(items, GROUPS, new Map(), new Map([['a', 'elsewhere']]));
   assert.equal(laneOf(items, 'a'), 0);
   assert.equal(laneOf(items, 'b'), 0);
+});
+
+// `withHierarchyMarks` stamps the class the fold caret keys off (itemCollapse.ts
+// queries for `item-summary`), so getting it wrong costs the caret, not just a
+// style.
+const PARENTS = new Map([['c', 'p']]);
+const identity = (id: string) => id;
+const classOf = (items: TimelineItem[], id: string) => items.find((i) => i.id === id)!.className;
+
+test('a parent is marked, a child and a loner are left alone', () => {
+  const items = [range('p', '2026-02-01', '2026-02-20'), range('c', '2026-02-02', '2026-02-05'), range('x', '2026-03-01', '2026-03-05')];
+  const out = withHierarchyMarks(items, PARENTS, new Set(), identity);
+  assert.equal(classOf(out, 'p'), 'item-summary');
+  assert.equal(classOf(out, 'c'), undefined);
+  // Untouched items are returned as-is, so the persist diff never sees a display
+  // concern (same reason withStatusMarks copies only what it marks).
+  assert.equal(out[2], items[2]);
+});
+
+test('the marks append to a lane class instead of replacing it', () => {
+  const items = [{ ...range('p', '2026-02-01', '2026-02-20'), className: 'lane-3' }];
+  const out = withHierarchyMarks(items, PARENTS, new Set(['p']), identity);
+  assert.equal(classOf(out, 'p'), 'lane-3 item-summary is-collapsed');
+  assert.equal(items[0].className, 'lane-3'); // the build's own item stays clean
+});
+
+// Grouped by tag or a custom field, one item renders once per lane it falls into
+// and carries a clone id. Marking only ids that match the source would leave
+// those clones without a caret while their children stay hidden.
+test('a clone is marked through its real id', () => {
+  const clone = { ...range('p::Release', '2026-02-01', '2026-02-20'), id: 'p::Release' };
+  const out = withHierarchyMarks([clone], PARENTS, new Set(), (id) => id.split('::')[0]);
+  assert.equal(out[0].className, 'item-summary');
+});
+
+test('no hierarchy at all leaves the list untouched', () => {
+  const items = [range('a', '2026-02-01', '2026-02-05')];
+  assert.equal(withHierarchyMarks(items, new Map(), new Set(), identity), items);
 });
