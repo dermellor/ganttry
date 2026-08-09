@@ -9,6 +9,7 @@ import {
   assignLanes,
   buildFromJson,
   tagPillsHtml,
+  withHierarchyMarks,
   withStatusMarks,
   type BuildResult,
   type TimelineGroup,
@@ -39,11 +40,14 @@ import {
 import type { TimelineFile, TimelineFileItem, View } from './types';
 import { durationToMs, parseLocalDay } from './date';
 import { firstAssignableGroup, resolveAssignableGroup } from './groupHierarchy';
+import { hiddenByCollapse } from './itemHierarchy';
 import {
   state,
   els,
   setStatus,
   isEditableView,
+  loadCollapsedItems,
+  toggleItemCollapsed,
   syncUrl,
   MS_PER_DAY,
   TAG_TEXT_MIN_PX_PER_DAY,
@@ -57,6 +61,7 @@ import {
 } from './persistence';
 import { attachItemPresence } from './itemPresence';
 import { attachItemRail } from './itemRail';
+import { attachItemCollapse } from './itemCollapse';
 import { attachItemContextMenu } from './contextMenu';
 import { attachOverrunLines } from './overrun';
 import { deleteItem, setItemFieldValue, setItemStatus, showItemForm } from './itemForm';
@@ -98,6 +103,47 @@ let regroupedMode = false;
 // Falls back to the id itself when not regrouped or the item has a single lane.
 export function displayIdsFor(realId: string): string[] {
   return realToDisplay.get(realId) ?? [realId];
+}
+
+// The parent map the lane packer may use for the current display set: the real
+// one along the item's own group, empty once the lanes are derived values.
+function displayParents(): Map<string, string> {
+  return regroupedMode ? new Map() : state.activeBuild?.parents ?? new Map();
+}
+
+/**
+ * An empty first row that reserves the phase ribbon's strip.
+ *
+ * The ribbon is pinned to the top of the center panel, so without a reservation
+ * it sits on the first track. Reserving the strip with CSS padding on the group
+ * set is what this replaces, and the reason is that vis cannot see padding: it
+ * derives its content height *and* its vertical scroll range from the sum of the
+ * group heights, so the panel ended up holding more than vis knew about. The
+ * scroll then stopped short by the height of the reserve and `.vis-timeline`
+ * (fixed height, `overflow: hidden`) cut off whatever hung below — always the
+ * last track, which is exactly where a folded summary item leaves a single short
+ * row.
+ *
+ * A group costs nothing to account for, because counting groups is what vis
+ * already does. It carries no items, so nothing can be assigned to it, and it is
+ * added *after* filtering and lane assignment: `pruneGroupsToItems` would drop an
+ * item-less group, and `assignLanes` colours lanes by index, so prepending
+ * earlier would shift every track's colour.
+ */
+export const BAND_SPACER_GROUP_ID = '__phase_band_spacer';
+
+function withBandSpacer(groups: TimelineGroup[]): TimelineGroup[] {
+  // Keyed off the phases themselves, not off the `has-phase-band` class: the
+  // class is toggled further down in renderTimeline, after computeDisplay has
+  // already run, so the first render would come out without the reservation.
+  const hasPhases = (state.activeBuild?.phases.length ?? 0) > 0;
+  if (!hasPhases || groups.length === 0) return groups;
+  // A strut, not an empty string: vis measures the label to get the group's
+  // height, so the reserve has to be something it can measure.
+  return [
+    { id: BAND_SPACER_GROUP_ID, content: '<div class="band-spacer-strut"></div>', className: 'band-spacer' },
+    ...groups,
+  ];
 }
 
 // vis-timeline editable config for the active source. When regrouped, the lanes
@@ -151,9 +197,13 @@ function computeDisplay(): { items: TimelineItem[]; groups: TimelineGroup[] } {
   // tag/field regroup would tangle them across values, so it runs deps-free.
   displayDeps = regroupedMode ? new Map() : build.dependencies;
 
-  assignLaneSubgroups(displayItems, displayGroups, displayDeps);
+  // Like the dependency edges above, the hierarchy bands a track only along the
+  // item's own group: a tag/field regroup renders an item once per lane it falls
+  // into, and those clone ids are not what the parent map is keyed by.
+  assignLaneSubgroups(displayItems, displayGroups, displayDeps, displayParents());
   assignLanes(displayItems, displayGroups);
-  return { items: displayItems, groups: displayGroups };
+  // The spacer is added last, on the way out — see withBandSpacer.
+  return { items: displayItems, groups: withBandSpacer(displayGroups) };
 }
 
 // Point-label measurement (see repackLanes). A single off-DOM canvas measures
@@ -203,8 +253,16 @@ export function filterBuildForDisplay(build: BuildResult): {
   groups: TimelineGroup[];
 } {
   const filterOn = isFilterActive();
-  if (!state.milestonesOnly && !filterOn) return { items: build.items, groups: build.groups };
+  // Folded subtrees are dropped here rather than in each view, so the timeline,
+  // the list and the status-line counts all say the same thing about what is on
+  // screen. It also runs before the tag/field regrouping, so a hidden child
+  // never gets cloned into a lane in the first place.
+  const hidden = hiddenByCollapse(build.parents, state.collapsedItems);
+  if (!state.milestonesOnly && !filterOn && hidden.size === 0) {
+    return { items: build.items, groups: build.groups };
+  }
   let items = build.items;
+  if (hidden.size) items = items.filter((it) => !hidden.has(it.id));
   if (state.milestonesOnly) items = items.filter((it) => it.type === 'point');
   if (filterOn) {
     items = items.filter((it) => it.type === 'background' || passesFilter(it, build.groups));
@@ -275,9 +333,14 @@ export async function refreshActiveSourceInPlace(view: View): Promise<boolean> {
 // (`withStatusMarks`, see buildItems.ts). „Now" is read once per populate, so
 // every item in one repaint is judged against the same instant.
 export function timelineItems(items: TimelineItem[]): TimelineItemWithStart[] {
-  return withStatusMarks(
-    items.filter((it): it is TimelineItemWithStart => !!it.start),
-    Date.now(),
+  return withHierarchyMarks(
+    withStatusMarks(
+      items.filter((it): it is TimelineItemWithStart => !!it.start),
+      Date.now(),
+    ),
+    state.activeBuild?.parents ?? new Map(),
+    state.collapsedItems,
+    realIdOf,
   );
 }
 
@@ -370,6 +433,9 @@ export async function renderTimeline(view: View) {
   state.activeSourceId = sourceId;
   state.activeSourceEditable = sourceEditable;
   state.activeSourceLive = sourceLive;
+  // Before the first computeDisplay: the folds are per source, and the previous
+  // view's set would otherwise hide items that happen to share an id here.
+  loadCollapsedItems(sourceId);
   snapshotSaved();
   setupRealtime();
 
@@ -454,7 +520,12 @@ export async function renderTimeline(view: View) {
     // and titles are already escapeHtml'd at build time and icon keys are
     // validated, so disabling the redundant filter is safe here.
     xss: { disabled: true },
-    margin: { item: 6, axis: axisMargin },
+    // vis puts a *half* gap at a track's top and bottom edge and a full one
+    // between its rows, so a bar ended up 3px from the track's border while
+    // sitting 6px from its neighbour, and read as glued to the line. Doubling
+    // the vertical gap buys the edges their 6px; the rows are further apart for
+    // it, which a track carrying a summary bar and its children needs anyway.
+    margin: { item: { horizontal: 6, vertical: 12 }, axis: axisMargin },
     orientation: { axis: 'top', item: 'top' },
     locale: 'de',
     tooltip: { followMouse: false, overflowMethod: 'cap' },
@@ -489,6 +560,9 @@ export async function renderTimeline(view: View) {
   // Same for the rail's delete mark — ours rather than vis's `editable.remove`
   // button, which only ever appears on a *selected* item (see itemRail.ts).
   attachItemRail(timeline, els.timeline, deleteItem);
+  // And the fold caret on every bar that has children. Unlike the rail's delete
+  // mark this is not an editing affordance, so it stays on a read-only source.
+  attachItemCollapse(timeline, els.timeline, toggleItemChildren);
   // Right-click quick actions. Delete goes through the same `deleteItem` the rail
   // mark and the form button use, so there is one delete flow, not three.
   attachItemContextMenu(timeline, {
@@ -701,7 +775,7 @@ export function repackLanes(): void {
   // Pack the *display* set (regrouped/cloned when grouping by tag/field), so the
   // clones on their derived lanes get label-width-aware spacing too.
   const before = new Map(displayItems.map((it) => [it.id, it.subgroup]));
-  assignLaneSubgroups(displayItems, displayGroups, displayDeps, {
+  assignLaneSubgroups(displayItems, displayGroups, displayDeps, displayParents(), {
     pxPerDay,
     pointLabelPx: measurePointLabelPx,
   });
@@ -994,6 +1068,17 @@ export function applyGrouping(): void {
 // Filter change: only the visible item set changes, so a plain display refresh
 // is enough (grouping dimension and editability are untouched).
 export function applyFilter(): void {
+  refreshDisplay();
+}
+
+/**
+ * Fold or unfold one summary item's subtree — the fold caret in either view.
+ * Which items disappear is decided once, in `filterBuildForDisplay`, so a plain
+ * display refresh is all this needs: the timeline, the list and the status-line
+ * counts follow from the same set.
+ */
+export function toggleItemChildren(realId: string): void {
+  toggleItemCollapsed(realId);
   refreshDisplay();
 }
 

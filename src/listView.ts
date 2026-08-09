@@ -14,13 +14,14 @@
 
 import { escapeHtml, tagPillsHtml, type TimelineItem } from './buildItems';
 import { iconSpanHtml } from './icons';
-import { addNewItem, filterBuildForDisplay, displayIdsFor } from './render';
+import { addNewItem, filterBuildForDisplay, displayIdsFor, toggleItemChildren } from './render';
 import { showDetailForId } from './detailPanel';
 import { state, els, syncUrl, isEditableView } from './state';
 import { computeSections, GROUP_DIM } from './listGrouping';
 import { metaOf, resolveGrouping, sectionContext, syncGroupByControl } from './grouping';
 import { syncFilterControl } from './filterControl';
 import { parentGroupIds } from './groupHierarchy';
+import { treeOrder } from './itemHierarchy';
 import { ownerCellHtml } from './users';
 
 const TYPE_LABELS: Record<TimelineItem['type'], string> = {
@@ -44,11 +45,34 @@ function ownerOf(id: string): string {
   return typeof owner === 'string' ? owner : '';
 }
 
-function rowHtml(item: TimelineItem, selected: boolean): string {
+// The fold slot in front of an entry, present on every row of a table that has a
+// tree in it so the labels line up whether or not a row has children. The caret
+// is a real `<button>`: the row itself is activatable too, and only a nested
+// control keeps „open this entry" and „fold its children" apart for the keyboard.
+function treeSlotHtml(item: TimelineItem, hasChildren: boolean): string {
+  if (!hasChildren) return '<span class="list-tree"></span>';
+  const collapsed = state.collapsedItems.has(item.id);
+  const label = collapsed ? 'Untereinträge einblenden' : 'Untereinträge ausblenden';
+  return (
+    `<span class="list-tree"><button type="button" class="list-collapse${collapsed ? ' is-collapsed' : ''}"` +
+    ` data-collapse="${escapeHtml(item.id)}" aria-expanded="${!collapsed}"` +
+    ` title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"></button></span>`
+  );
+}
+
+function rowHtml(
+  item: TimelineItem,
+  selected: boolean,
+  depth: number,
+  hasChildren: boolean,
+  hasTree: boolean,
+): string {
   const label = `${tagPillsHtml(item.tags)}${iconSpanHtml(item.icon)}${item.content ?? ''}`;
   const owner = ownerOf(item.id);
-  return `<tr class="list-row${selected ? ' is-selected' : ''}" data-id="${escapeHtml(item.id)}" tabindex="0" role="button">
-    <td class="list-entry">${label || '<span class="list-empty">—</span>'}</td>
+  const indent = hasTree ? ` style="--depth:${depth}"` : '';
+  const slot = hasTree ? treeSlotHtml(item, hasChildren) : '';
+  return `<tr class="list-row${selected ? ' is-selected' : ''}${hasChildren ? ' is-summary' : ''}" data-id="${escapeHtml(item.id)}" tabindex="0" role="button">
+    <td class="list-entry"${indent}>${slot}${label || '<span class="list-empty">—</span>'}</td>
     <td class="list-date">${formatDate(item.start)}</td>
     <td class="list-date">${item.type === 'point' ? '—' : formatDate(item.end)}</td>
     <td class="list-type">${TYPE_LABELS[item.type] ?? escapeHtml(item.type)}</td>
@@ -93,9 +117,20 @@ export function renderListView(): void {
   // would pin a new item to a parent.
   const parents = parentGroupIds(groups);
 
+  // Parent/child inside a section: children follow their parent, one indent step
+  // per level. A section can hold a child whose parent fell outside it (a tag
+  // section, say) — treeOrder leaves that one at the top level rather than
+  // dropping it, so nothing disappears from a view it belongs in.
+  const itemParents = state.activeBuild?.parents ?? new Map<string, string>();
+  const hasChildren = new Set(itemParents.values());
+
   const body = sections
     .map((s) => {
-      const rows = s.items.map((it) => rowHtml(it, it.id === sel)).join('');
+      const ordered = treeOrder(s.items, itemParents);
+      const hasTree = ordered.some((e) => e.depth > 0 || hasChildren.has(e.item.id));
+      const rows = ordered
+        .map((e) => rowHtml(e.item, e.item.id === sel, e.depth, hasChildren.has(e.item.id), hasTree))
+        .join('');
       const addBtn =
         showAdd && !s.empty && !parents.has(s.id)
           ? `<button type="button" class="list-add-item" data-add-group="${escapeHtml(s.id)}">+ Eintrag</button>`
@@ -137,6 +172,13 @@ export function setupListView(): void {
     const addBtn = (target as HTMLElement | null)?.closest<HTMLElement>('.list-add-item');
     if (addBtn) {
       addNewItem(addBtn.dataset.addGroup ?? null);
+      return;
+    }
+    // The fold caret sits inside a row, so it has to be handled before the row
+    // activation below — otherwise folding would also open the entry's form.
+    const caret = (target as HTMLElement | null)?.closest<HTMLElement>('.list-collapse');
+    if (caret?.dataset.collapse) {
+      toggleItemChildren(caret.dataset.collapse);
       return;
     }
     const row = (target as HTMLElement | null)?.closest<HTMLElement>('.list-row');

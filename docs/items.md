@@ -179,6 +179,55 @@ list builds html and the form assembles nodes.
 Owner is not (yet) a Gruppieren/Filter dimension, and the read-only detail panel
 does not show it — it surfaces in the item form and the Liste view's Owner column.
 
+## Parent and children
+
+An item can be **part of** another one: `metadata.parent` holds the id of its
+parent, and an item has at most one. The parent then reads as an umbrella over
+the items under it — a theme that runs for a quarter with the individual pieces
+of work inside it, a phase of a project with its steps.
+
+**The link is stored on the child**, exactly like `metadata.dependsOn` stores an
+edge on the dependent side. Two things follow that a `children: []` array on the
+parent would not give: „one parent per item" is structural instead of a rule
+somebody has to enforce, and re-parenting is a write to one item rather than to
+two (which is also what keeps it safe under the optimistic locking of a
+concurrently edited timeline).
+
+**The rules live in [`src/itemHierarchy.ts`](../src/itemHierarchy.ts)** — DOM-free
+and tested, imported by the build, both views and the item form, so none of them
+can disagree about what a tree is. Three ways a stored link can be wrong are
+dropped there, once, when the timeline is built: a self-link, a parent id no item
+carries, and any edge that would close a cycle. Hand-edited JSON produces all
+three, a delete produces the second, and a renderer walking an unsanitized map
+recurses forever on the third.
+
+**On the timeline** the hierarchy bands a track before anything else lays it out:
+every parent takes a lane above all of its children, which is what makes a
+summary bar read as summarizing them. The dependency staircase (see „Dependency
+arrows" (docs/data-model.md)) still applies, but *within* one such band — otherwise a chain of
+children would climb past the bar above them. A track with no hierarchy is a
+single band, so its layout is exactly what it was. The parent's bar carries a
+heavier outline (`item-summary`) and a fold caret at its inner left edge; folding
+hides its whole subtree, grandchildren included.
+
+**Cross-track links are recorded but do not nest.** A parent in another group has
+no row in this track, so banding under it would pull the child out of its own
+track — the same rule the dependency edges follow. The link still shows in the
+item form and still folds.
+
+**The parent's own dates stay authoritative.** They are maintained by hand, and a
+rollup that overwrote them would replace a decision with a calculation. Where the
+children run outside them, the item form says so under „Untereinträge" („…
+beginnen am 16.07.2026") and changes nothing.
+
+**Folding is a way of reading, not of editing**, so the caret is there on a
+read-only source too, and which items are folded is persisted per source
+(`timelines.collapsedItems`, keyed by source id — item ids are only unique within
+one timeline). Everything folded away is dropped in one place,
+`filterBuildForDisplay` in [`src/render.ts`](../src/render.ts), so the timeline,
+the Liste view and the status-line counts cannot disagree about what is on
+screen.
+
 ## Custom fields (per timeline)
 
 Beyond the built-in item fields, each timeline can declare its own **custom

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assignLaneSubgroups,
+  withHierarchyMarks,
   type LanePackOptions,
   type TimelineGroup,
   type TimelineItem,
@@ -32,7 +33,7 @@ test('nearby milestones separate onto different lanes when zoomed out', () => {
   // 120px label @ 10px/day == 12 days; the two points are 2 days apart, so the
   // first label would run through the second → they must not share a lane.
   const items = [point('a', '2026-02-10'), point('b', '2026-02-12')];
-  assignLaneSubgroups(items, GROUPS, new Map(), opts(10));
+  assignLaneSubgroups(items, GROUPS, new Map(), new Map(), opts(10));
   assert.notEqual(laneOf(items, 'a'), laneOf(items, 'b'));
 });
 
@@ -40,7 +41,7 @@ test('the same milestones pack onto one lane when zoomed in', () => {
   // 120px label @ 100px/day == 1.2 days < the 2-day gap → labels no longer
   // overlap, so packing them onto a single lane is correct (dense layout).
   const items = [point('a', '2026-02-10'), point('b', '2026-02-12')];
-  assignLaneSubgroups(items, GROUPS, new Map(), opts(100));
+  assignLaneSubgroups(items, GROUPS, new Map(), new Map(), opts(100));
   assert.equal(laneOf(items, 'a'), laneOf(items, 'b'));
 });
 
@@ -48,7 +49,7 @@ test('without pack options, zero-width points share a lane (legacy behaviour)', 
   // The file-build / notes path calls without options; points then have zero
   // effective width and pack together exactly as before this feature.
   const items = [point('a', '2026-02-10'), point('b', '2026-02-12')];
-  assignLaneSubgroups(items, GROUPS, new Map());
+  assignLaneSubgroups(items, GROUPS, new Map(), new Map());
   assert.equal(laneOf(items, 'a'), 0);
   assert.equal(laneOf(items, 'b'), 0);
 });
@@ -60,6 +61,99 @@ test('range items are packed by their time span, unaffected by label width', () 
     { id: 'r1', group: 'g', start: '2026-02-01', end: '2026-02-05', content: 'r1', title: '', type: 'range' },
     { id: 'r2', group: 'g', start: '2026-02-10', end: '2026-02-15', content: 'r2', title: '', type: 'range' },
   ];
-  assignLaneSubgroups(ranges, GROUPS, new Map(), opts(10));
+  assignLaneSubgroups(ranges, GROUPS, new Map(), new Map(), opts(10));
   assert.equal(laneOf(ranges, 'r1'), laneOf(ranges, 'r2'));
+});
+
+// Hierarchy bands the track before anything else packs it: a summary bar that
+// sat below one of its children would not read as summarizing them.
+function range(id: string, start: string, end: string): TimelineItem {
+  return { id, group: 'g', start, end, content: id, title: '', type: 'range' };
+}
+
+test('a parent takes a lane above every one of its children', () => {
+  // p spans both children, so plain packing would push it onto its own lane
+  // *below* them (they are declared first and pack tighter).
+  const items = [
+    range('c1', '2026-02-01', '2026-02-05'),
+    range('c2', '2026-02-10', '2026-02-15'),
+    range('p', '2026-02-01', '2026-02-15'),
+  ];
+  assignLaneSubgroups(items, GROUPS, new Map(), new Map([['c1', 'p'], ['c2', 'p']]));
+  assert.equal(laneOf(items, 'p'), 0);
+  assert.ok(laneOf(items, 'c1')! > 0);
+  assert.ok(laneOf(items, 'c2')! > 0);
+  // The two children have no time overlap, so they still share their lane.
+  assert.equal(laneOf(items, 'c1'), laneOf(items, 'c2'));
+});
+
+test('a grandchild lands below its parent, which is below the root', () => {
+  const items = [
+    range('root', '2026-02-01', '2026-02-20'),
+    range('mid', '2026-02-02', '2026-02-10'),
+    range('leaf', '2026-02-03', '2026-02-06'),
+  ];
+  assignLaneSubgroups(items, GROUPS, new Map(), new Map([['mid', 'root'], ['leaf', 'mid']]));
+  assert.ok(laneOf(items, 'root')! < laneOf(items, 'mid')!);
+  assert.ok(laneOf(items, 'mid')! < laneOf(items, 'leaf')!);
+});
+
+// The dependency staircase still applies, but only inside one hierarchy band —
+// otherwise a chain of children would climb past the bar summarizing them.
+test('the dependency staircase runs within a hierarchy band', () => {
+  const items = [
+    range('p', '2026-02-01', '2026-02-20'),
+    range('a', '2026-02-01', '2026-02-05'),
+    range('b', '2026-02-06', '2026-02-10'),
+  ];
+  const deps = new Map([['b', ['a']]]);
+  assignLaneSubgroups(items, GROUPS, deps, new Map([['a', 'p'], ['b', 'p']]));
+  assert.equal(laneOf(items, 'p'), 0);
+  assert.ok(laneOf(items, 'a')! < laneOf(items, 'b')!);
+});
+
+// A parent in another track has no row here, so it cannot band this one.
+test('a parent outside the track leaves the layout alone', () => {
+  const items = [range('a', '2026-02-01', '2026-02-05'), range('b', '2026-02-10', '2026-02-15')];
+  assignLaneSubgroups(items, GROUPS, new Map(), new Map([['a', 'elsewhere']]));
+  assert.equal(laneOf(items, 'a'), 0);
+  assert.equal(laneOf(items, 'b'), 0);
+});
+
+// `withHierarchyMarks` stamps the class the fold caret keys off (itemCollapse.ts
+// queries for `item-summary`), so getting it wrong costs the caret, not just a
+// style.
+const PARENTS = new Map([['c', 'p']]);
+const identity = (id: string) => id;
+const classOf = (items: TimelineItem[], id: string) => items.find((i) => i.id === id)!.className;
+
+test('a parent is marked, a child and a loner are left alone', () => {
+  const items = [range('p', '2026-02-01', '2026-02-20'), range('c', '2026-02-02', '2026-02-05'), range('x', '2026-03-01', '2026-03-05')];
+  const out = withHierarchyMarks(items, PARENTS, new Set(), identity);
+  assert.equal(classOf(out, 'p'), 'item-summary');
+  assert.equal(classOf(out, 'c'), undefined);
+  // Untouched items are returned as-is, so the persist diff never sees a display
+  // concern (same reason withStatusMarks copies only what it marks).
+  assert.equal(out[2], items[2]);
+});
+
+test('the marks append to a lane class instead of replacing it', () => {
+  const items = [{ ...range('p', '2026-02-01', '2026-02-20'), className: 'lane-3' }];
+  const out = withHierarchyMarks(items, PARENTS, new Set(['p']), identity);
+  assert.equal(classOf(out, 'p'), 'lane-3 item-summary is-collapsed');
+  assert.equal(items[0].className, 'lane-3'); // the build's own item stays clean
+});
+
+// Grouped by tag or a custom field, one item renders once per lane it falls into
+// and carries a clone id. Marking only ids that match the source would leave
+// those clones without a caret while their children stay hidden.
+test('a clone is marked through its real id', () => {
+  const clone = { ...range('p::Release', '2026-02-01', '2026-02-20'), id: 'p::Release' };
+  const out = withHierarchyMarks([clone], PARENTS, new Set(), (id) => id.split('::')[0]);
+  assert.equal(out[0].className, 'item-summary');
+});
+
+test('no hierarchy at all leaves the list untouched', () => {
+  const items = [range('a', '2026-02-01', '2026-02-05')];
+  assert.equal(withHierarchyMarks(items, new Map(), new Set(), identity), items);
 });

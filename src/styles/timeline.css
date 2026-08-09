@@ -315,6 +315,82 @@
   --rail-delete: 1;
 }
 
+/* ── Summary bars: an item that has children ───────────────────────────────
+ *
+ * `item-summary` is stamped on the way into the DataSet (buildItems.ts
+ * `withHierarchyMarks`) and is the single statement of „this item has
+ * children": the bar's own treatment and the fold caret both key off it, and
+ * itemCollapse.ts finds the bars to put a caret on by querying for it.
+ *
+ * The treatment is a heavier outline and a stronger label, not the classic Gantt
+ * bracket with triangular end caps. vis clips `.vis-item-overflow` (that is what
+ * the element is for), so caps would have to hang off the *outer* item — which is
+ * exactly the 2px gutter that keeps back-to-back bars apart, so two adjacent
+ * summaries would grow into each other.
+ *
+ * The caret sits at the inner LEFT edge, opposite the rail's marks, so folding
+ * and deleting never land under the same pointer position. Unlike the delete
+ * mark it is always visible: it is the only thing announcing that a bar has
+ * children folded under it, and a control you have to hover to discover is one
+ * nobody discovers.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.timeline .vis-item.vis-range.item-summary .vis-item-overflow {
+  border-width: 2px;
+}
+
+.timeline .vis-item.item-summary .vis-item-content {
+  font-weight: 600;
+  /* Room for the caret, which is absolutely positioned and would otherwise sit
+     on top of the first characters of the label. */
+  padding-left: calc(var(--rail-inset) + var(--rail-mark) + var(--rail-gap));
+}
+
+.timeline .vis-item .rail-collapse {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  left: var(--rail-inset);
+  width: var(--rail-mark);
+  height: var(--rail-mark);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: var(--rail-mark-dim);
+  transition: opacity 0.12s linear;
+  /* Above `.vis-drag-center` / `.vis-drag-left`, which vis appends to the same
+     item box and would otherwise swallow the click. */
+  z-index: 3;
+}
+
+.timeline .vis-item .rail-collapse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  -webkit-mask: var(--ui-icon-caret) center / var(--rail-glyph) no-repeat;
+  mask: var(--ui-icon-caret) center / var(--rail-glyph) no-repeat;
+  transition: transform 0.12s ease;
+}
+
+/* Folded: the same caret, turned a quarter turn to point at what is hidden. */
+.timeline .vis-item.is-collapsed .rail-collapse::after {
+  transform: rotate(-90deg);
+}
+
+.timeline .vis-item > .rail-collapse:hover {
+  opacity: 1;
+}
+
+.timeline .vis-item > .rail-collapse:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* ── The status mark: the rail's data mark ─────────────────────────────────
  *
  * An item's status is drawn on the bar as one mark in the rail, stamped as
@@ -626,6 +702,12 @@
   overflow: hidden;
 }
 
+/* Height of the reserved strip. Read back in render.ts, which sizes the spacer
+   group's row from it, so the ribbon and the row it sits over cannot drift. */
+.timeline {
+  --phase-band-reserve: 30px;
+}
+
 /* Phase ribbon — pinned to the top of the center panel */
 .phase-band {
   position: absolute;
@@ -638,17 +720,38 @@
   overflow: hidden;
 }
 
-/* Reserve vertical room for the ribbon so the first group row starts *below*
-   it instead of sitting behind it. Padding the whole group set — labels, item
-   foreground, and the full-height phase tints — keeps left and center panels in
-   vertical lockstep (scroll stays synced). `content-box` makes the padding add
-   to the height rather than eat into vis-timeline's computed content area, so
-   the bottom row is never clipped. Toggled by `has-phase-band` in render.ts. */
-.timeline.has-phase-band .vis-labelset,
-.timeline.has-phase-band .vis-foreground,
-.timeline.has-phase-band .vis-itemset > .vis-background {
-  box-sizing: content-box;
-  padding-top: 30px;
+/* Reserve vertical room for the ribbon so the first group row starts *below* it
+   instead of sitting behind it. The reserve is an empty **group**, prepended to
+   the group set by render.ts (`BAND_SPACER_GROUP_ID`), and this rule is what
+   gives it its height.
+
+   It used to be `padding-top` on the group set, which is what made the bottom
+   track uncuttable-off-able only by luck: padding is invisible to vis, which
+   derives both its content height and its scroll range from the sum of the
+   *group* heights. The panel then held 30px more than vis knew about, the
+   scroll stopped 30px early, and `.vis-timeline` — fixed height, `overflow:
+   hidden` — clipped the rest. Measured on a fourteen-track roadmap at vis's
+   own maximum scroll: last row 837→883, panel 216→884, clipping edge 849, so
+   12 of 46 pixels survived. A group costs vis nothing to account for, because
+   counting groups is what it already does. */
+   The height comes from a strut inside the label rather than from a `height`
+   rule on the row, because vis measures the label and stores *that* as the
+   group's height. Forcing the row's height in CSS leaves vis's number at zero,
+   which puts the discrepancy straight back where it was. */
+.timeline .vis-labelset .vis-label.band-spacer,
+.timeline .vis-foreground .vis-group.band-spacer {
+  border-bottom: 0 !important;
+  background: transparent;
+  box-shadow: none !important;
+}
+
+.timeline .vis-labelset .vis-label.band-spacer .vis-inner {
+  display: block;
+  padding: 0 !important;
+}
+
+.band-spacer-strut {
+  height: var(--phase-band-reserve);
 }
 
 .phase-seg {

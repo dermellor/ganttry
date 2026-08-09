@@ -3,6 +3,7 @@ import { normalizeIcon } from './icons';
 import { isOverdue, normalizeStatus } from './status';
 import type { StatusKey } from './status';
 import { durationToMs } from './date';
+import { hierarchyDepth, readParentId, resolveParents } from './itemHierarchy';
 
 export const UNGROUPED = '_ungrouped';
 
@@ -90,6 +91,42 @@ function statusMarkClass(item: TimelineItem, now: number): string | null {
   return isOverdue(item, now) ? 'status-mark status-overdue' : null;
 }
 
+/**
+ * Stamp the hierarchy onto `className`: `item-summary` on anything that has
+ * children, plus `is-collapsed` while its subtree is folded away. Runs alongside
+ * `withStatusMarks` and for the same reason — `assignLanes` owns `className` and
+ * rewrites it on every regroup, so a display concern may only be appended on the
+ * way into the DataSet, never inside a build.
+ *
+ * Being a child gets no class: the lane it sits in already says so, and a mark
+ * that repeats what the layout shows is one more thing to keep in step.
+ *
+ * The collapse caret (itemCollapse.ts) finds its bars by `item-summary` rather
+ * than by being handed a list of ids, which is what keeps „which bars can fold"
+ * a single statement instead of two that drift.
+ *
+ * `realId` maps a display id back to the item it stands for: when the timeline
+ * is grouped by tag or a custom field, one item renders once per lane it falls
+ * into (see grouping.ts). Marking only the ids that match the source would leave
+ * those clones without a caret — with their children still folded away, and no
+ * way left to unfold them.
+ */
+export function withHierarchyMarks<T extends TimelineItem>(
+  items: T[],
+  parents: Map<string, string>,
+  collapsed: ReadonlySet<string>,
+  realId: (displayId: string) => string,
+): T[] {
+  if (parents.size === 0) return items;
+  const hasChildren = new Set(parents.values());
+  return items.map((it) => {
+    const id = realId(it.id);
+    if (!hasChildren.has(id)) return it;
+    const marks = collapsed.has(id) ? 'item-summary is-collapsed' : 'item-summary';
+    return { ...it, className: `${it.className ? `${it.className} ` : ''}${marks}` };
+  });
+}
+
 export type DetailNote = {
   id: string;
   title: string;
@@ -170,6 +207,11 @@ export type BuildResult = {
   groups: TimelineGroup[];
   details: Map<string, DetailNote>;
   dependencies: Map<string, string[]>;
+  // child id → parent id, already sanitized (see itemHierarchy.resolveParents).
+  // A peer of `dependencies`: both are edges between items that the item shape
+  // itself does not carry, read once out of `metadata` at build time so no
+  // renderer has to reach back into the source file.
+  parents: Map<string, string>;
   phases: ResolvedPhase[];
 };
 
@@ -310,12 +352,20 @@ function packBand(
 // its non-stacking path — and because fixed, precomputed lanes are stable while
 // vis's own stacking re-flows vertically as items scroll in/out of view.
 //
-//   • Tracks WITH an internal dependency graph get a "staircase": connected
-//     items are placed in topological layers (longest-path depth) so every
-//     predecessor sits on a lane strictly above its successors and all
-//     dependency arrows flow downward; free items are packed into a block below.
+//   • A track carrying parent/child items is split into bands by hierarchy depth
+//     first: every parent sits above all of its children, which is what makes a
+//     summary bar read as one. Depth wins over the dependency staircase below
+//     because a child is *contained* by its parent, while a successor is merely
+//     after its predecessor — reversing the two would let a chain of children
+//     climb above the bar that summarizes them.
+//   • Within one such band, tracks WITH an internal dependency graph get a
+//     "staircase": connected items are placed in topological layers (longest-path
+//     depth) so every predecessor sits on a lane strictly above its successors
+//     and all dependency arrows flow downward; free items are packed into a block
+//     below.
 //   • Tracks WITHOUT internal dependencies just get a compact greedy packing —
-//     visually identical to what vis's own stacking produced before.
+//     visually identical to what vis's own stacking produced before. A track with
+//     no hierarchy is one single band, so its layout is unchanged.
 //
 // Track order and group membership are never changed ("Tracks bleiben heilig").
 export interface LanePackOptions {
@@ -333,6 +383,7 @@ export function assignLaneSubgroups(
   items: TimelineItem[],
   groups: TimelineGroup[],
   dependencies: Map<string, string[]>,
+  parents: Map<string, string>,
   opts?: LanePackOptions,
 ): void {
   // Only start-bearing items are laned (the bucket loop below skips start-less
@@ -378,53 +429,22 @@ export function assignLaneSubgroups(
   for (const [groupId, groupItems] of byGroup) {
     const ids = new Set(groupItems.map((i) => i.id));
 
-    // Intra-group edges only (cross-group deps are ignored — they'd force items
-    // out of their track).
-    const preds = new Map<string, string[]>();
-    const connected = new Set<string>();
+    // Intra-track hierarchy only, for the same reason the dependency edges below
+    // are intra-track: a parent living in another group has no row here, so
+    // banding under it would push the child out of its own track.
+    const localParents = new Map<string, string>();
     for (const it of groupItems) {
-      const ps = (dependencies.get(it.id) ?? []).filter((d) => ids.has(d) && d !== it.id);
-      preds.set(it.id, ps);
-      if (ps.length) {
-        connected.add(it.id);
-        for (const p of ps) connected.add(p);
-      }
+      const p = parents.get(it.id);
+      if (p && ids.has(p)) localParents.set(it.id, p);
     }
+    const depth = hierarchyDepth(localParents);
+    const maxDepth = groupItems.reduce((m, it) => Math.max(m, depth.get(it.id) ?? 0), 0);
 
     const laneOf = new Map<string, number>();
     let base = 0;
-
-    if (connected.size > 0) {
-      // Longest-path layer per connected item (with a cycle guard so a malformed
-      // dependsOn loop can't recurse forever).
-      const layer = new Map<string, number>();
-      const inStack = new Set<string>();
-      const computeLayer = (id: string): number => {
-        const cached = layer.get(id);
-        if (cached !== undefined) return cached;
-        if (inStack.has(id)) return 0; // back-edge: break the cycle
-        inStack.add(id);
-        let best = 0;
-        for (const p of preds.get(id) ?? []) best = Math.max(best, computeLayer(p) + 1);
-        inStack.delete(id);
-        layer.set(id, best);
-        return best;
-      };
-      for (const id of connected) computeLayer(id);
-      const maxLayer = Math.max(...[...connected].map((id) => layer.get(id) ?? 0));
-
-      // Connected items as layer bands (top = layer 0); banding by layer
-      // guarantees every edge points from a lower lane index to a higher one
-      // (i.e. downward). Free items packed into a block below.
-      for (let L = 0; L <= maxLayer; L++) {
-        const band = groupItems.filter((it) => connected.has(it.id) && layer.get(it.id) === L);
-        if (band.length) base += packBand(band, base, laneOf, startMs, endMs);
-      }
-      const free = groupItems.filter((it) => !connected.has(it.id));
-      if (free.length) base += packBand(free, base, laneOf, startMs, endMs);
-    } else {
-      // No internal dependencies: plain compact packing.
-      base += packBand(groupItems, base, laneOf, startMs, endMs);
+    for (let d = 0; d <= maxDepth; d++) {
+      const band = maxDepth === 0 ? groupItems : groupItems.filter((it) => (depth.get(it.id) ?? 0) === d);
+      if (band.length) base += packTrackBand(band, dependencies, base, laneOf, startMs, endMs);
     }
 
     // Numeric lane ids so vis-timeline's `subgroupOrder` (numeric `a - b` sort)
@@ -435,6 +455,67 @@ export function assignLaneSubgroups(
     const g = groups.find((x) => x.id === groupId);
     if (g) g.subgroupOrder = 'subgroup';
   }
+}
+
+// Lay one band of a track out from lane `base` down, honouring the dependency
+// edges *inside* the band, and return how many lanes it used. Edges leaving the
+// band are ignored: the bands are already ordered (by hierarchy depth), so an
+// edge across them is satisfied by that ordering, and layering on it again would
+// only push items further down for no gain.
+function packTrackBand(
+  band: TimelineItem[],
+  dependencies: Map<string, string[]>,
+  base: number,
+  laneOf: Map<string, number>,
+  startMs: (it: TimelineItem) => number,
+  endMs: (it: TimelineItem) => number,
+): number {
+  const ids = new Set(band.map((i) => i.id));
+  const preds = new Map<string, string[]>();
+  const connected = new Set<string>();
+  for (const it of band) {
+    const ps = (dependencies.get(it.id) ?? []).filter((d) => ids.has(d) && d !== it.id);
+    preds.set(it.id, ps);
+    if (ps.length) {
+      connected.add(it.id);
+      for (const p of ps) connected.add(p);
+    }
+  }
+
+  if (connected.size === 0) {
+    // No internal dependencies: plain compact packing.
+    return packBand(band, base, laneOf, startMs, endMs);
+  }
+
+  // Longest-path layer per connected item (with a cycle guard so a malformed
+  // dependsOn loop can't recurse forever).
+  const layer = new Map<string, number>();
+  const inStack = new Set<string>();
+  const computeLayer = (id: string): number => {
+    const cached = layer.get(id);
+    if (cached !== undefined) return cached;
+    if (inStack.has(id)) return 0; // back-edge: break the cycle
+    inStack.add(id);
+    let best = 0;
+    for (const p of preds.get(id) ?? []) best = Math.max(best, computeLayer(p) + 1);
+    inStack.delete(id);
+    layer.set(id, best);
+    return best;
+  };
+  for (const id of connected) computeLayer(id);
+  const maxLayer = Math.max(...[...connected].map((id) => layer.get(id) ?? 0));
+
+  // Connected items as layer bands (top = layer 0); banding by layer guarantees
+  // every edge points from a lower lane index to a higher one (i.e. downward).
+  // Free items packed into a block below.
+  let used = 0;
+  for (let L = 0; L <= maxLayer; L++) {
+    const layerBand = band.filter((it) => connected.has(it.id) && layer.get(it.id) === L);
+    if (layerBand.length) used += packBand(layerBand, base + used, laneOf, startMs, endMs);
+  }
+  const free = band.filter((it) => !connected.has(it.id));
+  if (free.length) used += packBand(free, base + used, laneOf, startMs, endMs);
+  return used;
 }
 
 function extractDependsOn(meta: unknown): string[] {
@@ -450,6 +531,7 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
   const groupSet = new Map<string, TimelineGroup>();
   const details = new Map<string, DetailNote>();
   const dependencies = new Map<string, string[]>();
+  const rawParents = new Map<string, string>();
 
   for (const declared of file.groups ?? []) {
     const g: TimelineGroup = { id: declared.id, content: escapeHtml(declared.content) };
@@ -467,6 +549,8 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
     const id = raw.id || `__auto_${auto++}`;
     const deps = extractDependsOn(raw.metadata);
     if (deps.length) dependencies.set(id, deps);
+    const parentId = readParentId(raw.metadata);
+    if (parentId) rawParents.set(id, parentId);
 
     let endIso: string | undefined = raw.type === 'point' ? undefined : raw.end;
     if (!endIso && raw.type !== 'point' && raw.start) {
@@ -507,10 +591,15 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
       })
     : [];
 
+  // Resolved against the ids that survived the loop above, so a link to an item
+  // that was dropped (no `content`) or deleted goes with it instead of leaving a
+  // child parented to nothing.
+  const parents = resolveParents(rawParents, new Set(items.map((it) => it.id)));
+
   const phases = resolvePhases(file);
   items.push(...phaseBackgroundItems(phases));
-  assignLaneSubgroups(items, groups, dependencies);
+  assignLaneSubgroups(items, groups, dependencies, parents);
   assignLanes(items, groups);
-  return { items, groups, details, dependencies, phases };
+  return { items, groups, details, dependencies, parents, phases };
 }
 
