@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isOverdue, normalizeStatus, statusOrDefault } from './status';
+import { isOverdue, normalizeStatus, statusOrDefault, statusToStore } from './status';
 
 // Fixed "now": 2026-08-06 12:00 local (tests run with TZ=Europe/Berlin).
 const NOW = new Date(2026, 7, 6, 12, 0).getTime();
@@ -11,6 +11,29 @@ test('normalizeStatus canonicalises and rejects', () => {
   assert.equal(normalizeStatus('erledigt'), undefined);
   assert.equal(normalizeStatus(undefined), undefined);
   assert.equal(statusOrDefault('nonsense'), 'Open');
+});
+
+// Opening an item's form is a read. The picker shows `Open` for an item that has
+// no status, and writing that display value back is what dirtied the source file
+// on a mere click (and bumped `version` on a DB-backed timeline).
+test('statusToStore: the default is never written onto a status-less item', () => {
+  assert.equal(statusToStore(undefined, 'Open'), undefined);
+  assert.equal(statusToStore(undefined, ''), undefined); // control absent/empty → default
+  assert.equal(statusToStore(undefined, 'nonsense'), undefined);
+  assert.equal(statusToStore(null, 'Open'), undefined);
+});
+
+test('statusToStore: a real pick is stored, canonicalised', () => {
+  assert.equal(statusToStore(undefined, 'Doing'), 'Doing');
+  assert.equal(statusToStore(undefined, 'done'), 'Done');
+});
+
+// An item that already carries a status always gets an explicit value: the DB
+// column is NOT NULL, so a PATCH omitting the key would leave the old one.
+test('statusToStore: an item that has a status keeps getting one', () => {
+  assert.equal(statusToStore('Done', 'Open'), 'Open');
+  assert.equal(statusToStore('Done', 'Done'), 'Done');
+  assert.equal(statusToStore('nonsense', 'Open'), 'Open');
 });
 
 test('isOverdue: a past finish with an unfinished status', () => {

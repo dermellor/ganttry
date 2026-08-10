@@ -18,9 +18,11 @@
 //     entity tables — never set `version` manually; read it back with `returning`.
 
 import type { Sql } from 'postgres';
+import type { MemberRole, MemberStatus } from '../../src/access';
 import type {
   CustomFieldDef,
   DirectoryUser,
+  Member,
   PluginRef,
   Pricing,
   PricingFeature,
@@ -39,6 +41,7 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
+  type MemberInvite,
   type PublicPricing,
   type TimelineGroupDecl,
   type TimelineMeta,
@@ -203,6 +206,89 @@ export async function touchUser(sql: Sql, email: string, name?: string | null): 
     on conflict (email) do update
       set name = coalesce(excluded.name, app_users.name),
           last_seen_at = now()`;
+}
+
+// ---- membership (app_users, migration 0016) --------------------------------
+// The same rows the directory above serves, read through the columns that decide
+// what a person may do. One table on purpose: see the migration's header.
+
+const MEMBER_SELECT =
+  'email, name, role, status, invited_by, invited_at, accepted_at, invite_expires_at, last_seen_at';
+
+/** Row → `Member`, dropping nulls so an absent field is absent rather than null. */
+function toMember(r: Record<string, any>): Member {
+  const out: Member = { email: r.email, role: r.role, status: r.status };
+  if (r.name != null) out.name = r.name;
+  if (r.invited_by != null) out.invitedBy = r.invited_by;
+  if (r.invited_at != null) out.invitedAt = toIso(r.invited_at)!;
+  if (r.accepted_at != null) out.acceptedAt = toIso(r.accepted_at)!;
+  if (r.invite_expires_at != null) out.inviteExpiresAt = toIso(r.invite_expires_at)!;
+  if (r.last_seen_at != null) out.lastSeenAt = toIso(r.last_seen_at)!;
+  return out;
+}
+
+export async function getMember(sql: Sql, email: string): Promise<Member | null> {
+  const clean = email.trim().toLowerCase();
+  if (!clean) return null;
+  const [row] = await sql`
+    select ${sql.unsafe(MEMBER_SELECT)} from app_users where lower(email) = ${clean}`;
+  return row ? toMember(row) : null;
+}
+
+export async function listMembers(sql: Sql): Promise<Member[]> {
+  const rows = await sql`
+    select ${sql.unsafe(MEMBER_SELECT)} from app_users
+    order by name asc nulls last, email asc`;
+  return rows.map(toMember);
+}
+
+export async function inviteMember(sql: Sql, input: MemberInvite): Promise<Member> {
+  const email = input.email.trim().toLowerCase();
+  if (!email) throw new ValidationError('inviteMember: email required');
+  // `status` on conflict keeps an accepted membership accepted: re-inviting is
+  // "send the mail again", never a downgrade that would make an active user
+  // re-accept. The role IS updated, since correcting it is the other reason an
+  // admin re-invites.
+  const [row] = await sql`
+    insert into app_users (email, role, status, invited_by, invited_at, invite_token_hash, invite_expires_at)
+    values (
+      ${email}, ${input.role}, 'invited', ${input.invitedBy ?? null}, now(),
+      ${input.tokenHash ?? null}, ${input.expiresAt ?? null}
+    )
+    on conflict (email) do update set
+      role = excluded.role,
+      status = case when app_users.status = 'active' then 'active' else 'invited' end,
+      invited_by = excluded.invited_by,
+      invited_at = excluded.invited_at,
+      invite_token_hash = excluded.invite_token_hash,
+      invite_expires_at = excluded.invite_expires_at
+    returning ${sql.unsafe(MEMBER_SELECT)}`;
+  return toMember(row);
+}
+
+export async function updateMemberRole(sql: Sql, email: string, role: MemberRole): Promise<Member> {
+  const [row] = await sql`
+    update app_users set role = ${role}
+    where lower(email) = ${email.trim().toLowerCase()}
+    returning ${sql.unsafe(MEMBER_SELECT)}`;
+  if (!row) throw new NotFoundError(`no member ${email}`);
+  return toMember(row);
+}
+
+export async function setMemberStatus(sql: Sql, email: string, status: MemberStatus): Promise<Member> {
+  // Accepting stamps `accepted_at` once and clears the invitation: a spent token
+  // must not resolve to a row any more, and keeping the expiry around would let
+  // a later expiry check refuse a member who is long since active.
+  const [row] = await sql`
+    update app_users set
+      status = ${status},
+      accepted_at = case when ${status} = 'active' and accepted_at is null then now() else accepted_at end,
+      invite_token_hash = case when ${status} = 'active' then null else invite_token_hash end,
+      invite_expires_at = case when ${status} = 'active' then null else invite_expires_at end
+    where lower(email) = ${email.trim().toLowerCase()}
+    returning ${sql.unsafe(MEMBER_SELECT)}`;
+  if (!row) throw new NotFoundError(`no member ${email}`);
+  return toMember(row);
 }
 
 export async function getTimeline(sql: Sql, id: string): Promise<TimelineFile | null> {
@@ -1131,6 +1217,11 @@ export function makePostgresRepo(sql: Sql): TimelineRepo {
     listTimelines: () => listTimelines(sql),
     listUsers: () => listUsers(sql),
     touchUser: (email, name) => touchUser(sql, email, name),
+    getMember: (email) => getMember(sql, email),
+    listMembers: () => listMembers(sql),
+    inviteMember: (input) => inviteMember(sql, input),
+    updateMemberRole: (email, role) => updateMemberRole(sql, email, role),
+    setMemberStatus: (email, status) => setMemberStatus(sql, email, status),
     getTimeline: (id) => getTimeline(sql, id),
     getWatermark: (id) => getWatermark(sql, id),
     getPublicPricing: (id) => getPublicPricing(sql, id),

@@ -2,7 +2,7 @@
 
 How a timeline is edited in the interface, and the two view modes.
 
-Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
 its file when it lives in another chapter.
 
@@ -26,7 +26,7 @@ and a copy of it for the other. Clicking it runs `deleteItem`
 takes, so there is one delete flow, not two.
 
 Geometry and states are **CSS**, in [`src/styles/timeline.css`](../src/styles/timeline.css)
-(rail block), with the glyph in [`src/styles/theme.css`](../src/styles/theme.css)
+(rail block), with the glyph in [`src/design-system/tokens/tokens.css`](../src/design-system/tokens/tokens.css)
 (`--ui-icon-delete`, kept apart from the `--icon-<key>` item set because chrome
 glyphs have no key). Slots are counted right-to-left from the bar's inner edge,
 so a mark's position is arithmetic on `--rail-slot` and marks line up without
@@ -87,21 +87,29 @@ measuring anything.
 Two vis-timeline collisions the rail has to defeat, both worth knowing before
 touching it. The mark needs `z-index` above `.vis-drag-center` /
 `.vis-drag-right` (vis appends those to the same item box *after* it, so they
-would swallow the click). And the right-edge **resize handle** is moved inward by
-`--rail-w` so „drag the right edge to resize" and „click × to delete" don't fight
-over the same pixels — but **only on a bar wide enough for them to collide**. vis
-caps that handle at `max-width: 20%`, so on a narrow bar it is a sliver sitting
-*past* the bar's right edge and it clears the mark by itself; the two start to
-overlap once the handle grows beyond 10px, i.e. above a 50px bar. Below that the
-shift would be actively wrong (24px inward on a 29px bar lands the grab zone in
-the bar's left third). Asking each bar about its own width is what a **container
-query** is for: `.vis-item.vis-range` is a `container-type: inline-size` query
-container — safe, because vis sets a range bar's width inline from its dates, so
-inline-size containment has nothing to break (verified: it moves no bar by a
-pixel). Milestones and boxes are deliberately excluded, since containment would
-cut off content-sized items. The `56px` threshold is a literal (container queries
-can't read custom properties) — keep it in step with the rail vars. One threshold
-covers a marked bar too, because its rail is no wider (the marks share a slot).
+would swallow the click). And the right-edge **resize handle** has to share the
+edge with the mark: vis pins it to `right: -4px` at 24px wide, which is exactly
+the rail's slot, so at that width „drag the right edge to resize" and „click × to
+delete" fight over the same pixels.
+
+The handle is therefore **narrowed, not moved** — it keeps `right: -4px` and ends
+where the mark begins, a band straddling the bar's border. It used to be shifted
+inward by `--rail-w` instead, and that is what made a bar resizable at its *left*
+edge only: the outermost pixels became `.vis-drag-center`, the next ~18 the mark
+(which swallows `mousedown`), and the grab zone started ~27px in, so aiming at the
+visible right edge moved the bar or hit „×" and never resized it. The cost of the
+current version is width, not reach: 10px on the right against vis's 24px on the
+left, which is what it costs to keep the mark inside the bar. The width is
+derived from `--bar-gutter` + `--rail-inset` (where the mark starts), so moving
+the rail moves the handle with it, and vis's own `max-width: 20%` shrinks it
+further on a narrow bar — no width threshold is involved either way.
+
+`.vis-item.vis-range` stays a `container-type: inline-size` query container for
+the **status mark**, which hides itself below 23px (see below). It is safe,
+because vis sets a range bar's width inline from its dates, so inline-size
+containment has nothing to break (verified: it moves no bar by a pixel).
+Milestones and boxes are deliberately excluded, since containment would cut off
+content-sized items.
 
 ### The status mark
 
@@ -424,7 +432,11 @@ replaced with nothing.
 - **An emptied field loses its key, and an item with none left loses `metadata`.**
   Same rule as `applyItemForm`, and load-bearing for the same reason: the persist
   diff sends a missing clearable field as an explicit `null` (`buildItemPatch`), or
-  the old value comes back on reload.
+  the old value comes back on reload. The one exception is a collection that was
+  *stored* empty (`"dependsOn": []`, `"metadata": {}`): both spellings mean the
+  same thing, so rewriting one into the other is not an edit, and doing it anyway
+  turned every click on such an item into a diff — see `writeListMeta` in
+  [`src/fieldValue.ts`](../src/fieldValue.ts).
 - **A status or field change has to re-render an open form**, and that is
   correctness, not polish: the form's pickers keep their values in hidden inputs,
   so a form still open on that item would hold the *old* value in its `FormData`
@@ -480,7 +492,7 @@ module. **Adding a value picker** needs no menu change at all — flag the field
 
 When the active view points to a **DB-backed** source (the timeline exists in Supabase, so `GET /api/source/<id>` returns it), the viewer is editable. A **local** source (a `data/*.json` file, or a directory of Markdown notes) is editable when a process with filesystem access serves it, which means the dev server; editing a directory patches the individual notes' frontmatter and moves a deleted one to `.trash/` rather than removing it; on a static deploy the same file loads read-only, because there is nothing there to write with. Whether the running build is one or the other was decided when it was built (see „Source kinds" (docs/architecture.md)).
 
-- **Drag** an item left/right to move start, drag the right edge to resize, drag vertically to switch group. Persists on drop. On a selected bar the resize handle sits just inside the rail (see „Item rail"), not right at the edge.
+- **Drag** an item left/right to move start, drag either edge to resize, drag vertically to switch group. Persists on drop. Both handles sit on the bar's edge; the right one is the narrower of the two because it shares that edge with the rail's „×" (see „Item rail").
 - **Delete** an item via the „×" mark at the bar's right edge, which appears on hover and while the item is selected — inside the bar on a bar wide enough for it, just outside on a narrow one. Clicking it neither selects the item nor opens its form. See „Item rail".
 - **Right-click** an item for quick actions without opening the form: set the
   status, set any custom field that declared `contextMenu: true` (each a submenu of
@@ -492,23 +504,26 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
   it (both outside the tabs, see below); the remaining fields are split across
   three tabs ([`src/itemForm.ts`](../src/itemForm.ts), `FORM_TABS`), with the Delete
   button + audit footer below the tabstrip so they stay reachable from any tab:
-  - **Date & Time** — start, end, duration (a Meilenstein has no extent, so
-    picking that type mutes end/duration). The two date pickers are bounded
-    against each other so they can't cross, and a reversed pair typed in anyway is
-    refused with a status-line message — see „An item's `end` must lie after its
-    `start`".
   - **Properties** — group, owner (a user picker, see „Item owner" (docs/items.md)), body
     (Markdown), tags, and the per-timeline
     custom fields. The free-form metadata JSON box sits behind an „Erweitert"
     `<details>` disclosure, collapsed unless the item actually carries extra
     metadata.
-  - **Relationships** — dependencies (`dependsOn`) and JIRA links.
+  - **Date & Time** — start, end, duration (a Meilenstein has no extent, so
+    picking that type mutes end/duration). The two date pickers are bounded
+    against each other so they can't cross, and a reversed pair typed in anyway is
+    refused with a status-line message — see „An item's `end` must lie after its
+    `start`".
+  - **Relationships** — containment (`parent`), dependencies (`dependsOn`) and
+    JIRA links.
 
   All panels stay in the DOM (inactive ones just `hidden`), so `FormData` keeps
   seeing every field and `applyItemForm` / the persist diff need no knowledge of
-  the tabs. The chosen tab is remembered across item switches (module-level
-  `activeFormTab`, not persisted across reloads). Save writes back; Delete removes
-  the item.
+  the tabs. Tab-strip order and panel order in the markup are kept in sync, since
+  roving-tabindex and reading order both follow the DOM. The chosen tab is
+  remembered across item switches (module-level `activeFormTab`, which starts on
+  Properties — the leftmost tab — and is not persisted across reloads). Save
+  writes back; Delete removes the item.
 
   **The panel headline IS the title editor.** The form used to repeat the title
   in a labelled input directly under the heading — the same string twice, one of
@@ -579,9 +594,31 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
   instead of drawing the former 2px accent ring, which read as a heavy frame
   around everything you touched. Buttons — tabs, pickers — keep a real ring, but
   only on `:focus-visible`, where there is no border to recolour.
+- **Übergeordnet** is the same autosuggest, single-valued: pick the item this one is part of (`metadata.parent`). The suggestions leave out the item itself and everything already below it — offering a pick that the build would then drop as a cycle looks exactly like a pick that did not register. Filling it hides the input behind the chip; removing the chip brings it back. Directly under it, **Untereinträge** lists the children as read-only chips, plus a line wherever they run outside the parent's own dates: the parent's dates stay authoritative and nothing is rewritten. See „Parent and children" (docs/items.md).
 - **Depends on** is a title-autosuggest field: type to search the current timeline's items by title (or id), pick to link a dependency (rendered as a removable chip). Stored as `metadata.dependsOn` IDs — the chips just show the target's title.
 - **Tags** is a chip editor with autosuggest: type to match tags already used in the timeline, or type a new label and press Enter to create one. Each chip carries its resolved colour and a remove button. Stored as `metadata.tags` (string[]); saving migrates any legacy singular `metadata.tag` into the array.
 - **Phases** render as a ribbon along the top. Drag a segment to move it, drag either edge to resize (snaps to whole days, min. 1 day), and click it (without dragging) to open the phase form in the side panel: title, start/end, duration, icon, colour. Persists on drop / Save; Delete removes the phase.
+
+**Opening an item's form is a read.** Leaving the panel commits it — on
+`focusout`, on switching to another item, on closing, on a view switch, on
+unload — and `commitItemForm` runs `applyItemForm` whether or not anything was
+typed. So every value the form *displays* on behalf of an absent one has to stay
+out of the model, or the commit invents an edit and the persist diff faithfully
+writes it: on a JSON source the file gains a field on every click, on a DB source
+the same no-op bumps `version` and re-attributes `updatedBy`. Four of these were
+live at once — a defaulted `status`, a `<select>` with no empty option putting
+its first group on a group-less item (and silently reassigning a dangling group
+id), `DEFAULT_EXTENT` on a stored-extentless range, and an empty `dependsOn` /
+`metadata` losing its key. The rule the fixes share: a default is applied for
+display only, and a stored spelling of "nothing" is left exactly as it is.
+`statusToStore` ([`src/status.ts`](../src/status.ts)) and `writeListMeta`
+([`src/fieldValue.ts`](../src/fieldValue.ts)) carry the two halves that are worth
+unit-testing; the other two are guards inside `applyItemForm` /
+`buildGroupOptions`. The seeding that stays is the one a *change* triggers:
+emptying a range's extent still re-seeds `DEFAULT_EXTENT`, because a range
+without one vanishes from the timeline.
+
+  The strip the ribbon sits in is reserved by an **empty group** prepended to the group set (`BAND_SPACER_GROUP_ID` in [`src/render.ts`](../src/render.ts)), which is why the DataSet carries one row nobody can put an item in. It looks removable and is not: reserving the strip with CSS padding instead is invisible to vis, which derives its content height *and* its vertical scroll range from the sum of the group heights — the panel then holds more than vis knows about, scrolling stops short by the height of the reserve, and `.vis-timeline` (fixed height, `overflow: hidden`) cuts off whatever hangs below, always the last track. Two details in the spacer are load-bearing and commented where they live: it is added after filtering and lane assignment, and its height comes from a strut inside its label rather than from a `height` rule on the row.
 
 Persistence path: viewer → item-level calls (`POST/PATCH/DELETE /api/source/<id>/item`, `PUT …/phases`) → middleware (`vite.config.ts`) → Supabase via `scripts/db/api.ts`. `PATCH` carries the item `version` in `If-Match`; a stale version returns `409` and the client reloads that item. Only DB-backed sources are editable; genuine file-based sources (the examples) load read-only from their static `/data/sources/<id>.json`. Builds (`npm run build`) and exported HTML have no edit endpoint. DB-backed timelines are discovered from the DB at build time (`collectDbSources`); the registration **stub** (`name` + `items: []`, no content) is written only to the gitignored build output `public/data/sources/<id>.json` — nothing DB-backed is committed, and there is deliberately no committed content cache (see „Principle: no emergency or fallback data").
 
@@ -597,7 +634,45 @@ active state driven by `aria-pressed`) switches between two renderings of the
   sections along the active **grouping dimension** (items sorted by start),
   with columns Eintrag (icon + tag pills + content), Start, Ende, Typ, Status,
   Owner. Phase background items are omitted. The milestones-only filter applies
-  here too.
+  here too. Children follow their parent, indented one step per level, with the
+  same fold caret the timeline's summary bars carry (see „Parent and children"
+  (docs/items.md)) — a section that has no tree in it reserves no caret column at
+  all, since an indent only some rows take reads as a rendering bug rather than
+  as a level. A section can hold a child whose parent fell outside it (they carry
+  different tags, say); that one stays at the top level rather than disappearing.
+
+### Loading placeholder
+
+Until a source has been fetched, the timeline area carries a placeholder drawn by
+[`src/timelineSkeleton.ts`](../src/timelineSkeleton.ts): a label column, an axis,
+and staggered bars and milestone dots in the lane colours. It goes up in
+`bootstrap()` (before the config is even in) and again at the top of
+`renderTimeline()`, and comes down the moment the vis-timeline is constructed, so
+the config fetch and the source fetch read as one wait rather than two.
+
+Three of its properties are load-bearing, and each replaces something that was
+visibly wrong without it:
+
+- **It previews the structure rather than spinning.** What it replaces is an
+  empty white area, which says „this timeline has no items" instead of „still
+  loading"; the only signal to the contrary sat in the footer status line at the
+  other end of the window.
+- **It stays well below item fidelity, on purpose.** Borderless pills in a
+  heavily diluted lane tint, on a grid drawn in `--grid-line` rather than
+  `--border`. A first version painted the bars the way real ones look — lane
+  background, lane border, 2px corners — and it read as a timeline that had
+  finished loading, which starts the eye looking for labels that are not there.
+  All the placeholder owes the user is the rhythm and the lane colours; the
+  dilution is one number in `.tl-skeleton-bar`.
+- **It is an opaque overlay above the outgoing timeline** (`z-index: 11`,
+  `.tl-skeleton` in [`src/styles/base.css`](../src/styles/base.css)), not a
+  sibling. A view switch destroys the previous timeline only *after* the new data
+  has arrived, and `.vis-timeline` opens no stacking context — so without that
+  z-index the previous view's dependency arrows draw straight through the
+  placeholder.
+- **It comes down on failure too.** Both load paths remove it before they report
+  the error, because a placeholder that outlives its load keeps promising a
+  timeline that is not coming.
 
 ### Shared toolbar: Gruppieren + Filter
 
@@ -613,12 +688,21 @@ lives in [`src/grouping.ts`](../src/grouping.ts), the pure sectioning stays in
 - **Gruppieren** (`#groupby`, `state.groupBy`, persisted as
   `timelines.listGroupBy`) chooses the dimension: **Gruppe** (default, the item
   group — build order preserved), **Tag** (offered when anything is tagged, from
-  `metadata.tags`), and one entry per **custom field** (e.g. **Tier**, from
+  `metadata.tags`), **Status** (offered when any item carries one — see „Item
+  status" (docs/items.md)), and one entry per **custom field** (e.g. **Tier**, from
   `metadata.<key>`). Multi-valued dimensions (tags, `multi-select` fields) place
   an item under *every* value it carries; items without a value land in an
-  "Ohne …" bucket. Custom-field order follows the declared `options` first, then
-  first appearance. Falls back to Gruppe when the chosen dimension isn't
-  available on the active build.
+  "Ohne …" bucket. A dimension that declares its values up front is ordered by
+  that declaration — `Open → Doing → Done` for status, the field's `options` for a
+  custom field — everything else by first appearance. Falls back to Gruppe when
+  the chosen dimension isn't available on the active build.
+
+  Status is deliberately offered on evidence rather than always: a file-based
+  source has no status concept, so the dimension would collapse to a single "Ohne
+  Status" bucket. For the same reason an item without a *stored* status buckets as
+  "Ohne Status" and not as `Open` — it only *displays* as `Open` (see „The default
+  is shown, not stored" (docs/items.md)), and filtering for `Open` must not sweep
+  those in.
 
   In the **list** these are the table sections. In the **timeline** they are the
   vis lanes: for a non-Gruppe dimension the build is *regrouped*

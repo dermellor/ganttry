@@ -10,7 +10,16 @@
 // apiSetTierValue). That also means there is no rowVersion to adopt back — on
 // success we mirror the write into the in-memory model and repaint.
 
-import { escapeHtml } from '../../buildItems';
+import {
+  Button,
+  el,
+  Field,
+  FormActions,
+  Select,
+  Text,
+  TextInput,
+  type Child,
+} from '../../pluginHost/api';
 import { state, setStatus } from '../../state';
 import { apiSetTierValue } from '../../editor';
 import { ensureLayer, positionLayer } from './popover';
@@ -53,44 +62,48 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
   const availableFrom = tier.valueVersions?.[featureId] ?? '';
 
   const layer = ensureLayer(LAYER_ID, 'pm-cell-editor', 'dialog');
-  const radio = (m: Mode, label: string) =>
-    `<label class="pm-ce-choice"><input type="radio" name="pm-ce-mode" value="${m}"${
-      m === mode ? ' checked' : ''
-    } />${label}</label>`;
+  const radio = (m: Mode, label: Child) =>
+    el('label', { class: 'pm-ce-choice' }, [
+      el('input', { type: 'radio', name: 'pm-ce-mode', value: m, checked: m === mode }),
+      label,
+    ]);
 
-  // "ab Version" only gates an included cell, so it is offered but never forced;
-  // clearing a cell drops the gate with it (see submit).
-  const versionField = versions.length
-    ? `<label class="pm-ce-field">ab Version
-         <select class="pm-ce-version">
-           <option value=""${!availableFrom ? ' selected' : ''}>— von Anfang an —</option>
-           ${versions
-             .map(
-               (v) =>
-                 `<option value="${escapeHtml(v)}"${v === availableFrom ? ' selected' : ''}>${escapeHtml(v)}</option>`,
-             )
-             .join('')}
-         </select>
-       </label>`
-    : '';
-
-  layer.innerHTML = `
-    <form class="pm-ce-form">
-      <p class="pm-ce-head">${escapeHtml(tier.name)} · ${escapeHtml(feature.name)}</p>
-      <div class="pm-ce-choices">
-        ${radio('on', '<span class="pm-check" aria-hidden="true">✓</span> Enthalten')}
-        ${radio('value', 'Wert')}
-        ${radio('off', '<span class="pm-dash" aria-hidden="true">–</span> Nicht enthalten')}
-      </div>
-      <label class="pm-ce-field pm-ce-value-field">Wert
-        <input class="pm-ce-value" type="text" value="${escapeHtml(valueText)}" placeholder="z.B. 3.000" />
-      </label>
-      ${versionField}
-      <div class="pm-ce-actions">
-        <button type="submit" class="btn-primary">Speichern</button>
-        <button type="button" class="btn-secondary" data-action="cancel">Abbrechen</button>
-      </div>
-    </form>`;
+  layer.replaceChildren(
+    el('form', { class: 'pm-ce-form' }, [
+      Text({ as: 'p', text: `${tier.name} · ${feature.name}`, className: 'pm-ce-head' }),
+      el('div', { class: 'pm-ce-choices' }, [
+        radio('on', [el('span', { class: 'pm-check', 'aria-hidden': 'true' }, '✓'), ' Enthalten']),
+        radio('value', 'Wert'),
+        radio('off', [el('span', { class: 'pm-dash', 'aria-hidden': 'true' }, '–'), ' Nicht enthalten']),
+      ]),
+      Field({
+        label: 'Wert',
+        className: 'pm-ce-value-field',
+        control: TextInput({ className: 'pm-ce-value', value: valueText, placeholder: 'z.B. 3.000' }),
+      }),
+      // „ab Version" only gates an included cell, so it is offered but never
+      // forced; clearing a cell drops the gate with it (see submit).
+      versions.length
+        ? Field({
+            label: 'ab Version',
+            control: Select({
+              className: 'pm-ce-version',
+              options: [
+                { value: '', label: '— von Anfang an —', selected: !availableFrom },
+                ...versions.map((v) => ({ value: v, label: v, selected: v === availableFrom })),
+              ],
+            }),
+          })
+        : null,
+      FormActions({
+        className: 'pm-ce-actions',
+        children: [
+          Button({ label: 'Speichern', type: 'submit' }),
+          Button({ label: 'Abbrechen', variant: 'outline', attrs: { 'data-action': 'cancel' } }),
+        ],
+      }),
+    ]),
+  );
   layer.hidden = false;
   positionLayer(layer, anchor);
 

@@ -4,6 +4,12 @@
 // and DOM refs live in state.ts.
 
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
+// The two stylesheets that are not the design system: vis-timeline's own
+// furniture as this app dresses it, and the handful of app-level compositions
+// that are not components. The design system's own CSS arrives with the
+// components that use it (see src/design-system/index.ts).
+import './styles/timeline.css';
+import './styles/app.css';
 import { escapeHtml } from './buildItems';
 import type { BuiltConfig } from './types';
 import {
@@ -38,6 +44,8 @@ import { GROUP_DIM } from './listGrouping';
 import { commitItemForm } from './persistence';
 import type { PresenceUser } from './presence';
 import { loadUserDirectory } from './users';
+import { normalizeMemberRole, roleAllows } from './access';
+import { openMemberAdmin } from './memberAdmin';
 import { deleteItem } from './itemForm';
 import { hideDetail, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
@@ -59,6 +67,7 @@ import {
   showOnlyPluginSection,
 } from './pluginHost/views';
 import { dataUrl } from './data-base';
+import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -82,7 +91,11 @@ async function loadCurrentUser(): Promise<PresenceUser | null> {
   try {
     const res = await fetch('/api/me');
     if (!res.ok) return null;
-    const data = (await res.json()) as { email?: unknown; name?: unknown };
+    const data = (await res.json()) as { email?: unknown; name?: unknown; role?: unknown; status?: unknown };
+    // The role rides along on the same probe. It is absent whenever access
+    // control is off, which is exactly when there is nothing to administer.
+    state.currentRole =
+      data.status === 'active' ? (normalizeMemberRole(data.role) ?? null) : null;
     if (typeof data.email === 'string' && data.email) {
       return { email: data.email, name: typeof data.name === 'string' ? data.name : undefined };
     }
@@ -230,6 +243,11 @@ async function handleExport() {
 
 async function bootstrap() {
   setStatus('Lade Konfiguration…');
+  // Before the config and the user directory are even in, so the first painted
+  // frame shows the placeholder rather than an empty area. renderTimeline()
+  // keeps it up for its own source fetch and takes it down when the chart is
+  // built, which makes the two loads read as one.
+  showTimelineSkeleton(els.timeline);
 
   const [cfg, currentUser] = await Promise.all([
     loadConfig(),
@@ -280,6 +298,13 @@ async function bootstrap() {
   syncUrl();
 
   // Safety net: flush + persist an open item form if the tab closes mid-edit.
+  // Only an admin is offered the screen. Hiding it is an affordance, never the
+  // permission: /api/members refuses anyone else regardless of what is on screen.
+  if (state.currentRole && roleAllows(state.currentRole, 'manage')) {
+    els.membersBtn.hidden = false;
+    els.membersBtn.addEventListener('click', () => void openMemberAdmin());
+  }
+
   window.addEventListener('beforeunload', () => commitItemForm());
 
   els.milestonesOnly.checked = state.milestonesOnly;
@@ -393,5 +418,8 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
 
 bootstrap().catch((err) => {
   console.error(err);
+  // Same reason as in renderTimeline's load failure: a placeholder that outlives
+  // the load it stands for keeps promising a timeline that is not coming.
+  hideTimelineSkeleton(els.timeline);
   setStatus(`Fehler: ${err instanceof Error ? err.message : String(err)}`);
 });

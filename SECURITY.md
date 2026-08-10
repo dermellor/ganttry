@@ -2,13 +2,13 @@
 
 ## Supported versions
 
-Ganttry has no tagged releases yet. Only the current `main` branch is supported;
+Zeitlines has no tagged releases yet. Only the current `main` branch is supported;
 fixes land there.
 
 ## Reporting a vulnerability
 
 Please report privately, not as a public issue: open a
-[security advisory](https://github.com/dermellor/ganttry/security/advisories/new)
+[security advisory](https://github.com/zeitlines/zeitlines/security/advisories/new)
 on this repository. That keeps the report visible only to the maintainers until a
 fix is out.
 

@@ -1,0 +1,98 @@
+/* Panel / PanelHeader / PanelTools / PanelBody. */
+
+/* Pinned to the right edge of its positioned container, floating over the
+   content rather than displacing it — see the note in Panel.ts. */
+.ds-Panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--ds-panel-width, 420px);
+  z-index: var(--z-panel);
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0 28px var(--space-3xl);
+  overflow-y: auto;
+  overscroll-behavior: none;
+  box-shadow: var(--shadow-panel);
+}
+
+.ds-Panel[hidden] {
+  display: none;
+}
+
+.ds-Panel-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  /* Bleeds to the panel's edges so the sticky background covers the full width
+     while the content below keeps the panel's padding. */
+  margin: 0 -28px;
+  padding: var(--space-2xl) 28px 14px;
+  background: var(--surface);
+  box-shadow: 0 4px 8px -4px transparent;
+  animation: ds-panel-elevate linear both;
+  animation-timeline: scroll(nearest);
+  animation-range: 0 12px;
+}
+
+@keyframes ds-panel-elevate {
+  to {
+    box-shadow: var(--shadow-header);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-Panel-header {
+    animation: none;
+  }
+}
+
+.ds-Panel-close {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+}
+
+.ds-Panel-header[data-has-tools] .ds-Panel-close {
+  top: var(--space-2xl);
+}
+
+.ds-Panel-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-height: var(--control-lg);
+  /* Keeps the last picker clear of the close button, which shares this line. */
+  padding-right: 40px;
+  /* Air between the picker row and the headline, so the heading reads as its own
+     block rather than as a caption stuck under the buttons. An editable headline
+     pulls itself up by 4px for its hover surface, so the visible gap is this
+     minus that. */
+  margin-bottom: var(--space-xl);
+}
+
+.ds-Panel-tools[hidden] {
+  display: none;
+}
+
+.ds-Panel-header .ds-Heading {
+  padding-right: 36px;
+}
+
+.ds-Panel-header[data-has-tools] .ds-Heading {
+  padding-right: 0;
+}
+
+.ds-Panel-header[data-has-tools] .ds-Heading[contenteditable] {
+  padding-right: var(--space-xs);
+}
+
+.ds-Panel-header .ds-Heading[contenteditable] {
+  padding-right: 42px;
+}
+
+.ds-Panel-body {
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+}

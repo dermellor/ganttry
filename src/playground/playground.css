@@ -1,0 +1,255 @@
+/* The playground's own furniture. Prefixed `pg-` rather than `ds-`, because
+ * none of it is part of the design system: it is the page that displays the
+ * design system, and a component that only exists to lay out specimens would be
+ * an inventory nobody uses.
+ *
+ * It still spends only tokens, for the same reason the app does — a page that
+ * shows the system while ignoring it is not evidence of anything.
+ */
+
+.pg-Layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  height: 100vh;
+  min-height: 0;
+}
+
+.pg-Nav {
+  padding: var(--space-2xl) var(--space-xl);
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.pg-Nav p {
+  margin: var(--space-sm) 0 var(--space-xl);
+}
+
+.pg-Nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.pg-Nav a {
+  display: block;
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-xs);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  text-decoration: none;
+}
+
+.pg-Nav a:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.pg-Main {
+  padding: var(--space-2xl) var(--space-3xl);
+}
+
+.pg-Body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xl);
+  max-width: 1100px;
+}
+
+.pg-Section {
+  scroll-margin-top: var(--space-2xl);
+}
+
+.pg-Section-head {
+  margin-bottom: var(--space-xl);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--border);
+}
+
+.pg-Section-head p {
+  margin: var(--space-2xs) 0 0;
+  max-width: 70ch;
+}
+
+.pg-Stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xl);
+}
+
+.pg-Row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-xl);
+}
+
+.pg-Columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-2xl);
+  align-items: start;
+}
+
+.pg-Specimen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.pg-Specimen-stage {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: var(--control-lg);
+}
+
+.pg-Specimen-label {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A surface for a component that only makes sense on one — a form is designed
+   against the panel's white, not against the app background. */
+.pg-Stage {
+  padding: var(--space-xl);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.pg-Grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-md);
+}
+
+.pg-IconGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--space-md);
+}
+
+.pg-Swatch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.pg-Swatch-chip {
+  width: var(--control-md);
+  height: var(--control-md);
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+}
+
+.pg-Swatch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pg-ScaleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  min-height: var(--control-sm);
+}
+
+.pg-ScaleRow-name {
+  flex: none;
+  width: 3.5em;
+}
+
+.pg-Bar {
+  height: 10px;
+  background: var(--accent-soft);
+  border-radius: 2px;
+}
+
+.pg-Box {
+  width: var(--control-lg);
+  height: var(--control-lg);
+  background: var(--accent-soft);
+}
+
+/* Hover target for the reveal specimen: the button is quiet until the pointer
+   is on the surrounding row, which is exactly what it does in the list view. */
+.pg-RevealHost {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* Popovers and suggestion lists position themselves against a trigger. On this
+   page there is none, so they get a host with a size and are pinned inside it. */
+.pg-MenuHost,
+.pg-PanelHost,
+.pg-SkeletonHost {
+  position: relative;
+}
+
+.pg-MenuHost {
+  min-height: 200px;
+  min-width: 200px;
+}
+
+.pg-StaticPopover {
+  position: static;
+}
+
+.pg-StaticList {
+  position: static;
+}
+
+.pg-PanelHost {
+  height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.pg-ProseEditable {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.pg-SkeletonHost {
+  height: 220px;
+  --timeline-pad-y: 0px;
+  --timeline-pad-x: 0px;
+}
+
+/* An `open` dialog without `showModal()` is an ordinary block, which is what
+   lets it be shown here in the flow instead of over the page. */
+.pg-DialogHost .pg-StaticDialog {
+  position: static;
+  margin: 0;
+  width: 100%;
+}
+
+/* The layout primitives need a bounded box to divide up; on this page nothing
+   else provides one. */
+.pg-LayoutHost {
+  display: flex;
+  flex-direction: column;
+  height: 320px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.pg-VRule {
+  display: flex;
+  align-items: stretch;
+  height: var(--control-lg);
+}

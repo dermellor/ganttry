@@ -16,7 +16,7 @@ import type { CustomFieldDef } from './types';
 // fallback without needing the DOM or app state.
 
 function item(id: string, start: string, extra: Partial<TimelineItem> = {}): TimelineItem {
-  return { id, start, content: id, title: '', type: 'range', ...extra };
+  return { id, start, content: id, label: id, title: '', type: 'range', ...extra };
 }
 
 const GROUPS = [
@@ -59,6 +59,37 @@ test('groupByOptions offers Tag only when something is tagged, plus custom field
   const tagged = groupByOptions([item('a', '2026-01-01', { tags: ['X'] })], [TIER]);
   assert.deepEqual(tagged.map((o) => o.key), ['group', 'tag', 'cf:tier']);
   assert.equal(tagged.find((o) => o.key === 'cf:tier')?.label, 'Tier');
+});
+
+test('groupByOptions offers Status only when an item actually carries one', () => {
+  const none = groupByOptions([item('a', '2026-01-01')], []);
+  assert.deepEqual(none.map((o) => o.key), ['group']);
+
+  const some = groupByOptions([item('a', '2026-01-01', { status: 'Doing' })], []);
+  assert.deepEqual(some.map((o) => o.key), ['group', 'status']);
+  assert.equal(some.find((o) => o.key === 'status')?.label, 'Status');
+});
+
+test('status dimension orders sections Open → Doing → Done, then "Ohne Status"', () => {
+  const entries = [
+    item('a', '2026-01-01', { status: 'Done' }),
+    item('b', '2026-01-02'), // no stored status → Ohne Status, not Open
+    item('c', '2026-01-03', { status: 'Open' }),
+    item('d', '2026-01-04', { status: 'Doing' }),
+    item('e', '2026-01-05', { status: 'Done' }),
+  ];
+  const opts = groupByOptions(entries, []);
+  const { sections, grouped } = computeSections(entries, 'status', opts, ctx());
+  assert.equal(grouped, true);
+  assert.deepEqual(
+    sections.map((s) => [s.label, s.empty, s.items.map((i) => i.id)]),
+    [
+      ['Open', false, ['c']],
+      ['Doing', false, ['d']],
+      ['Done', false, ['a', 'e']],
+      ['Ohne Status', true, ['b']],
+    ],
+  );
 });
 
 test('a grouped field is listed under its section title, so same-named fields stay tellable apart', () => {

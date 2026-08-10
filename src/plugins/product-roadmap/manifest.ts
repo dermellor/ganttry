@@ -4,7 +4,7 @@
 // demanding plugin that exists here (four kinds of rows, a composite key, two
 // cascades, ordering, item links and a public endpoint), so anything it cannot
 // declare is a gap in the manifest rather than a licence for it to stay special.
-// See <https://github.com/dermellor/ganttry/issues/17>.
+// See <https://github.com/zeitlines/zeitlines/issues/17>.
 //
 // The `collections`, `references` and `publicRead` sections describe what the
 // `pricing_*` tables and the `pricing-api` edge function do today. They are

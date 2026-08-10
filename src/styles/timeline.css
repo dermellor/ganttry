@@ -130,7 +130,7 @@
 .vis-item.vis-point.lane-2,
 .vis-item.vis-point.lane-3,
 .vis-item.vis-point.lane-4,
-.vis-item.vis-point.lane-5 { background-color: #fff !important; }
+.vis-item.vis-point.lane-5 { background-color: var(--surface) !important; }
 
 /* Guarantee a 2px gutter between back-to-back range bars at every zoom level.
    vis-timeline pins each bar to its exact date, so when one ends where the next
@@ -186,23 +186,6 @@
 .vis-item .vis-item-content {
   padding: 4px 8px;
   font-size: 12px;
-}
-
-/* The semantic icon glyph, wherever it appears: on timeline items, on phase
-   ribbon segments, and in the form's icon picker. `--item-icon` resolves to a
-   `--icon-<key>` glyph (set inline on the span, see icons.ts iconSpanHtml) and
-   the mask makes it take the surrounding text colour, so it adapts to every
-   context and theme automatically. Deliberately unscoped: three scoped copies
-   of the same declarations meant a fix landed in one and missed the others. */
-.item-icon {
-  display: inline-block;
-  width: 1em;
-  height: 1em;
-  margin-right: 0.35em;
-  vertical-align: -0.15em;
-  background-color: currentColor;
-  -webkit-mask: var(--item-icon) center / contain no-repeat;
-  mask: var(--item-icon) center / contain no-repeat;
 }
 
 /* ── Item rail: trailing marks inside the bar's right edge ─────────────────
@@ -313,6 +296,82 @@
 .timeline .vis-item.vis-range:has(> .rail-delete):hover,
 .timeline .vis-item.vis-range:has(> .rail-delete).vis-selected {
   --rail-delete: 1;
+}
+
+/* ── Summary bars: an item that has children ───────────────────────────────
+ *
+ * `item-summary` is stamped on the way into the DataSet (buildItems.ts
+ * `withHierarchyMarks`) and is the single statement of „this item has
+ * children": the bar's own treatment and the fold caret both key off it, and
+ * itemCollapse.ts finds the bars to put a caret on by querying for it.
+ *
+ * The treatment is a heavier outline and a stronger label, not the classic Gantt
+ * bracket with triangular end caps. vis clips `.vis-item-overflow` (that is what
+ * the element is for), so caps would have to hang off the *outer* item — which is
+ * exactly the 2px gutter that keeps back-to-back bars apart, so two adjacent
+ * summaries would grow into each other.
+ *
+ * The caret sits at the inner LEFT edge, opposite the rail's marks, so folding
+ * and deleting never land under the same pointer position. Unlike the delete
+ * mark it is always visible: it is the only thing announcing that a bar has
+ * children folded under it, and a control you have to hover to discover is one
+ * nobody discovers.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.timeline .vis-item.vis-range.item-summary .vis-item-overflow {
+  border-width: 2px;
+}
+
+.timeline .vis-item.item-summary .vis-item-content {
+  font-weight: 600;
+  /* Room for the caret, which is absolutely positioned and would otherwise sit
+     on top of the first characters of the label. */
+  padding-left: calc(var(--rail-inset) + var(--rail-mark) + var(--rail-gap));
+}
+
+.timeline .vis-item .rail-collapse {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  left: var(--rail-inset);
+  width: var(--rail-mark);
+  height: var(--rail-mark);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: var(--rail-mark-dim);
+  transition: opacity 0.12s linear;
+  /* Above `.vis-drag-center` / `.vis-drag-left`, which vis appends to the same
+     item box and would otherwise swallow the click. */
+  z-index: 3;
+}
+
+.timeline .vis-item .rail-collapse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  -webkit-mask: var(--ui-icon-caret) center / var(--rail-glyph) no-repeat;
+  mask: var(--ui-icon-caret) center / var(--rail-glyph) no-repeat;
+  transition: transform 0.12s ease;
+}
+
+/* Folded: the same caret, turned a quarter turn to point at what is hidden. */
+.timeline .vis-item.is-collapsed .rail-collapse::after {
+  transform: rotate(-90deg);
+}
+
+.timeline .vis-item > .rail-collapse:hover {
+  opacity: 1;
+}
+
+.timeline .vis-item > .rail-collapse:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* ── The status mark: the rail's data mark ─────────────────────────────────
@@ -517,40 +576,51 @@
   opacity: 1;
 }
 
-/* Move the right-edge resize handle inward by the rail width. vis pins it to
-   the bar edge (`right: -4px`, 24px wide), which is exactly where the rail is —
-   and vis appends it after the mark, so without this the handle covers it and
-   "drag the right edge to resize" and "click × to delete" fight over the same
-   pixels. The handle only exists on a selected item.
-
-   Only on a bar wide enough for the two to actually collide. vis caps the handle
-   at `max-width: 20%`, so on a narrow bar it is a sliver sitting *past* the bar's
-   right edge (`right: -4px` puts its right edge 4px beyond) and it clears the
-   mark on its own: they start to overlap once the handle grows past 10px, i.e.
-   above a 50px bar. Below that the shift would be actively wrong — 24px inward
-   on a 29px bar lands the grab zone in the bar's left third. The 56px literal is
-   that 50px plus a little margin; container queries can't read custom
-   properties, so keep it in step with the rail vars if those change.
-
-   Asking each bar about its own width is what a container query is for.
-   `.vis-item` is safe to make a query container — vis sets a range bar's width
-   inline from its dates, so inline-size containment has nothing to break (and
-   measurably moves nothing). Scoped to ranges: milestones and boxes size to
-   their content, which containment would cut off. */
+/* A range bar is its own container query context, which is what lets a mark ask
+   about the width of the bar it sits on (see the status mark's `max-width: 23px`
+   query above). `.vis-item` is safe to make a query container — vis sets a range
+   bar's width inline from its dates, so inline-size containment has nothing to
+   break (and measurably moves nothing). Scoped to ranges: milestones and boxes
+   size to their content, which containment would cut off. */
 .timeline .vis-item.vis-range {
   container-type: inline-size;
 }
 
-@container (min-width: 56px) {
-  .timeline .vis-item.vis-range:has(> .rail-delete).vis-selected .vis-drag-right {
-    right: calc(var(--rail-w) - 4px);
-  }
+/* Keep the right-edge resize handle *on* the edge and narrow it until it clears
+   the rail. vis pins the handle to the bar edge (`right: -4px`, 24px wide),
+   which is exactly the rail's slot — the delete mark sits from `--bar-gutter +
+   --rail-inset` to that plus `--rail-mark` inside the edge — and vis appends the
+   handle after the mark, so at vis's width the two fight over the same pixels.
+   The handle only exists on a selected item.
+
+   This used to be solved by shifting the whole handle inward by the rail width.
+   That cleared the mark and gave up the bar's right edge with it: the outermost
+   pixels became `.vis-drag-center`, the next ~18 the mark (which swallows
+   mousedown in the capture phase, see itemRail.ts), and the grab zone only
+   started ~27px in. Aiming at the visible right edge therefore moved the bar or
+   hit „×" and never resized it, so a bar could be dragged longer at its *left*
+   edge only — which is how the bug was reported.
+
+   Narrowing instead keeps the edge and spends width: the handle spans 4px
+   outside the bar to the mark's outer edge, a band straddling the border, and
+   nothing moves when an item is selected. The left handle keeps vis's 24px, so
+   the two edges have different grab widths — that is the price of the mark
+   living inside the bar rather than outside it.
+
+   The width is derived from where the mark starts rather than written as a
+   literal, so moving the rail moves the handle with it. No container query is
+   needed any more: the handle no longer depends on the bar being wide enough for
+   a 24px shift, and vis's own `max-width: 20%` shrinks it further on a narrow
+   bar. */
+.timeline .vis-item.vis-range:has(> .rail-delete).vis-selected .vis-drag-right {
+  right: -4px;
+  width: calc(4px + var(--bar-gutter) + var(--rail-inset));
 }
 
 .vis-item.vis-point {
-  background-color: #fff !important;
+  background-color: var(--surface) !important;
   border: 1px solid var(--accent) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-bar);
 }
 
 .vis-item.vis-point.lane-0 { border-color: var(--lane-0-border) !important; }
@@ -564,7 +634,7 @@
   border-color: var(--accent) !important;
   background: var(--accent);
   border-width: 7px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-drag);
 }
 
 .vis-item.vis-point .vis-item-content {
@@ -596,34 +666,48 @@
   box-shadow: inset -3px 0 0 0 var(--surface);
 }
 
-/* Item tag: lightweight coloured theme pill before the title */
-.vis-item .item-tag {
-  display: inline-block;
+/* Inside a bar the tag pill runs a shade smaller than it does in a table row:
+   the bar's own text is 12px, and the pill has to stay subordinate to it. */
+.vis-item .ds-Tag {
+  font-size: 9.5px;
   margin-right: 5px;
   padding: 0 5px;
-  border-radius: 3px;
-  font-size: 9.5px;
-  font-weight: 600;
-  line-height: 1.5;
-  color: #fff;
-  vertical-align: 1px;
-  white-space: nowrap;
 }
 
 /* Dense view (zoomed out): the pill text is more clutter than signal, so it
-   collapses to just its coloured dot. The inline background-color carries the
-   tag's colour; the label stays available via the item tooltip. Toggled from
-   JS (`updateTagDensity`) on the timeline container. */
-.is-tags-compact .vis-item .item-tag {
-  width: 8px;
-  height: 8px;
+   collapses to its coloured dot — the `compact` variant of the Tag component,
+   switched on here for every tag at once rather than per item, because the
+   trigger is the zoom level and not the tag. Toggled from JS
+   (`updateTagDensity`) on the timeline container. */
+.is-tags-compact .vis-item .ds-Tag {
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
   padding: 0;
   margin-right: 3px;
-  border-radius: 50%;
+  border-radius: var(--mark-radius);
   font-size: 0;
   line-height: 0;
   vertical-align: 0;
   overflow: hidden;
+}
+
+/* The heights of the two overlays pinned to the top of the center panel. Both
+   are read back by the spacer strut below, so an overlay and the row it sits
+   over cannot drift apart. */
+.timeline {
+  --phase-band-reserve: 30px;
+  /* Only the *lower* half of a milestone mark reaches into the content: the
+     marks are centred on the axis line, so that is all the room they take away
+     from the rows. The upper half is paid for by the axis instead — see the
+     label shift further down. */
+  --milestone-rail-reserve: 12px;
+}
+
+/* Offsets the ribbon below the marks; unset without a rail, so the fallback in
+   `top` is what keeps the ribbon at the panel edge on a timeline without one.
+   `has-milestone-rail` is toggled by the rail itself. */
+.timeline.has-milestone-rail {
+  --milestone-rail-h: var(--milestone-rail-reserve);
 }
 
 /* Phase ribbon — pinned to the top of the center panel, below the milestone
@@ -640,40 +724,61 @@
   overflow: hidden;
 }
 
-/* Reserve vertical room for the overlays pinned to the top of the center panel
+/* Reserve vertical room for the overlays pinned to the top of the center panel,
    so the first group row starts *below* them instead of sitting behind them.
-   Padding the whole group set — labels, item foreground, and the full-height
-   phase tints — keeps left and center panels in vertical lockstep (scroll stays
-   synced). `content-box` makes the padding add to the height rather than eat
-   into vis-timeline's computed content area, so the bottom row is never clipped.
+   The reserve is an empty **group**, prepended to the group set by render.ts
+   (`BAND_SPACER_GROUP_ID`), and these rules are what give it its height.
 
-   The two overlays stack, so the reserve is a sum rather than a fixed height:
-   each class contributes its own band height and the unset ones fall back to 0.
-   Hardcoding one number instead means adding the second overlay silently drops
-   the first row behind it. `has-phase-band` is toggled in render.ts,
-   `has-milestone-rail` by the rail itself (its count follows the filter). */
-.timeline.has-phase-band { --phase-band-h: 30px; }
-/* Only the *lower* half of a milestone mark reaches into the content: the marks
-   are centred on the axis line, so that is all the room they take away from the
-   rows. The upper half is paid for by the axis instead — see the label shift. */
-.timeline.has-milestone-rail { --milestone-rail-h: 12px; }
+   It used to be `padding-top` on the group set, which is what made the bottom
+   track uncuttable-off-able only by luck: padding is invisible to vis, which
+   derives both its content height and its scroll range from the sum of the
+   *group* heights. The panel then held 30px more than vis knew about, the
+   scroll stopped 30px early, and `.vis-timeline` — fixed height, `overflow:
+   hidden` — clipped the rest. Measured on a fourteen-track roadmap at vis's
+   own maximum scroll: last row 837→883, panel 216→884, clipping edge 849, so
+   12 of 46 pixels survived. A group costs vis nothing to account for, because
+   counting groups is what it already does.
 
-/* `.vis-itemset > .vis-foreground`, never a bare `.vis-foreground`: the time axis
-   carries that class too (`.vis-time-axis.vis-foreground`), so the unscoped
-   selector padded the axis panel by the same amount and left it reaching that far
-   past the line the date labels sit on. Invisible on its own — the panel is
-   transparent and its labels hang from the top — but vis derives the center
-   panel's offset from its own axis measurement, which does not include the
-   padding, so the line and the panel edge silently drift apart by exactly this
-   reserve. */
-.timeline.has-phase-band .vis-labelset,
-.timeline.has-phase-band .vis-itemset > .vis-foreground,
-.timeline.has-phase-band .vis-itemset > .vis-background,
-.timeline.has-milestone-rail .vis-labelset,
-.timeline.has-milestone-rail .vis-itemset > .vis-foreground,
-.timeline.has-milestone-rail .vis-itemset > .vis-background {
-  box-sizing: content-box;
-  padding-top: calc(var(--phase-band-h, 0px) + var(--milestone-rail-h, 0px));
+   The height comes from a strut inside the label rather than from a `height`
+   rule on the row, because vis measures the label and stores *that* as the
+   group's height. Forcing the row's height in CSS leaves vis's number at zero,
+   which puts the discrepancy straight back where it was. */
+.timeline .vis-labelset .vis-label.band-spacer,
+.timeline .vis-foreground .vis-group.band-spacer {
+  border-bottom: 0 !important;
+  background: transparent;
+  box-shadow: none !important;
+}
+
+.timeline .vis-labelset .vis-label.band-spacer .vis-inner {
+  display: block;
+  padding: 0 !important;
+}
+
+/* Which overlays the strut pays for is decided per render, by the classes
+   render.ts writes into it — never by a class toggled on the container
+   afterwards. Both overlays can be present at once, so the reserve is a sum:
+   hardcoding one number is how adding the second one silently drops the first
+   row behind it.
+
+   The classes have to be on the element as it is inserted, because vis measures
+   the label once and keeps the number. A container class toggled after that
+   changes what the strut looks like and not what vis believes, which is the
+   same discrepancy in a new place. */
+.band-spacer-strut {
+  height: 0;
+}
+
+.band-spacer-strut.reserves-band {
+  height: var(--phase-band-reserve);
+}
+
+.band-spacer-strut.reserves-rail {
+  height: var(--milestone-rail-reserve);
+}
+
+.band-spacer-strut.reserves-band.reserves-rail {
+  height: calc(var(--phase-band-reserve) + var(--milestone-rail-reserve));
 }
 
 .phase-seg {
@@ -685,8 +790,8 @@
   padding: 0 10px;
   box-sizing: border-box;
   border-radius: 5px;
-  background: var(--accent, #2f0d5b);
-  color: #fff;
+  background: var(--accent);
+  color: var(--surface);
   font-family: var(--font-body);
   font-size: 11.5px;
   font-weight: 600;
@@ -789,14 +894,14 @@ body.phase-dragging {
   height: 10px;
   padding: 0;
   transform: translate(-50%, -50%) rotate(45deg);
-  background: var(--accent, #2f0d5b);
+  background: var(--accent);
   /* Milestones sharing a date are fanned apart by `spreadCoincident`, which
      derives its spacing from this box (MARK_BOX_PX in milestoneRail.ts, 10px
      border-box → ≈14.1px across once turned 45°). Changing the size here means
      changing that constant with it, or fanned marks start intersecting again.
      The ring separates a mark from whatever it overlaps — a neighbour, or the
      axis line it sits on. */
-  border: 1px solid var(--bg, #fff);
+  border: 1px solid var(--bg);
   border-radius: 2px;
   cursor: pointer;
   pointer-events: auto;
@@ -875,16 +980,15 @@ body.phase-dragging {
   left: -26px;
 }
 
-/* Smaller variant of the shared avatar (base.css `.user-avatar`). */
-.presence-avatar.presence-mark {
-  width: 18px;
-  height: 18px;
-  font-size: 9px;
-  border-width: 1.5px;
+/* What an `Avatar` needs on top of its `sm` size to sit on a timeline bar: a
+   ring against the bar's own fill, a tighter overlap than the header's stack,
+   and a shadow so it reads as floating above the bar rather than painted on it. */
+.ds-Avatar.presence-mark {
+  border: 1.5px solid var(--surface);
   margin-left: -6px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-mark);
 }
 
-.presence-avatar.presence-mark.is-editing {
-  box-shadow: 0 0 0 1.5px hsl(var(--presence-hue, 260), 60%, 48%), 0 1px 2px rgba(0, 0, 0, 0.18);
+.ds-Avatar.presence-mark[data-editing] {
+  box-shadow: 0 0 0 1.5px hsl(var(--ds-avatar-hue, 260), 60%, 48%), var(--shadow-mark);
 }

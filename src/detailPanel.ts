@@ -2,8 +2,9 @@
 // Markdown body. Editable sources open the item form (itemForm.ts) instead.
 
 import { marked } from 'marked';
-import { escapeHtml, type DetailNote } from './buildItems';
-import { jiraLinksHtml, readJiraIssues } from './jira';
+import { type DetailNote } from './buildItems';
+import { el, Prose, setDescriptionList, type DescriptionListEntry } from './design-system';
+import { jiraLinks, readJiraIssues } from './jira';
 import { state, els, isEditableView, revealBesidePanel, clearFormSlots } from './state';
 import { cancelThrottledPersist, publishSelfPresence } from './persistence';
 import { showItemForm } from './itemForm';
@@ -28,9 +29,9 @@ export function setDetailTitle(text: string, editable = false): void {
   // that through here wiped the pickers on every keystroke, and with their
   // form-associated hidden inputs gone from the DOM, FormData lost icon / type /
   // status: the next edit reset the status to its default and dropped the rest.
-  els.detailTools.innerHTML = '';
+  els.detailTools.replaceChildren();
   els.detailTools.hidden = true;
-  els.detail.querySelector('.detail-header')?.classList.remove('has-tools');
+  els.detail.querySelector('.ds-Panel-header')?.removeAttribute('data-has-tools');
   if (editable) {
     // plaintext-only keeps pasted rich text (and stray <br>) out of a value that
     // round-trips to the DB as a plain string.
@@ -95,18 +96,24 @@ export function showDetail(note: DetailNote) {
   }
 
   const jiraIssues = readJiraIssues(fm);
+  const entries: DescriptionListEntry[] = metaPairs.map(([term, value]) => ({ term, value }));
+  if (jiraIssues.length) {
+    entries.push({
+      term: 'JIRA',
+      // Several links under one term, stacked rather than run together: an issue
+      // key plus its summary is long enough that two on one line stop reading as
+      // two links.
+      value: el('span', { class: 'ds-DescriptionList-stack' }, jiraLinks(jiraIssues)),
+    });
+  }
+  setDescriptionList(els.detailMeta, entries);
 
-  els.detailMeta.innerHTML =
-    metaPairs
-      .map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`)
-      .join('') +
-    (jiraIssues.length
-      ? `<dt>JIRA</dt><dd class="jira-refs">${jiraLinksHtml(jiraIssues, escapeHtml)}</dd>`
-      : '');
-
-  const bodyHtml = marked.parse(note.body || '', { async: false }) as string;
-  els.detailBody.innerHTML = bodyHtml;
-  els.detailBody.classList.remove('detail-form');
+  // Into a `Prose` wrapper rather than onto the panel body: the body also holds
+  // the edit form, and prose styling applied to it reaches the form's own
+  // markup too.
+  const prose = Prose();
+  prose.innerHTML = marked.parse(note.body || '', { async: false }) as string;
+  els.detailBody.replaceChildren(prose);
 
   els.detail.hidden = false;
   if (note.start) {
@@ -121,7 +128,6 @@ export function hideDetail() {
   }
   cancelThrottledPersist();
   els.detail.hidden = true;
-  els.detailBody.classList.remove('detail-form');
   clearFormSlots();
   // Panel closed → release the item mark we held for the others.
   publishSelfPresence();

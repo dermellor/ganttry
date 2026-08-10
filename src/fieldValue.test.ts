@@ -1,6 +1,34 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyFieldPick } from './fieldValue';
+import { applyFieldPick, writeListMeta } from './fieldValue';
+
+// Opening an item's form commits it, so a key whose representation churns there
+// turns every click into a diff — `"dependsOn": []` did exactly that.
+test('writeListMeta: an already-empty array is left exactly as stored', () => {
+  const meta: Record<string, unknown> = { dependsOn: [] };
+  writeListMeta(meta, 'dependsOn', []);
+  assert.deepEqual(meta, { dependsOn: [] });
+});
+
+test('writeListMeta: a list that had entries and lost them loses its key', () => {
+  const meta: Record<string, unknown> = { dependsOn: ['S-1'] };
+  writeListMeta(meta, 'dependsOn', []);
+  assert.deepEqual(meta, {});
+});
+
+test('writeListMeta: an absent key stays absent', () => {
+  const meta: Record<string, unknown> = {};
+  writeListMeta(meta, 'tags', []);
+  assert.equal('tags' in meta, false);
+});
+
+test('writeListMeta: entries are written as a copy', () => {
+  const meta: Record<string, unknown> = {};
+  const values = ['a', 'b'];
+  writeListMeta(meta, 'tags', values);
+  assert.deepEqual(meta.tags, ['a', 'b']);
+  assert.notEqual(meta.tags, values); // stored array is not the caller's
+});
 
 test('applyFieldPick: single-select replaces whatever was there', () => {
   assert.deepEqual(applyFieldPick([], '3.0', false), { values: ['3.0'], stored: '3.0' });

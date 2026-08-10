@@ -87,7 +87,8 @@
         "dependsOn": [
           "S-2"
         ]
-      }
+      },
+      "status": "Open"
     },
     {
       "id": "D-2",
@@ -113,7 +114,8 @@
         "dependsOn": [
           "D-2"
         ]
-      }
+      },
+      "status": "Open"
     },
     {
       "id": "D-4",

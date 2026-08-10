@@ -31,7 +31,7 @@ anywhere someone is representing the project.
 ## Reporting
 
 Report a problem privately through a
-[security advisory](https://github.com/dermellor/ganttry/security/advisories/new)
+[security advisory](https://github.com/zeitlines/zeitlines/security/advisories/new)
 on this repository — it is the one channel here that is not world-readable, so it
 works for conduct reports as well as vulnerabilities. Do not open a public issue,
 because the tracker is public and that would expose the very details a report needs

@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
+import matter from 'gray-matter';
 
 import { parseFrontmatter, patchFrontmatter, setBody, toYamlValue } from './frontmatter.ts';
 
@@ -127,6 +128,49 @@ describe('toYamlValue', () => {
 
   test('arrays render flow-style', () => {
     assert.equal(toYamlValue(['a', 'b']), '[a, b]');
+  });
+});
+
+describe('toYamlValue: what is written reads back unchanged', () => {
+  // The point of these is the *parser*, not the quoting style: they assert
+  // through `gray-matter` (js-yaml 3, YAML 1.1), the same reader `scan.ts` uses.
+  // Asserting the emitted text instead would pass happily while the value still
+  // changed type on the way back in, which is the bug they were written for.
+  const roundTrip = (value: unknown): unknown =>
+    matter(patchFrontmatter('---\nk: alt\n---\nBody\n', { k: value })).data.k;
+
+  test('a string that looks like a number stays a string', () => {
+    // `featureVersion: '2.0'` (product-roadmap) came back as the number 2, so
+    // the select found no matching option and the field rendered empty.
+    for (const s of ['2.0', '1.0', '007', '0211', '-1', '1e3', '0x1A', '1_000', '.5', '+3', '12:30']) {
+      assert.deepEqual(roundTrip(s), s, `„${s}" muss ein String bleiben`);
+    }
+  });
+
+  test('a string that looks like a constant stays a string', () => {
+    for (const s of ['true', 'True', 'false', 'null', 'Null', '~', '.inf', '.nan']) {
+      assert.deepEqual(roundTrip(s), s, `„${s}" muss ein String bleiben`);
+    }
+  });
+
+  test('a hash after a space does not truncate the value into a comment', () => {
+    assert.equal(roundTrip('Titel # zwei'), 'Titel # zwei');
+  });
+
+  test('flow-sequence elements survive their own separators', () => {
+    assert.deepEqual(roundTrip(['a,b', 'c]d', 'e']), ['a,b', 'c]d', 'e']);
+    assert.deepEqual(roundTrip(['2.0', 'true']), ['2.0', 'true'], 'elements are scalars too');
+  });
+
+  test('ordinary values keep their plain form', () => {
+    // The counter-test: quoting everything would pass the ones above and rewrite
+    // every note the timeline touches. A date in particular must stay bare —
+    // the scanner's cascade reads it as a date, and quoting it would churn the
+    // one line every note has.
+    const out = patchFrontmatter('---\nk: alt\n---\nBody\n', { k: '2026-01-01' });
+    assert.match(out, /^k: 2026-01-01$/m);
+    assert.match(patchFrontmatter('---\nk: alt\n---\nBody\n', { k: 'Kickoff' }), /^k: Kickoff$/m);
+    assert.match(patchFrontmatter('---\nk: alt\n---\nBody\n', { k: 't-pro' }), /^k: t-pro$/m);
   });
 });
 

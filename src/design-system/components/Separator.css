@@ -1,0 +1,28 @@
+/* Separator. */
+
+.ds-Separator {
+  border: none;
+  background: var(--border);
+  margin: 0;
+}
+
+.ds-Separator[data-orientation='horizontal'] {
+  width: 100%;
+  height: 1px;
+}
+
+.ds-Separator[data-orientation='vertical'] {
+  width: 1px;
+  align-self: stretch;
+  /* A vertical rule inside a flex row has no intrinsic height, and `stretch`
+     alone does nothing once the row centres its items. */
+  min-height: var(--space-xl);
+}
+
+.ds-Separator[data-spaced][data-orientation='horizontal'] {
+  margin: var(--space-xl) 0;
+}
+
+.ds-Separator[data-spaced][data-orientation='vertical'] {
+  margin: 0 var(--space-xl);
+}

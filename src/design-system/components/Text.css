@@ -1,0 +1,112 @@
+/* Heading / Text / Label — the three typographic voices. */
+
+.ds-Heading {
+  margin: 0;
+  font-family: var(--font-headline);
+  font-weight: var(--headline-weight);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.01em;
+}
+
+.ds-Heading[data-level='1'],
+.ds-Heading[data-level='2'] {
+  font-size: var(--text-xl);
+}
+
+.ds-Heading[data-level='3'] {
+  font-size: var(--text-lg);
+  letter-spacing: 0;
+}
+
+/* The editable headline (the detail panel's title). No focus ring: this is a
+   22px serif line, and a frame around it reads as a misplaced input. The tint
+   alone marks it as the surface being edited. The negative margin keeps the text
+   on the same optical line it sat on before the hover surface needed padding. */
+.ds-Heading[contenteditable] {
+  margin: -4px -6px;
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  cursor: text;
+}
+
+.ds-Heading[contenteditable]:hover,
+.ds-Heading[contenteditable]:focus {
+  background: var(--hover);
+}
+
+.ds-Heading[contenteditable]:focus {
+  outline: none;
+}
+
+.ds-Heading[contenteditable]:empty::before {
+  content: attr(data-placeholder);
+  color: var(--fg-muted);
+}
+
+/* ---- Text ----------------------------------------------------------------- */
+
+.ds-Text[data-size='xs'] { font-size: var(--text-xs); }
+.ds-Text[data-size='sm'] { font-size: var(--text-sm); }
+.ds-Text[data-size='md'] { font-size: var(--text-md); }
+.ds-Text[data-size='base'] { font-size: var(--text-base); }
+
+.ds-Text[data-tone='muted'] { color: var(--fg-muted); }
+.ds-Text[data-tone='danger'] { color: var(--danger); }
+.ds-Text[data-tone='accent'] { color: var(--accent); }
+
+.ds-Text[data-truncate] {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* „Not a real reference": a legacy owner string that matches no user, an empty
+   dropdown's explanation. Italic and muted, so it reads as absence rather than
+   as a value. */
+.ds-Text[data-placeholder] {
+  font-style: italic;
+  color: var(--fg-muted);
+}
+
+/* ---- Link ------------------------------------------------------------------ */
+
+.ds-Link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.ds-Link:hover {
+  text-decoration: underline;
+}
+
+.ds-Link[data-tabular] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* No href: it is a reference we cannot resolve, so it must not offer a hover
+   state that promises navigation. */
+.ds-Link[data-static]:hover {
+  text-decoration: none;
+  cursor: default;
+}
+
+/* ---- Label ---------------------------------------------------------------- */
+
+.ds-Label {
+  font-size: var(--text-xs);
+  line-height: var(--leading-tight);
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+}
+
+.ds-Label-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: var(--weight-normal);
+  opacity: 0.8;
+}

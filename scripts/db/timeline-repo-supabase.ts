@@ -13,9 +13,11 @@
 // whole-sheet rewrite — concurrent edits on different items no longer clobber.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { MemberRole, MemberStatus } from '../../src/access';
 import type {
   CustomFieldDef,
   DirectoryUser,
+  Member,
   PluginRef,
   Pricing,
   PricingFeature,
@@ -34,6 +36,7 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
+  type MemberInvite,
   type PublicPricing,
   type TimelineGroupDecl,
   type TimelineMeta,
@@ -187,6 +190,121 @@ export async function touchUser(db: SupabaseClient, email: string, name?: string
   if (label) row.name = label;
   const { error } = await db.from('app_users').upsert(row, { onConflict: 'email' });
   if (error) throw new Error(`touchUser: ${error.message}`);
+}
+
+// ---- membership (app_users, migration 0016) --------------------------------
+// The same rows the directory above serves, read through the columns that decide
+// what a person may do. One table on purpose: see the migration's header.
+
+const MEMBER_SELECT = 'email, name, role, status, invited_by, invited_at, accepted_at, invite_expires_at, last_seen_at';
+
+/** Row → `Member`, dropping nulls so an absent field is absent rather than null. */
+function toMember(r: Record<string, any>): Member {
+  const out: Member = { email: r.email, role: r.role, status: r.status };
+  if (r.name != null) out.name = r.name;
+  if (r.invited_by != null) out.invitedBy = r.invited_by;
+  if (r.invited_at != null) out.invitedAt = r.invited_at;
+  if (r.accepted_at != null) out.acceptedAt = r.accepted_at;
+  if (r.invite_expires_at != null) out.inviteExpiresAt = r.invite_expires_at;
+  if (r.last_seen_at != null) out.lastSeenAt = r.last_seen_at;
+  return out;
+}
+
+export async function getMember(db: SupabaseClient, email: string): Promise<Member | null> {
+  const clean = email.trim().toLowerCase();
+  if (!clean) return null;
+  // maybeSingle(): "not a member" is an ordinary answer, and single() would turn
+  // it into a PostgREST error the caller then has to decode.
+  const { data, error } = await db
+    .from('app_users')
+    .select(MEMBER_SELECT)
+    .ilike('email', clean)
+    .maybeSingle();
+  if (error) throw new Error(`getMember: ${error.message}`);
+  return data ? toMember(data) : null;
+}
+
+export async function listMembers(db: SupabaseClient): Promise<Member[]> {
+  const { data, error } = await db
+    .from('app_users')
+    .select(MEMBER_SELECT)
+    .order('name', { ascending: true, nullsFirst: false })
+    .order('email', { ascending: true });
+  if (error) throw new Error(`listMembers: ${error.message}`);
+  return (data ?? []).map(toMember);
+}
+
+export async function inviteMember(db: SupabaseClient, input: MemberInvite): Promise<Member> {
+  const email = input.email.trim().toLowerCase();
+  if (!email) throw new ValidationError('inviteMember: email required');
+  // PostgREST's upsert cannot express "keep the old value when it was 'active'"
+  // the way the postgres.js driver's CASE does, so the read decides instead. The
+  // rule is the same in both: re-inviting never downgrades an accepted
+  // membership, because accepting is one-way and an active user must not be sent
+  // back through the door.
+  const existing = await getMember(db, email);
+  const row: Record<string, unknown> = {
+    email,
+    role: input.role,
+    status: existing?.status === 'active' ? 'active' : 'invited',
+    invited_by: input.invitedBy ?? null,
+    invited_at: new Date().toISOString(),
+    invite_token_hash: input.tokenHash ?? null,
+    invite_expires_at: input.expiresAt ?? null,
+  };
+  const { data, error } = await db
+    .from('app_users')
+    .upsert(row, { onConflict: 'email' })
+    .select(MEMBER_SELECT)
+    .single();
+  if (error) throw new Error(`inviteMember: ${error.message}`);
+  return toMember(data);
+}
+
+export async function updateMemberRole(
+  db: SupabaseClient,
+  email: string,
+  role: MemberRole,
+): Promise<Member> {
+  const { data, error } = await db
+    .from('app_users')
+    .update({ role })
+    .ilike('email', email.trim().toLowerCase())
+    .select(MEMBER_SELECT)
+    .maybeSingle();
+  if (error) throw new Error(`updateMemberRole: ${error.message}`);
+  if (!data) throw new NotFoundError(`no member ${email}`);
+  return toMember(data);
+}
+
+export async function setMemberStatus(
+  db: SupabaseClient,
+  email: string,
+  status: MemberStatus,
+): Promise<Member> {
+  const clean = email.trim().toLowerCase();
+  const patch: Record<string, unknown> = { status };
+  if (status === 'active') {
+    // Accepting stamps `accepted_at` once and clears the invitation: a spent
+    // token must not resolve to a row any more, and a leftover expiry would let
+    // a later check refuse a member who is long since active. `accepted_at` is
+    // only written when it is still empty, so restoring a suspended member does
+    // not rewrite the day they joined.
+    const existing = await getMember(db, clean);
+    if (!existing) throw new NotFoundError(`no member ${email}`);
+    if (!existing.acceptedAt) patch.accepted_at = new Date().toISOString();
+    patch.invite_token_hash = null;
+    patch.invite_expires_at = null;
+  }
+  const { data, error } = await db
+    .from('app_users')
+    .update(patch)
+    .ilike('email', clean)
+    .select(MEMBER_SELECT)
+    .maybeSingle();
+  if (error) throw new Error(`setMemberStatus: ${error.message}`);
+  if (!data) throw new NotFoundError(`no member ${email}`);
+  return toMember(data);
 }
 
 export async function getTimeline(db: SupabaseClient, id: string): Promise<TimelineFile | null> {
@@ -1159,6 +1277,11 @@ export function makeSupabaseRepo(db: SupabaseClient): TimelineRepo {
     listTimelines: () => listTimelines(db),
     listUsers: () => listUsers(db),
     touchUser: (email, name) => touchUser(db, email, name),
+    getMember: (email) => getMember(db, email),
+    listMembers: () => listMembers(db),
+    inviteMember: (input) => inviteMember(db, input),
+    updateMemberRole: (email, role) => updateMemberRole(db, email, role),
+    setMemberStatus: (email, status) => setMemberStatus(db, email, status),
     getTimeline: (id) => getTimeline(db, id),
     getWatermark: (id) => getWatermark(db, id),
     getPublicPricing: (id) => getPublicPricing(db, id),

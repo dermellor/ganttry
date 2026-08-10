@@ -51,20 +51,42 @@ jobs:
       - name: openapi.yaml matches the routes and types
         run: npm run openapi:check
 
+      # tokens.css and tokens/index.ts are generated from tokens.json. Committed,
+      # because a stylesheet cannot import JSON — so a token added to the source
+      # without a regeneration would otherwise ship as a name nothing defines,
+      # which is how `--surface-alt` came to be used in six rules and declared in
+      # none.
+      - name: Design tokens match their source
+        run: npm run tokens:check
+
+      # The contract in docs/design-system.md, as far as it can be checked:
+      # colours named once, spacing from the scale, buttons from the component,
+      # and every exported component present in the playground.
+      - name: Design-system contract
+        run: bash scripts/ci/check-design-system.sh
+
+      # Nothing else notices a documented env var that no code reads: the schemas
+      # cover data files, openapi.yaml covers routes, and no test asserts anything
+      # about prose. TIMELINES_NOTES_DIR and TIMELINES_STATIC_ONLY outlived the
+      # Markdown notes pipeline in both README and .env.example because of that.
+      - name: Documented env vars are actually read
+        run: bash scripts/ci/check-env-docs.sh
+
       # No credentials are configured here on purpose: this is the path a
       # contributor takes after a plain `git clone`. The build discovers no DB
-      # timelines and warns about the missing notes directory, both non-fatal.
+      # timelines and registers only the local sources under data/, non-fatally.
       - name: Build
         run: npm run build
 
       - name: Generic bundle carries no pricing view code
         run: bash scripts/ci/check-bundle-split.sh
 
-      # Non-blocking for now: the repo carries 7 pre-existing type errors
-      # (node Dirent typing in build-data.ts, missing @types/ws, two library
-      # signature mismatches). Fixing those is its own change; until then this
-      # step reports the count without gating a PR. Make it blocking — drop the
-      # continue-on-error — as soon as `npm run typecheck` is clean.
+      # Non-blocking for now: the repo carries 3 pre-existing type errors (missing
+      # @types/ws, two library signature mismatches). It was 7 until the notes
+      # pipeline went, taking the four Dirent ones in its directory walk with it.
+      # Fixing the rest is its own change; until then this step reports the count
+      # without gating a PR. Make it blocking — drop the continue-on-error — as
+      # soon as `npm run typecheck` is clean.
       - name: Typecheck (non-blocking)
         run: npm run typecheck
         continue-on-error: true

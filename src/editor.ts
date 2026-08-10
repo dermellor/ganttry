@@ -1,4 +1,5 @@
 import { dataUrl } from './data-base';
+import { assignMissingItemIds, nextItemId } from './itemId';
 import type {
   PricingFeature,
   PricingTier,
@@ -262,35 +263,29 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
   // Session lapsed while the tab was open (a live-reload re-fetch) — send the
   // user to the login instead of surfacing a bare "HTTP 401".
   if (apiRes && apiRes.status === 401) handleSessionExpired();
+  // A refusal is not a malfunction, and „HTTP 403" reads like one. The person
+  // in front of it can do exactly one thing about it, so the message says that
+  // instead of a status code. Deliberately NOT a redirect: they are signed in,
+  // and sending them back to a login they already passed is a loop.
+  if (apiRes && apiRes.status === 403) {
+    throw new Error(
+      `Für die Timeline „${id}“ fehlt dir die Berechtigung. Bitte eine Administratorin oder einen Administrator dieser Instanz um Zugriff.`,
+    );
+  }
   const reason = apiRes ? `HTTP ${apiRes.status}` : 'keine Verbindung zur API';
   throw new Error(
     `Timeline „${id}“ konnte nicht aus der DB geladen werden (${reason}).`,
   );
 }
 
+// Both wrap the shared rule in ./itemId.ts, which the server's granular create
+// uses as well — the id scheme is one rule, not one per runtime.
 export function ensureItemIds(file: TimelineFile): boolean {
-  let changed = false;
-  const used = new Set(file.items.map((i) => i.id).filter(Boolean) as string[]);
-  let counter = 1;
-  for (const item of file.items) {
-    if (item.id) continue;
-    let candidate = `i${counter}`;
-    while (used.has(candidate)) {
-      counter += 1;
-      candidate = `i${counter}`;
-    }
-    item.id = candidate;
-    used.add(candidate);
-    changed = true;
-  }
-  return changed;
+  return assignMissingItemIds(file.items);
 }
 
 export function generateNewId(file: TimelineFile, prefix = 'i'): string {
-  const used = new Set(file.items.map((i) => i.id).filter(Boolean) as string[]);
-  let n = 1;
-  while (used.has(`${prefix}${n}`)) n += 1;
-  return `${prefix}${n}`;
+  return nextItemId(file.items.map((i) => i.id).filter(Boolean) as string[], prefix);
 }
 
 // Date ⇄ calendar-day conversion lives in one place — see src/date.ts. Re-export

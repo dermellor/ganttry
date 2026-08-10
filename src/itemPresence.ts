@@ -20,6 +20,7 @@ import {
   labelFor,
   type PresenceEntry,
 } from './presenceModel';
+import { Avatar } from './design-system';
 import { realIdOf } from './grouping';
 import { state } from './state';
 
@@ -136,24 +137,32 @@ function removeMark(box: HTMLElement): void {
 
 function avatars(users: PresenceEntry[]): HTMLElement[] {
   const shown = users.slice(0, MAX_MARKS);
-  const out = shown.map((u) => {
-    const el = document.createElement('span');
-    el.className = 'user-avatar presence-avatar presence-mark';
-    if (u.editing) el.classList.add('is-editing');
-    el.style.setProperty('--presence-hue', String(hueFor(u.email)));
-    el.textContent = initials(u);
-    // "ausgewählt" rather than "offen": the mark follows the timeline selection,
-    // which outlives closing the detail panel.
-    el.title = `${labelFor(u)} — ${u.editing ? 'editiert gerade' : 'hat diesen Eintrag ausgewählt'}`;
-    return el;
-  });
+  const out = shown.map((u) =>
+    Avatar({
+      initials: initials(u),
+      hue: hueFor(u.email),
+      size: 'sm',
+      stacked: true,
+      className: 'presence-mark',
+      // „ausgewählt" rather than „offen": the mark follows the timeline
+      // selection, which outlives closing the detail panel.
+      title: `${labelFor(u)} — ${u.editing ? 'editiert gerade' : 'hat diesen Eintrag ausgewählt'}`,
+      attrs: u.editing ? { 'data-editing': '' } : undefined,
+    }),
+  );
   const overflow = users.length - shown.length;
   if (overflow > 0) {
-    const more = document.createElement('span');
-    more.className = 'user-avatar presence-avatar presence-mark presence-more';
-    more.textContent = `+${overflow}`;
-    more.title = users.slice(MAX_MARKS).map(labelFor).join('\n');
-    out.push(more);
+    out.push(
+      Avatar({
+        initials: `+${overflow}`,
+        hue: 0,
+        size: 'sm',
+        stacked: true,
+        overflow: true,
+        className: 'presence-mark',
+        title: users.slice(MAX_MARKS).map(labelFor).join('\n'),
+      }),
+    );
   }
   return out;
 }

@@ -1,4 +1,5 @@
 import type { View } from './types';
+import { exportShellHtml } from './appShell';
 import {
   escapeHtml,
   withStatusMarks,
@@ -11,13 +12,23 @@ import { JIRA_BASE_URL } from './jira';
 import visJsRaw from 'vis-timeline/standalone/umd/vis-timeline-graph2d.min.js?raw';
 import visCssRaw from 'vis-timeline/styles/vis-timeline-graph2d.min.css?raw';
 import markedJsRaw from 'marked/marked.min.js?raw';
-import baseCssRaw from './styles/base.css?raw';
-import detailCssRaw from './styles/detail.css?raw';
-import formsCssRaw from './styles/forms.css?raw';
-import wysiwygCssRaw from './styles/wysiwyg.css?raw';
-import chipsCssRaw from './styles/chips.css?raw';
-import themeCssRaw from './styles/theme.css?raw';
 import timelineCssRaw from './styles/timeline.css?raw';
+import appCssRaw from './styles/app.css?raw';
+
+// The exported file is one self-contained document, so every stylesheet it needs
+// has to be inlined as text. The design system's are collected by glob rather
+// than listed: a component added to the layer brought its stylesheet with it and
+// was then invisible in exports until somebody remembered to add a line here —
+// which is exactly the kind of omission nobody notices, because the app itself
+// looks right.
+const dsCss = Object.entries(
+  import.meta.glob<string>('./design-system/**/*.css', { query: '?raw', import: 'default', eager: true }),
+)
+  // Tokens first: a component stylesheet that reads `var(--space-md)` before the
+  // custom property is defined resolves to nothing at all.
+  .sort(([a], [b]) => Number(b.includes('/tokens/')) - Number(a.includes('/tokens/')))
+  .map(([, css]) => css)
+  .join('\n');
 
 type ExportArgs = {
   view: View;
@@ -61,9 +72,12 @@ function clientScript(): string {
   var padding = span * 0.05;
   var height = elTimeline.clientHeight || 600;
 
+  // The Icon component's markup, hand-written because this script runs inside the
+  // exported file with no module loader — the class and the custom property are
+  // the contract it has to match (see src/design-system/components/Marks.ts).
   function iconSpan(icon) {
     if (!icon || !/^[a-z]+$/.test(icon)) return '';
-    return '<span class="item-icon" style="--item-icon:var(--icon-' + icon + ')"></span>';
+    return '<span class="ds-Icon" aria-hidden="true" style="--ds-icon:var(--icon-' + icon + ')"></span>';
   }
 
   var timeline = new vis.Timeline(elTimeline, itemsDs, useGroups ? groupsDs : undefined, {
@@ -139,11 +153,12 @@ function clientScript(): string {
         var sum = (entry && entry.summary) || '';
         if (!key) return '';
         var label = sum ? key + ' – ' + sum : key;
+        // The Link component's markup — same reason as iconSpan above.
         return base
-          ? '<a class="jira-ref" href="' + escapeHtml(base + '/browse/' + key) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(label) + '</a>'
-          : '<span class="jira-ref">' + escapeHtml(label) + '</span>';
+          ? '<a class="ds-Link" data-tabular href="' + escapeHtml(base + '/browse/' + key) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(label) + '</a>'
+          : '<span class="ds-Link" data-tabular data-static>' + escapeHtml(label) + '</span>';
       }).join('');
-      metaHtml += '<dt>JIRA</dt><dd class="jira-refs">' + refs + '</dd>';
+      metaHtml += '<dt>JIRA</dt><dd><span class="ds-DescriptionList-stack">' + refs + '</span></dd>';
     }
     elDetailMeta.innerHTML = metaHtml;
     var bodyHtml = (window.marked && note.body) ? window.marked.parse(note.body) : escapeHtml(note.body || '');
@@ -198,33 +213,12 @@ function buildHtml(args: ExportArgs): string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${escapeHtml(title)}</title>
 <style>${visCssRaw}</style>
-<style>${baseCssRaw}</style>
-<style>${detailCssRaw}</style>
-<style>${formsCssRaw}</style>
-<style>${wysiwygCssRaw}</style>
-<style>${chipsCssRaw}</style>
-<style>${themeCssRaw}</style>
+<style>${dsCss}</style>
 <style>${timelineCssRaw}</style>
+<style>${appCssRaw}</style>
 </head>
 <body>
-<header class="app-header">
-  <div class="app-title">
-    <span class="app-title-mark"></span>
-    <h1>${escapeHtml(view.name)}</h1>
-  </div>
-</header>
-<main class="app-main">
-  <section id="timeline" class="timeline" aria-label="Timeline"></section>
-  <aside id="detail" class="detail" hidden>
-    <div class="detail-header">
-      <button id="detail-close" class="detail-close" aria-label="Schließen">×</button>
-      <h2 id="detail-title"></h2>
-    </div>
-    <dl id="detail-meta" class="detail-meta"></dl>
-    <article id="detail-body" class="detail-body"></article>
-  </aside>
-</main>
-<footer class="app-footer"><span id="status" class="status">…</span></footer>
+${exportShellHtml(view.name)}
 <script>${visJsRaw}</script>
 <script>${markedJsRaw}</script>
 <script>window.__TIMELINE_PAYLOAD__ = ${payload};</script>

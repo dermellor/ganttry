@@ -1,0 +1,106 @@
+/* TextInput / TextArea / Select / Checkbox — one editing surface, four shapes. */
+
+.ds-Input {
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.ds-Input[data-block] {
+  width: 100%;
+}
+
+/* Border tint rather than a ring — see the note in Input.ts. */
+.ds-Input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ds-Input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.ds-Input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Read-only is not disabled: the value still matters and stays selectable, it
+   just cannot be typed into. The fill says so without dimming the text. */
+.ds-Input[readonly] {
+  background: var(--hover);
+  color: var(--fg-muted);
+  cursor: default;
+}
+
+/* The input inside a ChipBox. The box owns the border and the focus tint, so
+   this one is bare and flexes into whatever width the chips have left, down to a
+   floor that is still typeable. */
+.ds-Input[data-bare] {
+  flex: 1 1 70px;
+  min-width: 70px;
+  width: auto;
+  padding: var(--space-3xs) var(--space-2xs);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+}
+
+.ds-Input[data-bare]:focus {
+  border-color: transparent;
+}
+
+/* ---- TextArea ------------------------------------------------------------- */
+
+.ds-TextArea {
+  resize: vertical;
+  line-height: var(--leading-snug);
+}
+
+.ds-TextArea[data-mono] {
+  font-family: var(--font-mono);
+}
+
+/* ---- Select --------------------------------------------------------------- */
+
+.ds-Select {
+  cursor: pointer;
+}
+
+.ds-Select[data-wide] {
+  min-width: 180px;
+}
+
+/* ---- Checkbox ------------------------------------------------------------- */
+
+.ds-Checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ds-Checkbox:focus-within {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-xs);
+}
+
+.ds-Checkbox-box {
+  accent-color: var(--accent);
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  margin: 0;
+  cursor: pointer;
+}
+
+.ds-Checkbox-box:disabled,
+.ds-Checkbox-box:disabled + .ds-Checkbox-label {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

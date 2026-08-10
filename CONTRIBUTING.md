@@ -1,4 +1,4 @@
-# Contributing to Ganttry
+# Contributing to Zeitlines
 
 Thanks for considering a contribution. This file covers what you need to get a
 change running and reviewed. [`AGENTS.md`](AGENTS.md) holds the conventions, the
@@ -8,7 +8,7 @@ and keep it in sync when behaviour changes.
 
 ## You do not need a database
 
-The quickest way in: file sources need no Postgres, no Supabase and no
+The quickest way in: local sources need no Postgres, no Supabase and no
 credentials.
 
 ```bash
@@ -92,8 +92,10 @@ bundle-split check (below). What the checks expect:
   timeline data that is not yours to publish.
 - **Documentation is English, the UI is German.** That split is deliberate, so
   quoted UI strings stay German in the docs („Neu", „kein Wert", „Gespeichert")
-  even in otherwise English prose. Some `data/` examples and a few identifiers
-  also carry German words; that is history, not a convention to extend.
+  even in otherwise English prose. Commit messages, branch names, pull request
+  text and issues are English as well. Some `data/` examples, a few identifiers
+  and most of the commit history before that rule carry German; that is history,
+  not a convention to extend.
 
 ## Pull requests
 
@@ -106,4 +108,4 @@ capture.
 By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md), which
 fits on one screen.
 
-Issues and questions: <https://github.com/dermellor/ganttry/issues>.
+Issues and questions: <https://github.com/zeitlines/zeitlines/issues>.

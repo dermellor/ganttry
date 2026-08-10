@@ -2,7 +2,7 @@
 
 The Netlify deploy, its auth gate, and JIRA linking.
 
-Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
 its file when it lives in another chapter.
 
@@ -81,6 +81,26 @@ static Vite site:
    fetch chasing a cross-origin login redirect and the edit silently vanishing.
    The client (`apiJson` / `loadSource` in [`src/editor.ts`](../src/editor.ts))
    catches the `401` and sends the top window to the login, preserving the view.
+
+**What decides admission depends on one switch.** With `TIMELINES_ACCESS_CONTROL`
+unset the gate behaves as described above: Google proves the address and
+`ALLOWED_EMAIL_DOMAINS` decides. With it set to `true` the **member list** decides
+instead (`app_users`, migration `0016`): the address needs a row whose status is
+`invited` or `active`, an invitation must not have expired, and the domain list is
+no longer consulted — an invited person may sit on any domain, which is what
+inviting them means. The same switch makes every `/api/*` call check the row's
+role, so a session and a permission are two separate questions.
+
+The full model — roles, the invitation lifecycle, what the token does and does
+not do, and the six-step rollout — is „Users" (docs/users.md). Two consequences
+worth knowing before turning it on:
+
+- **Set `TIMELINES_BOOTSTRAP_ADMIN` first.** Against an empty member list nobody
+  can invite anybody, and the instance is closed to its owner too. That address
+  becomes an admin on its first sign-in.
+- **Do not empty `ALLOWED_EMAIL_DOMAINS` while the switch is off.** It is what
+  `readSession` validates every existing cookie against in that mode, so clearing
+  it invalidates every session at once.
 
 **Sliding session (no silent expiry).** The session cookie is **not** a fixed
 one-shot token. Its base lifetime is 30 days (`SESSION_MAX_AGE` in

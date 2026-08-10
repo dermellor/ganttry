@@ -2,7 +2,7 @@
 
 Postgres as the data source: schema, drivers, locking, realtime, presence.
 
-Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
 its file when it lives in another chapter.
 
@@ -121,13 +121,24 @@ runner works against any Postgres).
   „Standalone JSON timelines" (docs/data-model.md)). There is no DB CHECK for it, because `start` and
   `end` are `text` columns.
 - `timeline_groups` — id, content, nested_groups, show_nested, sort.
-- `app_users` — the **user directory** an item owner points at (migration
-  `0015`): `email` as PK, optional `name`, `first_seen_at`, `last_seen_at`. Not
-  timeline-scoped (a collection-level concept, like `listTimelines`), with no
-  `version` column and no optimistic locking: a row carries no user-written
-  content, only the identity the auth provider asserts anyway. No anon SELECT —
-  it is read through the server-gated `/api/users` endpoint (service key) and
-  never subscribed to. It fills itself (see „Item owner" (docs/items.md)).
+- `app_users` — the **user directory and the member list**, which are one table
+  because they are one set of people (migrations `0015` and `0016`): `email` as
+  PK, optional `name`, `first_seen_at`, `last_seen_at`, plus `role`, `status` and
+  the invitation columns (`invited_by`, `invited_at`, `accepted_at`,
+  `invite_token_hash`, `invite_expires_at`). Not timeline-scoped (a
+  collection-level concept, like `listTimelines`), with no `version` column and
+  no optimistic locking: a row carries no user-written content, only the identity
+  the auth provider asserts and the verdict an admin gave it. No anon SELECT — it
+  is read through the server-gated `/api/users` (the picker's view: address and
+  name) and `/api/members` (administration) endpoints, and never subscribed to.
+  Only the token's hash is stored, never the token.
+
+  `0015` created it as a directory that filled itself and was explicitly *not* a
+  membership list; `0016` made it one, because once an invitation is the only way
+  in the two are the same people and two tables would be two copies of one
+  statement. The self-filling behaviour survives only while
+  `TIMELINES_ACCESS_CONTROL` is off, where the owner picker has no other source.
+  The whole model is „Users" (docs/users.md).
 - **Pricing tables** (migration `0009`, only relevant to product-roadmap
   timelines): `pricing_features`, `pricing_tiers`, `pricing_highlights`, one row
   per entity with its own `version` column (trigger bump, optimistic locking like
@@ -363,9 +374,11 @@ knowing:
   back to supabase-js and seed **the live database**. `db:reset` therefore sets
   `TIMELINES_DATABASE_URL` as well; keep them together if you rewrite that chain.
 
-`dev:local` sets `TIMELINES_DB_LIVE=poll`, because a local Postgres has no
-realtime: without it the client would try the anon key from `.env.local`, which
-points at the hosted instance (see „Live-update seam").
+`dev:local` sets `TIMELINES_DB_LIVE=poll` explicitly, and still needs to even
+though `defaultLive` now derives polling for a bare Postgres: a `.env.local` that
+also carries the hosted Supabase vars makes the derived answer `realtime`, and
+the client would then try that instance's anon key against a local database (see
+„Live-update seam").
 
 The migrate step inside `db:reset` passes `--allow-dirty`, since a throwaway target
 is exactly where iterating on an uncommitted migration is correct. The guardrail it
@@ -502,15 +515,34 @@ by the source through `capabilities.live` (`SourceLive` in
   server-gated, which is what makes a Postgres **without** realtime live. The poll
   pauses while an edit form is open (`isBusy`), and a change detected meanwhile is
   not discarded but applied afterwards.
-- **`none`** — no live updates (file sources).
+- **`none`** — no live updates: a local source read from its static copy, where
+  no process is serving it and nothing can change under it.
 
 The server tells the client which mode applies through the **`X-Source-Live`
 response header** on `GET /api/source/<id>`, set by the runtime glue from
 `adapter.capabilities.live`; `loadSource` reads it and stores it in
-`state.activeSourceLive`. The DB adapter reports `realtime` by default, and the env
-var **`TIMELINES_DB_LIVE=poll`** (`process.env` locally, `Deno.env` on Netlify)
-switches DB sources to polling — useful for a Postgres without realtime enabled,
-and for testing the poll path end to end.
+`state.activeSourceLive`.
+
+**Which mode a DB source reports is derived, not configured.** `defaultLive`
+([`scripts/db/api.ts`](../scripts/db/api.ts)) answers `realtime` when a Supabase
+project is configured and `poll` otherwise, because Realtime needs such a project
+while the watermark endpoint works against any Postgres. The check is „are the
+Supabase vars set", not „which driver won": a deployment may deliberately run
+postgres.js *against* a Supabase database (see „Drivers"), and that setup keeps
+realtime.
+
+The env var **`TIMELINES_DB_LIVE`** (`process.env` locally, `Deno.env` on
+Netlify) overrides the derived value in either direction, `poll` or `realtime`.
+Both runtimes parse it through the shared `liveOverride`, so an unrecognised
+value defers to the default instead of being coerced into a mode.
+
+> This used to default to `realtime` unconditionally, which broke the plain
+> self-hosted Postgres case silently: the server claimed realtime, the client
+> found no `VITE_SUPABASE_ANON_KEY`, and did nothing — edits appeared on reload
+> only, with nothing saying why. The client now falls back to polling when it is
+> told `realtime` without an anon key (`watchTimeline` in
+> [`src/realtime.ts`](../src/realtime.ts)), so both halves of that mismatch are
+> covered.
 
 > **Scope:** the watermark covers items plus timeline metadata (including
 > phases), but **not** the pricing tables. No poll source is a product timeline

@@ -6,6 +6,7 @@
 // layer (pricing.highlights). Class names + SVGs match the rendered original.
 
 import { escapeHtml } from '../../buildItems';
+import { html, Separator } from '../../pluginHost/api';
 import { resolveHighlight, resolveHighlightLabel, type ResolvedHighlight } from './pricing';
 import type { PricingHighlight, PricingTier, TimelineFile } from '../../types';
 
@@ -130,7 +131,7 @@ export function renderCardsHtml(
         `<div class="pc-name">${escapeHtml(tier.name)}</div>` +
         `<div class="pc-suit">${escapeHtml(suit)}</div>` +
         priceHtml(tier.price) +
-        `<hr class="pc-divider" />` +
+        html(Separator({ className: 'pc-divider' })) +
         `<div class="pc-body">${targetBlock}${body || '<p class="pc-card-empty">—</p>'}</div>` +
         `</article>`
       );

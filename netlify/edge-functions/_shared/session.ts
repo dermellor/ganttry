@@ -1,3 +1,5 @@
+import { accessControlEnabled } from '../../../src/access.ts';
+
 export const COOKIE_NAME = 'tl_session';
 export const STATE_COOKIE = 'tl_oauth_state';
 // Base session lifetime. The session is not a fixed one-shot token: the auth
@@ -120,7 +122,20 @@ export async function readSession(req: Request): Promise<SessionPayload | null> 
   if (!raw) return null;
   const payload = (await verify(raw)) as SessionPayload | null;
   if (!payload) return null;
-  if (!payload.email || !isAllowedDomain(payload.email)) return null;
+  if (!payload.email) return null;
+  // The domain is only an access rule while membership is not.
+  //
+  // With TIMELINES_ACCESS_CONTROL on, an invited person may sit on any domain —
+  // that is the point of inviting them — so testing the list here would refuse
+  // exactly the people the invitation was for. It stays in force while the
+  // switch is off, because then it is the ONLY thing standing between a signed
+  // cookie and the data.
+  //
+  // Read the order carefully before changing it: emptying ALLOWED_EMAIL_DOMAINS
+  // while this still tested it would invalidate every session at once.
+  if (!accessControlEnabled(Deno.env.get('TIMELINES_ACCESS_CONTROL')) && !isAllowedDomain(payload.email)) {
+    return null;
+  }
   if (payload.exp < nowSec()) return null;
   return payload;
 }
@@ -171,7 +186,7 @@ export function escapeHtml(s: string): string {
 
 // ---------- MCP service-token bypass ----------
 //
-// Allows a headless client (the Ganttry MCP server) to pass the auth gate and
+// Allows a headless client (the Zeitlines MCP server) to pass the auth gate and
 // read/write sheet sources without an interactive Google login. The request
 // carries `X-MCP-Token: <MCP_API_TOKEN>`; sheet access then uses a stored
 // service refresh token instead of a per-user session token.

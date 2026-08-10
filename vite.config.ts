@@ -5,7 +5,10 @@ import { envSourcesHint, envValue, hydrateProcessEnv } from './scripts/db/env';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
 import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
-import { handleUsersApi, resolveAdapter, resolveRepo, parseSourcePath, type DbConnections, type ApiRequest } from './scripts/db/api';
+import { type DbConnections } from './scripts/db/api';
+import { accessControlEnabled, handleApiRequest, liveOverride } from './scripts/db/http';
+import { resolveRepo } from './scripts/db/api';
+import { toRequest, writeResponse } from './scripts/node-http';
 import { hasLocalTimeline, isLocalWritable, makeFileRepo } from './scripts/local/file-repo';
 
 // Runs while Vite loads this config, before it resolves `import.meta.env`.
@@ -45,23 +48,6 @@ const dbConns = (): DbConnections => ({
   sqlFor: getSqlForSource,
   local: localSource,
 });
-const hasDb = (c: DbConnections): boolean => Boolean(c.sql || c.supabase);
-
-/**
- * A single path segment of a source or item id.
- *
- * Dots are allowed because an item in a Markdown directory source is identified
- * by its file path, and file names carry dots. `.` and `..` are excluded
- * separately: those are the only two that mean something to the filesystem, and
- * excluding them by name is exact where a character blocklist is a guess.
- *
- * This is not the containment guard. That one lives in `scripts/local/file-repo.ts`
- * and works on the RESOLVED path, which is what catches the encodings a
- * character rule misses; this check only keeps obviously malformed ids out of
- * the dispatcher.
- */
-const ID_SEGMENT = /^[a-zA-Z0-9_.-]+$/;
-const isIdSegment = (s: string): boolean => s !== '.' && s !== '..' && ID_SEGMENT.test(s);
 
 type JiraCreds = { baseUrl: string; email: string; apiToken: string };
 
@@ -133,13 +119,6 @@ function timelinesApi(): Plugin {
         res.end(JSON.stringify(json));
       };
 
-      const readBody = async (req: any): Promise<unknown> => {
-        let raw = '';
-        for await (const chunk of req) raw += chunk;
-        if (!raw.trim()) return undefined;
-        return JSON.parse(raw);
-      };
-
       // GET /api/me — current user for the header presence badge. Local dev has
       // no auth session, so everyone is the single "local" identity (matches the
       // updatedBy attribution the write path uses in dev).
@@ -157,33 +136,23 @@ function timelinesApi(): Plugin {
         return { email, name: email };
       };
 
-      server.middlewares.use('/api/me', (req, res, next) => {
+      // Mirrors the edge function's /api/me, role included: without that, the
+      // membership screen could never be opened locally, and „works in
+      // production only" is how a feature stops being verifiable before deploy.
+      server.middlewares.use('/api/me', async (req, res, next) => {
         if (req.method !== 'GET') return next();
-        send(res, 200, devIdentity(req));
-      });
-
-      // GET /api/users — the user directory an item's Owner links to. Serving it
-      // also registers the caller (see handleUsersApi), which locally means the
-      // `dev_user` identity — but only when it is address-shaped, so the default
-      // "local" never lands in the (live) directory. Getting a test person in:
-      //   document.cookie = 'dev_user=alice@example.com'; location.reload()
-      //
-      // Without a DB there is no directory. It answers 200 with an empty list
-      // rather than failing: the owner picker then has nothing to offer, which is
-      // the truth for a notes-only checkout, and no source is editable anyway.
-      server.middlewares.use('/api/users', async (req, res, next) => {
-        if (req.method !== 'GET') return next();
+        const me = devIdentity(req);
+        if (!accessControlEnabled(process.env.TIMELINES_ACCESS_CONTROL)) return send(res, 200, me);
         const repo = resolveRepo(dbConns());
-        if (!repo) return send(res, 200, { users: [] });
-        // Email only, no name: the dev identity has none, and `/api/me` reports
-        // the address *as* the name so the presence badge has something to label
-        // with. Registering that would store "alice@example.com" as Alice's
-        // display name; without it she shows as "alice" (the local part).
-        const result = await handleUsersApi(repo, {
-          method: 'GET',
-          caller: { email: devIdentity(req).email },
-        });
-        send(res, result.status, result.json);
+        if (!repo) return send(res, 200, me);
+        try {
+          const member = await repo.getMember(me.email);
+          return send(res, 200, member ? { ...me, role: member.role, status: member.status } : me);
+        } catch {
+          // The identity matters more than the affordance hints, and every route
+          // enforces for itself regardless of what this answers.
+          return send(res, 200, me);
+        }
       });
 
       // GET /<data dir>/config.json — the built viewer config, with one field
@@ -212,8 +181,10 @@ function timelinesApi(): Plugin {
         try {
           const built = JSON.parse(await readFile(resolve(__dirname, 'public', DATA_DIR, 'config.json'), 'utf8'));
           for (const view of built.views ?? []) {
-            // Per source, not blanket: a Markdown directory is served here but
-            // is not writable yet, and claiming otherwise offers edits that 501.
+            // Per source, not blanket: a local view only becomes editable if its
+            // id still resolves to something this process can reach and write
+            // (`isLocalWritable`). A stamped-but-unresolvable source flipped to
+            // editable offers „+ Eintrag" and drag handles that end in an error.
             if (view?.source?.kind === 'local') {
               view.source.editable = isLocalWritable(localDirs, view.source.id);
             }
@@ -224,109 +195,57 @@ function timelinesApi(): Plugin {
         }
       });
 
-      // GET /api/sources — list timelines
-      server.middlewares.use('/api/sources', async (req, res, next) => {
-        if (req.method !== 'GET') return next();
-        const conns = dbConns();
-        // Without a DB the collection is still answerable from the filesystem:
-        // the local timelines ARE sources, and returning [] would hide them.
-        if (!hasDb(conns) && !conns.local) return send(res, 200, { sources: [] });
-        try {
-          const result = await resolveAdapter(conns, '').handle({ method: 'GET', id: '' });
-          send(res, result.status, result.json);
-        } catch (err) {
-          send(res, 500, { error: 'server_error', message: String(err) });
-        }
-      });
-
-      // GET /api/pricing/<id> — PUBLIC pricing model (mirror of the edge fn).
-      server.middlewares.use('/api/pricing', async (req, res, next) => {
-        if (req.method !== 'GET') return next();
-        const repo = resolveRepo(dbConns());
-        if (!repo) return send(res, 503, { error: 'db_not_configured' });
-        const id = (req.url ?? '').replace(/\?.*$/, '').replace(/^\/+|\/+$/g, '');
-        if (!id) return send(res, 400, { error: 'id required' });
-        try {
-          const pricing = await repo.getPublicPricing(decodeURIComponent(id));
-          if (pricing) send(res, 200, pricing);
-          else send(res, 404, { error: 'not found' });
-        } catch (err) {
-          send(res, 500, { error: 'server_error', message: String(err) });
-        }
-      });
-
-      // /api/source/<id>[/item|group|phases[/<childId>]] — DB-backed CRUD
-      server.middlewares.use('/api/source', async (req, res, next) => {
-        const method = req.method ?? 'GET';
-        const rawPath = (req.url ?? '').replace(/\?.*$/, '');
-        const parsed = parseSourcePath(rawPath);
-        if (!parsed) return send(res, 400, { error: 'invalid path' });
-
-        // Validate id + childId segments.
-        const segs = [...parsed.id.split('/'), parsed.sub?.childId].filter(Boolean) as string[];
-        if (!segs.every(isIdSegment)) {
-          return send(res, 400, { error: `invalid id "${parsed.id}"` });
-        }
-
-        const conns = dbConns();
-        // A local file answers for its own id whether or not a DB exists, so the
-        // "no DB" refusal below must not intercept it — that gate predates local
-        // sources and would otherwise 404 every JSON timeline on a checkout
-        // without credentials, which is the common contributor setup.
-        if (!hasDb(conns) && !conns.local?.has(parsed.id)) {
-          // No DB configured: 404 on GET (nothing to read). The client surfaces
-          // the error loudly — there is no static content fallback. Writes 503.
-          if (method === 'GET') return send(res, 404, { error: 'db_not_configured' });
-          return send(res, 503, {
-            error: 'db_not_configured',
-            detail: 'Set TIMELINES_DATABASE_URL, or TIMELINES_SUPABASE_URL + TIMELINES_SUPABASE_SERVICE_KEY.',
-          });
-        }
-
-        let body: unknown;
-        if (method !== 'GET' && method !== 'DELETE') {
-          try {
-            body = await readBody(req);
-          } catch (err) {
-            return send(res, 400, { error: 'invalid JSON', detail: String(err) });
-          }
-        }
-
-        const ifMatchHeader = req.headers['if-match'];
-        const ifMatch = ifMatchHeader ? parseInt(String(ifMatchHeader), 10) : undefined;
-
-        const apiReq: ApiRequest = {
-          method,
-          id: parsed.id,
-          sub: parsed.sub,
-          body,
-          ifMatch: Number.isFinite(ifMatch as number) ? (ifMatch as number) : undefined,
+      // Everything else under /api/ is the shared HTTP layer: /api/sources,
+      // /api/users, /api/pricing/<id> and the /api/source CRUD tree. Routing,
+      // optimistic locking, the X-Source-Live header and the error mapping used
+      // to be written out here AND in the timelines-api edge function, two
+      // copies that had already drifted; they now live once in scripts/db/http.ts
+      // and this middleware is the Node adapter in front of it.
+      //
+      // Mounted globally rather than on '/api': connect strips the mount path
+      // from `req.url`, so a prefixed mount would hand the handler '/sources'
+      // and every route would miss.
+      server.middlewares.use(async (req, res, next) => {
+        if (!(req.url ?? '').startsWith('/api/')) return next();
+        const out = await handleApiRequest(await toRequest(req), {
+          conns: dbConns(),
           // Local dev has no auth session; attribute edits as "local" so they're
           // distinguishable from colleague (Netlify/Google) and MCP edits in the
-          // item audit panel. Production/MCP set updatedBy in their own runtimes.
-          updatedBy: 'local',
-        };
-
-        try {
-          // TIMELINES_DB_LIVE=poll makes DB sources advertise polling instead of
-          // Supabase Realtime (for a Postgres without Realtime enabled).
-          const live = process.env.TIMELINES_DB_LIVE === 'poll' ? 'poll' : 'realtime';
-          const adapter = resolveAdapter(conns, apiReq.id, live);
-          // Tell the client which live-update impl to use (read by loadSource).
-          res.setHeader('X-Source-Live', adapter.capabilities.live);
-          const result = await adapter.handle(apiReq);
-          // A GET 404 (source not in the DB) surfaces as a loud client error —
-          // no static content fallback (see AGENTS.md „keine Notfall-Daten").
-          send(res, result.status, result.json);
-        } catch (err) {
-          send(res, 500, { error: 'server_error', message: String(err) });
-        }
+          // item audit panel. A `dev_user` cookie overrides it (see /api/me).
+          //
+          // Email only, no name: the dev identity has none, and `/api/me` reports
+          // the address *as* the name so the presence badge has something to
+          // label with. Registering that would store "alice@example.com" as
+          // Alice's display name; without it she shows as "alice".
+          updatedBy: devIdentity(req).email,
+          caller: { email: devIdentity(req).email },
+          // Off unless a developer asks for it, and then it consults the same
+          // member list as everything else — which is the point: trying the role
+          // model out locally must exercise the real path, not a dev-only
+          // shortcut that lets every check pass.
+          accessControl: accessControlEnabled(process.env.TIMELINES_ACCESS_CONTROL),
+          live: liveOverride(process.env.TIMELINES_DB_LIVE),
+        });
+        if (!out) return next(); // not one of its routes (e.g. /api/me, /api/jira)
+        await writeResponse(res, out);
       });
     },
   };
 }
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      // Two entries. The design-system playground is a page of its own rather
+      // than a route in the app: the app has no router, and a separate entry is
+      // what keeps the playground's specimen code out of the app's bundle —
+      // asserted by scripts/ci/check-bundle-split.sh rather than assumed.
+      input: {
+        index: resolve(__dirname, 'index.html'),
+        playground: resolve(__dirname, 'playground.html'),
+      },
+    },
+  },
   server: {
     port: PORT,
     strictPort: true,

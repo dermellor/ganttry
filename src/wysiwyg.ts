@@ -12,6 +12,8 @@
 
 import { marked } from 'marked';
 import TurndownService from 'turndown';
+import { el, Prose } from './design-system';
+import './styles/wysiwyg.css';
 
 const turndown = new TurndownService({
   headingStyle: 'atx',
@@ -44,16 +46,16 @@ const LINE_MARKERS: Record<string, { kind: BlockKind; len: number }> = {
 };
 
 export function createMarkdownEditor(initialMarkdown: string, onChange: () => void): MarkdownEditor {
-  const root = document.createElement('div');
-  root.className = 'wysiwyg';
-
-  const surface = document.createElement('div');
-  surface.className = 'wysiwyg-surface';
+  // The frame carries the border and the focus tint, exactly as a ChipBox does
+  // for the bare input inside it; the surface is the `Prose` component in its
+  // editable mode, so a note reads the same while it is being typed as it does
+  // once the form is closed.
+  const surface = Prose({ editable: true, className: 'wysiwyg-surface' });
   surface.contentEditable = 'true';
   surface.spellcheck = false;
   surface.innerHTML = renderMd(initialMarkdown);
 
-  root.append(surface);
+  const root = el('div', { class: 'wysiwyg' }, surface);
 
   function renderMd(md: string): string {
     const html = marked.parse(md ?? '', { async: false }) as string;

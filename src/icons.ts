@@ -1,12 +1,16 @@
 // Curated, semantic icon set.
 //
 // An item stores only a *semantic* key (what the icon means, not how it looks).
-// Each key resolves to a glyph via a `--icon-<key>` CSS custom property (see
-// src/styles/theme.css). This keeps the data portable and round-trips cleanly
-// through the DB, editor and exports.
+// Each key resolves to a glyph via a `--icon-<key>` CSS custom property. This
+// keeps the data portable and round-trips cleanly through the DB, editor and
+// exports.
 //
-// The base glyphs live in theme.css `:root`; override any key in your own
-// stylesheet with `:root { --icon-<key>: url(…) }`.
+// The base glyphs live in `src/design-system/tokens/icons.css`; override any key
+// in your own stylesheet with `:root { --icon-<key>: url(…) }`. How one is drawn
+// is the `Icon` component's business, not this module's — here it is only the
+// vocabulary and the guard that keeps a stored value out of a CSS var name.
+
+import { html, Icon } from './design-system';
 
 export type IconKey =
   | 'milestone'
@@ -60,10 +64,11 @@ export function normalizeIcon(value: unknown): IconKey | undefined {
   return ICON_KEYS.has(v) ? (v as IconKey) : undefined;
 }
 
-// The `<span>` prepended to an item's content at render time. Empty string when
-// no valid icon, so it is safe to always concatenate.
+// The glyph prepended to an item's content at render time, as markup: this feeds
+// vis-timeline, which takes a string per item. Empty string when there is no
+// valid icon, so it is safe to always concatenate.
 export function iconSpanHtml(value: unknown): string {
   const key = normalizeIcon(value);
   if (!key) return '';
-  return `<span class="item-icon" style="--item-icon:var(--icon-${key})"></span>`;
+  return html(Icon({ name: key }));
 }

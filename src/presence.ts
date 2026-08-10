@@ -2,6 +2,7 @@
 // active timeline open. Fed by the Supabase presence channel (src/realtime.ts),
 // which is opt-in per environment (VITE_SUPABASE_*). No realtime → no badge.
 
+import { Avatar } from './design-system';
 import { els } from './state';
 import { hueFor, initials, labelFor as label, type PresenceUser } from './presenceModel';
 
@@ -38,23 +39,27 @@ export function renderPresence(users: PresenceUser[], selfEmail: string | null):
   const frag = document.createDocumentFragment();
 
   for (const u of shown) {
-    const avatar = document.createElement('span');
-    // `user-avatar` carries the shared avatar look (base.css); `presence-avatar`
-    // adds only the stacking overlap and the self ring.
-    avatar.className = 'user-avatar presence-avatar';
-    if (u.email === selfEmail) avatar.classList.add('is-self');
-    avatar.style.setProperty('--presence-hue', String(hueFor(u.email)));
-    avatar.textContent = initials(u);
-    avatar.title = u.email === selfEmail ? `${label(u)} — du` : label(u);
-    frag.appendChild(avatar);
+    frag.appendChild(
+      Avatar({
+        initials: initials(u),
+        hue: hueFor(u.email),
+        stacked: true,
+        self: u.email === selfEmail,
+        title: u.email === selfEmail ? `${label(u)} — du` : label(u),
+      }),
+    );
   }
 
   if (overflow > 0) {
-    const more = document.createElement('span');
-    more.className = 'user-avatar presence-avatar presence-more';
-    more.textContent = `+${overflow}`;
-    more.title = sorted.slice(MAX_AVATARS).map(label).join('\n');
-    frag.appendChild(more);
+    frag.appendChild(
+      Avatar({
+        initials: `+${overflow}`,
+        hue: 0,
+        stacked: true,
+        overflow: true,
+        title: sorted.slice(MAX_AVATARS).map(label).join('\n'),
+      }),
+    );
   }
 
   el.replaceChildren(frag);

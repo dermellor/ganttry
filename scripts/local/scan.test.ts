@@ -30,7 +30,7 @@ async function fresh(name: string, container?: object): Promise<string> {
 }
 
 before(async () => {
-  root = await mkdtemp(join(tmpdir(), 'ganttry-scan-'));
+  root = await mkdtemp(join(tmpdir(), 'zeitlines-scan-'));
 });
 
 describe('scanDirectory: items out of Markdown', () => {

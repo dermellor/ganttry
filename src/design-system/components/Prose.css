@@ -1,0 +1,86 @@
+/* Prose — rendered Markdown, reading and editing. */
+
+.ds-Prose {
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  color: var(--fg);
+}
+
+.ds-Prose h1,
+.ds-Prose h2,
+.ds-Prose h3 {
+  font-family: var(--font-headline);
+  font-weight: var(--headline-weight);
+  line-height: var(--leading-tight);
+  margin: 1.25em 0 0.3em;
+}
+
+.ds-Prose > :first-child { margin-top: 0; }
+.ds-Prose > :last-child { margin-bottom: 0; }
+
+.ds-Prose h1 { font-size: 1.5em; }
+.ds-Prose h2 { font-size: 1.3em; }
+.ds-Prose h3 { font-size: 1.12em; }
+
+.ds-Prose p { margin: 0.5em 0; }
+
+.ds-Prose ul,
+.ds-Prose ol {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+}
+
+.ds-Prose li { margin: 0.15em 0; }
+
+.ds-Prose blockquote {
+  margin: 0.5em 0;
+  padding-left: 0.8em;
+  border-left: 3px solid var(--border);
+  color: var(--fg-muted);
+}
+
+.ds-Prose a {
+  color: var(--accent);
+}
+
+.ds-Prose code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--hover);
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius-xs);
+}
+
+.ds-Prose pre {
+  margin: 0.5em 0;
+  padding: var(--space-sm) var(--space-sm);
+  background: var(--hover);
+  border-radius: var(--radius-xs);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  white-space: pre-wrap;
+}
+
+.ds-Prose pre code {
+  padding: 0;
+  background: none;
+}
+
+/* ---- editing surface -------------------------------------------------------- */
+
+/* Grows with its content between these bounds. The floor is deliberately low:
+   the body is the single biggest consumer of panel height, and an empty or
+   two-line note has no business reserving a screenful. */
+.ds-Prose[data-editable] {
+  padding: var(--space-sm) var(--space-sm);
+  min-height: 72px;
+  max-height: 340px;
+  overflow-y: auto;
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
+
+.ds-Prose[data-editable]:focus {
+  outline: none;
+}

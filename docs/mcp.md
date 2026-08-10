@@ -2,7 +2,7 @@
 
 Reading and writing DB-backed timelines from an agent.
 
-Part of the Ganttry documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
+Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
 its file when it lives in another chapter.
 
@@ -26,7 +26,7 @@ live site and therefore not manipulable here.
 | `list_users`        | Lists the linkable users (email, name) for `metadata.owner`   |
 | `get_timeline`      | A complete timeline (items + groups) by id                    |
 | `add_item`          | Appends an item (required: `start`, `content`)                 |
-| `update_item`       | Patches an item (only the given fields; `metadata` is merged) |
+| `update_item`       | Patches an item (only the given fields; `metadata` is merged, a `null` value removes its key) |
 | `delete_item`       | Removes an item by id                                         |
 | `add_group`         | Adds a group                                                  |
 | `update_group`      | Patches a group                                               |
@@ -40,11 +40,28 @@ live site and therefore not manipulable here.
 | `add_/update_/delete_highlight` | One card tile (granular)                          |
 | `set_versions`      | Replaces the ordered version list                             |
 
-The granular item and group tools run read-modify-write: the server fetches the
-timeline, mutates it in memory and writes it back with a PUT (bulk replace).
-`dependsOn` and `owner` live under `metadata`; `owner` carries the e-mail of a
-user from `list_users` (see „Item owner" (docs/items.md)), and a free-text name is stored but
-renders as unlinked. The granular **pricing** tools instead hit their row's
+The granular item and group tools run read-modify-write: the local server fetches
+the timeline, mutates it in memory and writes it back with a PUT (bulk replace);
+the remote one reads it to resolve the patch and then writes the single row.
+
+**Why they read at all, on both servers.** The write underneath replaces a whole
+column, and it has to: the viewer sends the complete `metadata` object on every
+save and depends on the replace to drop a key the user emptied (see
+`CLEARABLE_ITEM_FIELDS` in [`src/persistence.ts`](../src/persistence.ts)). Moving
+the merge down into the endpoint would make removing the last tag impossible. So
+the *patch* these two tools document is resolved against the current value first,
+by one shared rule in [`scripts/mcp/patch.ts`](../scripts/mcp/patch.ts). The
+remote `update_item` skipped that step and replaced `metadata` wholesale, which
+silently dropped every key the caller had not resent, and `update_group` wrote
+through an upsert that nulled an unmentioned `nestedGroups`.
+
+`dependsOn`, `parent` and `owner` live under `metadata`; `owner` carries the
+e-mail of a user from `list_users` (see „Item owner" (docs/items.md)), and a
+free-text name is stored but renders as unlinked. `parent` is the id of the item
+this one is part of, at most one — a self-link, an unknown id or one that would
+close a cycle is dropped when the timeline is built, so a tool call that writes
+one succeeds and the link simply is not there (see „Parent and children"
+(docs/items.md)). The granular **pricing** tools instead hit their row's
 endpoint directly, with no read-modify-write and no full dump — details under
 „Pricing" (docs/pricing.md).
 
