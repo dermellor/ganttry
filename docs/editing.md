@@ -865,8 +865,8 @@ lives in [`src/grouping.ts`](../src/grouping.ts), the pure sectioning stays in
 [`src/listGrouping.ts`](../src/listGrouping.ts) (`computeSections`, unit-tested in
 `src/listGrouping.test.ts`).
 
-- **Gruppieren** (`#groupby`, `state.groupBy`, persisted as
-  `timelines.listGroupBy`) chooses the dimension: **Gruppe** (default, the item
+- **Gruppieren** (`#groupby`, `state.groupBy`, persisted per timeline, see „Where
+  the display state lives") chooses the dimension: **Gruppe** (default, the item
   group — build order preserved), **Tag** (offered when anything is tagged, from
   `metadata.tags`), **Status** (offered when any item carries one — see „Item
   status" (docs/items.md)), and one entry per **custom field** (e.g. **Tier**, from
@@ -902,9 +902,9 @@ lives in [`src/grouping.ts`](../src/grouping.ts), the pure sectioning stays in
   on, and a popover checklist (`#filter-menu`) of that dimension's values selects
   *which* to keep. An item passes if it carries a selected value (the "Ohne …"
   bucket, `NO_BUCKET`, is selectable to keep value-less items); an **empty
-  selection means no restriction**. Persisted as `timelines.filterDim` /
-  `timelines.filterValues`; a persisted dimension that no longer exists turns the
-  filter off. The filtering itself lives in `filterBuildForDisplay`
+  selection means no restriction**. Persisted per timeline (see „Where the display
+  state lives"); a stored dimension that no longer exists on this timeline turns
+  the filter off. The filtering itself lives in `filterBuildForDisplay`
   ([`src/render.ts`](../src/render.ts)) via `passesFilter`, so every consumer
   (timeline, list, export, status line) honours it from one place, composed with
   the milestones-only toggle; empty lanes are pruned once by `pruneGroupsToItems`.
@@ -917,9 +917,46 @@ Both modes share all state and machinery: the timeline instance stays alive
 working. Clicking a row opens the same detail panel (or edit form on editable
 sources), tracks the selection, and highlights the row — identical to selecting
 a timeline item. Edits (form, add, delete) repaint the list live via
-`applyBuildToDataSets`. The mode persists in `localStorage`
-(`timelines.viewMode`) and in the URL hash (`mode=list`), so list views can be
+`applyBuildToDataSets`. The mode persists per timeline (see „Where the display
+state lives") and in the URL hash (`mode=list`), so list views can be
 deep-linked and survive reload.
+
+### Where the display state lives
+
+Presentation, grouping dimension, value filter and the milestones narrowing are
+stored **per timeline**, in one `localStorage` key holding
+`{ [viewId]: … }` ([`src/viewPrefs.ts`](../src/viewPrefs.ts), swapped by
+`loadViewPrefs` and written by `saveViewPrefs` in
+[`src/state.ts`](../src/state.ts)). Each of them says how *one* timeline is being
+looked at, and each used to be a single key for the whole instance, so switching
+timelines carried a filter into a timeline it was never meant for. The shape
+follows the fold store (`COLLAPSED_ITEMS_KEY`), which had already solved this for
+folded items.
+
+Three consequences worth knowing:
+
+- **The guards stay, and their reason changed.** A stored dimension that no longer
+  exists still turns the filter off, and an unavailable grouping dimension still
+  resolves to `Gruppe`. That now covers a timeline changing under its own stored
+  state (a custom field was removed), never another timeline's dimension.
+- **The resolved fallback is not written back.** `resolveGrouping` derives it on
+  every render, and `state.groupBy` keeps the user's choice. Storing the fallback
+  instead meant that a filter which left no tagged item flattened the grouping to
+  `Gruppe` permanently, so clearing the filter did not bring it back.
+- **A link outranks the stored state, and how much it outranks depends on the
+  path.** On load, only the parameters the link actually carries win, so a link
+  without `mode` opens the timeline in the presentation it remembers. A hash
+  change inside the running app (back/forward, a pasted link) is authoritative
+  about all of it, absences included, which is what makes back reverse a
+  narrowing rather than leave it standing. The result is stored on the timeline
+  that was opened.
+
+The five instance-wide keys this replaces (`timelines.viewMode`,
+`timelines.listGroupBy`, `timelines.filterDim`, `timelines.filterValues`,
+`timelines.milestonesOnly`) are read once, to seed the first timeline opened after
+the update, and then removed. Dropping them without that read resets every user's
+saved view, grouping and filter, which is the trap
+[`AGENTS.md`](../AGENTS.md) names for the `timelines.*` prefix.
 
 ## URL state
 

@@ -1075,7 +1075,10 @@ body.phase-dragging {
   }
 }
 
-/* Avatar cluster, straddling the item's left edge. Left rather than right,
+/* Avatar cluster, straddling the item's left edge. Stored phase backgrounds put
+   the cluster only on their display-only title, without the ordinary item ring;
+   the full-height tint is deliberately left unmarked (itemPresence.ts).
+   Left rather than right,
    because a range bar frequently runs off the right of the window (its end can
    be months away) — the start edge is the one you are looking at, and a chip
    pinned to the far end would be permanently off-canvas. Vertically centred:

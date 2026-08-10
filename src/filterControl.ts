@@ -8,7 +8,7 @@
 
 import { type TimelineItem } from './buildItems';
 import { Checkbox, setSelectOptions } from './design-system';
-import { state, els, FILTER_DIM_KEY, FILTER_VALUES_KEY } from './state';
+import { state, els, saveViewPrefs } from './state';
 import { filterDimensions, filterValueOptions } from './grouping';
 import { applyFilter } from './render';
 
@@ -18,9 +18,10 @@ function currentEntries(): TimelineItem[] {
   return (state.activeBuild?.items ?? []).filter((it) => it.type !== 'background');
 }
 
+// The selection belongs to the timeline it was made on, so it is written with
+// the rest of that timeline's display state (see viewPrefs.ts).
 function persist(): void {
-  localStorage.setItem(FILTER_DIM_KEY, state.filterDim);
-  localStorage.setItem(FILTER_VALUES_KEY, JSON.stringify(state.filterValues));
+  saveViewPrefs();
 }
 
 function updateToggleLabel(total: number): void {
@@ -55,8 +56,11 @@ export function syncFilterControl(): void {
     dimSel.dataset.built = signature;
   }
 
-  // A persisted dimension that no longer exists (build changed) turns the filter
-  // off rather than silently filtering on a phantom dimension.
+  // A stored dimension that no longer exists on this timeline (a custom field was
+  // removed, the last tag went) turns the filter off rather than silently
+  // filtering on a phantom dimension. Since the selection is stored per timeline,
+  // this is about a timeline changing under its own stored state, never about
+  // another timeline's dimension leaking in.
   if (state.filterDim && !dims.some((d) => d.key === state.filterDim)) {
     state.filterDim = '';
     state.filterValues = [];

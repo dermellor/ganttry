@@ -201,7 +201,7 @@ what makes a second view possible without touching the core.
 
 **A view is addressable.** `ViewMode` is `timeline`, `list`, or
 `plugin:<pluginId>:<viewId>`, and that one scalar is what `state.viewMode`, the
-`?mode=` hash parameter and the persisted `timelines.viewMode` key all carry
+`?mode=` hash parameter and the mode persisted per timeline all carry
 ([`src/pluginHost/viewMode.ts`](../src/pluginHost/viewMode.ts)). Modes from before
 plugin views were addressable — a bare view id, with no plugin in front of it —
 resolve through the descriptor's `legacyModeIds`, so old deep links and every

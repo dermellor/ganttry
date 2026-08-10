@@ -84,9 +84,12 @@ left alone, and a sweep that "finishes the rename" breaks all three:
 - **Applied migrations.** `supabase/migrations/*.sql` are checksummed by
   `db:migrate`; editing even a comment in one raises a drift warning.
 
-`localStorage` keys (`timelines.viewMode` and its siblings) also still carry the
-old prefix. Renaming them without a read-both migration silently resets every
-user's saved view, grouping and filter state.
+`localStorage` keys (`timelines.view`, `timelines.viewPrefs` and their siblings)
+also still carry the old prefix. Renaming them without a read-both migration
+silently resets every user's saved view, grouping and filter state. The move of
+the display state from five instance-wide keys to one per-timeline store is what
+that migration looks like: see „Where the display state lives"
+([`docs/editing.md`](docs/editing.md)).
 
 ## Branching, Commits & Session Isolation
 
