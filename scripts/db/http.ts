@@ -116,6 +116,17 @@ async function readBody(req: Request, method: string): Promise<unknown> {
 }
 
 /**
+ * Every path this module answers for.
+ *
+ * Exported because the same list has to exist twice more — in the edge
+ * function's `config.path` and in `netlify.toml` — and those two are hand-kept.
+ * A route added here alone works in the Vite dev middleware, which matches all
+ * of `/api/`, and 404s in production, where an edge function only ever sees the
+ * paths it declares. `scripts/ci/edge-routes.test.ts` asserts the three agree.
+ */
+export const OWNED_API_PATHS = ['/api/source/*', '/api/sources', '/api/users', '/api/members'] as const;
+
+/**
  * Is this one of ours at all?
  *
  * Needed as its own question because authorization has to run after „yes" and
