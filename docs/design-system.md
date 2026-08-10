@@ -120,7 +120,8 @@ it is the one that will be argued about:
 | [`src/styles/timeline.css`](../src/styles/timeline.css) | vis-timeline's own furniture as this app dresses it: `.vis-item`, the item rail, the phase band, the dependency arrows. Not components — a third-party chart's internals. It spends tokens like everything else. |
 | [`src/styles/wysiwyg.css`](../src/styles/wysiwyg.css) | The frame around the Markdown editor. What the text inside it looks like is the `Prose` component, which the reading view uses too. |
 | [`src/styles/app.css`](../src/styles/app.css) | App composition that is not a component. Currently one rule. The bar is deliberately high — two call sites and it becomes a component. |
-| [`src/styles/members.css`](../src/styles/members.css) | How the „Benutzer" screen arranges components it does not own. Imported by `memberAdmin.ts`, so an instance where nobody opens the screen never downloads it. |
+| [`src/styles/members.css`](../src/styles/members.css) | How the „Benutzer" section arranges components it does not own. Imported by `memberAdmin.ts`, so an instance where nobody opens it never downloads it. |
+| [`src/styles/settings.css`](../src/styles/settings.css) | The same, for the settings area around it: two columns, and which chrome steps aside while the area is open. Imported by `settingsArea.ts`. |
 
 A plugin's own stylesheet
 ([`pricing.css`](../src/plugins/product-roadmap/pricing.css)) sits in the same

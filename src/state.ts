@@ -17,6 +17,9 @@ import type { BuildResult } from './buildItems';
 import type { JiraIssue } from './jira';
 import type { PresenceUser } from './presence';
 import type { MemberRole } from './access';
+// Type-only, so it is erased: a value import would make the cycle with
+// settingsArea.ts (which reads `els` and `state` from here) a real one.
+import type { SettingsSection } from './settingsArea';
 import type { PresenceHandle } from './realtime';
 import { mountAppShell } from './appShell';
 import { isoDateOnly } from './editor';
@@ -139,6 +142,10 @@ export interface AppState {
   // membership screen": there is nothing to administer then. Only ever an
   // affordance hint — every route enforces for itself.
   currentRole: MemberRole | null;
+  // Which section of the settings area is open; null means it is closed. Held
+  // here rather than in the area's own module because `syncUrl` writes it into
+  // the hash alongside the view, and the view is what the area is closed back to.
+  settingsSection: SettingsSection | null;
   realtimeRefreshTimer: ReturnType<typeof setTimeout> | null;
   // Debounce for reactive form edits: coalesces rapid keystrokes into one
   // model update + live rebuild (see scheduleLiveEdit).
@@ -194,6 +201,7 @@ export const state: AppState = {
   presenceSourceId: null,
   currentUser: null,
   currentRole: null,
+  settingsSection: null,
   realtimeRefreshTimer: null,
   liveEditTimer: null,
   selectedItemId: null,
@@ -348,5 +356,9 @@ export function syncUrl(): void {
   }
   if (state.milestonesOnly) urlState.milestones = true;
   if (state.viewMode !== 'timeline') urlState.mode = state.viewMode;
+  // Written alongside everything else: the view, item and window stay in the
+  // hash while the area is open, so closing it returns to the timeline the
+  // operator left rather than to the default view.
+  if (state.settingsSection) urlState.settings = state.settingsSection;
   writeUrlState(urlState);
 }

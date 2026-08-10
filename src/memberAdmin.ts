@@ -1,10 +1,17 @@
 // The „Benutzer" screen: who belongs to this instance, and the four things an
 // admin does about it — invite, change a role, suspend, restore.
 //
-// A dialog rather than a view, because a view in this app names a timeline
-// source (see `applyView` in main.ts) and membership is not one. It also keeps
-// the whole surface out of the bundle's hot path: nothing here runs until an
-// admin opens it.
+// A section of the settings area rather than a screen of its own. It shipped as
+// a dialog on its own header button, which was the second surface showing
+// instance-wide state and heading for the „a button per concern, and no
+// overview" arrangement the area exists to prevent. What it lost in the move is
+// only the frame it drew for itself — the modal, its backdrop and its heading.
+// The list, the invite form and the row actions are unchanged.
+//
+// It is still not a view: a view in this app names a timeline source (see
+// `applyView` in main.ts) and membership is not one. Building on mount keeps the
+// whole surface out of the bundle's hot path — nothing here runs, and no member
+// markup exists in the document, until an admin opens the section.
 //
 // Everything it offers is also enforced server-side (scripts/db/http.ts). What
 // the interface hides is an affordance, never a permission: a viewer who
@@ -46,7 +53,8 @@ const ROLE_LABEL: Record<MemberRole, string> = {
   viewer: 'Leser',
 };
 
-let dialog: HTMLDialogElement | null = null;
+/** Where the built subtree currently lives, or null while unmounted. */
+let root: HTMLElement | null = null;
 let members: Member[] = [];
 
 /**
@@ -133,7 +141,7 @@ function row(m: Member): HTMLElement {
 }
 
 function render(): void {
-  const body = dialog?.querySelector('#member-rows');
+  const body = root?.querySelector('#member-rows');
   if (!body) return;
   body.replaceChildren(
     ...(members.length
@@ -151,7 +159,7 @@ function render(): void {
 }
 
 function say(message: string, kind: 'ok' | 'error' = 'ok'): void {
-  const slot = dialog?.querySelector('#member-note') as HTMLElement | null;
+  const slot = root?.querySelector('#member-note') as HTMLElement | null;
   if (!slot) return;
   slot.replaceChildren(
     ...(message
@@ -178,8 +186,8 @@ function say(message: string, kind: 'ok' | 'error' = 'ok'): void {
  * make the person wait for an e-mail.
  */
 function showInvite(email: string, token: string): void {
-  const box = dialog?.querySelector('#member-invite') as HTMLElement | null;
-  const field = dialog?.querySelector('#member-invite-url') as HTMLInputElement | null;
+  const box = root?.querySelector('#member-invite') as HTMLElement | null;
+  const field = root?.querySelector('#member-invite-url') as HTMLInputElement | null;
   if (!box || !field) return;
   field.value = inviteUrl(token);
   box.hidden = false;
@@ -215,9 +223,9 @@ async function act(email: string, patch: Record<string, unknown>, done: string):
 }
 
 function wire(): void {
-  if (!dialog) return;
+  if (!root) return;
 
-  dialog.querySelector('#member-invite-form')!.addEventListener('submit', async (ev) => {
+  root.querySelector('#member-invite-form')!.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const form = ev.target as HTMLFormElement;
     const email = (form.elements.namedItem('email') as HTMLInputElement).value.trim();
@@ -236,7 +244,7 @@ function wire(): void {
 
   // One delegated listener rather than one per row: the table is re-rendered on
   // every change, and per-row listeners would leak with it.
-  dialog.querySelector('#member-rows')!.addEventListener('click', (ev) => {
+  root.querySelector('#member-rows')!.addEventListener('click', (ev) => {
     const btn = (ev.target as HTMLElement).closest('button[data-act]') as HTMLButtonElement | null;
     const email = btn?.closest('tr')?.getAttribute('data-email');
     if (!btn || !email) return;
@@ -252,15 +260,15 @@ function wire(): void {
     }
   });
 
-  dialog.querySelector('#member-rows')!.addEventListener('change', (ev) => {
+  root.querySelector('#member-rows')!.addEventListener('change', (ev) => {
     const select = ev.target as HTMLSelectElement;
     if (select.dataset.act !== 'role') return;
     const email = select.closest('tr')?.getAttribute('data-email');
     if (email) void act(email, { role: select.value }, `Rolle von ${email} geändert.`);
   });
 
-  dialog.querySelector('#member-invite-copy')!.addEventListener('click', async () => {
-    const field = dialog!.querySelector('#member-invite-url') as HTMLInputElement;
+  root.querySelector('#member-invite-copy')!.addEventListener('click', async () => {
+    const field = root!.querySelector('#member-invite-url') as HTMLInputElement;
     try {
       await navigator.clipboard.writeText(field.value);
       say('Link kopiert.');
@@ -272,24 +280,19 @@ function wire(): void {
     }
   });
 
-  // The close button comes with the Dialog component and closes it itself
-  // (see `onClose` in build), so there is nothing to wire here.
 }
 
 /**
- * The dialog's markup, built here rather than carried in index.html.
+ * The section's markup, built here rather than carried in the app shell.
  *
- * Nothing in this module runs until an admin opens the screen, so building it on
- * first open keeps the whole surface — and its stylesheet — off the path every
+ * Nothing in this module runs until an admin opens the section, so building it
+ * on mount keeps the whole surface — and its stylesheet — off the path every
  * other visitor takes. It also means the shell has no markup for a feature most
- * instances never switch on.
+ * instances never switch on. The heading and the close button are the area's,
+ * which is what this stopped drawing when it stopped being a dialog.
  */
-function build(): HTMLDialogElement {
-  const node = Dialog({
-    title: 'Benutzer',
-    className: 'member-dialog',
-    onClose: () => node.close(),
-    children: [
+function build(): HTMLElement {
+  return el('div', { class: 'member-screen' }, [
       el('form', { id: 'member-invite-form', class: 'member-invite-form' }, [
         TextInput({
           type: 'email',
@@ -337,24 +340,41 @@ function build(): HTMLDialogElement {
           ],
         }),
       ]),
-    ],
-  });
-  return node;
+  ]);
 }
 
-/** Open the screen, loading the list fresh — roles change while it is closed. */
-export async function openMemberAdmin(): Promise<void> {
-  if (!dialog) {
-    dialog = build();
-    document.body.appendChild(dialog);
-    wire();
-  }
+/**
+ * Mount the screen into the settings area, loading the list fresh.
+ *
+ * Fresh on every mount rather than cached, for the reason the dialog reloaded on
+ * every open: roles and statuses change while the section is closed, and a stale
+ * table is a table an admin acts on.
+ *
+ * The listeners are wired to the freshly built subtree each time. That is not a
+ * leak — `unmountMemberAdmin` drops the whole subtree, and the listeners go with
+ * the nodes they sit on.
+ */
+export async function mountMemberAdmin(container: HTMLElement): Promise<void> {
+  root = build();
+  container.replaceChildren(root);
+  wire();
   say('');
-  (dialog.querySelector('#member-invite') as HTMLElement).hidden = true;
-  dialog.showModal();
+  (root.querySelector('#member-invite') as HTMLElement).hidden = true;
   try {
     await reload();
   } catch (e) {
     say(e instanceof Error ? e.message : String(e), 'error');
   }
+}
+
+/**
+ * Drop the screen when another section takes the panel.
+ *
+ * `members` is cleared with it: keeping the last roster around would let a
+ * re-mount paint stale rows for the instant before the reload answers, and those
+ * rows carry role dropdowns somebody can click.
+ */
+export function unmountMemberAdmin(): void {
+  root = null;
+  members = [];
 }

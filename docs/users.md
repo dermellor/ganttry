@@ -242,5 +242,14 @@ actions. It is shown only to somebody who may `manage`, and that is an affordanc
 rather than a permission — every route enforces for itself, so hiding the button
 only avoids offering people something that would refuse them.
 
-It is a dialog today and becomes a section of the instance settings area in #44,
-which is why it deliberately carries little chrome of its own.
+It is a **section of the settings area** (`#settings=members`), not a screen of
+its own — see [`docs/settings.md`](settings.md). It shipped as a dialog on its own
+header button, and moving it is what kept the instance from growing a button per
+concern. Nothing about the list changed in the move; what it lost is the modal,
+its backdrop and the heading it used to draw for itself, all of which the area
+now draws once for every section.
+
+With `TIMELINES_ACCESS_CONTROL` off the section renders no member list at all,
+only the sentence naming that variable. Roles exist in the table and decide
+nothing while the switch is off, so a list there would imply an authority it does
+not have.

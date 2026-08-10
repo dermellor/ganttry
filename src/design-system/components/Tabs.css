@@ -27,6 +27,30 @@
   transition: color var(--motion-fast), border-color var(--motion-fast);
 }
 
+/* A column beside its panel rather than a strip above it. The active marker
+   moves to the inline edge with the strip, so the tab still breaks the rule the
+   list draws instead of sitting next to it. */
+.ds-Tabs[data-orientation='vertical'] {
+  flex-direction: column;
+  align-items: stretch;
+  margin-top: 0;
+  border-bottom: none;
+  border-right: 1px solid var(--border);
+}
+
+.ds-Tabs[data-orientation='vertical'] .ds-Tab {
+  justify-content: flex-start;
+  text-align: left;
+  border-bottom: none;
+  border-right: 2px solid transparent;
+  margin-bottom: 0;
+  margin-right: -1px;
+}
+
+.ds-Tabs[data-orientation='vertical'] .ds-Tab[aria-selected='true'] {
+  border-right-color: var(--accent);
+}
+
 .ds-Tab:hover:not([aria-selected='true']) {
   color: var(--fg);
 }
