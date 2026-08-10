@@ -33,16 +33,7 @@
 .vis-time-axis .vis-text.vis-major:not(.vis-measure),
 .vis-time-axis .vis-text.vis-minor[class*='vis-year'] {
   font-weight: 500;
-}
-
-.vis-ltr .vis-time-axis .vis-text.vis-major:not(.vis-measure),
-.vis-ltr .vis-time-axis .vis-text.vis-minor[class*='vis-year'] {
-  padding-left: var(--space-lg) !important;
-}
-
-.vis-rtl .vis-time-axis .vis-text.vis-major:not(.vis-measure),
-.vis-rtl .vis-time-axis .vis-text.vis-minor[class*='vis-year'] {
-  padding-right: var(--space-lg) !important;
+  top: var(--space-sm);
 }
 
 .vis-labelset .vis-label {
