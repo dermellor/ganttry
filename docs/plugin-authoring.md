@@ -100,6 +100,47 @@ function subscribeOnce(host) {
 Most views need no subscription at all: the host already calls `renderView` again
 when the timeline changes. It is for state a plugin keeps *outside* the render.
 
+## Making it look like the app
+
+A plugin's view is rendered into the app's own page, so the theme is already
+around it: the tokens in `src/styles/theme.css` are custom properties on `:root`
+and they **cascade into a plugin's DOM**. Use them and the view follows a theme
+change it never hears about; hardcode `#333` and it does not.
+
+```js
+cell.setAttribute('style', 'padding:6px 10px;border-bottom:1px solid var(--border);color:var(--fg-muted)');
+```
+
+These are the ones worth treating as the vocabulary:
+
+| Token | For |
+| --- | --- |
+| `--bg`, `--surface` | the page behind you, and a raised surface on it |
+| `--fg`, `--fg-muted` | body text, and text that is secondary rather than faint |
+| `--border` | any hairline; it is a translucent accent, not grey |
+| `--hover` | a hover wash on an interactive row |
+| `--accent` | the one colour the product spends on emphasis |
+| `--warning`, `--danger`, `--success` | states, in the app's own reading of them |
+| `--font-body`, `--font-headline`, `--font-mono` | typography |
+
+**The host styles exactly one thing inside your view: headings.** `h1`–`h3` get
+the app's headline font, because a heading is part of the page's voice and a
+plugin that writes a plain `<h2>` should not read as a foreign document pasted
+into the app. Everything below that — tables, buttons, spacing — is yours, on
+purpose: a default there is something a plugin with its own design would have to
+fight.
+
+A shared component vocabulary (`ds-*` classes, so a plugin gets a real button
+rather than a browser one) is
+[#60](https://github.com/zeitlines/zeitlines/issues/60). Until it lands, tokens
+plus your own CSS is the whole story — and note what that implies once it does:
+the class names become part of the versioned contract, like the manifest shape.
+
+You can ship CSS with the artifact by injecting a `<style>` from your module; the
+policy allows inline styles. Do not fetch a stylesheet from anywhere — the
+Content-Security-Policy will refuse it unless the operator has allowlisted that
+origin, and asking them to is a worse first impression than a plain table.
+
 ## Declaring data
 
 A collection is declared in the manifest and the host does the rest — storage,

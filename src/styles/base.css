@@ -302,6 +302,23 @@ body {
   flex-direction: column;
 }
 
+/* The one thing the host styles INSIDE a plugin's view, and the line is drawn on
+   purpose: a heading is part of the page's voice, not part of the plugin's
+   design. Without this a plugin that writes a plain `<h2>` gets the browser
+   default and reads as a foreign document pasted into the app — the plugin has
+   said nothing about typography, so answering with Times New Roman is a worse
+   default than answering with ours.
+
+   Everything below a heading (tables, buttons, spacing) is deliberately NOT
+   styled here: a default there is something a plugin with its own design has to
+   fight, and the vocabulary for it belongs in the design system
+   (<https://github.com/zeitlines/zeitlines/issues/60>) rather than in a rule that
+   reaches into a plugin's markup. */
+.plugin-view :is(h1, h2, h3) {
+  font-family: var(--font-headline, var(--font-body, serif));
+  font-weight: var(--headline-weight, 400);
+}
+
 /* Grouping toolbar shared by the timeline and list views — identical header row
    in both. A plugin view has to opt in (PluginView.toolbar), so it is hidden
    there by default. */
