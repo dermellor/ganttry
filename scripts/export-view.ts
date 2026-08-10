@@ -300,8 +300,10 @@ async function main() {
   const built = buildFromJson(view, file);
 
   const [baseCss, themeCss, timelineCss, visCss, visJs, markedJs] = await Promise.all([
-    readTextFile(join(STYLES_DIR, 'base.css')),
-    readTextFile(join(STYLES_DIR, 'theme.css')),
+    // The design system owns the base sheet and the tokens now; this script kept
+    // reading them from src/styles/, where they no longer are.
+    readTextFile(join(ROOT, 'src', 'design-system', 'styles', 'base.css')),
+    readTextFile(join(ROOT, 'src', 'design-system', 'tokens', 'tokens.css')),
     readTextFile(join(STYLES_DIR, 'timeline.css')),
     readTextFile(join(NM, 'vis-timeline', 'styles', 'vis-timeline-graph2d.min.css')),
     readTextFile(join(NM, 'vis-timeline', 'standalone', 'umd', 'vis-timeline-graph2d.min.js')),

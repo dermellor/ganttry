@@ -20,6 +20,7 @@
 // which needs credentials rather than a database.
 
 import {
+  handleMembersApi,
   handleUsersApi,
   liveOverride,
   parsePublicPluginPath,
@@ -142,6 +143,17 @@ async function readBody(req: Request, method: string): Promise<unknown> {
 }
 
 /**
+ * Every path this module answers for.
+ *
+ * Exported because the same list has to exist twice more — in the edge
+ * function's `config.path` and in `netlify.toml` — and those two are hand-kept.
+ * A route added here alone works in the Vite dev middleware, which matches all
+ * of `/api/`, and 404s in production, where an edge function only ever sees the
+ * paths it declares. `scripts/ci/edge-routes.test.ts` asserts the three agree.
+ */
+export const OWNED_API_PATHS = ['/api/source/*', '/api/sources', '/api/users', '/api/members'] as const;
+
+/**
  * Is this one of ours at all?
  *
  * Needed as its own question because authorization has to run after „yes" and
@@ -156,6 +168,7 @@ function isOurs(path: string): boolean {
   return (
     path === '/api/plugins' ||
     path.startsWith('/api/plugins/') ||
+    path === '/api/members' ||
     path === '/api/users' ||
     path === '/api/sources' ||
     path === '/api/source' ||
@@ -183,15 +196,36 @@ export function serviceRoleFrom(raw: string | undefined | null): MemberRole {
  * one forgotten is a write path.
  */
 function requiredCapability(path: string, method: string): Capability {
-  const base = capabilityForMethod(method);
-  // Managing people is its own stake: a PATCH on a timeline item and a PATCH on
-  // a membership are the same verb with very different consequences. Reading the
-  // directory stays a plain read, because the owner picker needs it.
-  if (path === '/api/users' && base !== 'read') return 'manage';
-  return base;
+  // Everything about administering people needs `manage`, reading included: the
+  // member list carries roles, statuses and invitation state, which is not what
+  // the owner picker's directory (/api/users, a plain read) is for.
+  if (path === '/api/members') return 'manage';
+  return capabilityForMethod(method);
 }
 
 async function authorize(path: string, method: string, ctx: ApiContext): Promise<Response | null> {
+  // Administration is never ungated, and the switch does NOT open it.
+  //
+  // The switch means „membership decides what people may do". Off, there are no
+  // roles to decide with — so a route that needs `manage` cannot be satisfied,
+  // and letting it through „because the checks are off" served the whole member
+  // roster to anyone past the auth gate and let them invite an admin. That is
+  // what this branch prevents, and it has to sit ABOVE the switch: below it, the
+  // early return has already happened.
+  //
+  // 503 rather than 403: nothing is wrong with the caller, the instance has not
+  // enabled the feature. A 403 would send an admin looking for their missing
+  // permission instead of at TIMELINES_ACCESS_CONTROL.
+  if (path === '/api/members' && !ctx.accessControl) {
+    return json(
+      {
+        error: 'access_control_disabled',
+        message:
+          'Membership administration is off on this instance. Set TIMELINES_ACCESS_CONTROL=true to enable it.',
+      },
+      503,
+    );
+  }
   if (!ctx.accessControl) return null;
 
   const capability: Capability = requiredCapability(path, method);
@@ -227,7 +261,28 @@ async function authorize(path: string, method: string, ctx: ApiContext): Promise
     );
   }
 
-  const member = await repo.getMember(email);
+  let member;
+  try {
+    member = await repo.getMember(email);
+  } catch (e) {
+    // The switch is on and the member list cannot be read. In practice that is
+    // one thing: the migration has not been applied to this database, and the
+    // columns do not exist yet. Without this the failure surfaces as a 500 on
+    // every request including the sign-in, with the cause only in a log — the
+    // exact footgun of turning the switch on before running `db:migrate`.
+    //
+    // Refusing rather than passing through: a database that cannot answer „may
+    // this caller do this" has not answered yes.
+    return json(
+      {
+        error: 'membership_unavailable',
+        message:
+          'TIMELINES_ACCESS_CONTROL is on, but the member list could not be read. Apply the pending migrations (npm run db:migrate).',
+        detail: e instanceof Error ? e.message : String(e),
+      },
+      503,
+    );
+  }
   // One message for „not a member" and „wrong role" on purpose: the difference
   // is only interesting to somebody probing which addresses exist.
   return memberCan(member, capability) ? null : deny(`${email} may not ${capability} here`);
@@ -303,20 +358,26 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
   const denied = await authorize(path, method, ctx);
   if (denied) return denied;
 
+  if (path === '/api/members') {
+    const repo = resolveRepo(ctx.conns);
+    if (!repo) return json({ error: 'db_not_configured', message: 'Membership needs a database.' }, 503);
+    const result = await handleMembersApi(repo, {
+      method,
+      caller: ctx.caller,
+      body: await readBody(req, method),
+    });
+    return json(result.json, result.status);
+  }
+
   if (path === '/api/users') {
-    if (method !== 'GET' && method !== 'POST' && method !== 'PATCH') {
-      return json({ error: 'method not allowed' }, 405);
-    }
+    if (method !== 'GET') return json({ error: 'method not allowed' }, 405);
     const repo = resolveRepo(ctx.conns);
     // Without a DB there is no directory. 200 with an empty list rather than an
     // error: that is the truth for a checkout without credentials, and no source
     // is editable there anyway, so the owner picker having nothing to offer is
-    // correct rather than a failure. A write has nowhere to go and says so.
-    if (!repo) {
-      if (method === 'GET') return json({ users: [] });
-      return json({ error: 'db_not_configured', message: 'Membership needs a database.' }, 503);
-    }
-    const result = await handleUsersApi(repo, { method, caller: ctx.caller, body: await readBody(req, method) });
+    // correct rather than a failure.
+    if (!repo) return json({ users: [] });
+    const result = await handleUsersApi(repo, { method, caller: ctx.caller });
     return json(result.json, result.status);
   }
 

@@ -25,10 +25,10 @@ test('read-only routes reject a write with 405', async () => {
     const res = await call(path, { method: 'POST' });
     assert.equal(res?.status, 405, path);
   }
-  // /api/users takes POST and PATCH now (invite, role, status). Everything else
-  // is still refused, and without a database a write has nowhere to go.
-  assert.equal((await call('/api/users', { method: 'DELETE' }))?.status, 405);
-  assert.equal((await call('/api/users', { method: 'POST', body: '{}' }))?.status, 503);
+  // The directory is read-only; administration lives on /api/members, which
+  // without a database has nowhere to go.
+  assert.equal((await call('/api/users', { method: 'POST' }))?.status, 405);
+  assert.equal((await call('/api/members', { method: 'POST', body: '{}' }))?.status, 503);
 });
 
 test('without a DB the collection is still answerable, and empty', async () => {
@@ -293,10 +293,68 @@ test('the public pricing route stays reachable with the switch on', async () => 
   assert.equal(res.headers.get('Access-Control-Allow-Origin'), '*');
 });
 
+test('administering people needs manage, reading the directory does not', async () => {
+  // An editor runs the owner picker all day and must never be able to invite.
+  const editor = asMember(MEMBERS, 'editor@example.test');
+  assert.notEqual((await call('/api/users', undefined, editor))!.status, 403);
+
+  const denied = (await call('/api/members', undefined, editor))!;
+  assert.equal(denied.status, 403);
+  assert.equal(((await denied.json()) as any).capability, 'manage');
+
+  // Even reading the member list is administration: it carries roles, statuses
+  // and invitation state.
+  const admin = asMember(MEMBERS, 'admin@example.test');
+  assert.notEqual((await call('/api/members', undefined, admin))!.status, 403);
+});
+
 test('paths we do not own are never refused, only passed through', async () => {
   // The check must sit behind „is this ours", or a 403 lands on /api/me and the
   // presence badge dies the moment the switch goes on.
   for (const path of ['/api/me', '/api/jira/search?q=x', '/index.html']) {
     assert.equal(await call(path, undefined, { accessControl: true }), null, path);
   }
+});
+
+test('administration is refused while access control is off, database or not', async () => {
+  // The switch means „membership decides"; off, there is nothing to decide with,
+  // so a route needing `manage` cannot be satisfied. Letting it through because
+  // „the checks are off" served the whole member roster to anyone past the auth
+  // gate and let them invite an admin.
+  for (const ctx of [withLocal(), asMember(MEMBERS, 'admin@example.test')]) {
+    const res = (await call('/api/members', undefined, { ...ctx, accessControl: false }))!;
+    assert.equal(res.status, 503);
+    assert.equal(((await res.json()) as any).error, 'access_control_disabled');
+  }
+  const write = (await call('/api/members', { method: 'POST', body: '{}' }, {
+    ...asMember(MEMBERS, 'admin@example.test'),
+    accessControl: false,
+  }))!;
+  assert.equal(write.status, 503, 'inviting is refused for the same reason');
+});
+
+test('an unreadable member list refuses, and names the likely cause', async () => {
+  // Turning the switch on before applying the migration is the ordering mistake
+  // this guards: without it every request, sign-in included, becomes a 500 whose
+  // cause is only in a log.
+  const brokenDb = {
+    from: () => ({
+      select: () => ({
+        ilike: () => ({
+          maybeSingle: async () => {
+            throw new Error('column "role" does not exist');
+          },
+        }),
+      }),
+    }),
+  };
+  const res = (await call('/api/sources', undefined, {
+    conns: { supabase: brokenDb } as unknown as DbConnections,
+    accessControl: true,
+    caller: { email: 'someone@example.test' },
+  }))!;
+  assert.equal(res.status, 503);
+  const body = (await res.json()) as any;
+  assert.equal(body.error, 'membership_unavailable');
+  assert.match(body.message, /db:migrate/);
 });

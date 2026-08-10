@@ -193,12 +193,18 @@ Building one: [`docs/plugin-playbook.md`](docs/plugin-playbook.md), starting fro
 
 ## Theming
 
-The viewer ships a single neutral theme defined as CSS custom properties in the
-`:root` block of [`src/styles/theme.css`](src/styles/theme.css): colour tokens,
-typography (`--font-body` / `--font-headline`), lane colours and mark radius. To
-recolour or re-type the viewer, override any of these variables in your own
-stylesheet loaded after `theme.css`. There is no runtime brand selector: the
-tokens in `theme.css` are the single styling seam.
+The viewer ships a single neutral theme, as CSS custom properties in
+[`src/design-system/tokens/tokens.css`](src/design-system/tokens/tokens.css):
+colour tokens, typography, spacing and radii, lane colours, mark radius, plus the
+glyph sets in `icons.css` beside it. To recolour or re-type the viewer, override
+any of them in your own stylesheet loaded after `tokens.css`. There is no runtime
+brand selector: those two files are the single styling seam.
+
+The tokens are generated from
+[`tokens.json`](src/design-system/tokens/tokens.json) (`npm run tokens`), and
+everything the viewer draws is built from the components above them — see
+[`docs/design-system.md`](docs/design-system.md), and `/playground.html` for all
+of them on one page.
 
 ## Configuration
 
@@ -220,7 +226,7 @@ are read from `process.env`, then `.env.local`, then any file named by
 | `TIMELINES_SOURCES_SUBDIR` | Scope the local-source scan to `data/<subdir>/`. |
 | `VITE_JIRA_BASE_URL` | Public base URL for JIRA browse links. Empty renders keys as plain text. |
 | `AUTH_REQUIRED` / `ALLOWED_EMAIL_DOMAINS` | Netlify edge auth gate: `true` enables it; comma-separated allowed sign-in domains (empty = nobody passes). The domain list only decides while `TIMELINES_ACCESS_CONTROL` is off. |
-| `TIMELINES_ACCESS_CONTROL` | `true` makes the member list decide, both at sign-in and on every `/api/*` call: roles (`admin` / `editor` / `viewer`) and an invitation become the way in, and the domain list stops being consulted. Off by default, because an instance whose member list is not yet populated would refuse everybody. Needs a database. |
+| `TIMELINES_ACCESS_CONTROL` | See [`docs/users.md`](docs/users.md) for the whole model and the rollout order. `true` makes the member list decide, both at sign-in and on every `/api/*` call: roles (`admin` / `editor` / `viewer`) and an invitation become the way in, and the domain list stops being consulted. Off by default, because an instance whose member list is not yet populated would refuse everybody. Needs a database. |
 | `TIMELINES_BOOTSTRAP_ADMIN` | With the above: the one address that becomes an admin on first sign-in, even against an empty member list. Without it a fresh instance has nobody who can invite. Keep it set — it is the instance's master key. |
 | `MCP_TOKEN_ROLE` | With the above: the role the `X-MCP-Token` service identity acts with, default `editor`. Set `viewer` for a read-only agent. |
 

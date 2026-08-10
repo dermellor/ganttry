@@ -22,18 +22,20 @@
       "status": "Open"
     },
     {
-      "start": "2026-03-02",
-      "duration": "3w",
+      "start": "2026-03-01",
       "content": "Konzept & Wireframes",
       "group": "Phase 2 — Design",
-      "id": "i2"
+      "id": "i2",
+      "end": "2026-03-27",
+      "status": "Open"
     },
     {
       "start": "2026-03-23",
-      "duration": "2w",
       "content": "Prototyp-Tests",
       "group": "Phase 2 — Design",
-      "id": "i3"
+      "id": "i3",
+      "status": "Done",
+      "end": "2026-04-10"
     },
     {
       "start": "2026-04-06",

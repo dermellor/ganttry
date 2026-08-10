@@ -51,6 +51,20 @@ jobs:
       - name: openapi.yaml matches the routes and types
         run: npm run openapi:check
 
+      # tokens.css and tokens/index.ts are generated from tokens.json. Committed,
+      # because a stylesheet cannot import JSON — so a token added to the source
+      # without a regeneration would otherwise ship as a name nothing defines,
+      # which is how `--surface-alt` came to be used in six rules and declared in
+      # none.
+      - name: Design tokens match their source
+        run: npm run tokens:check
+
+      # The contract in docs/design-system.md, as far as it can be checked:
+      # colours named once, spacing from the scale, buttons from the component,
+      # and every exported component present in the playground.
+      - name: Design-system contract
+        run: bash scripts/ci/check-design-system.sh
+
       # Nothing else notices a documented env var that no code reads: the schemas
       # cover data files, openapi.yaml covers routes, and no test asserts anything
       # about prose. TIMELINES_NOTES_DIR and TIMELINES_STATIC_ONLY outlived the

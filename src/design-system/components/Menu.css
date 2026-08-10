@@ -1,0 +1,171 @@
+/* Popover / Menu / MenuSection / MenuItem / PickerGrid / PickerList. */
+
+.ds-Popover {
+  padding: var(--space-3xs);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-popover);
+}
+
+.ds-Popover[hidden] {
+  display: none;
+}
+
+.ds-Popover[data-placement='anchored'] {
+  position: absolute;
+  top: calc(100% + var(--space-2xs));
+  left: 0;
+}
+
+/* For a popover that must be wider than its trigger: anchored to the trigger's
+   right edge, it grows leftwards and cannot push past the panel it sits in. */
+.ds-Popover[data-placement='anchored'][data-align-end] {
+  left: auto;
+  right: 0;
+}
+
+/* Positioned by the caller in viewport coordinates. `fixed` is what lets a menu
+   overhang the timeline's scroll panes instead of being clipped by them. */
+.ds-Popover[data-placement='fixed'] {
+  position: fixed;
+}
+
+.ds-Popover[data-layer='popover'] {
+  z-index: var(--z-popover);
+}
+
+.ds-Popover[data-layer='menu'] {
+  z-index: var(--z-menu);
+}
+
+.ds-Popover[data-scroll] {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* ---- MenuSection ----------------------------------------------------------- */
+
+.ds-MenuSection {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ds-MenuSection + .ds-MenuSection {
+  margin-top: var(--space-3xs);
+  padding-top: var(--space-3xs);
+  border-top: 1px solid var(--border);
+}
+
+/* ---- MenuItem -------------------------------------------------------------- */
+
+.ds-MenuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: var(--space-xs) var(--space-sm);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  white-space: nowrap;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.ds-MenuItem:hover:not(:disabled),
+.ds-MenuItem[aria-expanded='true'] {
+  background: var(--hover);
+}
+
+.ds-MenuItem:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.ds-MenuItem:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The current value, marked the same way whether the row is a radio in a menu or
+   a cell in a picker grid. */
+.ds-MenuItem[aria-checked='true'],
+.ds-MenuItem[aria-selected='true'] {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+.ds-MenuItem[data-danger],
+.ds-MenuItem[data-danger] .ds-MenuItem-mark {
+  color: var(--danger);
+}
+
+.ds-MenuItem[data-none] {
+  color: var(--fg-muted);
+  line-height: 1;
+}
+
+/* A fixed box per mark, so labels line up whether the mark is a 10px dot or a
+   16px glyph. Flex, because a dot is an inline span and would otherwise ignore
+   its own width. */
+.ds-MenuItem-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 var(--icon-size-md);
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  color: var(--fg-muted);
+}
+
+.ds-MenuItem-label {
+  white-space: nowrap;
+}
+
+.ds-MenuItem-detail {
+  margin-left: auto;
+  padding-left: var(--space-md);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+/* Pushed to the trailing edge so the labels stay left-aligned with the action
+   rows below them. */
+.ds-MenuItem-chevron {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  padding-left: var(--space-sm);
+  color: var(--fg-muted);
+}
+
+/* ---- PickerGrid / PickerList ------------------------------------------------ */
+
+.ds-PickerGrid {
+  display: grid;
+  grid-template-columns: repeat(var(--ds-picker-columns, 6), var(--control-sm));
+  gap: var(--space-3xs);
+}
+
+.ds-PickerList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 150px;
+}
+
+.ds-MenuItem[data-cell] {
+  justify-content: center;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  padding: 0;
+}
+
+.ds-MenuItem[data-cell] .ds-MenuItem-mark {
+  color: inherit;
+}

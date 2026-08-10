@@ -1548,8 +1548,57 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
+  "/api/members":
+    get:
+      operationId: getMembers
+      summary: "List the memberships"
+      description: "Administration, not the owner picker: this carries roles, statuses and invitation state, so it needs the `manage` capability where `/api/users` needs a plain read. Removed members stay in the list, because an item owner may still point at them."
+      responses:
+        "200":
+          description: "Every membership."
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - members
+                properties:
+                  members:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/Member"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
     post:
-      operationId: postUsers
+      operationId: postMembers
       summary: "Invite somebody, or re-invite them"
       description: "Creates the membership with status `invited` and mints an invitation token. The plain token is in THIS response and nowhere else; only its SHA-256 is stored. Re-inviting an existing address corrects the role and issues a fresh token, and never downgrades a membership that has already been accepted. Needs the `manage` capability."
       requestBody:
@@ -1613,7 +1662,7 @@ paths:
         "503":
           description: "No database is configured to hold the member list."
     patch:
-      operationId: patchUsers
+      operationId: patchMembers
       summary: "Change a role or a status, or resend an invitation"
       description: "The address travels in the body, because an e-mail carries `@` and dots. There is no DELETE: removing somebody is `status: \"removed\"`, since an item owner points at an address and a deleted row would leave that dangling. Refuses any change that would leave the instance without an active admin. Needs the `manage` capability."
       requestBody:

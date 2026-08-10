@@ -3,15 +3,52 @@
 // with autosuggest, and the reactive apply/delete logic. Persistence is deferred
 // to persistence.ts (commitItemForm / scheduleLiveEdit).
 
-import { escapeHtml, readTags, tagColor } from './buildItems';
+import { readTags, tagColor } from './buildItems';
 import {
   applyCustomFields,
   initCustomFieldState,
   isManagedMetaKey,
   readFieldValues,
-  renderCustomFieldsHtml,
+  renderCustomFields,
   wireCustomFields,
 } from './customFields';
+import {
+  Button,
+  Chip,
+  ChipBox,
+  ChipBoxSlot,
+  DescriptionList,
+  Disclosure,
+  Dot,
+  el,
+  Field,
+  FieldError,
+  FieldNote,
+  FormActions,
+  fromHtml,
+  highlightSuggestion,
+  Icon,
+  IconButton,
+  MenuItem,
+  PickerGrid,
+  PickerList,
+  Popover,
+  Select,
+  StatusDot,
+  SuggestEmpty,
+  SuggestItem,
+  SuggestList,
+  Tab,
+  TabPanel,
+  Tabs,
+  TextArea,
+  TextInput,
+  ToolbarAnchor,
+  type Child,
+  type DescriptionListEntry,
+  type SelectOption,
+  type SelectOptionGroup,
+} from './design-system';
 import { TIMELINE_ICONS } from './icons';
 import { ITEM_STATUSES, statusOrDefault, statusToStore, type StatusKey } from './status';
 import { findItemIndex, isoDateOnly } from './editor';
@@ -27,6 +64,12 @@ import {
 import type { DirectoryUser, TimelineFileItem } from './types';
 import { directoryState, displayName, resolveOwner, searchUsers, userAvatar } from './users';
 import { assignableLeaves, parentGroupIds } from './groupHierarchy';
+import {
+  PARENT_META_KEY,
+  extentOverflow,
+  readParentId,
+  wouldCreateCycle,
+} from './itemHierarchy';
 import { state, els, setStatus, revealBesidePanel, clearFormSlots } from './state';
 import { parseLocalDay, durationToMs, shiftDays } from './date';
 import { describeReversedExtent, isReversedExtent } from './itemExtent';
@@ -47,29 +90,32 @@ type GroupOption = { id: string; content: string; nestedGroups?: string[] };
 function buildGroupOptions(
   groups: GroupOption[],
   selected: string | number | null | undefined,
-): string {
+): (SelectOption | SelectOptionGroup)[] {
   const byId = new Map(groups.map((g) => [g.id, g]));
   const parents = parentGroupIds(groups);
   const childIds = new Set<string>();
   for (const g of groups) for (const c of g.nestedGroups ?? []) childIds.add(c);
   const sel = selected == null ? null : String(selected);
   let matched = false;
-  const optHtml = (id: string): string => {
+  const option = (id: string): SelectOption | null => {
     const g = byId.get(id);
-    if (!g) return '';
+    if (!g) return null;
     const isSel = g.id === sel;
     if (isSel) matched = true;
-    return `<option value="${escapeHtml(g.id)}"${isSel ? ' selected' : ''}>${escapeHtml(g.content)}</option>`;
+    return { value: g.id, label: g.content, selected: isSel };
   };
 
-  const out: string[] = [];
+  const out: (SelectOption | SelectOptionGroup)[] = [];
   for (const g of groups) {
     if (childIds.has(g.id)) continue; // rendered under its parent's optgroup
     if (parents.has(g.id)) {
-      const children = assignableLeaves(g.id, groups).map(optHtml).join('');
-      out.push(`<optgroup label="${escapeHtml(g.content)}">${children}</optgroup>`);
+      const children = assignableLeaves(g.id, groups)
+        .map(option)
+        .filter((o): o is SelectOption => o != null);
+      out.push({ label: g.content, options: children });
     } else {
-      out.push(optHtml(g.id));
+      const leaf = option(g.id);
+      if (leaf) out.push(leaf);
     }
   }
   // Nothing matched — the item has no group, or one that no longer exists. A
@@ -78,8 +124,8 @@ function buildGroupOptions(
   // group-less item into whatever track happened to sort first. The placeholder
   // carries the empty value, which applyItemForm leaves alone, so the read stays
   // a read and a dangling group id survives instead of being reassigned.
-  if (!matched) out.unshift('<option value="" selected>— —</option>');
-  return out.join('');
+  if (!matched) out.unshift({ value: '', label: '— —', selected: true });
+  return out;
 }
 
 // ---- form tabs -------------------------------------------------------------
@@ -113,11 +159,11 @@ const FORM_TABS = [
 ] as const;
 type FormTabId = (typeof FORM_TABS)[number]['id'];
 
-function tabIconHtml(id: FormTabId): string {
-  return (
+function tabIcon(id: FormTabId): Element {
+  return fromHtml(
     '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"' +
-    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    `${TAB_ICONS[id]}</svg>`
+      ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      `${TAB_ICONS[id]}</svg>`,
   );
 }
 
@@ -196,7 +242,10 @@ function wireTitleHeadline(): void {
 type PickOption = {
   value: string;
   label: string; // full name: tooltip, accessible name, and popover row text
-  mark: string; // HTML for the visual shown in the trigger and the popover
+  // The visual shown in the trigger and in the popover row. A factory rather
+  // than one node, because the same option is drawn in both places at once and
+  // an element cannot be in two parents.
+  mark: () => Element;
 };
 
 type PickerSpec = {
@@ -208,11 +257,12 @@ type PickerSpec = {
 };
 
 // A mark rendered as an inline SVG, in the same style as the tab glyphs.
-function svgMark(body: string): string {
-  return (
-    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"' +
-    ` stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`
-  );
+function svgMark(body: string): () => Element {
+  return () =>
+    fromHtml(
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"' +
+        ` stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`,
+    );
 }
 
 const ICON_SPEC: PickerSpec = {
@@ -220,11 +270,11 @@ const ICON_SPEC: PickerSpec = {
   title: 'Icon',
   layout: 'grid',
   options: [
-    { value: '', label: 'kein Icon', mark: '<span class="pick-none">—</span>' },
+    { value: '', label: 'kein Icon', mark: () => el('span', {}, '—') },
     ...TIMELINE_ICONS.map(({ key, label }) => ({
       value: key,
       label,
-      mark: `<span class="item-icon" style="--item-icon:var(--icon-${key})"></span>`,
+      mark: () => Icon({ name: key, standalone: true }),
     })),
   ],
 };
@@ -257,7 +307,7 @@ const STATUS_SPEC: PickerSpec = {
   options: ITEM_STATUSES.map(({ key, label }) => ({
     value: key,
     label,
-    mark: `<span class="status-dot" data-status="${key}"></span>`,
+    mark: () => StatusDot({ status: key }),
   })),
 };
 
@@ -271,27 +321,45 @@ function pickerTitle(spec: PickerSpec, value: string): string {
   return `${spec.title}: ${pickOption(spec, value).label}`;
 }
 
-function pickerHtml(spec: PickerSpec, current: string): string {
-  const cells = spec.options
-    .map(
-      (o) =>
-        `<button type="button" class="pick-cell" role="option" data-value="${escapeHtml(o.value)}"` +
-        ` aria-selected="${o.value === current}" title="${escapeHtml(o.label)}"` +
-        ` aria-label="${escapeHtml(o.label)}">${o.mark}` +
-        (spec.layout === 'list' ? `<span class="pick-cell-label">${escapeHtml(o.label)}</span>` : '') +
-        `</button>`,
-    )
-    .join('');
-  return (
-    `<div class="pick" data-pick="${spec.name}">` +
-    `<button type="button" class="pick-trigger" data-role="pick-trigger" aria-haspopup="listbox"` +
-    ` aria-expanded="false" title="${escapeHtml(pickerTitle(spec, current))}"` +
-    ` aria-label="${escapeHtml(pickerTitle(spec, current))}">${pickOption(spec, current).mark}</button>` +
-    `<input type="hidden" form="${FORM_ID}" name="${spec.name}" value="${escapeHtml(current)}" />` +
-    `<div class="pick-menu pick-${spec.layout}" role="listbox" aria-label="${escapeHtml(spec.title)}"` +
-    ` data-role="pick-menu" hidden>${cells}</div>` +
-    `</div>`
+function pickerNode(spec: PickerSpec, current: string): HTMLElement {
+  const cells = spec.options.map((option) =>
+    MenuItem({
+      cell: spec.layout === 'grid',
+      label: option.label,
+      mark: option.mark(),
+      selected: option.value === current,
+      // `option` inside the listbox below, rather than the component's default
+      // menu semantics: this is a value picker, not a set of commands.
+      attrs: { role: 'option', 'data-value': option.value, 'aria-label': option.label },
+    }),
   );
+
+  const title = pickerTitle(spec, current);
+  const trigger = IconButton({
+    icon: pickOption(spec, current).mark(),
+    ariaLabel: title,
+    variant: 'outline',
+    attrs: { 'data-role': 'pick-trigger', 'aria-haspopup': 'listbox', 'aria-expanded': 'false' },
+  });
+
+  const menu = Popover({
+    hidden: true,
+    role: 'listbox',
+    ariaLabel: spec.title,
+    attrs: { 'data-role': 'pick-menu' },
+    children: spec.layout === 'grid' ? PickerGrid({ children: cells }) : PickerList({ children: cells }),
+  });
+
+  return ToolbarAnchor({
+    attrs: { 'data-pick': spec.name },
+    children: [
+      trigger,
+      // Outside the <form> element but bound to it by `form`, which is what lets
+      // the pickers sit in the panel header and still be submitted with it.
+      el('input', { type: 'hidden', form: FORM_ID, name: spec.name, value: current }),
+      menu,
+    ],
+  });
 }
 
 // Renders all three pickers into the panel header row. Called by showItemForm
@@ -302,9 +370,9 @@ function renderPickerTools(item: TimelineFileItem): void {
     type: item.type ?? '',
     status: statusOrDefault(item.status),
   };
-  els.detailTools.innerHTML = PICKERS.map((spec) => pickerHtml(spec, current[spec.name])).join('');
+  els.detailTools.replaceChildren(...PICKERS.map((spec) => pickerNode(spec, current[spec.name])));
   els.detailTools.hidden = false;
-  els.detail.querySelector('.detail-header')?.classList.add('has-tools');
+  els.detail.querySelector('.ds-Panel-header')?.setAttribute('data-has-tools', '');
 }
 
 function wirePicker(spec: PickerSpec, onPick?: (value: string) => void): void {
@@ -330,18 +398,18 @@ function wirePicker(spec: PickerSpec, onPick?: (value: string) => void): void {
   trigger.addEventListener('click', () => (menu.hidden ? open() : close()));
 
   menu.addEventListener('click', (e) => {
-    const cell = (e.target as HTMLElement).closest<HTMLButtonElement>('.pick-cell');
+    const cell = (e.target as HTMLElement).closest<HTMLButtonElement>('.ds-MenuItem');
     if (!cell || cell.dataset.value == null) return;
     const value = cell.dataset.value;
     close();
     trigger.focus();
     if (hidden.value === value) return;
     hidden.value = value;
-    trigger.innerHTML = pickOption(spec, value).mark;
+    trigger.querySelector('.ds-Button-icon')?.replaceChildren(pickOption(spec, value).mark());
     const title = pickerTitle(spec, value);
     trigger.title = title;
     trigger.setAttribute('aria-label', title);
-    for (const c of menu.querySelectorAll<HTMLButtonElement>('.pick-cell')) {
+    for (const c of menu.querySelectorAll<HTMLButtonElement>('.ds-MenuItem')) {
       c.setAttribute('aria-selected', String(c === cell));
     }
     onPick?.(value);
@@ -378,26 +446,73 @@ function wirePickDismiss(): void {
   });
 }
 
-function tabStripHtml(): string {
-  const tabs = FORM_TABS.map(
-    ({ id, label }) =>
-      `<button type="button" role="tab" class="form-tab" data-tab="${id}"` +
-      ` id="f-tab-${id}" aria-controls="f-panel-${id}"` +
-      ` aria-selected="${id === activeFormTab}"${id === activeFormTab ? '' : ' tabindex="-1"'}>` +
-      `${tabIconHtml(id)}<span>${escapeHtml(label)}</span></button>`,
-  ).join('');
-  return `<div class="form-tabs" role="tablist" aria-label="Felder">${tabs}</div>`;
+function tabStrip(): HTMLElement {
+  return Tabs({
+    ariaLabel: 'Felder',
+    children: FORM_TABS.map(({ id, label }) =>
+      Tab({
+        label,
+        icon: tabIcon(id),
+        selected: id === activeFormTab,
+        controls: `f-panel-${id}`,
+        attrs: { id: `f-tab-${id}`, 'data-tab': id },
+      }),
+    ),
+  });
 }
 
-function panelHtml(id: FormTabId, fields: string): string {
-  return (
-    `<div class="form-panel" role="tabpanel" id="f-panel-${id}" data-tab="${id}"` +
-    ` aria-labelledby="f-tab-${id}"${id === activeFormTab ? '' : ' hidden'}>${fields}</div>`
-  );
+function panel(id: FormTabId, fields: Child): HTMLElement {
+  return TabPanel({
+    id: `f-panel-${id}`,
+    hidden: id !== activeFormTab,
+    attrs: { 'data-tab': id, 'aria-labelledby': `f-tab-${id}` },
+    children: fields,
+  });
+}
+
+/**
+ * The four token fields — owner, tags, dependencies, JIRA — differ in their
+ * label, their placeholder and which slots the wiring re-renders into. They were
+ * four near-identical blocks of markup; what is left of the difference is the
+ * arguments below.
+ */
+function chipField(spec: {
+  label: string;
+  hint?: string;
+  inputId: string;
+  placeholder: string;
+  chipRole: string;
+  listRole: string;
+  full?: boolean;
+  /** The owner list is wider than its half-width field and opens leftwards. */
+  alignEnd?: boolean;
+  /** Trailing content inside the field — the owner's hidden value input. */
+  extra?: Child;
+}): HTMLElement {
+  return Field({
+    label: spec.label,
+    hint: spec.hint,
+    htmlFor: spec.inputId,
+    full: spec.full,
+    control: [
+      ChipBox({
+        children: [
+          ChipBoxSlot({ attrs: { 'data-role': spec.chipRole } }),
+          ChipBoxSlot({
+            children: [
+              TextInput({ id: spec.inputId, bare: true, placeholder: spec.placeholder, attrs: { autocomplete: 'off' } }),
+              SuggestList({ hidden: true, alignEnd: spec.alignEnd, attrs: { 'data-role': spec.listRole } }),
+            ],
+          }),
+        ],
+      }),
+      spec.extra,
+    ],
+  });
 }
 
 function wireFormTabs(form: HTMLFormElement): void {
-  const tabs = [...form.querySelectorAll<HTMLButtonElement>('.form-tab')];
+  const tabs = [...form.querySelectorAll<HTMLButtonElement>('.ds-Tab')];
   const select = (id: FormTabId) => {
     activeFormTab = id;
     for (const tab of tabs) {
@@ -406,7 +521,7 @@ function wireFormTabs(form: HTMLFormElement): void {
       if (on) tab.removeAttribute('tabindex');
       else tab.tabIndex = -1;
     }
-    for (const panel of form.querySelectorAll<HTMLElement>('.form-panel')) {
+    for (const panel of form.querySelectorAll<HTMLElement>('.ds-TabPanel')) {
       panel.hidden = panel.dataset.tab !== id;
     }
   };
@@ -452,6 +567,7 @@ export function showItemForm(
   const metadata = (item.metadata ?? {}) as Record<string, unknown>;
   const dependsOn = Array.isArray(metadata.dependsOn) ? (metadata.dependsOn as unknown[]).map(String) : [];
   state.formDependsOn = [...dependsOn];
+  state.formParent = readParentId(metadata) ?? '';
   const owner = typeof metadata.owner === 'string' ? metadata.owner : '';
   state.formJiraIssues = readJiraIssues(metadata);
   state.formTags = readTags(metadata);
@@ -462,112 +578,151 @@ export function showItemForm(
   );
   const metaJson = Object.keys(otherMeta).length ? JSON.stringify(otherMeta, null, 2) : '';
 
-  els.detailBody.classList.add('detail-form');
   // Swapping the form removes the previously-focused input, which fires a
   // focusout → commit. Guard it: the outgoing form's values must not be
   // flushed onto this (already switched-to) item.
   state.formRebuilding = true;
-  els.detailBody.innerHTML = `
-    <form class="item-form" id="${FORM_ID}" data-id="${escapeHtml(id)}">
-      <input id="f-content" name="content" type="hidden" value="${escapeHtml(item.content ?? '')}" />
-      ${tabStripHtml()}
-      ${panelHtml(
-        'props',
-        `
-      <div class="field">
-        <label for="f-group">Group</label>
-        <select id="f-group" name="group">${groupOptions}</select>
-      </div>
-      <div class="field owner-field">
-        <label for="f-owner-search">Owner</label>
-        <div class="chip-box">
-          <div class="owner-chip-slot" data-role="owner-chip"></div>
-          <div class="owner-suggest">
-            <input id="f-owner-search" type="text" autocomplete="off" placeholder="Person suchen…" />
-            <ul class="owner-suggest-list" data-role="owner-list" hidden></ul>
-          </div>
-        </div>
-        <input id="f-owner" name="owner" type="hidden" value="${escapeHtml(owner)}" />
-      </div>
-      <div class="field full">
-        <label>Body</label>
-        <div data-role="body-editor"></div>
-        <textarea id="f-body" name="body" hidden>${escapeHtml(item.body ?? '')}</textarea>
-      </div>
-      <div class="field full tags-field">
-        <label for="f-tags">Tags <small>(farbige Marker)</small></label>
-        <div class="chip-box">
-          <div class="tags-chips" data-role="tags-chips"></div>
-          <div class="tags-suggest">
-            <input id="f-tags" type="text" autocomplete="off" placeholder="hinzufügen…" />
-            <ul class="tags-suggest-list" data-role="tags-list" hidden></ul>
-          </div>
-        </div>
-      </div>
-      ${renderCustomFieldsHtml(metadata)}
-      <details class="adv-block"${metaJson ? ' open' : ''}>
-        <summary>Erweitert</summary>
-        <div class="field meta-json">
-          <label for="f-meta">Other metadata (JSON)</label>
-          <textarea id="f-meta" name="metadata" rows="3" placeholder='{"key": "value"}'>${escapeHtml(metaJson)}</textarea>
-        </div>
-      </details>`,
-      )}
-      ${panelHtml(
-        'time',
-        `
-      <div class="field">
-        <label for="f-start">Start</label>
-        <input id="f-start" name="start" type="date" value="${isoDateOnly(item.start)}" />
-      </div>
-      <div class="field">
-        <label for="f-end">End</label>
-        <input id="f-end" name="end" type="date" value="${isoDateOnly(item.end ?? '')}" />
-      </div>
-      <div class="field">
-        <label for="f-duration">Duration</label>
-        <input id="f-duration" name="duration" value="${escapeHtml(typeof item.duration === 'string' ? item.duration : item.duration != null ? String(item.duration) : '')}" placeholder="nur ohne End-Datum" />
-      </div>
-      <p class="field-error" data-role="extent-error" role="alert" hidden></p>`,
-      )}
-      ${panelHtml(
-        'rel',
-        `
-      <div class="field full deps-field">
-        <label for="f-deps">Depends on <small>(Einträge verknüpfen)</small></label>
-        <div class="chip-box">
-          <div class="deps-chips" data-role="deps-chips"></div>
-          <div class="deps-suggest">
-            <input id="f-deps" type="text" autocomplete="off" placeholder="Eintrag suchen…" />
-            <ul class="deps-suggest-list" data-role="deps-list" hidden></ul>
-          </div>
-        </div>
-      </div>
-      <div class="field full jira-field">
-        <label for="f-jira">JIRA <small>(Tickets verlinken)</small></label>
-        <div class="chip-box">
-          <div class="jira-chips" data-role="jira-chips"></div>
-          <div class="jira-suggest">
-            <input id="f-jira" type="text" autocomplete="off" placeholder="Ticket suchen oder Key eingeben (z. B. PROJ-123)…" />
-            <ul class="jira-suggest-list" data-role="jira-list" hidden></ul>
-          </div>
-        </div>
-      </div>`,
-      )}
-      <div class="form-actions centered">
-        <button type="button" class="btn-danger" data-action="delete">Löschen</button>
-      </div>
-      ${auditBlockHtml(item)}
-    </form>
-  `;
+
+  const durationValue =
+    typeof item.duration === 'string' ? item.duration : item.duration != null ? String(item.duration) : '';
+
+  const formEl = el('form', { class: 'ds-FormGrid item-form', id: FORM_ID, 'data-id': id }, [
+    el('input', { id: 'f-content', name: 'content', type: 'hidden', value: item.content ?? '' }),
+    tabStrip(),
+
+    panel('props', [
+      Field({
+        label: 'Group',
+        htmlFor: 'f-group',
+        control: Select({ id: 'f-group', name: 'group', options: groupOptions }),
+      }),
+      chipField({
+        label: 'Owner',
+        inputId: 'f-owner-search',
+        placeholder: 'Person suchen…',
+        chipRole: 'owner-chip',
+        listRole: 'owner-list',
+        alignEnd: true,
+        extra: el('input', { id: 'f-owner', name: 'owner', type: 'hidden', value: owner }),
+      }),
+      Field({
+        label: 'Body',
+        full: true,
+        control: [
+          el('div', { 'data-role': 'body-editor' }),
+          TextArea({ id: 'f-body', name: 'body', value: item.body ?? '', attrs: { hidden: true } }),
+        ],
+      }),
+      chipField({
+        label: 'Tags',
+        hint: '(farbige Marker)',
+        inputId: 'f-tags',
+        placeholder: 'hinzufügen…',
+        chipRole: 'tags-chips',
+        listRole: 'tags-list',
+        full: true,
+      }),
+      renderCustomFields(metadata),
+      Disclosure({
+        summary: 'Erweitert',
+        open: !!metaJson,
+        children: Field({
+          label: 'Other metadata (JSON)',
+          htmlFor: 'f-meta',
+          className: 'meta-json',
+          control: TextArea({
+            id: 'f-meta',
+            name: 'metadata',
+            rows: 3,
+            value: metaJson,
+            placeholder: '{"key": "value"}',
+          }),
+        }),
+      }),
+    ]),
+
+    panel('time', [
+      Field({
+        label: 'Start',
+        htmlFor: 'f-start',
+        control: TextInput({ id: 'f-start', name: 'start', type: 'date', value: isoDateOnly(item.start) }),
+      }),
+      Field({
+        label: 'End',
+        htmlFor: 'f-end',
+        control: TextInput({ id: 'f-end', name: 'end', type: 'date', value: isoDateOnly(item.end ?? '') }),
+      }),
+      Field({
+        label: 'Duration',
+        htmlFor: 'f-duration',
+        control: TextInput({
+          id: 'f-duration',
+          name: 'duration',
+          value: durationValue,
+          placeholder: 'nur ohne End-Datum',
+        }),
+      }),
+      FieldError({ hidden: true, attrs: { 'data-role': 'extent-error' } }),
+    ]),
+
+    panel('rel', [
+      chipField({
+        label: 'Übergeordnet',
+        hint: '(Teil von)',
+        inputId: 'f-parent',
+        placeholder: 'Eintrag suchen…',
+        chipRole: 'parent-chip',
+        listRole: 'parent-list',
+        full: true,
+      }),
+      // Read-only: a child is linked from its own form, so this field shows the
+      // subtree rather than editing it. Hidden until there is one.
+      Field({
+        label: 'Untereinträge',
+        full: true,
+        hidden: true,
+        attrs: { 'data-role': 'children-field' },
+        control: [
+          ChipBoxSlot({ className: 'ds-ChipRow', attrs: { 'data-role': 'children-chips' } }),
+          FieldNote({ hidden: true, attrs: { 'data-role': 'children-overflow' } }),
+        ],
+      }),
+      chipField({
+        label: 'Depends on',
+        hint: '(Einträge verknüpfen)',
+        inputId: 'f-deps',
+        placeholder: 'Eintrag suchen…',
+        chipRole: 'deps-chips',
+        listRole: 'deps-list',
+        full: true,
+      }),
+      chipField({
+        label: 'JIRA',
+        hint: '(Tickets verlinken)',
+        inputId: 'f-jira',
+        placeholder: 'Ticket suchen oder Key eingeben (z. B. PROJ-123)…',
+        chipRole: 'jira-chips',
+        listRole: 'jira-list',
+        full: true,
+      }),
+    ]),
+
+    FormActions({
+      centered: true,
+      children: Button({ label: 'Löschen', variant: 'danger', attrs: { 'data-action': 'delete' } }),
+    }),
+    auditBlock(item),
+  ]);
+
+  els.detailBody.replaceChildren(formEl);
   state.formRebuilding = false;
 
   const form = els.detailBody.querySelector('form') as HTMLFormElement;
   const startInput = form.querySelector<HTMLInputElement>('#f-start')!;
   const endInput = form.querySelector<HTMLInputElement>('#f-end')!;
   const durInput = form.querySelector<HTMLInputElement>('#f-duration')!;
-  const endField = endInput.closest('.field') as HTMLElement;
-  const durField = durInput.closest('.field') as HTMLElement;
+  const endField = endInput.closest('.ds-Field') as HTMLElement;
+  const durField = durInput.closest('.ds-Field') as HTMLElement;
 
   // Native bounds so the two date pickers can't offer a reversed extent in the
   // first place: the end starts the day *after* the start (the rule is strict —
@@ -611,8 +766,10 @@ export function showItemForm(
   // point state visually so the interaction reads cleanly.
   const syncTypeFields = (value: string) => {
     const isPoint = value === 'point';
-    endField.classList.toggle('is-muted', isPoint);
-    durField.classList.toggle('is-muted', isPoint);
+    // `data-muted` is the Field component's own prop, expressed as the attribute
+    // it renders — a `is-muted` class would style nothing.
+    endField.toggleAttribute('data-muted', isPoint);
+    durField.toggleAttribute('data-muted', isPoint);
   };
   syncTypeFields(item.type ?? '');
 
@@ -667,6 +824,7 @@ export function showItemForm(
   wirePickDismiss();
   wireBodyEditor(form);
   wireJiraAutosuggest(form);
+  wireParentPicker(form, id);
   wireDepsAutosuggest(form, id);
   wireTagsAutosuggest(form);
   wireOwnerPicker(form);
@@ -712,41 +870,52 @@ function formatAuditDate(iso?: string): string {
   return Number.isNaN(d.getTime()) ? '' : auditDateFmt.format(d);
 }
 
-function auditRowHtml(label: string, by?: string, iso?: string, version?: number): string {
+function auditRow(term: string, by?: string, iso?: string, version?: number): DescriptionListEntry | null {
   const when = formatAuditDate(iso);
-  if (!when && !by) return '';
-  const parts: string[] = [];
-  if (by) parts.push(`von <strong>${escapeHtml(by)}</strong>`);
-  if (when) parts.push(escapeHtml(when));
-  if (version != null) parts.push(`v${version}`);
-  return `<dt>${escapeHtml(label)}</dt><dd>${parts.join(' · ')}</dd>`;
+  if (!when && !by) return null;
+  const parts: Child[] = [];
+  if (by) parts.push('von ', el('strong', {}, by));
+  if (when) parts.push(parts.length ? ' · ' : '', when);
+  if (version != null) parts.push(' · ', `v${version}`);
+  return { term, value: parts };
 }
 
-function auditBlockHtml(item: TimelineFileItem): string {
+function auditEntries(item: TimelineFileItem): DescriptionListEntry[] {
   // The read-only id lives here instead of as its own form field: it is metadata
-  // of the same category as the audit rows, and as an 11px dt/dd pair it costs a
-  // fraction of the vertical space a labelled input took in the field grid.
-  // Unlike the audit rows it renders everywhere, not just on localhost.
-  const idRow = item.id ? `<dt>ID</dt><dd><code>${escapeHtml(item.id)}</code></dd>` : '';
-  const wrap = (body: string) =>
-    body ? `<div class="item-audit" data-role="audit"><dl>${body}</dl></div>` : '';
-  if (!import.meta.env.DEV) return wrap(idRow);
-  const rows =
-    auditRowHtml('Erstellt', item.createdBy, item.createdAt) +
-    auditRowHtml('Aktualisiert', item.updatedBy, item.updatedAt, item.version);
+  // of the same category as the audit rows, and as a dt/dd pair in the compact
+  // voice it costs a fraction of the vertical space a labelled input took in the
+  // field grid. Unlike the audit rows it renders everywhere, not just on
+  // localhost.
+  const entries: DescriptionListEntry[] = item.id
+    ? [{ term: 'ID', value: el('code', {}, item.id), breakAll: true }]
+    : [];
+  if (!import.meta.env.DEV) return entries;
+  const rows = [
+    auditRow('Erstellt', item.createdBy, item.createdAt),
+    auditRow('Aktualisiert', item.updatedBy, item.updatedAt, item.version),
+  ].filter((row): row is DescriptionListEntry => row != null);
   // Nothing known yet (e.g. a freshly added item before its first save round-trip).
-  return wrap(idRow + (rows || '<dt>Metadaten</dt><dd>noch nicht gespeichert</dd>'));
+  return [...entries, ...(rows.length ? rows : [{ term: 'Metadaten', value: 'noch nicht gespeichert' }])];
+}
+
+function auditBlock(item: TimelineFileItem): HTMLElement | null {
+  const entries = auditEntries(item);
+  if (!entries.length) return null;
+  return DescriptionList({
+    compact: true,
+    entries,
+    className: 'item-audit',
+    attrs: { 'data-role': 'audit' },
+  });
 }
 
 // Re-render the audit block in place after a save writes fresh server values
 // back onto the item (called from persistence.adoptAudit).
 export function refreshItemAudit(item: TimelineFileItem): void {
-  const wrap = els.detailBody.querySelector<HTMLElement>('.item-audit[data-role="audit"]');
-  if (!wrap) return;
-  const html = auditBlockHtml(item);
-  // auditBlockHtml wraps in .item-audit; swap just the inner <dl>.
-  const inner = html.replace(/^<div[^>]*>|<\/div>$/g, '');
-  wrap.innerHTML = inner;
+  const current = els.detailBody.querySelector<HTMLElement>('.item-audit[data-role="audit"]');
+  const next = auditBlock(item);
+  if (!current || !next) return;
+  current.replaceWith(next);
 }
 
 // Mounts the Markdown WYSIWYG editor over the hidden Body textarea. The editor
@@ -769,24 +938,21 @@ function wireBodyEditor(form: HTMLFormElement): void {
 function renderJiraChips(form: HTMLFormElement): void {
   const wrap = form.querySelector<HTMLElement>('[data-role="jira-chips"]');
   if (!wrap) return;
-  wrap.innerHTML = state.formJiraIssues
-    .map(
-      (iss, i) =>
-        `<span class="jira-chip" title="${escapeHtml(iss.summary || iss.key)}">` +
-        `<span class="jira-chip-key">${escapeHtml(iss.key)}</span>` +
-        (iss.summary ? `<span class="jira-chip-sum">${escapeHtml(iss.summary)}</span>` : '') +
-        `<button type="button" class="jira-chip-x" data-remove="${i}" aria-label="Entfernen">×</button>` +
-        `</span>`,
-    )
-    .join('');
-  wrap.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const idx = Number(btn.dataset.remove);
-      state.formJiraIssues.splice(idx, 1);
-      renderJiraChips(form);
-      scheduleLiveEdit();
-    });
-  });
+  wrap.replaceChildren(
+    ...state.formJiraIssues.map((iss, i) =>
+      Chip({
+        code: iss.key,
+        label: iss.summary || undefined,
+        title: iss.summary || iss.key,
+        removable: true,
+        onRemove: () => {
+          state.formJiraIssues.splice(i, 1);
+          renderJiraChips(form);
+          scheduleLiveEdit();
+        },
+      }),
+    ),
+  );
 }
 
 function addJiraIssue(form: HTMLFormElement, issue: JiraIssue): void {
@@ -822,29 +988,26 @@ function wireJiraAutosuggest(form: HTMLFormElement): void {
       closeList();
       return;
     }
-    list.innerHTML = issues
-      .map(
-        (iss, i) =>
-          `<li class="jira-suggest-item" data-i="${i}" role="option">` +
-          `<span class="jira-suggest-key">${escapeHtml(iss.key)}</span>` +
-          `<span class="jira-suggest-sum">${escapeHtml(iss.summary)}</span>` +
-          `</li>`,
-      )
-      .join('');
+    list.replaceChildren(
+      ...issues.map((iss, i) =>
+        SuggestItem({
+          layout: 'stacked',
+          code: iss.key,
+          description: iss.summary,
+          attrs: { 'data-i': i },
+          on: {
+            mousedown: (e) => {
+              e.preventDefault();
+              pick(i);
+            },
+          },
+        }),
+      ),
+    );
     list.hidden = false;
-    list.querySelectorAll<HTMLLIElement>('.jira-suggest-item').forEach((li) => {
-      li.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        pick(Number(li.dataset.i));
-      });
-    });
   };
 
-  const highlight = () => {
-    list.querySelectorAll<HTMLLIElement>('.jira-suggest-item').forEach((li, i) => {
-      li.classList.toggle('is-active', i === activeIndex);
-    });
-  };
+  const highlight = () => highlightSuggestion(list, activeIndex);
 
   const pick = (i: number) => {
     const issue = current[i];
@@ -909,6 +1072,150 @@ function wireJiraAutosuggest(form: HTMLFormElement): void {
   });
 }
 
+/**
+ * The „Übergeordnet" picker plus the read-only „Untereinträge" list under it —
+ * the two sides of one relationship, so they are rendered by one function and
+ * cannot end up describing different links.
+ *
+ * The suggestions leave out every item that would close a cycle (the item
+ * itself, and anything already below it). Offering those and having
+ * `resolveParents` drop the link afterwards looks exactly like a pick that did
+ * not register.
+ */
+function wireParentPicker(form: HTMLFormElement, selfId: string): void {
+  const chip = form.querySelector<HTMLElement>('[data-role="parent-chip"]');
+  const input = form.querySelector<HTMLInputElement>('#f-parent');
+  const list = form.querySelector<HTMLUListElement>('[data-role="parent-list"]');
+  if (!chip || !input || !list) return;
+
+  const renderChip = (): void => {
+    chip.replaceChildren(
+      ...(state.formParent
+        ? [
+            Chip({
+              label: depLabel(state.formParent),
+              title: state.formParent,
+              removable: true,
+              attrs: { 'data-clear-parent': '' },
+            }),
+          ]
+        : []),
+    );
+    chip.querySelector<HTMLButtonElement>('[data-clear-parent] .ds-Chip-remove')?.addEventListener('click', () => {
+      state.formParent = '';
+      renderChip();
+      // A single-valued picker hides its input once filled; clearing brings it
+      // back, so the next parent can be typed without reopening the form.
+      input.hidden = false;
+      scheduleLiveEdit();
+    });
+    input.hidden = !!state.formParent;
+  };
+
+  const closeList = () => {
+    list.hidden = true;
+    list.innerHTML = '';
+  };
+
+  const candidates = (q: string): TimelineFileItem[] => {
+    // Read the *live* hierarchy, not the one this form was opened with: the
+    // user may have re-parented another item since.
+    const parents = state.activeBuild?.parents ?? new Map<string, string>();
+    const needle = q.toLowerCase();
+    return (state.activeSourceFile?.items ?? [])
+      .filter((it) => it.id && !wouldCreateCycle(parents, selfId, it.id))
+      .filter(
+        (it) =>
+          !needle ||
+          (it.content ?? '').toLowerCase().includes(needle) ||
+          (it.id ?? '').toLowerCase().includes(needle),
+      )
+      .slice(0, 8);
+  };
+
+  const renderList = (items: TimelineFileItem[]): void => {
+    if (!items.length) {
+      closeList();
+      return;
+    }
+    list.replaceChildren(
+      ...items.map((it) =>
+        SuggestItem({
+          layout: 'stacked',
+          label: it.content?.trim() || it.id || '',
+          description: it.id ?? '',
+          attrs: { 'data-id': it.id ?? '' },
+        }),
+      ),
+    );
+    list.hidden = false;
+    list.querySelectorAll<HTMLLIElement>('.ds-SuggestItem').forEach((li) => {
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        state.formParent = li.dataset.id ?? '';
+        input.value = '';
+        closeList();
+        renderChip();
+        scheduleLiveEdit();
+      });
+    });
+  };
+
+  input.addEventListener('input', () => renderList(candidates(input.value.trim())));
+  input.addEventListener('focus', () => renderList(candidates(input.value.trim())));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeList();
+  });
+  // Let a mousedown on a suggestion fire first, then close.
+  input.addEventListener('blur', () => setTimeout(closeList, 120));
+
+  renderChip();
+  renderChildren(form, selfId);
+}
+
+/**
+ * The children an item has, as read-only chips, plus the one place the rollup is
+ * stated: where the children run outside the parent's own dates.
+ *
+ * The parent's dates stay authoritative — they are maintained by hand and a
+ * rollup that overwrote them would silently replace a decision with a
+ * calculation. So this reports the discrepancy and changes nothing.
+ */
+function renderChildren(form: HTMLFormElement, selfId: string): void {
+  const field = form.querySelector<HTMLElement>('[data-role="children-field"]');
+  const chips = form.querySelector<HTMLElement>('[data-role="children-chips"]');
+  const note = form.querySelector<HTMLElement>('[data-role="children-overflow"]');
+  if (!field || !chips || !note) return;
+
+  const parents = state.activeBuild?.parents ?? new Map<string, string>();
+  const childIds = [...parents.entries()].filter(([, p]) => p === selfId).map(([c]) => c);
+  field.hidden = childIds.length === 0;
+  if (!childIds.length) return;
+
+  // No remove button: a child is linked from its own form, so this row shows the
+  // subtree rather than editing it.
+  chips.replaceChildren(...childIds.map((cid) => Chip({ label: depLabel(cid), title: cid })));
+
+  const byId = new Map((state.activeSourceFile?.items ?? []).map((it) => [it.id, it]));
+  const self = byId.get(selfId);
+  const { before, after } = extentOverflow(
+    { start: self?.start, end: self?.end },
+    childIds.map((cid) => ({ start: byId.get(cid)?.start, end: byId.get(cid)?.end })),
+  );
+  const parts: string[] = [];
+  if (before) parts.push(`beginnen am ${formatDay(before)}`);
+  if (after) parts.push(`laufen bis ${formatDay(after)}`);
+  note.hidden = parts.length === 0;
+  note.textContent = parts.length ? `Untereinträge ${parts.join(' und ')}.` : '';
+}
+
+// "2026-07-16" → "16.07.2026". Same reading as the list view's dates; anything
+// unparseable falls back to the raw day so an odd value still shows something.
+function formatDay(value: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : value;
+}
+
 // Resolves a dependsOn id to a readable label (the item's title, falling back
 // to the raw id if the target isn't in the current source, e.g. a stale ref).
 function depLabel(depId: string): string {
@@ -921,23 +1228,20 @@ function depLabel(depId: string): string {
 function renderDepChips(form: HTMLFormElement): void {
   const wrap = form.querySelector<HTMLElement>('[data-role="deps-chips"]');
   if (!wrap) return;
-  wrap.innerHTML = state.formDependsOn
-    .map(
-      (depId, i) =>
-        `<span class="deps-chip" title="${escapeHtml(depId)}">` +
-        `<span class="deps-chip-label">${escapeHtml(depLabel(depId))}</span>` +
-        `<button type="button" class="deps-chip-x" data-remove="${i}" aria-label="Entfernen">×</button>` +
-        `</span>`,
-    )
-    .join('');
-  wrap.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const idx = Number(btn.dataset.remove);
-      state.formDependsOn.splice(idx, 1);
-      renderDepChips(form);
-      scheduleLiveEdit();
-    });
-  });
+  wrap.replaceChildren(
+    ...state.formDependsOn.map((depId, i) =>
+      Chip({
+        label: depLabel(depId),
+        title: depId,
+        removable: true,
+        onRemove: () => {
+          state.formDependsOn.splice(i, 1);
+          renderDepChips(form);
+          scheduleLiveEdit();
+        },
+      }),
+    ),
+  );
 }
 
 function addDep(form: HTMLFormElement, depId: string): void {
@@ -982,9 +1286,7 @@ function wireDepsAutosuggest(form: HTMLFormElement, selfId: string): void {
   };
 
   const highlight = () => {
-    list.querySelectorAll<HTMLLIElement>('.deps-suggest-item').forEach((li, i) => {
-      li.classList.toggle('is-active', i === activeIndex);
-    });
+    highlightSuggestion(list, activeIndex);
   };
 
   const pick = (i: number) => {
@@ -1002,22 +1304,23 @@ function wireDepsAutosuggest(form: HTMLFormElement, selfId: string): void {
       closeList();
       return;
     }
-    list.innerHTML = items
-      .map(
-        (it, i) =>
-          `<li class="deps-suggest-item" data-i="${i}" role="option">` +
-          `<span class="deps-suggest-label">${escapeHtml(it.content?.trim() || it.id || '')}</span>` +
-          `<span class="deps-suggest-id">${escapeHtml(it.id ?? '')}</span>` +
-          `</li>`,
-      )
-      .join('');
+    list.replaceChildren(
+      ...items.map((it, i) =>
+        SuggestItem({
+          layout: 'stacked',
+          label: it.content?.trim() || it.id || '',
+          description: it.id ?? '',
+          attrs: { 'data-i': i },
+          on: {
+            mousedown: (e) => {
+              e.preventDefault();
+              pick(i);
+            },
+          },
+        }),
+      ),
+    );
     list.hidden = false;
-    list.querySelectorAll<HTMLLIElement>('.deps-suggest-item').forEach((li) => {
-      li.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        pick(Number(li.dataset.i));
-      });
-    });
   };
 
   input.addEventListener('input', () => {
@@ -1103,27 +1406,21 @@ function wireOwnerPicker(form: HTMLFormElement): void {
     input.hidden = !!owner;
     if (!owner) return;
 
-    const chip = document.createElement('span');
     // An unresolvable value is a legacy free-text owner (or a file source's).
     // Marked as such rather than dropped, and shown without an avatar: inventing
     // a monogram and a colour for "Strategy Team" would present a string as a
     // person the directory never knew.
-    chip.className = owner.known ? 'owner-chip' : 'owner-chip is-unlinked';
-    if (owner.known && owner.user) chip.appendChild(userAvatar(owner.user, 'owner-chip-avatar'));
-    const label = document.createElement('span');
-    label.className = 'owner-chip-label';
-    label.textContent = owner.label;
-    chip.appendChild(label);
-    chip.title = owner.known ? owner.raw : `${owner.raw} — nicht mit einem Benutzer verknüpft`;
-
-    const x = document.createElement('button');
-    x.type = 'button';
-    x.className = 'owner-chip-x';
-    x.setAttribute('aria-label', 'Owner entfernen');
-    x.textContent = '×';
-    x.addEventListener('click', () => setOwner(''));
-    chip.appendChild(x);
-    slot.appendChild(chip);
+    slot.appendChild(
+      Chip({
+        mark: owner.known && owner.user ? userAvatar(owner.user, 'sm') : undefined,
+        label: owner.label,
+        unlinked: !owner.known,
+        title: owner.known ? owner.raw : `${owner.raw} — nicht mit einem Benutzer verknüpft`,
+        removable: true,
+        removeLabel: 'Owner entfernen',
+        onRemove: () => setOwner(''),
+      }),
+    );
   };
 
   const setOwner = (email: string) => {
@@ -1135,11 +1432,7 @@ function wireOwnerPicker(form: HTMLFormElement): void {
     if (!email) input.focus();
   };
 
-  const highlight = () => {
-    list.querySelectorAll<HTMLLIElement>('.owner-suggest-item').forEach((li, i) => {
-      li.classList.toggle('is-active', i === activeIndex);
-    });
-  };
+  const highlight = () => highlightSuggestion(list, activeIndex);
 
   const pick = (i: number) => {
     const user = current[i];
@@ -1163,38 +1456,28 @@ function wireOwnerPicker(form: HTMLFormElement): void {
           : status === 'empty'
             ? 'Noch keine Benutzer erfasst'
             : 'Kein Treffer';
-      const li = document.createElement('li');
-      li.className = 'owner-suggest-empty';
-      li.setAttribute('role', 'presentation');
-      li.textContent = msg;
-      list.replaceChildren(li);
+      list.replaceChildren(SuggestEmpty({ text: msg }));
       list.hidden = false;
       return;
     }
     list.replaceChildren(
-      ...users.map((u, i) => {
-        const li = document.createElement('li');
-        li.className = 'owner-suggest-item';
-        li.dataset.i = String(i);
-        li.setAttribute('role', 'option');
-        li.appendChild(userAvatar(u, 'owner-suggest-avatar'));
-        const name = document.createElement('span');
-        name.className = 'owner-suggest-label';
-        name.textContent = displayName(u);
-        li.appendChild(name);
-        // The address is shown next to the name, not only in a tooltip: two
-        // colleagues can share a display name, and the address is the value
-        // actually stored.
-        const mail = document.createElement('span');
-        mail.className = 'owner-suggest-mail';
-        mail.textContent = u.email;
-        li.appendChild(mail);
-        li.addEventListener('mousedown', (e) => {
-          e.preventDefault();
-          pick(i);
-        });
-        return li;
-      }),
+      ...users.map((u, i) =>
+        SuggestItem({
+          mark: userAvatar(u, 'sm'),
+          label: displayName(u),
+          // The address is shown next to the name, not only in a tooltip: two
+          // colleagues can share a display name, and the address is the value
+          // actually stored.
+          detail: u.email,
+          attrs: { 'data-i': i },
+          on: {
+            mousedown: (e) => {
+              e.preventDefault();
+              pick(i);
+            },
+          },
+        }),
+      ),
     );
     list.hidden = false;
   };
@@ -1247,24 +1530,20 @@ function collectTimelineTags(): string[] {
 function renderTagChips(form: HTMLFormElement): void {
   const wrap = form.querySelector<HTMLElement>('[data-role="tags-chips"]');
   if (!wrap) return;
-  wrap.innerHTML = state.formTags
-    .map(
-      (tag, i) =>
-        `<span class="tag-chip" style="--tag-color:${tagColor(tag)}">` +
-        `<span class="tag-chip-dot"></span>` +
-        `<span class="tag-chip-label">${escapeHtml(tag)}</span>` +
-        `<button type="button" class="tag-chip-x" data-remove="${i}" aria-label="Entfernen">×</button>` +
-        `</span>`,
-    )
-    .join('');
-  wrap.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const idx = Number(btn.dataset.remove);
-      state.formTags.splice(idx, 1);
-      renderTagChips(form);
-      scheduleLiveEdit();
-    });
-  });
+  wrap.replaceChildren(
+    ...state.formTags.map((tag, i) =>
+      Chip({
+        mark: Dot({ color: tagColor(tag) }),
+        label: tag,
+        removable: true,
+        onRemove: () => {
+          state.formTags.splice(i, 1);
+          renderTagChips(form);
+          scheduleLiveEdit();
+        },
+      }),
+    ),
+  );
 }
 
 function addTag(form: HTMLFormElement, tag: string): void {
@@ -1301,11 +1580,7 @@ function wireTagsAutosuggest(form: HTMLFormElement): void {
       .slice(0, 8);
   };
 
-  const highlight = () => {
-    list.querySelectorAll<HTMLLIElement>('.tags-suggest-item').forEach((li, i) => {
-      li.classList.toggle('is-active', i === activeIndex);
-    });
-  };
+  const highlight = () => highlightSuggestion(list, activeIndex);
 
   const pick = (i: number) => {
     const tag = current[i];
@@ -1322,21 +1597,21 @@ function wireTagsAutosuggest(form: HTMLFormElement): void {
       closeList();
       return;
     }
-    list.innerHTML = tags
-      .map(
-        (tag, i) =>
-          `<li class="tags-suggest-item" data-i="${i}" role="option">` +
-          `<span class="tags-suggest-dot" style="background-color:${tagColor(tag)}"></span>` +
-          `<span class="tags-suggest-label">${escapeHtml(tag)}</span>` +
-          `</li>`,
-      )
-      .join('');
-    list.querySelectorAll<HTMLLIElement>('.tags-suggest-item').forEach((li) => {
-      li.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        pick(Number(li.dataset.i));
-      });
-    });
+    list.replaceChildren(
+      ...tags.map((tag, i) =>
+        SuggestItem({
+          mark: Dot({ color: tagColor(tag) }),
+          label: tag,
+          attrs: { 'data-i': i },
+          on: {
+            mousedown: (e) => {
+              e.preventDefault();
+              pick(i);
+            },
+          },
+        }),
+      ),
+    );
     list.hidden = false;
   };
 
@@ -1565,6 +1840,9 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     item.metadata != null && Object.keys(item.metadata as object).length === 0;
   const meta = (item.metadata ??= {}) as Record<string, unknown>;
   writeListMeta(meta, 'dependsOn', state.formDependsOn);
+
+  if (state.formParent) meta[PARENT_META_KEY] = state.formParent;
+  else delete meta[PARENT_META_KEY];
 
   const owner = get('owner');
   if (owner) meta.owner = owner;

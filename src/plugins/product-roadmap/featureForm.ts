@@ -5,7 +5,7 @@
 // through the granular PATCH endpoint (optimistic-locked on rowVersion), so a
 // concurrent edit elsewhere in the model is never clobbered.
 
-import { escapeHtml } from '../../buildItems';
+import { Button, el, Field, FormActions, IconButton, Select, TextArea, TextInput } from '../../pluginHost/api';
 import { createMarkdownEditor } from '../../wysiwyg';
 import type { PricingFeature } from './types';
 import { state, els, setStatus, clearFormSlots } from '../../state';
@@ -26,20 +26,23 @@ function findFeature(featureId: string): PricingFeature | undefined {
 // and a remove button. Rows are added/removed dynamically via the "+ " button,
 // so they carry no `name` — save reads them straight off the DOM (see
 // saveFeatureFromForm).
-function versionSelectOptions(versions: string[], selected: string): string {
-  return versions
-    .map((v) => `<option value="${escapeHtml(v)}"${v === selected ? ' selected' : ''}>ab ${escapeHtml(v)}</option>`)
-    .join('');
-}
-
-function vdescRowHtml(versions: string[], selectedVersion: string, text: string): string {
-  return `
-    <div class="version-desc-row" data-vdesc-row>
-      <select class="version-desc-select" aria-label="Version">${versionSelectOptions(versions, selectedVersion)}</select>
-      <div class="version-desc-editor" data-role="vdesc-editor"></div>
-      <textarea class="version-desc-text" hidden>${escapeHtml(text)}</textarea>
-      <button type="button" class="vdesc-remove" data-action="remove-vdesc" aria-label="Versionsbeschreibung entfernen" title="Entfernen">×</button>
-    </div>`;
+function vdescRow(versions: string[], selectedVersion: string, text: string): HTMLElement {
+  return el('div', { class: 'version-desc-row' }, [
+    Select({
+      className: 'version-desc-select',
+      block: false,
+      attrs: { 'aria-label': 'Version' },
+      options: versions.map((v) => ({ value: v, label: `ab ${v}`, selected: v === selectedVersion })),
+    }),
+    el('div', { class: 'version-desc-editor', 'data-role': 'vdesc-editor' }),
+    TextArea({ className: 'version-desc-text', value: text, attrs: { hidden: true } }),
+    IconButton({
+      icon: '×',
+      ariaLabel: 'Versionsbeschreibung entfernen',
+      variant: 'outline',
+      attrs: { 'data-action': 'remove-vdesc' },
+    }),
+  ]);
 }
 
 // Mount the shared Markdown WYSIWYG editor over a hidden <textarea>, keeping the
@@ -80,75 +83,107 @@ export function showFeatureForm(featureId: string): void {
   state.activeFormFeatureId = featureId;
 
   setDetailTitle(feature.name || '(unbenanntes Feature)');
-  els.detailMeta.innerHTML = '';
+  els.detailMeta.replaceChildren();
 
-  const versions = currentPricing(state.activeSourceFile)?.versions ?? [];
-  const versionOptions =
-    `<option value=""${!feature.version ? ' selected' : ''}>— von Anfang an —</option>` +
-    versions
-      .map(
-        (v) =>
-          `<option value="${escapeHtml(v)}"${feature.version === v ? ' selected' : ''}>${escapeHtml(v)}</option>`,
-      )
-      .join('');
-
-  const groupOptionsList = existingGroups()
-    .map((g) => `<option value="${escapeHtml(g)}"></option>`)
-    .join('');
+  const versions = currentPricing(state.activeSourceFile).versions ?? [];
 
   // Additive, per-version description notes as a dynamic list: add a row via the
   // "+" button, link it to a version, type the note. Existing notes are seeded as
   // rows in declared version order. Only shown when the timeline has versions
   // (there's nothing to link a note to otherwise).
-  const existingRows = versions.length
-    ? versions
-        .filter((v) => feature.descriptionByVersion?.[v]?.trim())
-        .map((v) => vdescRowHtml(versions, v, feature.descriptionByVersion![v]))
-        .join('')
-    : '';
-  const versionDescFields = versions.length
-    ? `
-      <div class="field full version-desc-field">
-        <label>Versionsbeschreibungen <small>(zusätzlich, je Version)</small></label>
-        <div class="version-desc-list">${existingRows}</div>
-        <button type="button" class="vdesc-add" data-action="add-vdesc">+ Versionsbeschreibung</button>
-      </div>`
-    : '';
+  const versionDescField = versions.length
+    ? Field({
+        label: 'Versionsbeschreibungen',
+        hint: '(zusätzlich, je Version)',
+        full: true,
+        className: 'version-desc-field',
+        control: [
+          el(
+            'div',
+            { class: 'version-desc-list' },
+            versions
+              .filter((v) => feature.descriptionByVersion?.[v]?.trim())
+              .map((v) => vdescRow(versions, v, feature.descriptionByVersion![v])),
+          ),
+          Button({
+            label: '+ Versionsbeschreibung',
+            variant: 'dashed',
+            className: 'vdesc-add',
+            attrs: { 'data-action': 'add-vdesc' },
+          }),
+        ],
+      })
+    : null;
 
-  els.detailBody.classList.add('detail-form');
-  els.detailBody.innerHTML = `
-    <form class="item-form feature-form" data-id="${escapeHtml(featureId)}">
-      <div class="field full">
-        <label for="ft-name">Name</label>
-        <input id="ft-name" name="name" value="${escapeHtml(feature.name ?? '')}" />
-      </div>
-      <div class="field">
-        <label for="ft-group">Gruppe <small>(Matrix-Abschnitt)</small></label>
-        <input id="ft-group" name="group" list="ft-group-options" value="${escapeHtml(feature.group ?? '')}" />
-        <datalist id="ft-group-options">${groupOptionsList}</datalist>
-      </div>
-      <div class="field">
-        <label for="ft-version">Ab Version</label>
-        <select id="ft-version" name="version">${versionOptions}</select>
-      </div>
-      <div class="field full">
-        <label for="ft-description">Beschreibung</label>
-        <div data-role="desc-editor"></div>
-        <textarea id="ft-description" name="description" hidden>${escapeHtml(feature.description ?? '')}</textarea>
-      </div>
-      ${versionDescFields}
-      <div class="field">
-        <label for="ft-id">ID <small>(read-only)</small></label>
-        <input id="ft-id" name="id" value="${escapeHtml(featureId)}" readonly />
-      </div>
-      <div class="form-actions">
-        <button type="submit" class="btn-primary">Speichern</button>
-        <button type="button" class="btn-danger" data-action="delete">Löschen</button>
-      </div>
-    </form>
-  `;
+  const form = el('form', { class: 'ds-FormGrid feature-form', 'data-id': featureId }, [
+    Field({
+      label: 'Name',
+      htmlFor: 'ft-name',
+      full: true,
+      control: TextInput({ id: 'ft-name', name: 'name', value: feature.name ?? '' }),
+    }),
+    Field({
+      label: 'Gruppe',
+      hint: '(Matrix-Abschnitt)',
+      htmlFor: 'ft-group',
+      control: [
+        TextInput({
+          id: 'ft-group',
+          name: 'group',
+          value: feature.group ?? '',
+          attrs: { list: 'ft-group-options' },
+        }),
+        // Distinct group labels already in use, so a typo does not silently
+        // create a second matrix section.
+        el(
+          'datalist',
+          { id: 'ft-group-options' },
+          existingGroups().map((g) => el('option', { value: g })),
+        ),
+      ],
+    }),
+    Field({
+      label: 'Ab Version',
+      htmlFor: 'ft-version',
+      control: Select({
+        id: 'ft-version',
+        name: 'version',
+        options: [
+          { value: '', label: '— von Anfang an —', selected: !feature.version },
+          ...versions.map((v) => ({ value: v, label: v, selected: feature.version === v })),
+        ],
+      }),
+    }),
+    Field({
+      label: 'Beschreibung',
+      htmlFor: 'ft-description',
+      full: true,
+      control: [
+        el('div', { 'data-role': 'desc-editor' }),
+        TextArea({
+          id: 'ft-description',
+          name: 'description',
+          value: feature.description ?? '',
+          attrs: { hidden: true },
+        }),
+      ],
+    }),
+    versionDescField,
+    Field({
+      label: 'ID',
+      hint: '(read-only)',
+      htmlFor: 'ft-id',
+      control: TextInput({ id: 'ft-id', name: 'id', value: featureId, readonly: true }),
+    }),
+    FormActions({
+      children: [
+        Button({ label: 'Speichern', type: 'submit' }),
+        Button({ label: 'Löschen', variant: 'danger', attrs: { 'data-action': 'delete' } }),
+      ],
+    }),
+  ]);
 
-  const form = els.detailBody.querySelector('form') as HTMLFormElement;
+  els.detailBody.replaceChildren(form);
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     saveFeatureFromForm(featureId, form);
@@ -173,12 +208,10 @@ export function showFeatureForm(featureId: string): void {
         [...vdescList.querySelectorAll<HTMLSelectElement>('.version-desc-select')].map((s) => s.value),
       );
       const next = versions.find((v) => !used.has(v)) ?? versions[0];
-      vdescList.insertAdjacentHTML('beforeend', vdescRowHtml(versions, next, ''));
-      const row = vdescList.querySelector<HTMLElement>('.version-desc-row:last-child');
-      if (row) {
-        wireVdescRow(row);
-        row.querySelector<HTMLElement>('.version-desc-editor .wysiwyg-surface')?.focus();
-      }
+      const row = vdescRow(versions, next, '');
+      vdescList.appendChild(row);
+      wireVdescRow(row);
+      row.querySelector<HTMLElement>('.version-desc-editor .wysiwyg-surface')?.focus();
     });
     vdescList.addEventListener('click', (e) => {
       const btn = (e.target as HTMLElement).closest('[data-action="remove-vdesc"]');

@@ -1,0 +1,162 @@
+/* Icon / StatusDot / Dot / Tag / Avatar. */
+
+/* Sized in `em` so a glyph in running text matches the text it sits in, and the
+   trailing gap scales with it. `--ds-icon` is set inline per instance. */
+.ds-Icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.35em;
+  vertical-align: -0.15em;
+  background-color: currentColor;
+  -webkit-mask: var(--ds-icon) center / contain no-repeat;
+  mask: var(--ds-icon) center / contain no-repeat;
+}
+
+/* A glyph alone in a button or a picker cell is centred by its container, so the
+   text gap it carries for running text would push it off centre. */
+.ds-Icon[data-standalone] {
+  margin-right: 0;
+}
+
+.ds-Icon[data-size='sm'] { width: var(--icon-size-sm); height: var(--icon-size-sm); }
+.ds-Icon[data-size='md'] { width: var(--icon-size-md); height: var(--icon-size-md); }
+.ds-Icon[data-size='lg'] { width: var(--icon-size-lg); height: var(--icon-size-lg); }
+
+/* ---- StatusDot ------------------------------------------------------------- */
+
+.ds-StatusDot {
+  display: inline-block;
+  flex: none;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  border-radius: var(--mark-radius);
+  background: var(--status-open);
+}
+
+.ds-StatusDot[data-status='Doing'] { background: var(--status-doing); }
+.ds-StatusDot[data-status='Done'] { background: var(--status-done); }
+
+/* ---- Dot ------------------------------------------------------------------- */
+
+.ds-Dot {
+  display: inline-block;
+  flex: none;
+  border-radius: var(--mark-radius);
+  /* The fallback is what an option with no colour of its own gets. */
+  background: var(--ds-dot-color, var(--fg-muted));
+}
+
+.ds-Dot[data-size='xs'] { width: var(--icon-size-xs); height: var(--icon-size-xs); }
+.ds-Dot[data-size='sm'] { width: var(--icon-size-sm); height: var(--icon-size-sm); }
+
+/* ---- Tag ------------------------------------------------------------------- */
+
+.ds-Tag {
+  display: inline-block;
+  margin-right: var(--space-2xs);
+  padding: 0 var(--space-2xs);
+  border-radius: 3px;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1.5;
+  color: var(--surface);
+  background: var(--ds-tag-color, var(--fg-muted));
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+/* Zoomed out, the pill's text is more clutter than signal, so it collapses to
+   its dot. The label stays reachable through the title attribute. */
+.ds-Tag[data-compact] {
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+  padding: 0;
+  margin-right: 3px;
+  border-radius: var(--mark-radius);
+  font-size: 0;
+  vertical-align: baseline;
+}
+
+/* ---- Badge ------------------------------------------------------------------ */
+
+.ds-Badge {
+  display: inline-block;
+  padding: 0.1rem var(--space-sm);
+  /* Not `--mark-radius`: that token is 50%, meant for round item marks, and it
+     turns a text pill into an ellipse. */
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.ds-Badge[data-tone='accent'] {
+  border-color: var(--accent);
+}
+
+.ds-Badge[data-tone='muted'] {
+  color: var(--fg-muted);
+}
+
+/* ---- AvatarStack ------------------------------------------------------------ */
+
+.ds-AvatarStack {
+  display: flex;
+  align-items: center;
+}
+
+.ds-AvatarStack[hidden] {
+  display: none;
+}
+
+/* ---- Avatar ---------------------------------------------------------------- */
+
+.ds-Avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: var(--mark-radius);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--surface);
+  background: hsl(var(--ds-avatar-hue, 260), 52%, 46%);
+  box-sizing: border-box;
+  cursor: default;
+  user-select: none;
+  text-transform: uppercase;
+}
+
+.ds-Avatar[data-size='md'] {
+  width: var(--avatar-md);
+  height: var(--avatar-md);
+  font-size: var(--text-xs);
+  /* The ring against the surface is what separates two overlapping avatars in a
+     stack; a size that never stacks still carries it so the two look alike. */
+  border: 2px solid var(--surface);
+}
+
+.ds-Avatar[data-size='sm'] {
+  width: var(--avatar-sm);
+  height: var(--avatar-sm);
+  font-size: var(--icon-size-xs);
+  border-width: 0;
+}
+
+.ds-Avatar[data-stacked] {
+  margin-left: -8px;
+}
+
+.ds-Avatar[data-stacked]:first-child {
+  margin-left: 0;
+}
+
+.ds-Avatar[data-self] {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.ds-Avatar[data-overflow] {
+  background: var(--fg-muted);
+  font-size: var(--text-2xs);
+}

@@ -7,6 +7,7 @@ import { getSql, getSqlForSource } from './scripts/db/sql';
 import { getServiceClient } from './scripts/db/client';
 import { type DbConnections } from './scripts/db/api';
 import { accessControlEnabled, handleApiRequest, liveOverride } from './scripts/db/http';
+import { resolveRepo } from './scripts/db/api';
 import { toRequest, writeResponse } from './scripts/node-http';
 import { hasLocalTimeline, isLocalWritable, makeFileRepo } from './scripts/local/file-repo';
 import { parseOperators } from './scripts/db/operator';
@@ -141,9 +142,23 @@ function timelinesApi(): Plugin {
         return { email, name: email };
       };
 
-      server.middlewares.use('/api/me', (req, res, next) => {
+      // Mirrors the edge function's /api/me, role included: without that, the
+      // membership screen could never be opened locally, and „works in
+      // production only" is how a feature stops being verifiable before deploy.
+      server.middlewares.use('/api/me', async (req, res, next) => {
         if (req.method !== 'GET') return next();
-        send(res, 200, devIdentity(req));
+        const me = devIdentity(req);
+        if (!accessControlEnabled(process.env.TIMELINES_ACCESS_CONTROL)) return send(res, 200, me);
+        const repo = resolveRepo(dbConns());
+        if (!repo) return send(res, 200, me);
+        try {
+          const member = await repo.getMember(me.email);
+          return send(res, 200, member ? { ...me, role: member.role, status: member.status } : me);
+        } catch {
+          // The identity matters more than the affordance hints, and every route
+          // enforces for itself regardless of what this answers.
+          return send(res, 200, me);
+        }
       });
 
       // GET /<data dir>/config.json — the built viewer config, with one field
@@ -275,6 +290,18 @@ const CSP = buildCsp({
 });
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      // Two entries. The design-system playground is a page of its own rather
+      // than a route in the app: the app has no router, and a separate entry is
+      // what keeps the playground's specimen code out of the app's bundle —
+      // asserted by scripts/ci/check-bundle-split.sh rather than assumed.
+      input: {
+        index: resolve(__dirname, 'index.html'),
+        playground: resolve(__dirname, 'playground.html'),
+      },
+    },
+  },
   server: {
     port: PORT,
     strictPort: true,

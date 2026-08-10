@@ -1,0 +1,67 @@
+/* AppMain / ContentArea / ViewSection. */
+
+.ds-AppMain {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr;
+  /* The detail panel positions itself against this. */
+  position: relative;
+  min-height: 0;
+  --ds-panel-width: 420px;
+}
+
+/* The only grid column: the shared toolbar stacked above whichever content
+   section is active. It stays full width while the panel floats over it. */
+.ds-ContentArea {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* `min-height: 0` is the same trap in every one of these flex columns: without
+   it a tall child resolves `min-height: auto` to its content height and
+   overflows the viewport instead of scrolling inside its own section. */
+.ds-ViewSection {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ds-ViewSection[data-tone='chart'] {
+  display: block;
+  /* Named because the loading placeholder insets itself by exactly this much;
+     two hardcoded copies drift apart the first time the padding is touched. */
+  --timeline-pad-y: var(--space-lg);
+  --timeline-pad-x: var(--space-2xl);
+  padding: var(--timeline-pad-y) var(--timeline-pad-x);
+  /* Positioning context for that placeholder, which covers the chart rather than
+     displacing it. Harmless for vis-timeline: its own overlays attach inside
+     `.vis-panel.vis-center`, which is absolutely positioned and therefore keeps
+     its own offset parent. */
+  position: relative;
+  overflow: hidden;
+}
+
+.ds-ViewSection[data-tone='scroll'] {
+  display: block;
+  overflow: auto;
+  padding: var(--space-lg) var(--space-2xl);
+}
+
+.ds-ScrollArea {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-lg) var(--space-2xl);
+}
+
+/* Last, and with a `:where()`-free doubled attribute, so it beats every `display`
+   the tones set above. The UA's `[hidden] { display: none }` loses to any author
+   rule at equal specificity, which is why hiding the chart section left it on
+   screen with the list stacked underneath it. */
+.ds-ViewSection[hidden][hidden] {
+  display: none;
+}

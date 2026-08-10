@@ -189,6 +189,10 @@ const itemFields = {
     .optional()
     .describe(
       'Free-form extras, e.g. { "owner": "robin@example.com", "dependsOn": ["S-1"] }. ' +
+        '`parent` holds the id of the item this one is part of ("S-1"), at most one — the ' +
+        'parent then renders as a summary bar above its children and can fold them away. ' +
+        'A link to the item itself, to an unknown id, or one that would close a cycle is ' +
+        'dropped when the timeline is built. ' +
         '`owner` links a user and holds their e-mail from list_users — a free-text name ' +
         'is still stored but shows as unlinked. Custom-field ' +
         'values also live here under the field key (string for text/select, string[] for ' +

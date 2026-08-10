@@ -11,6 +11,7 @@
 // Highlights and the version list are still authored via MCP.
 
 import { escapeHtml } from '../../buildItems';
+import { Button, html, IconButton, SegmentedControl, Select, ToolbarControl } from '../../pluginHost/api';
 import {
   groupFeatures,
   featureVisibleForVersion,
@@ -113,7 +114,16 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
       // (the toolbar button leaves it ungrouped). Same two-affordance pattern the
       // list view uses for "+ Eintrag".
       const addInGroup = editable
-        ? `<button type="button" class="pm-add-inline" data-add-feature-group="${escapeHtml(group)}">+ Feature</button>`
+        ? html(
+            Button({
+              label: '+ Feature',
+              variant: 'outline',
+              size: 'sm',
+              reveal: true,
+              className: 'pm-add-inline',
+              attrs: { 'data-add-feature-group': group },
+            }),
+          )
         : '';
       bodyRows.push(
         `<tr class="pm-group-row"><th class="pm-feature" colspan="${totalCols}">${escapeHtml(group)}${addInGroup}</th></tr>`,
@@ -192,8 +202,15 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
       const prev = visible[i - 1];
       const next = visible[i + 1];
       const moveBtn = (fid: string, anchorAttr: string, glyph: string, label: string) =>
-        `<button type="button" class="pm-move" data-move-feature="${escapeHtml(f.id)}" ${anchorAttr}="${escapeHtml(fid)}"` +
-        ` title="${label}" aria-label="${label}">${glyph}</button>`;
+        html(
+          IconButton({
+            icon: glyph,
+            ariaLabel: label,
+            boxSize: 'sm',
+            className: 'pm-move',
+            attrs: { 'data-move-feature': f.id, [anchorAttr]: fid },
+          }),
+        );
       const reorder =
         editable && visible.length > 1
           ? `<span class="pm-reorder">` +
@@ -428,11 +445,20 @@ export function renderPricingView(host: HTMLElement): void {
   const body =
     subView === 'cards' ? renderCardsHtml(file, versions, selectedVersion) : matrixHtml(file, versions, editable);
 
+  // The two representations of one model, so a segmented control rather than two
+  // buttons — the same component the header uses for Timeline/Liste, which is the
+  // same kind of choice.
   const toggle = hasHighlights
-    ? `<div class="pm-subview" role="group" aria-label="Darstellung">` +
-      `<button type="button" class="pm-subview-btn" data-sub="matrix" aria-pressed="${subView === 'matrix'}">Matrix</button>` +
-      `<button type="button" class="pm-subview-btn" data-sub="cards" aria-pressed="${subView === 'cards'}">Kacheln</button>` +
-      `</div>`
+    ? html(
+        SegmentedControl({
+          ariaLabel: 'Darstellung',
+          className: 'pm-subview',
+          segments: [
+            { value: 'matrix', label: 'Matrix', selected: subView === 'matrix', attrs: { 'data-sub': 'matrix' } },
+            { value: 'cards', label: 'Kacheln', selected: subView === 'cards', attrs: { 'data-sub': 'cards' } },
+          ],
+        }),
+      )
     : '';
 
   // Add affordances for the matrix's two axes. Only in the matrix subview: the
@@ -442,18 +468,26 @@ export function renderPricingView(host: HTMLElement): void {
   const addControls =
     editable && subView === 'matrix'
       ? `<div class="pm-add" role="group" aria-label="Hinzufügen">` +
-        `<button type="button" class="pm-add-btn" data-action="add-feature">+ Feature</button>` +
-        `<button type="button" class="pm-add-btn" data-action="add-tier">+ Tarif</button>` +
+        html(Button({ label: '+ Feature', variant: 'outline', attrs: { 'data-action': 'add-feature' } })) +
+        html(Button({ label: '+ Tarif', variant: 'outline', attrs: { 'data-action': 'add-tier' } })) +
         `</div>`
       : '';
 
   const switcher = versions.length
-    ? `<label class="pm-version-switch">Version` +
-      `<select class="pm-version-select"><option value="">Alle</option>` +
-      versions
-        .map((v) => `<option value="${escapeHtml(v)}"${v === selectedVersion ? ' selected' : ''}>${escapeHtml(v)}</option>`)
-        .join('') +
-      `</select></label>`
+    ? html(
+        ToolbarControl({
+          label: 'Version',
+          className: 'pm-version-switch',
+          children: Select({
+            className: 'pm-version-select',
+            block: false,
+            options: [
+              { value: '', label: 'Alle', selected: !selectedVersion },
+              ...versions.map((v) => ({ value: v, label: v, selected: v === selectedVersion })),
+            ],
+          }),
+        }),
+      )
     : '';
 
   // Every edit repaints through here, so without carrying the scroll offsets the
@@ -490,7 +524,7 @@ export function renderPricingView(host: HTMLElement): void {
     repaintPricingView();
   });
 
-  host.querySelectorAll<HTMLButtonElement>('.pm-subview-btn').forEach((btn) => {
+  host.querySelectorAll<HTMLButtonElement>('.pm-subview .ds-Segment').forEach((btn) => {
     btn.addEventListener('click', () => {
       subView = (btn.dataset.sub as SubView) === 'cards' ? 'cards' : 'matrix';
       localStorage.setItem(PRICING_SUBVIEW_KEY, subView);

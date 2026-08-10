@@ -1,0 +1,74 @@
+/* Tabs / Tab / TabPanel. */
+
+.ds-Tabs {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: var(--space-3xs);
+  margin-top: var(--space-2xs);
+  border-bottom: 1px solid var(--border);
+}
+
+.ds-Tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  background: transparent;
+  border: none;
+  /* The underline is the tab's own bottom border pulled onto the strip's, so the
+     active tab breaks the rule instead of sitting above it. */
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 7px var(--space-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--motion-fast), border-color var(--motion-fast);
+}
+
+.ds-Tab:hover:not([aria-selected='true']) {
+  color: var(--fg);
+}
+
+.ds-Tab[aria-selected='true'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: var(--weight-medium);
+}
+
+.ds-Tab:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* The glyph stays lighter than the label so it reads as support rather than as a
+   second focal point. The active tab shows it at full strength. */
+.ds-Tab-icon {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.7;
+}
+
+.ds-Tab-icon svg {
+  display: block;
+}
+
+.ds-Tab[aria-selected='true'] .ds-Tab-icon {
+  opacity: 1;
+}
+
+/* ---- TabPanel --------------------------------------------------------------- */
+
+.ds-TabPanel {
+  grid-column: 1 / -1;
+}
+
+.ds-TabPanel[data-grid] {
+  gap: var(--space-lg) var(--space-md);
+  margin-top: var(--space-xl);
+}
+
+.ds-TabPanel[hidden] {
+  display: none;
+}

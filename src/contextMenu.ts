@@ -22,7 +22,7 @@
 // `aria-checked` is a property of the item that was right-clicked.
 
 import { contextMenuFields, fieldOptionColor, readFieldValues } from './customFields';
-import { escapeHtml } from './buildItems';
+import { Dot, el, fromHtml, Menu, MenuItem, MenuSection, Popover, StatusDot } from './design-system';
 import { findItemIndex } from './editor';
 import { realIdOf } from './grouping';
 import { menuPosition, submenuPosition } from './menuPosition';
@@ -52,18 +52,19 @@ const SUB_OVERLAP = 4;
 // the parent row it belongs to, rather than sitting a few pixels below it.
 const PANEL_PAD = 5;
 
-const ITEM_SELECTOR = '.ctx-item';
-// Root-level rows only: submenu rows carry `.ctx-item` too, and keyboard
+const ITEM_SELECTOR = '.ds-MenuItem';
+// Root-level rows only: submenu rows are the same component, and keyboard
 // navigation has to treat the two levels separately.
-const ROOT_ITEM_SELECTOR = ':scope > .ctx-section > .ctx-item';
+const ROOT_ITEM_SELECTOR = ':scope > .ds-MenuSection > .ds-MenuItem';
 
 // Glyphs in the same style as the form's pickers (stroke, currentColor) so a menu
 // row and a picker row read as the same family.
-function glyph(body: string): string {
-  return (
-    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"' +
-    ` stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`
-  );
+function glyph(body: string): () => Element {
+  return () =>
+    fromHtml(
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"' +
+        ` stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`,
+    );
 }
 
 const GLYPH_DUPLICATE = glyph(
@@ -72,22 +73,16 @@ const GLYPH_DUPLICATE = glyph(
 const GLYPH_DELETE = glyph(
   '<path d="M4 7h16M9 7V4.5h6V7M6 7l.9 12.1A1.5 1.5 0 0 0 8.4 20.5h7.2a1.5 1.5 0 0 0 1.5-1.4L18 7M10.5 11v5.5M13.5 11v5.5" />',
 );
-const GLYPH_CHEVRON = glyph('<path d="M9.5 5.5l7 6.5-7 6.5" />');
 
-// A value row's mark: the status dot takes its colour from CSS per value, a field
-// option's comes from the option itself.
-function statusDot(key: StatusKey): string {
-  return `<span class="status-dot" data-status="${key}"></span>`;
-}
-function colorDot(color: string): string {
-  return `<span class="ctx-dot" style="background:${escapeHtml(color)}"></span>`;
-}
+// A mark is a factory rather than a node: the current value's mark appears on the
+// root row and again in the panel, and one element cannot have two parents.
+type Mark = () => Element;
 
-type ValueRow = { value: string; label: string; mark: string; checked: boolean };
+type ValueRow = { value: string; label: string; mark: Mark; checked: boolean };
 type Submenu = {
   id: string; // ties the root row to its panel
   label: string;
-  mark: string; // the root row's mark: the current value, when there is exactly one
+  mark?: Mark; // the root row's mark: the current value, when there is exactly one
   multi: boolean; // toggle semantics, and the panel stays open between picks
   action: 'status' | 'field';
   key?: string; // metadata key, for action === 'field'
@@ -140,13 +135,13 @@ function submenusFor(item: TimelineFileItem): Submenu[] {
     {
       id: 'status',
       label: 'Status',
-      mark: statusDot(status),
+      mark: () => StatusDot({ status }),
       multi: false,
       action: 'status',
       rows: ITEM_STATUSES.map(({ key, label }) => ({
         value: key,
         label,
-        mark: statusDot(key),
+        mark: () => StatusDot({ status: key }),
         checked: key === status,
       })),
     },
@@ -159,7 +154,7 @@ function submenusFor(item: TimelineFileItem): Submenu[] {
     const rows: ValueRow[] = (def.options ?? []).map((o) => ({
       value: o.value,
       label: o.label ?? o.value,
-      mark: colorDot(fieldOptionColor(def, o.value)),
+      mark: () => Dot({ color: fieldOptionColor(def, o.value), size: 'sm' }),
       checked: current.includes(o.value),
     }));
     // A single-select needs a way back to "unset" — the same empty choice its
@@ -168,15 +163,16 @@ function submenusFor(item: TimelineFileItem): Submenu[] {
       rows.unshift({
         value: '',
         label: 'kein Wert',
-        mark: '<span class="ctx-none">—</span>',
+        mark: () => el('span', {}, '—'),
         checked: current.length === 0,
       });
     }
+    const rootValue = !multi ? current[0] : undefined;
     out.push({
       id: `f:${def.key}`,
       label: def.label || def.key,
       // Only a single-valued field can show "the" current value on its root row.
-      mark: !multi && current[0] ? colorDot(fieldOptionColor(def, current[0])) : '',
+      mark: rootValue ? () => Dot({ color: fieldOptionColor(def, rootValue), size: 'sm' }) : undefined,
       multi,
       action: 'field',
       key: def.key,
@@ -186,54 +182,67 @@ function submenusFor(item: TimelineFileItem): Submenu[] {
   return out;
 }
 
-function rootRowHtml(sub: Submenu): string {
-  return (
-    `<button type="button" class="ctx-item ctx-parent" role="menuitem"` +
-    ` aria-haspopup="menu" aria-expanded="false" data-sub="${escapeHtml(sub.id)}">` +
-    `<span class="ctx-mark">${sub.mark}</span>` +
-    `<span class="ctx-label">${escapeHtml(sub.label)}</span>` +
-    `<span class="ctx-chevron">${GLYPH_CHEVRON}</span>` +
-    `</button>`
-  );
+function rootRow(sub: Submenu): HTMLElement {
+  return MenuItem({
+    label: sub.label,
+    mark: sub.mark?.(),
+    parent: true,
+    attrs: { role: 'menuitem', 'data-sub': sub.id },
+  });
 }
 
-function panelHtml(sub: Submenu): string {
+function panel(sub: Submenu): HTMLElement {
   // menuitemradio for a single choice, menuitemcheckbox for a toggle — the role
   // is what tells a screen reader whether picking replaces or adds.
   const role = sub.multi ? 'menuitemcheckbox' : 'menuitemradio';
-  const rows = sub.rows
-    .map(
-      (r) =>
-        `<button type="button" class="ctx-item" role="${role}"` +
-        ` aria-checked="${r.checked}" data-action="${sub.action}"` +
-        (sub.key ? ` data-key="${escapeHtml(sub.key)}"` : '') +
-        ` data-multi="${sub.multi}" data-value="${escapeHtml(r.value)}">` +
-        `<span class="ctx-mark">${r.mark}</span>` +
-        `<span class="ctx-label">${escapeHtml(r.label)}</span>` +
-        `</button>`,
-    )
-    .join('');
-  return (
-    `<div class="ctx-submenu" role="menu" data-sub-panel="${escapeHtml(sub.id)}"` +
-    ` aria-label="${escapeHtml(sub.label)}" hidden>${rows}</div>`
-  );
+  return Popover({
+    placement: 'fixed',
+    layer: 'menu',
+    hidden: true,
+    role: 'menu',
+    ariaLabel: sub.label,
+    minWidth: 150,
+    attrs: { 'data-sub-panel': sub.id },
+    children: sub.rows.map((r) =>
+      MenuItem({
+        label: r.label,
+        mark: r.mark(),
+        none: r.value === '',
+        attrs: {
+          role,
+          'aria-checked': String(r.checked),
+          'data-action': sub.action,
+          ...(sub.key ? { 'data-key': sub.key } : {}),
+          'data-multi': String(sub.multi),
+          'data-value': r.value,
+        },
+      }),
+    ),
+  });
 }
 
-function menuHtml(subs: Submenu[]): string {
-  return (
-    `<div class="ctx-section">${subs.map(rootRowHtml).join('')}</div>` +
-    `<div class="ctx-section">` +
-    `<button type="button" class="ctx-item" role="menuitem" data-action="duplicate">` +
-    `<span class="ctx-mark">${GLYPH_DUPLICATE}</span><span class="ctx-label">Duplizieren</span>` +
-    `</button>` +
-    `<button type="button" class="ctx-item is-danger" role="menuitem" data-action="delete">` +
-    `<span class="ctx-mark">${GLYPH_DELETE}</span><span class="ctx-label">Löschen</span>` +
-    `</button>` +
-    `</div>` +
+function menuChildren(subs: Submenu[]): Element[] {
+  return [
+    MenuSection({ children: subs.map(rootRow) }),
+    MenuSection({
+      children: [
+        MenuItem({
+          label: 'Duplizieren',
+          mark: GLYPH_DUPLICATE(),
+          attrs: { role: 'menuitem', 'data-action': 'duplicate' },
+        }),
+        MenuItem({
+          label: 'Löschen',
+          mark: GLYPH_DELETE(),
+          danger: true,
+          attrs: { role: 'menuitem', 'data-action': 'delete' },
+        }),
+      ],
+    }),
     // Panels come after the sections and are positioned as fixed overlays, so
     // they take no part in the root menu's flow.
-    subs.map(panelHtml).join('')
-  );
+    ...subs.map(panel),
+  ];
 }
 
 function openMenu(clientX: number, clientY: number, id: string): void {
@@ -242,11 +251,13 @@ function openMenu(clientX: number, clientY: number, id: string): void {
   const item = file.items[findItemIndex(file, id)];
   if (!item) return;
 
-  const menu = document.createElement('div');
-  menu.className = 'ctx-menu';
-  menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', `Aktionen: ${item.content ?? 'Eintrag'}`);
-  menu.innerHTML = menuHtml(submenusFor(item));
+  const menu = Menu({
+    placement: 'fixed',
+    layer: 'menu',
+    ariaLabel: `Aktionen: ${item.content ?? 'Eintrag'}`,
+    minWidth: 170,
+    children: menuChildren(submenusFor(item)),
+  });
   document.body.appendChild(menu);
 
   menuEl = menu;

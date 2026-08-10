@@ -51,9 +51,13 @@ remote `update_item` skipped that step and replaced `metadata` wholesale, which
 silently dropped every key the caller had not resent, and `update_group` wrote
 through an upsert that nulled an unmentioned `nestedGroups`.
 
-`dependsOn` and `owner` live under `metadata`; `owner` carries the e-mail of a
-user from `list_users` (see „Item owner" (docs/items.md)), and a free-text name is stored but
-renders as unlinked.
+`dependsOn`, `parent` and `owner` live under `metadata`; `owner` carries the
+e-mail of a user from `list_users` (see „Item owner" (docs/items.md)), and a
+free-text name is stored but renders as unlinked. `parent` is the id of the item
+this one is part of, at most one — a self-link, an unknown id or one that would
+close a cycle is dropped when the timeline is built, so a tool call that writes
+one succeeds and the link simply is not there (see „Parent and children"
+(docs/items.md)).
 
 **The three plugin tools name no plugin.** There used to be thirteen tools for
 one plugin's entities — `set_pricing`, `add_feature`, `set_tier_value` and the

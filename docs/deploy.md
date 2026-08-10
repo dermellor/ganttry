@@ -91,7 +91,9 @@ no longer consulted — an invited person may sit on any domain, which is what
 inviting them means. The same switch makes every `/api/*` call check the row's
 role, so a session and a permission are two separate questions.
 
-Two consequences worth knowing before turning it on:
+The full model — roles, the invitation lifecycle, what the token does and does
+not do, and the six-step rollout — is „Users" (docs/users.md). Two consequences
+worth knowing before turning it on:
 
 - **Set `TIMELINES_BOOTSTRAP_ADMIN` first.** Against an empty member list nobody
   can invite anybody, and the instance is closed to its owner too. That address

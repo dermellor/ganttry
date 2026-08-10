@@ -4,7 +4,7 @@
 // it without importing each other. The click wiring lives in pricingMatrix
 // (wireWork), matching on the `.pm-work-item` class this markup emits.
 
-import { escapeHtml } from '../../buildItems';
+import { el, htmlAll, MenuItem } from '../../pluginHost/api';
 import { aggregateWorkState } from './pricing';
 import { statusOrDefault, type StatusKey } from '../../status';
 import type { TimelineFileItem } from '../../types';
@@ -26,18 +26,23 @@ function fmtDate(it: TimelineFileItem): string {
 export function workDotHtml(items: TimelineFileItem[]): string {
   const st = aggregateWorkState(items);
   if (st === 'none') return '';
-  const pop = items
-    .map((it) => {
+  // Each linked roadmap item as a menu row: this popover is a list of things to
+  // jump to, which is what a MenuItem is. The mark carries the plugin's own
+  // traffic-light rather than the product's `--status-*` — see the note beside
+  // those custom properties in pricing.css.
+  const pop = htmlAll(
+    items.map((it) => {
       const s = statusOrDefault(it.status);
-      return (
-        `<button type="button" class="pm-work-item" data-item-id="${escapeHtml(it.id ?? '')}">` +
-        `<span class="pm-work-item-dot pm-work-${s.toLowerCase()}" aria-hidden="true"></span>` +
-        `<span class="pm-work-item-name">${escapeHtml(it.content)}</span>` +
-        `<span class="pm-work-item-meta">${escapeHtml(STATUS_LABEL[s])}${fmtDate(it) ? ' · ' + escapeHtml(fmtDate(it)) : ''}</span>` +
-        `</button>`
-      );
-    })
-    .join('');
+      const when = fmtDate(it);
+      return MenuItem({
+        label: it.content,
+        detail: when ? `${STATUS_LABEL[s]} · ${when}` : STATUS_LABEL[s],
+        mark: el('span', { class: `pm-work-item-dot pm-work-${s.toLowerCase()}`, 'aria-hidden': 'true' }),
+        className: 'pm-work-item',
+        attrs: { 'data-item-id': it.id ?? '' },
+      });
+    }),
+  );
   return (
     `<details class="pm-work"><summary class="pm-work-dot pm-work-${st}" title="${WORK_LABEL[st]} — ${items.length} Item(s)">` +
     `<span class="pm-work-count">${items.length}</span></summary>` +

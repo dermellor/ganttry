@@ -6,19 +6,20 @@
 // items, with the only signal to the contrary sitting in the footer status line
 // at the other end of the window.
 //
-// The markup is built here instead of living in index.html because
-// `renderTimeline()` clears its container when it destroys a previous timeline,
-// so the placeholder has to be re-creatable at any point.
+// What it looks like is the `TimelineSkeleton` component; what is here is the
+// geometry and the mount/unmount, because `renderTimeline()` clears its
+// container when it destroys a previous timeline and the placeholder therefore
+// has to be re-creatable at any point.
 
-const CLASS = 'tl-skeleton';
+import { TimelineSkeleton, type SkeletonMark } from './design-system';
 
-type Mark = { x: number; w: number } | { x: number; point: true };
+const CLASS = 'ds-Skeleton';
 
 // Bar geometry per row, as percentages of the track width. Hand-picked rather
 // than generated: a placeholder that reshuffles on every view switch draws
 // attention to itself, and randomness in a paint path cannot be reproduced when
 // something about the layout looks wrong.
-const ROWS: readonly (readonly Mark[])[] = [
+const ROWS: readonly (readonly SkeletonMark[])[] = [
   [{ x: 4, w: 30 }, { x: 42, w: 17 }],
   [{ x: 10, w: 44 }, { x: 64, point: true }],
   [{ x: 6, w: 19 }, { x: 33, w: 27 }],
@@ -27,32 +28,9 @@ const ROWS: readonly (readonly Mark[])[] = [
   [{ x: 40, w: 41 }],
 ];
 
-// Tick stubs on the axis. Eight of them line up with the 12.5% grid the track
-// paints, so the vertical rules read as this axis' ticks rather than as a
-// second, unrelated grid.
-const TICKS = 8;
-
-function markHtml(mark: Mark): string {
-  return 'point' in mark
-    ? `<span class="tl-skeleton-point" style="left:${mark.x}%"></span>`
-    : `<span class="tl-skeleton-bar" style="left:${mark.x}%;width:${mark.w}%"></span>`;
-}
-
 export function showTimelineSkeleton(host: HTMLElement): void {
   if (host.querySelector(`.${CLASS}`)) return;
-  const el = document.createElement('div');
-  el.className = CLASS;
-  // Decorative: what is happening is already announced by the footer status
-  // line, and six empty boxes tell a screen reader nothing.
-  el.setAttribute('aria-hidden', 'true');
-  el.innerHTML = [
-    `<div class="tl-skeleton-axis">${'<span></span>'.repeat(TICKS)}</div>`,
-    `<div class="tl-skeleton-labels">${ROWS.map(() => '<span></span>').join('')}</div>`,
-    `<div class="tl-skeleton-track">${ROWS.map(
-      (row) => `<div class="tl-skeleton-row">${row.map(markHtml).join('')}</div>`,
-    ).join('')}</div>`,
-  ].join('');
-  host.appendChild(el);
+  host.appendChild(TimelineSkeleton({ rows: ROWS }));
 }
 
 export function hideTimelineSkeleton(host: HTMLElement): void {

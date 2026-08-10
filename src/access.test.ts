@@ -9,6 +9,7 @@ import {
   isActiveMember,
   maySignIn,
   memberCan,
+  needsBootstrapPromotion,
   normalizeMemberRole,
   normalizeMemberStatus,
   roleAllows,
@@ -202,4 +203,39 @@ test('an expiry left on an active row never refuses them', () => {
     decideSignIn({ status: 'active', inviteExpiresAt: new Date(NOW - 99 * HOUR).toISOString() }, NOW),
     { allow: true, accept: false },
   );
+});
+
+// ---- the bootstrap master key -----------------------------------------------
+
+test('the bootstrap address is promoted from whatever state its row is in', () => {
+  const BOOT = 'owner@example.test';
+  // The case that matters on an instance that has been running: the address is
+  // already in the directory as an active editor, because 0015 backfilled it
+  // from edit attribution. Firing only on a missing row would sign the owner in
+  // as an editor into an instance with no admin at all.
+  assert.equal(needsBootstrapPromotion({ role: 'editor', status: 'active' }, BOOT, BOOT), true);
+  assert.equal(needsBootstrapPromotion(null, BOOT, BOOT), true, 'and a missing row too');
+  assert.equal(needsBootstrapPromotion({ role: 'admin', status: 'suspended' }, BOOT, BOOT), true);
+  assert.equal(needsBootstrapPromotion({ role: 'admin', status: 'removed' }, BOOT, BOOT), true);
+});
+
+test('an active admin is left alone, and so is everybody else', () => {
+  const BOOT = 'owner@example.test';
+  assert.equal(needsBootstrapPromotion({ role: 'admin', status: 'active' }, BOOT, BOOT), false);
+  // Somebody who is not the bootstrap address is never promoted, whatever they are.
+  assert.equal(needsBootstrapPromotion(null, 'someone@example.test', BOOT), false);
+  assert.equal(
+    needsBootstrapPromotion({ role: 'viewer', status: 'active' }, 'someone@example.test', BOOT),
+    false,
+  );
+});
+
+test('no bootstrap address configured promotes nobody', () => {
+  for (const unset of [undefined, null, '', '   ']) {
+    assert.equal(needsBootstrapPromotion(null, 'anyone@example.test', unset), false, String(unset));
+  }
+});
+
+test('the bootstrap comparison ignores case and surrounding space', () => {
+  assert.equal(needsBootstrapPromotion(null, 'Owner@Example.test', '  owner@example.test '), true);
 });

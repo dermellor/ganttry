@@ -1,0 +1,60 @@
+/* SegmentedControl / Segment. */
+
+/* One border around the group, hairlines between the segments: two separate
+   bordered buttons beside each other read as two controls. */
+.ds-SegmentedControl {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.ds-Segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: var(--control-lg);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+
+/* A text segment sizes to its label instead of being a square box. */
+.ds-Segment[data-text] {
+  width: auto;
+  padding: var(--space-xs) var(--space-md);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.ds-Segment[data-text][aria-pressed='true'] {
+  font-weight: var(--weight-semibold);
+}
+
+.ds-Segment + .ds-Segment {
+  border-left: 1px solid var(--border);
+}
+
+.ds-Segment:hover:not([aria-pressed='true']) {
+  background: var(--surface-alt);
+  color: var(--fg);
+}
+
+.ds-Segment[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.ds-Segment:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.ds-Segment svg {
+  display: block;
+}

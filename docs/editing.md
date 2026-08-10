@@ -26,7 +26,7 @@ and a copy of it for the other. Clicking it runs `deleteItem`
 takes, so there is one delete flow, not two.
 
 Geometry and states are **CSS**, in [`src/styles/timeline.css`](../src/styles/timeline.css)
-(rail block), with the glyph in [`src/styles/theme.css`](../src/styles/theme.css)
+(rail block), with the glyph in [`src/design-system/tokens/tokens.css`](../src/design-system/tokens/tokens.css)
 (`--ui-icon-delete`, kept apart from the `--icon-<key>` item set because chrome
 glyphs have no key). Slots are counted right-to-left from the bar's inner edge,
 so a mark's position is arithmetic on `--rail-slot` and marks line up without
@@ -87,21 +87,29 @@ measuring anything.
 Two vis-timeline collisions the rail has to defeat, both worth knowing before
 touching it. The mark needs `z-index` above `.vis-drag-center` /
 `.vis-drag-right` (vis appends those to the same item box *after* it, so they
-would swallow the click). And the right-edge **resize handle** is moved inward by
-`--rail-w` so „drag the right edge to resize" and „click × to delete" don't fight
-over the same pixels — but **only on a bar wide enough for them to collide**. vis
-caps that handle at `max-width: 20%`, so on a narrow bar it is a sliver sitting
-*past* the bar's right edge and it clears the mark by itself; the two start to
-overlap once the handle grows beyond 10px, i.e. above a 50px bar. Below that the
-shift would be actively wrong (24px inward on a 29px bar lands the grab zone in
-the bar's left third). Asking each bar about its own width is what a **container
-query** is for: `.vis-item.vis-range` is a `container-type: inline-size` query
-container — safe, because vis sets a range bar's width inline from its dates, so
-inline-size containment has nothing to break (verified: it moves no bar by a
-pixel). Milestones and boxes are deliberately excluded, since containment would
-cut off content-sized items. The `56px` threshold is a literal (container queries
-can't read custom properties) — keep it in step with the rail vars. One threshold
-covers a marked bar too, because its rail is no wider (the marks share a slot).
+would swallow the click). And the right-edge **resize handle** has to share the
+edge with the mark: vis pins it to `right: -4px` at 24px wide, which is exactly
+the rail's slot, so at that width „drag the right edge to resize" and „click × to
+delete" fight over the same pixels.
+
+The handle is therefore **narrowed, not moved** — it keeps `right: -4px` and ends
+where the mark begins, a band straddling the bar's border. It used to be shifted
+inward by `--rail-w` instead, and that is what made a bar resizable at its *left*
+edge only: the outermost pixels became `.vis-drag-center`, the next ~18 the mark
+(which swallows `mousedown`), and the grab zone started ~27px in, so aiming at the
+visible right edge moved the bar or hit „×" and never resized it. The cost of the
+current version is width, not reach: 10px on the right against vis's 24px on the
+left, which is what it costs to keep the mark inside the bar. The width is
+derived from `--bar-gutter` + `--rail-inset` (where the mark starts), so moving
+the rail moves the handle with it, and vis's own `max-width: 20%` shrinks it
+further on a narrow bar — no width threshold is involved either way.
+
+`.vis-item.vis-range` stays a `container-type: inline-size` query container for
+the **status mark**, which hides itself below 23px (see below). It is safe,
+because vis sets a range bar's width inline from its dates, so inline-size
+containment has nothing to break (verified: it moves no bar by a pixel).
+Milestones and boxes are deliberately excluded, since containment would cut off
+content-sized items.
 
 ### The status mark
 
@@ -368,7 +376,7 @@ module. **Adding a value picker** needs no menu change at all — flag the field
 
 When the active view points to a **DB-backed** source (the timeline exists in Supabase, so `GET /api/source/<id>` returns it), the viewer is editable. A **local** source (a `data/*.json` file, or a directory of Markdown notes) is editable when a process with filesystem access serves it, which means the dev server; editing a directory patches the individual notes' frontmatter and moves a deleted one to `.trash/` rather than removing it; on a static deploy the same file loads read-only, because there is nothing there to write with. Whether the running build is one or the other was decided when it was built (see „Source kinds" (docs/architecture.md)).
 
-- **Drag** an item left/right to move start, drag the right edge to resize, drag vertically to switch group. Persists on drop. On a selected bar the resize handle sits just inside the rail (see „Item rail"), not right at the edge.
+- **Drag** an item left/right to move start, drag either edge to resize, drag vertically to switch group. Persists on drop. Both handles sit on the bar's edge; the right one is the narrower of the two because it shares that edge with the rail's „×" (see „Item rail").
 - **Delete** an item via the „×" mark at the bar's right edge, which appears on hover and while the item is selected — inside the bar on a bar wide enough for it, just outside on a narrow one. Clicking it neither selects the item nor opens its form. See „Item rail".
 - **Right-click** an item for quick actions without opening the form: set the
   status, set any custom field that declared `contextMenu: true` (each a submenu of
@@ -390,7 +398,8 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
     against each other so they can't cross, and a reversed pair typed in anyway is
     refused with a status-line message — see „An item's `end` must lie after its
     `start`".
-  - **Relationships** — dependencies (`dependsOn`) and JIRA links.
+  - **Relationships** — containment (`parent`), dependencies (`dependsOn`) and
+    JIRA links.
 
   All panels stay in the DOM (inactive ones just `hidden`), so `FormData` keeps
   seeing every field and `applyItemForm` / the persist diff need no knowledge of
@@ -469,6 +478,7 @@ When the active view points to a **DB-backed** source (the timeline exists in Su
   instead of drawing the former 2px accent ring, which read as a heavy frame
   around everything you touched. Buttons — tabs, pickers — keep a real ring, but
   only on `:focus-visible`, where there is no border to recolour.
+- **Übergeordnet** is the same autosuggest, single-valued: pick the item this one is part of (`metadata.parent`). The suggestions leave out the item itself and everything already below it — offering a pick that the build would then drop as a cycle looks exactly like a pick that did not register. Filling it hides the input behind the chip; removing the chip brings it back. Directly under it, **Untereinträge** lists the children as read-only chips, plus a line wherever they run outside the parent's own dates: the parent's dates stay authoritative and nothing is rewritten. See „Parent and children" (docs/items.md).
 - **Depends on** is a title-autosuggest field: type to search the current timeline's items by title (or id), pick to link a dependency (rendered as a removable chip). Stored as `metadata.dependsOn` IDs — the chips just show the target's title.
 - **Tags** is a chip editor with autosuggest: type to match tags already used in the timeline, or type a new label and press Enter to create one. Each chip carries its resolved colour and a remove button. Stored as `metadata.tags` (string[]); saving migrates any legacy singular `metadata.tag` into the array.
 - **Phases** render as a ribbon along the top. Drag a segment to move it, drag either edge to resize (snaps to whole days, min. 1 day), and click it (without dragging) to open the phase form in the side panel: title, start/end, duration, icon, colour. Persists on drop / Save; Delete removes the phase.
@@ -492,6 +502,8 @@ unit-testing; the other two are guards inside `applyItemForm` /
 emptying a range's extent still re-seeds `DEFAULT_EXTENT`, because a range
 without one vanishes from the timeline.
 
+  The strip the ribbon sits in is reserved by an **empty group** prepended to the group set (`BAND_SPACER_GROUP_ID` in [`src/render.ts`](../src/render.ts)), which is why the DataSet carries one row nobody can put an item in. It looks removable and is not: reserving the strip with CSS padding instead is invisible to vis, which derives its content height *and* its vertical scroll range from the sum of the group heights — the panel then holds more than vis knows about, scrolling stops short by the height of the reserve, and `.vis-timeline` (fixed height, `overflow: hidden`) cuts off whatever hangs below, always the last track. Two details in the spacer are load-bearing and commented where they live: it is added after filtering and lane assignment, and its height comes from a strut inside its label rather than from a `height` rule on the row.
+
 Persistence path: viewer → item-level calls (`POST/PATCH/DELETE /api/source/<id>/item`, `PUT …/phases`) → middleware (`vite.config.ts`) → Supabase via `scripts/db/api.ts`. `PATCH` carries the item `version` in `If-Match`; a stale version returns `409` and the client reloads that item. Only DB-backed sources are editable; genuine file-based sources (the examples) load read-only from their static `/data/sources/<id>.json`. Builds (`npm run build`) and exported HTML have no edit endpoint. DB-backed timelines are discovered from the DB at build time (`collectDbSources`); the registration **stub** (`name` + `items: []`, no content) is written only to the gitignored build output `public/data/sources/<id>.json` — nothing DB-backed is committed, and there is deliberately no committed content cache (see „Principle: no emergency or fallback data").
 
 ## View modes: Timeline / Liste
@@ -506,7 +518,12 @@ active state driven by `aria-pressed`) switches between two renderings of the
   sections along the active **grouping dimension** (items sorted by start),
   with columns Eintrag (icon + tag pills + content), Start, Ende, Typ, Status,
   Owner. Phase background items are omitted. The milestones-only filter applies
-  here too.
+  here too. Children follow their parent, indented one step per level, with the
+  same fold caret the timeline's summary bars carry (see „Parent and children"
+  (docs/items.md)) — a section that has no tree in it reserves no caret column at
+  all, since an indent only some rows take reads as a rendering bug rather than
+  as a level. A section can hold a child whose parent fell outside it (they carry
+  different tags, say); that one stays at the top level rather than disappearing.
 
 ### Loading placeholder
 
