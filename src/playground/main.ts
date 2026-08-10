@@ -581,6 +581,17 @@ const selectorSection = section(
     ),
     row(
       specimen(
+        'Tabs, vertikal',
+        Tabs({
+          orientation: 'vertical',
+          ariaLabel: 'Bereiche',
+          children: [
+            Tab({ label: 'Instanz', selected: true }),
+            Tab({ label: 'Benutzer' }),
+          ],
+        }),
+      ),
+      specimen(
         'SegmentedControl',
         SegmentedControl({
           ariaLabel: 'Ansicht',

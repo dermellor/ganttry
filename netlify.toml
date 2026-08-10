@@ -38,6 +38,13 @@
   function = "timelines-api"
   path = "/api/members"
 
+# What this instance is configured as. Same function once more: it reads the
+# deploy's environment, which only an edge function running on it can see, and it
+# needs `manage` like the member list above.
+[[edge_functions]]
+  function = "timelines-api"
+  path = "/api/settings"
+
 # PUBLIC pricing model for external marketing pages (Astro). No auth (see
 # auth.ts excludedPath); serves only the pricing model, never roadmap items.
 [[edge_functions]]

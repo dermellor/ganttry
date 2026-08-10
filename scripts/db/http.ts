@@ -35,11 +35,12 @@ import {
   accessControlEnabled,
   capabilityForMethod,
   memberCan,
-  normalizeMemberRole,
   roleAllows,
+  serviceRoleFrom,
   type Capability,
   type MemberRole,
 } from '../../src/access.ts';
+import { declaredSettings } from '../../src/settings.ts';
 
 /** What the runtime resolved before dispatching: connections plus who is asking. */
 export type ApiContext = {
@@ -74,6 +75,19 @@ export type ApiContext = {
    * `defaultLive`, which derives it from the configured backend.
    */
   live?: SourceLive;
+  /**
+   * How this runtime reads its own environment, for `GET /api/settings`.
+   *
+   * A function rather than a snapshot object, because the three runtimes have
+   * three accessors — `Deno.env.get`, the Node cascade's `envValue`, and
+   * `process.env` in the dev middleware — and only the runtime knows which.
+   *
+   * Optional in the type but not in effect: a runtime that omits it gets a 503
+   * from the settings route rather than an empty list. „Nothing is configured"
+   * and „I cannot see the configuration" look identical on the page, and the
+   * first one would send an operator debugging a lockout to the wrong place.
+   */
+  env?: (key: string) => string | undefined;
 };
 
 /**
@@ -124,7 +138,13 @@ async function readBody(req: Request, method: string): Promise<unknown> {
  * of `/api/`, and 404s in production, where an edge function only ever sees the
  * paths it declares. `scripts/ci/edge-routes.test.ts` asserts the three agree.
  */
-export const OWNED_API_PATHS = ['/api/source/*', '/api/sources', '/api/users', '/api/members'] as const;
+export const OWNED_API_PATHS = [
+  '/api/source/*',
+  '/api/sources',
+  '/api/users',
+  '/api/members',
+  '/api/settings',
+] as const;
 
 /**
  * Is this one of ours at all?
@@ -140,6 +160,7 @@ export const OWNED_API_PATHS = ['/api/source/*', '/api/sources', '/api/users', '
 function isOurs(path: string): boolean {
   return (
     path === '/api/members' ||
+    path === '/api/settings' ||
     path === '/api/users' ||
     path === '/api/sources' ||
     path === '/api/source' ||
@@ -147,17 +168,11 @@ function isOurs(path: string): boolean {
   );
 }
 
-// Re-exported so the runtimes keep reaching it through this module; the parser
-// itself lives with the rules, because the auth gate needs it too and must not
-// import a module that pulls in both database drivers.
-export { accessControlEnabled };
-
-/** The service role a runtime should use for its token caller, defaulting to editor. */
-export function serviceRoleFrom(raw: string | undefined | null): MemberRole {
-  // Defaulting to `editor` keeps every existing automation working unchanged the
-  // day the switch is turned on. An operator who wants a read-only agent says so.
-  return normalizeMemberRole(raw) ?? 'editor';
-}
+// Re-exported so the runtimes keep reaching them through this module; the
+// parsers themselves live with the rules, because the auth gate and the settings
+// registry need them too and must not import a module that pulls in both
+// database drivers.
+export { accessControlEnabled, serviceRoleFrom };
 
 /**
  * May this caller do this? Answers a `Response` to send, or null to proceed.
@@ -171,8 +186,15 @@ function requiredCapability(path: string, method: string): Capability {
   // member list carries roles, statuses and invitation state, which is not what
   // the owner picker's directory (/api/users, a plain read) is for.
   if (path === '/api/members') return 'manage';
+  // The same, for the same reason one level up: what this instance is
+  // configured as — which domains may sign in, which credentials are set at all,
+  // what the automations act as — is administration, not viewer-facing state.
+  if (path === '/api/settings') return 'manage';
   return capabilityForMethod(method);
 }
+
+/** The two routes that administer the instance rather than a timeline. */
+const ADMIN_PATHS = new Set(['/api/members', '/api/settings']);
 
 async function authorize(path: string, method: string, ctx: ApiContext): Promise<Response | null> {
   // Administration is never ungated, and the switch does NOT open it.
@@ -184,15 +206,23 @@ async function authorize(path: string, method: string, ctx: ApiContext): Promise
   // what this branch prevents, and it has to sit ABOVE the switch: below it, the
   // early return has already happened.
   //
+  // `/api/settings` joins it for the same reason and with the same cost: the
+  // settings area is unavailable on an instance that has not turned the switch
+  // on, which is also the instance whose operator most wants to look at
+  // TIMELINES_ACCESS_CONTROL. Serving it anyway would mean answering „which
+  // domains may sign in, which credentials are set" to whoever reaches the URL,
+  // with nothing but the auth gate in front. The 503's message names the
+  // variable, so the deep link answers the question it was opened for.
+  //
   // 503 rather than 403: nothing is wrong with the caller, the instance has not
   // enabled the feature. A 403 would send an admin looking for their missing
   // permission instead of at TIMELINES_ACCESS_CONTROL.
-  if (path === '/api/members' && !ctx.accessControl) {
+  if (ADMIN_PATHS.has(path) && !ctx.accessControl) {
     return json(
       {
         error: 'access_control_disabled',
         message:
-          'Membership administration is off on this instance. Set TIMELINES_ACCESS_CONTROL=true to enable it.',
+          'Administration is off on this instance. Set TIMELINES_ACCESS_CONTROL=true to enable it.',
       },
       503,
     );
@@ -327,6 +357,22 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
       body: await readBody(req, method),
     });
     return json(result.json, result.status);
+  }
+
+  if (path === '/api/settings') {
+    if (method !== 'GET') return json({ error: 'method not allowed' }, 405);
+    // No `env` means the runtime never wired one up. Refusing beats answering
+    // `[]`, which reads on the page as „this instance configures nothing".
+    if (!ctx.env) {
+      return json(
+        {
+          error: 'settings_unavailable',
+          message: 'This runtime did not supply an environment reader for the settings registry.',
+        },
+        503,
+      );
+    }
+    return json({ settings: declaredSettings(ctx.env) });
   }
 
   if (path === '/api/users') {

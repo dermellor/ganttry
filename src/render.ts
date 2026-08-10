@@ -179,6 +179,23 @@ function displayParents(): Map<string, string> {
  */
 export const BAND_SPACER_GROUP_ID = '__phase_band_spacer';
 
+/**
+ * The height vis may draw into: the container's **content** box.
+ *
+ * Not `clientHeight`, which includes padding — and `.timeline` pads its top.
+ * Handing vis that number gave it a box of the container's full height, starting
+ * one padding below the container's top edge, so its bottom 16px lay outside a
+ * container that clips (`overflow: hidden`). No scroll position could reveal
+ * them: vis counts those pixels as visible and ends its scroll range exactly that
+ * much early, so the strip it swallowed was always the last track. That is why it
+ * read as „the bottom row is cut off" rather than as a height being off by the
+ * padding, and why it only showed on a timeline with enough tracks to scroll.
+ */
+function visViewportHeight(el: HTMLElement): number {
+  const cs = getComputedStyle(el);
+  return el.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+}
+
 function withBandSpacer(groups: TimelineGroup[]): TimelineGroup[] {
   // Keyed off the phases and the marks themselves, not off the `has-phase-band` /
   // `has-milestone-rail` classes: both are toggled further down, after
@@ -555,7 +572,7 @@ export async function renderTimeline(view: View) {
   const span = Math.max(focusMax - focusMin, 90 * 24 * 3600 * 1000);
   const padding = span * 0.05;
 
-  const containerHeight = els.timeline.clientHeight || 600;
+  const containerHeight = visViewportHeight(els.timeline) || 600;
 
   const editable = editableOptions();
 
@@ -661,7 +678,7 @@ export async function renderTimeline(view: View) {
 
   let lastH = containerHeight;
   const ro = new ResizeObserver(() => {
-    const h = els.timeline.clientHeight;
+    const h = visViewportHeight(els.timeline);
     if (h > 0 && h !== lastH) {
       lastH = h;
       timeline?.setOptions({ height: `${h}px` });

@@ -45,7 +45,7 @@ import { commitItemForm } from './persistence';
 import type { PresenceUser } from './presence';
 import { loadUserDirectory } from './users';
 import { normalizeMemberRole, roleAllows } from './access';
-import { openMemberAdmin } from './memberAdmin';
+import { settingsSection, showSettings, wireSettingsArea } from './settingsArea';
 import { deleteItem } from './itemForm';
 import { hideDetail, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
@@ -291,20 +291,34 @@ async function bootstrap() {
   state.pendingItem = urlState.item ?? null;
   state.pendingWindow = parseUrlWindow(urlState);
 
+  // Recorded BEFORE the first syncUrl below, which rewrites the hash from
+  // `state`: read afterwards, the section a deep link named would be stripped
+  // out of the URL it arrived in, and the next reload would land on the timeline.
+  // Mounting still happens further down — this is only the state.
+  state.settingsSection = urlState.settings != null ? settingsSection(urlState.settings) : null;
+
   state.suppressUrlSync = true;
   await applyView(initialView);
   applyViewMode(state.viewMode, { persist: false });
   state.suppressUrlSync = false;
   syncUrl();
 
-  // Safety net: flush + persist an open item form if the tab closes mid-edit.
-  // Only an admin is offered the screen. Hiding it is an affordance, never the
-  // permission: /api/members refuses anyone else regardless of what is on screen.
+  // Only an admin is offered the area. Hiding it is an affordance, never the
+  // permission: /api/settings and /api/members refuse anybody else regardless of
+  // what is on screen.
+  wireSettingsArea();
   if (state.currentRole && roleAllows(state.currentRole, 'manage')) {
-    els.membersBtn.hidden = false;
-    els.membersBtn.addEventListener('click', () => void openMemberAdmin());
+    els.settingsBtn.hidden = false;
   }
 
+  // …but the deep link opens it for anybody who follows one, and the sections
+  // then show whatever the server answers. That is deliberate: `#settings` on an
+  // instance with access control off answers „the switch is off, here is the
+  // variable", which is the exact question somebody follows that link to ask. A
+  // silently ignored link would leave them with a timeline and no explanation.
+  if (state.settingsSection) await showSettings(state.settingsSection);
+
+  // Safety net: flush + persist an open item form if the tab closes mid-edit.
   window.addEventListener('beforeunload', () => commitItemForm());
 
   els.milestonesOnly.checked = state.milestonesOnly;
@@ -368,6 +382,14 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
   if (!state.config) return;
   state.suppressUrlSync = true;
   try {
+    // The area first: back/forward out of it has to put the timeline back before
+    // the view work below redraws into a container that is still display:none.
+    const wantSettings = incoming.settings != null ? settingsSection(incoming.settings) : null;
+    if (wantSettings !== state.settingsSection) {
+      state.settingsSection = wantSettings;
+      await showSettings(wantSettings);
+    }
+
     const wantMilestones = !!incoming.milestones;
     if (wantMilestones !== state.milestonesOnly) {
       state.milestonesOnly = wantMilestones;

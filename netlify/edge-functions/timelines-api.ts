@@ -91,6 +91,9 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
     // turned on.
     serviceRole: mcp ? serviceRoleFrom(Deno.env.get('MCP_TOKEN_ROLE')) : undefined,
     live: liveOverride(Deno.env.get('TIMELINES_DB_LIVE')),
+    // How the settings registry reads this instance. The deploy's values live in
+    // the host's dashboard, so `Deno.env` is the only place that has them.
+    env: (key) => Deno.env.get(key),
   });
   // null → not one of our routes; fall through to the rest of the stack.
   return out ?? undefined;
@@ -101,5 +104,5 @@ export const config: Config = {
   // netlify.toml. A route added to scripts/db/http.ts alone reaches the Vite dev
   // middleware (which matches all of /api/) and 404s in production, where an
   // edge function only sees the paths it declares.
-  path: ['/api/source/*', '/api/sources', '/api/users', '/api/members'],
+  path: ['/api/source/*', '/api/sources', '/api/users', '/api/members', '/api/settings'],
 };
