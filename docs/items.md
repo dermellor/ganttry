@@ -202,13 +202,22 @@ three, a delete produces the second, and a renderer walking an unsanitized map
 recurses forever on the third.
 
 **On the timeline** the hierarchy bands a track before anything else lays it out:
-every parent takes a lane above all of its children, which is what makes a
-summary bar read as summarizing them. The dependency staircase (see „Dependency
-arrows" (docs/data-model.md)) still applies, but *within* one such band — otherwise a chain of
-children would climb past the bar above them. A track with no hierarchy is a
-single band, so its layout is exactly what it was. The parent's bar carries a
-heavier outline (`item-summary`) and a fold caret at its inner left edge; folding
-hides its whole subtree, grandchildren included.
+every parent takes a lane above its complete, contiguous subtree. An unrelated
+item may start only after that subtree, never between a summary and one of its
+children; the same rule recursively keeps a grandchild beside its own parent
+instead of below an unrelated sibling. The dependency staircase (see
+„Dependency arrows" (docs/data-model.md)) still applies, but *within* one such
+band — otherwise a chain of children would climb past the bar above them. A track
+with no hierarchy is a single band, so its layout is exactly what it was. The
+parent's bar carries a heavier outline (`item-summary`) and a fold caret at its
+inner left edge. A light shadow separates that bar as the folder tab. While
+expanded, a very pale, borderless body sits behind its contiguous subtree,
+slightly inset from both horizontal edges of the tab and ending vertically after
+the last descendant. It therefore communicates containment without pretending
+that the parent owns another date span. Every child also carries a quiet branch
+mark (`item-child`). Folding hides the whole subtree and its folder body,
+grandchildren included, while the parent's structural band remains reserved so
+unrelated items do not jump across it when toggled.
 
 **Cross-track links are recorded but do not nest.** A parent in another group has
 no row in this track, so banding under it would pull the child out of its own

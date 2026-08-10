@@ -29,6 +29,7 @@ import {
 import { syncFilterControl } from './filterControl';
 import { GROUP_DIM } from './listGrouping';
 import { DependencyArrows } from './arrows';
+import { HierarchyFolders } from './hierarchyFolders';
 import { PhaseBand } from './phaseBand';
 import { MilestoneRail, railMarks } from './milestoneRail';
 import { scrollItemIntoView } from './visGeometry';
@@ -82,6 +83,7 @@ import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 // phaseBand, milestoneRail and the DataSets are only ever touched here.
 let timeline: Timeline | null = null;
 let arrows: DependencyArrows | null = null;
+let hierarchyFolders: HierarchyFolders | null = null;
 let phaseBand: PhaseBand | null = null;
 let milestoneRail: MilestoneRail | null = null;
 // Holds only start-bearing items (vis-timeline can't place a date-less item);
@@ -436,6 +438,13 @@ export function timelineItems(items: TimelineItem[]): TimelineItemWithStart[] {
 export function applyBuildToDataSets(): void {
   if (!state.activeBuild) return;
   const display = computeDisplay();
+  // `computeDisplay` has to support the first render, before a timeline exists,
+  // so it assigns a coarse layout without point-label widths. During an update
+  // (folding included) the live timeline already gives us the real zoom. Refine
+  // the in-memory items *before* publishing them to vis: publishing the coarse
+  // pass first made unrelated items jump into a hierarchy folder until the next
+  // animation-frame repack moved them back out.
+  packDisplayForCurrentZoom();
   // Diff the DataSets in place instead of clear()+add(). Clearing momentarily
   // empties the timeline, collapsing its content height — the browser then clamps
   // the vertical-scroll container's scrollTop to the top and vis-timeline latches
@@ -447,11 +456,7 @@ export function applyBuildToDataSets(): void {
   // The head rail reads the same display set, so it follows the filter and the
   // grouping dimension without a second derivation of "what is visible".
   milestoneRail?.setItems(display.items);
-  // `computeDisplay` packs without zoom information, so the reservation it just
-  // wrote onto the groups is the coarse one (points reserve no label width there)
-  // and every track would briefly shrink to it. Re-pack with the real px/day right
-  // away, so an edit never flashes a layout that belongs to no zoom level.
-  repackLanes();
+  hierarchyFolders?.setHierarchy(display.items, displayParents());
   // Keep the list view in sync when it's the active display (edits, drags,
   // milestones-only toggle all funnel through here).
   if (state.viewMode === 'list') renderListView();
@@ -565,6 +570,10 @@ export async function renderTimeline(view: View) {
   if (arrows) {
     arrows.dispose();
     arrows = null;
+  }
+  if (hierarchyFolders) {
+    hierarchyFolders.dispose();
+    hierarchyFolders = null;
   }
   if (phaseBand) {
     phaseBand.dispose();
@@ -701,6 +710,23 @@ export async function renderTimeline(view: View) {
   // And for the overrun line, whose length is a duration and therefore depends on
   // the current zoom (see overrun.ts).
   attachOverrunLines(timeline);
+
+  // The pale body behind an expanded subtree is created unconditionally: a
+  // timeline may gain or lose visible hierarchy through folding and filtering
+  // without rebuilding the vis instance. Like the other overlays it retries
+  // until vis has created its item-set layers.
+  const initHierarchyFolders = () => {
+    if (!timeline || hierarchyFolders) return;
+    try {
+      hierarchyFolders = new HierarchyFolders(timeline, els.timeline);
+      hierarchyFolders.setHierarchy(displayItems, displayParents());
+    } catch {
+      // item set not ready yet — a later attempt will pick it up
+    }
+  };
+  requestAnimationFrame(initHierarchyFolders);
+  setTimeout(initHierarchyFolders, 100);
+  setTimeout(initHierarchyFolders, 500);
 
   let lastH = containerHeight;
   const ro = new ResizeObserver(() => {
@@ -905,23 +931,15 @@ function scheduleRepack(): void {
   });
 }
 
-// Recompute per-lane subgroups for the current zoom level and push only the
-// items whose lane actually changed into the live DataSet. Because point items
-// reserve their label width (translated from px via the current px/day),
-// zooming out — where the same label spans more days — spreads crowded
-// milestones onto more lanes, and zooming back in re-packs them tight again.
-export function repackLanes(): void {
-  if (!timeline || !state.activeBuild || !itemsDs) return;
+// Refine the current display set for the live zoom without touching the DataSet.
+// Keeping this separate from `repackLanes` lets rebuilds finish both packing
+// passes before vis sees either one, while zoom/pan can still diff the mounted
+// rows and update only what moved.
+function packDisplayForCurrentZoom(): boolean {
+  if (!timeline || !state.activeBuild) return false;
   const pxPerDay = currentPxPerDay();
-  if (pxPerDay === null) return;
+  if (pxPerDay === null) return false;
 
-  // Pack the *display* set (regrouped/cloned when grouping by tag/field), so the
-  // clones on their derived lanes get label-width-aware spacing too. Restricted to
-  // the reserved neighbourhood, which is what keeps both the lanes and the reserved
-  // height tight: packing the whole timeline would spread a track over every lane
-  // its busiest stretch needs, wherever you happen to be looking.
-  const before = new Map(displayItems.map((it) => [it.id, it.subgroup]));
-  const beforeStyles = new Map(displayGroups.map((g) => [g.id, g.style]));
   const reservation = reservationFor(timeline.getWindow());
   assignLaneSubgroups(
     displayItems.filter((it) => withinReservation(it, reservation)),
@@ -930,6 +948,25 @@ export function repackLanes(): void {
     displayParents(),
     { pxPerDay: packingPxPerDay(pxPerDay), pointLabelPx: measurePointLabelPx },
   );
+  return true;
+}
+
+// Recompute per-lane subgroups for the current zoom level and push only the
+// items whose lane actually changed into the live DataSet. Because point items
+// reserve their label width (translated from px via the current px/day),
+// zooming out — where the same label spans more days — spreads crowded
+// milestones onto more lanes, and zooming back in re-packs them tight again.
+export function repackLanes(): void {
+  if (!timeline || !state.activeBuild || !itemsDs) return;
+
+  // Pack the *display* set (regrouped/cloned when grouping by tag/field), so the
+  // clones on their derived lanes get label-width-aware spacing too. Restricted to
+  // the reserved neighbourhood, which is what keeps both the lanes and the reserved
+  // height tight: packing the whole timeline would spread a track over every lane
+  // its busiest stretch needs, wherever you happen to be looking.
+  const before = new Map(displayItems.map((it) => [it.id, it.subgroup]));
+  const beforeStyles = new Map(displayGroups.map((g) => [g.id, g.style]));
+  if (!packDisplayForCurrentZoom()) return;
 
   // Only touch items that are actually mounted (milestones-only filter may hide
   // some) and whose lane moved — a partial update keeps vis's redraw minimal.
@@ -1314,4 +1351,3 @@ export function toggleItemChildren(realId: string): void {
   toggleItemCollapsed(realId);
   refreshDisplay();
 }
-

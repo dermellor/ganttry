@@ -4,7 +4,7 @@ import { normalizeIcon } from './icons';
 import { isOverdue, normalizeStatus } from './status';
 import type { StatusKey } from './status';
 import { durationToMs } from './date';
-import { hierarchyDepth, readParentId, resolveParents } from './itemHierarchy';
+import { childrenByParent, readParentId, resolveParents } from './itemHierarchy';
 
 export const UNGROUPED = '_ungrouped';
 
@@ -121,13 +121,11 @@ function statusMarkClass(item: TimelineItem, now: number): string | null {
 
 /**
  * Stamp the hierarchy onto `className`: `item-summary` on anything that has
- * children, plus `is-collapsed` while its subtree is folded away. Runs alongside
- * `withStatusMarks` and for the same reason — `assignLanes` owns `className` and
- * rewrites it on every regroup, so a display concern may only be appended on the
- * way into the DataSet, never inside a build.
- *
- * Being a child gets no class: the lane it sits in already says so, and a mark
- * that repeats what the layout shows is one more thing to keep in step.
+ * children, `item-child` on anything that declares a parent, plus `is-collapsed`
+ * while a subtree is folded away. Runs alongside `withStatusMarks` and for the
+ * same reason — `assignLanes` owns `className` and rewrites it on every regroup,
+ * so a display concern may only be appended on the way into the DataSet, never
+ * inside a build.
  *
  * The collapse caret (itemCollapse.ts) finds its bars by `item-summary` rather
  * than by being handed a list of ids, which is what keeps „which bars can fold"
@@ -149,9 +147,14 @@ export function withHierarchyMarks<T extends TimelineItem>(
   const hasChildren = new Set(parents.values());
   return items.map((it) => {
     const id = realId(it.id);
-    if (!hasChildren.has(id)) return it;
-    const marks = collapsed.has(id) ? 'item-summary is-collapsed' : 'item-summary';
-    return { ...it, className: `${it.className ? `${it.className} ` : ''}${marks}` };
+    const marks: string[] = [];
+    if (parents.has(id)) marks.push('item-child');
+    if (hasChildren.has(id)) {
+      marks.push('item-summary');
+      if (collapsed.has(id)) marks.push('is-collapsed');
+    }
+    if (marks.length === 0) return it;
+    return { ...it, className: `${it.className ? `${it.className} ` : ''}${marks.join(' ')}` };
   });
 }
 
@@ -407,12 +410,13 @@ function packBand(
 // its non-stacking path — and because fixed, precomputed lanes are stable while
 // vis's own stacking re-flows vertically as items scroll in/out of view.
 //
-//   • A track carrying parent/child items is split into bands by hierarchy depth
-//     first: every parent sits above all of its children, which is what makes a
-//     summary bar read as one. Depth wins over the dependency staircase below
-//     because a child is *contained* by its parent, while a successor is merely
-//     after its predecessor — reversing the two would let a chain of children
-//     climb above the bar that summarizes them.
+//   • A track carrying parent/child items is split into contiguous tree bands
+//     first: a parent's entire subtree sits directly below it before an unrelated
+//     item may start. Walking only by depth would put every root first and every
+//     child second, which lets unrelated roots appear between a summary and its
+//     children. Containment wins over the dependency staircase below because a
+//     child is *part of* its parent, while a successor is merely after its
+//     predecessor.
 //   • Within one such band, tracks WITH an internal dependency graph get a
 //     "staircase": connected items are placed in topological layers (longest-path
 //     depth) so every predecessor sits on a lane strictly above its successors
@@ -433,6 +437,56 @@ export interface LanePackOptions {
 }
 
 const LANE_DAY_MS = 86_400_000;
+
+/**
+ * Ordered packing bands that keep every local subtree contiguous.
+ *
+ * Leaf siblings may still share a compact band. A child that has children of
+ * its own starts a nested block, so its siblings cannot slip between it and its
+ * descendants. The same rule at the root keeps unrelated items outside the
+ * complete parent→descendant span. With no hierarchy the single returned band
+ * preserves the old compact packing exactly.
+ */
+function hierarchyBands(
+  items: TimelineItem[],
+  parents: Map<string, string>,
+  structuralParents: ReadonlySet<string>,
+): TimelineItem[][] {
+  if (parents.size === 0 && !items.some((it) => structuralParents.has(it.id))) return [items];
+
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const children = childrenByParent(parents);
+  const bands: TimelineItem[][] = [];
+  let loose: TimelineItem[] = [];
+
+  const flushLoose = (): void => {
+    if (loose.length === 0) return;
+    bands.push(loose);
+    loose = [];
+  };
+
+  const emit = (item: TimelineItem): void => {
+    const kids = (children.get(item.id) ?? []).flatMap((id) => {
+      const child = byId.get(id);
+      return child ? [child] : [];
+    });
+    if (kids.length === 0 && !structuralParents.has(item.id)) {
+      loose.push(item);
+      return;
+    }
+
+    flushLoose();
+    bands.push([item]);
+    for (const child of kids) emit(child);
+    flushLoose();
+  };
+
+  for (const root of items) {
+    if (!parents.has(root.id)) emit(root);
+  }
+  flushLoose();
+  return bands;
+}
 
 export function assignLaneSubgroups(
   items: TimelineItem[],
@@ -488,6 +542,11 @@ export function assignLaneSubgroups(
 
   for (const [groupId, groupItems] of byGroup) {
     const ids = new Set(groupItems.map((i) => i.id));
+    // A folded parent's children are absent from `groupItems`, but the parent
+    // must keep its structural band. Otherwise it falls back into ordinary
+    // compact packing and unrelated items jump from above to below it (or back)
+    // whenever the subtree is toggled.
+    const structuralParents = new Set(parents.values());
 
     // Intra-track hierarchy only, for the same reason the dependency edges below
     // are intra-track: a parent living in another group has no row here, so
@@ -497,9 +556,6 @@ export function assignLaneSubgroups(
       const p = parents.get(it.id);
       if (p && ids.has(p)) localParents.set(it.id, p);
     }
-    const depth = hierarchyDepth(localParents);
-    const maxDepth = groupItems.reduce((m, it) => Math.max(m, depth.get(it.id) ?? 0), 0);
-
     // The lane each item sat in before this pass, read off the items themselves
     // (`subgroup` is only overwritten further down, after packing). Feeding it back
     // in is what keeps a re-pack from moving items that did not have to move.
@@ -507,8 +563,7 @@ export function assignLaneSubgroups(
 
     const laneOf = new Map<string, number>();
     let base = 0;
-    for (let d = 0; d <= maxDepth; d++) {
-      const band = maxDepth === 0 ? groupItems : groupItems.filter((it) => (depth.get(it.id) ?? 0) === d);
+    for (const band of hierarchyBands(groupItems, localParents, structuralParents)) {
       if (band.length) base += packTrackBand(band, dependencies, base, laneOf, startMs, endMs, prevLane);
     }
 
@@ -675,4 +730,3 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
   assignLanes(items, groups);
   return { items, groups, details, dependencies, parents, phases };
 }
-

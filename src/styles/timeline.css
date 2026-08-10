@@ -337,8 +337,54 @@
  * nobody discovers.
  * ────────────────────────────────────────────────────────────────────────── */
 
+/* A child gets one quiet, inline branch mark. Its dates and bar geometry stay
+   untouched; the marker only makes the relationship visible after the lane
+   packer has placed the complete family together. This also survives very long
+   horizontal gaps between a summary and a child, where proximity alone is not
+   enough to communicate containment. */
+.timeline .vis-item.item-child .vis-item-content::before {
+  content: '↳';
+  display: inline-block;
+  margin-right: var(--space-xs);
+  font-weight: 600;
+  opacity: 0.3;
+}
+
+/* The parent bar is the dated folder tab; this body uses only vertical space,
+   so it groups the visible subtree without claiming a start or finish of its
+   own. Inserted between vis's background and foreground layers by
+   hierarchyFolders.ts. Each body sits slightly inside its own tab edges. */
+.hierarchy-folders {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.hierarchy-folder {
+  --folder-color: var(--item-border);
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--folder-color) 5%, transparent);
+}
+
+.hierarchy-folder.lane-0 { --folder-color: var(--lane-0-border); }
+.hierarchy-folder.lane-1 { --folder-color: var(--lane-1-border); }
+.hierarchy-folder.lane-2 { --folder-color: var(--lane-2-border); }
+.hierarchy-folder.lane-3 { --folder-color: var(--lane-3-border); }
+.hierarchy-folder.lane-4 { --folder-color: var(--lane-4-border); }
+.hierarchy-folder.lane-5 { --folder-color: var(--lane-5-border); }
+
 .timeline .vis-item.vis-range.item-summary .vis-item-overflow {
   border-width: 2px;
+  box-shadow: var(--shadow-bar);
+}
+
+.timeline .vis-item.vis-range.vis-selected.item-summary .vis-item-overflow {
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow-bar);
 }
 
 .timeline .vis-item.item-summary .vis-item-content {
