@@ -1,0 +1,165 @@
+/* The settings area's own composition (src/settingsArea.ts).
+ *
+ * What is *not* here, because it comes from the design system: the section nav
+ * (`Tabs` in its vertical variant), the table (`Table`), the origin pill
+ * (`Badge`), the refusals (`Callout`) and every piece of text (`Text`,
+ * `Heading`). What is left is how this one area arranges them — which is the bar
+ * the contract sets for a stylesheet outside the layer (docs/design-system.md →
+ * „What is not in the design system").
+ *
+ * Imported by settingsArea.ts rather than by the app, so an instance where
+ * nobody opens the area never downloads it.
+ */
+
+/* The chrome that belongs to a timeline goes away while the area is open.
+   Through this class rather than by setting `hidden` on each element: every one
+   of them owns its own `hidden` for its own reasons (`+ Eintrag` is hidden on a
+   read-only source, the detail panel when nothing is selected), and writing over
+   that on open means guessing what to restore on close.
+
+   The add button is matched by attribute rather than by an id selector: its id
+   begins with three hex digits, so the hash form reads to the design-system
+   checker as a colour literal. (Writing that id here in the hash form would trip
+   the same check from inside this comment.) */
+body.settings-open .ds-ContentArea,
+body.settings-open .ds-Panel,
+body.settings-open .app-timeline-controls,
+body.settings-open [id='add-btn'],
+body.settings-open #presence,
+/* The footer counts the active timeline's items and exports it. Both are true
+   statements about something that is not on screen, and „8 items in Beispiel:
+   Projektplan" under a page of instance settings reads as a claim about the
+   settings. */
+body.settings-open .ds-Toolbar[data-tone='footer'] {
+  display: none;
+}
+
+/* Two columns. `flex-direction` is stated because `.ds-ViewSection` is a column
+   by default — this is the one place that wants its children side by side.
+
+   The rules below are scoped under `.settings` rather than written as bare
+   classes: a component's own class and a bare class have the same specificity,
+   so which one wins comes down to the order the bundler happens to emit them in.
+   That is not something to leave to chance. */
+.settings {
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* `display: flex` above outranks the user agent's `[hidden] { display: none }`,
+   so without this the area stays on screen after it is closed — under the
+   timeline, which is back by then. */
+.settings[hidden] {
+  display: none;
+}
+
+.settings > .settings-nav {
+  flex: none;
+  width: 12rem;
+  padding: var(--space-md) var(--space-xs);
+  overflow-y: auto;
+}
+
+.settings > .settings-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings .settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-lg);
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-head h2 {
+  margin: 0;
+}
+
+.settings #settings-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 0 var(--space-xl);
+}
+
+.settings .setting-group {
+  padding-top: var(--space-lg);
+}
+
+/* Only placement. The size, weight and colour are the `Heading` component's —
+   an eyebrow treatment here would be a fourth heading style that exists in one
+   stylesheet, which is what the design system replaced. */
+.settings .setting-group-title {
+  margin: 0 0 var(--space-xs);
+  padding: 0 var(--space-lg);
+}
+
+/* The column headers repeat „Einstellung / Wert / Herkunft" above every group
+   and carry nothing the cells do not already say. They stay in the markup for
+   screen readers, which reach a cell without the row above it. */
+.settings .setting-table thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.settings .setting-table td {
+  vertical-align: top;
+}
+
+.settings .setting-label {
+  display: block;
+}
+
+.settings .setting-key {
+  display: block;
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+/* The value column is the one that is read down, so it holds a fixed share
+   rather than sizing to its longest entry. */
+.settings .setting-table td:nth-child(2) {
+  width: 28%;
+}
+
+.settings .setting-table td:nth-child(3) {
+  width: 32%;
+}
+
+.settings .setting-value {
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
+
+/* „gesetzt" without a value is the read gate at work, not a missing value. It is
+   marked so the two do not read alike: an operator who takes a withheld secret
+   for an absent one goes off to configure something that already is. */
+.settings .setting-secret {
+  font-style: italic;
+}
+
+.settings .setting-why {
+  margin: var(--space-3xs) 0 0;
+}
+
+@media (max-width: 40rem) {
+  .settings {
+    flex-direction: column;
+  }
+
+  .settings > .settings-nav {
+    width: auto;
+  }
+}

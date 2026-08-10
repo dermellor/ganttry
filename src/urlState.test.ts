@@ -94,3 +94,22 @@ test('an incomplete or unparseable window yields null, not an epoch window', () 
   assert.equal(withHash('#from=tomorrow&to=someday', parseUrlWindow), null);
   assert.equal(withHash('#from=2026-01-01&to=not-a-date', parseUrlWindow), null);
 });
+
+test('a bare #settings opens the area; an absent key leaves it closed', () => {
+  // `URLSearchParams` reads a valueless key as the empty string, which is a
+  // *present* key — telling that apart from an absent one is why `readUrlState`
+  // checks `!= null` rather than truthiness. Collapse the two and the short link
+  // an operator actually types stops opening anything.
+  assert.equal(withHash('#settings', (s) => s.settings), '');
+  assert.equal(withHash('#settings=members', (s) => s.settings), 'members');
+  assert.equal(withHash('#view=src%3Aexample-projektplan', (s) => s.settings), undefined);
+});
+
+test('the area travels alongside the view rather than replacing it', () => {
+  // Closing the area returns to the timeline the operator left, which only works
+  // if the view, the item and the window survive in the hash while it is open.
+  const state = withHash('#view=src%3Aexample-projektplan&item=kickoff&settings=instance', (s) => s);
+  assert.equal(state.settings, 'instance');
+  assert.equal(state.view, 'src:example-projektplan');
+  assert.equal(state.item, 'kickoff');
+});

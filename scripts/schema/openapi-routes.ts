@@ -338,6 +338,22 @@ export const ROUTES: RouteDef[] = [
     ],
   },
   {
+    path: '/api/settings',
+    operations: [
+      {
+        method: 'GET',
+        summary: 'What this instance is configured as',
+        description:
+          'Every instance-wide setting, each declaring where its value lives (`env`, `build`, or `db`), whether this deployment can change it here, and why not when it cannot. Adding a setting is a declaration in `src/settings.ts` and needs no change to this route. The read gate is per setting and fails closed: `value` is present only for settings declared safe to serve, so a secret is reported as `set: true` and nothing more. Needs the `manage` capability, and answers `503` while `TIMELINES_ACCESS_CONTROL` is off, because there are no roles to satisfy it with.',
+        responses: {
+          ...commonErrors(),
+          '200': { description: 'The declared settings.', schema: { type: 'object', required: ['settings'], properties: { settings: { type: 'array', items: ref('DeclaredSetting') } } } },
+          '503': { description: 'Access control is off, or the runtime supplied no environment reader.' },
+        },
+      },
+    ],
+  },
+  {
     path: '/api/me',
     operations: [
       {

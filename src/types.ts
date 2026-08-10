@@ -88,6 +88,41 @@ export type Member = DirectoryUser & {
 };
 
 /**
+ * Where an instance-wide setting's value comes from.
+ *
+ * `env` is the host's environment or the instance profile, `build` is baked into
+ * the artefact, `db` is state the running app writes through its own API. No
+ * declaration is `db` yet — the plugin install registry is the first one, and it
+ * arrives without this union changing, which is the point of declaring the home
+ * rather than hardcoding one per setting.
+ */
+export type SettingHome = 'env' | 'db' | 'build';
+
+/**
+ * One instance-wide setting as served to the operator interface.
+ *
+ * The declaration it comes from lives in [`src/settings.ts`](./settings.ts),
+ * together with the reasoning for the two fields that are easy to misread:
+ * `value` is absent (rather than empty or masked) whenever the declaration does
+ * not allow the value to be served, and `set` is therefore the only thing that
+ * can be said about a secret.
+ */
+export type DeclaredSetting = {
+  key: string;
+  group: string;
+  label: string;
+  home: SettingHome;
+  /** Whether this deployment can change the value here, in the app. */
+  editable: boolean;
+  /** Why it cannot, when it cannot. */
+  why?: string;
+  /** Does this instance set it at all? Served for every setting. */
+  set: boolean;
+  /** The effective value — only for settings declared safe to serve. */
+  value?: string;
+};
+
+/**
  * One entry in the viewer's view picker. Every view names a source: since the
  * Markdown notes pipeline was retired there is no other way for one to exist,
  * which is what removed the „view without a source" branch from the renderer.
