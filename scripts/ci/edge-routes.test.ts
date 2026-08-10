@@ -18,6 +18,11 @@ import { OWNED_API_PATHS } from '../db/http.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+test('the plugin registry is part of the deployed timeline API', () => {
+  assert.ok(OWNED_API_PATHS.includes('/api/plugins'));
+  assert.ok(OWNED_API_PATHS.includes('/api/plugins/*'));
+});
+
 test('every owned API path is declared in the edge function and in netlify.toml', async () => {
   const fn = await readFile(join(ROOT, 'netlify', 'edge-functions', 'timelines-api.ts'), 'utf8');
   const toml = await readFile(join(ROOT, 'netlify.toml'), 'utf8');

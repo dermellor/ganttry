@@ -169,6 +169,8 @@ export const OWNED_API_PATHS = [
   '/api/source/*',
   '/api/sources',
   '/api/users',
+  '/api/plugins',
+  '/api/plugins/*',
   '/api/members',
   '/api/settings',
 ] as const;
@@ -185,16 +187,11 @@ export const OWNED_API_PATHS = [
  * ever consulted.
  */
 function isOurs(path: string): boolean {
-  return (
-    path === '/api/plugins' ||
-    path.startsWith('/api/plugins/') ||
-    path === '/api/members' ||
-    path === '/api/settings' ||
-    path === '/api/users' ||
-    path === '/api/sources' ||
-    path === '/api/source' ||
-    path.startsWith('/api/source/')
-  );
+  return OWNED_API_PATHS.some((pattern) => {
+    if (!pattern.endsWith('/*')) return path === pattern;
+    const base = pattern.slice(0, -2);
+    return path === base || path.startsWith(`${base}/`);
+  });
 }
 
 // Re-exported so the runtimes keep reaching them through this module; the

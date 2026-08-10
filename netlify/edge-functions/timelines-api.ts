@@ -113,5 +113,13 @@ export const config: Config = {
   // netlify.toml. A route added to scripts/db/http.ts alone reaches the Vite dev
   // middleware (which matches all of /api/) and 404s in production, where an
   // edge function only sees the paths it declares.
-  path: ['/api/source/*', '/api/sources', '/api/users', '/api/members', '/api/settings'],
+  path: [
+    '/api/source/*',
+    '/api/sources',
+    '/api/users',
+    '/api/plugins',
+    '/api/plugins/*',
+    '/api/members',
+    '/api/settings',
+  ],
 };
