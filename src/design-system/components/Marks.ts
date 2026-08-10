@@ -135,6 +135,28 @@ export type AvatarOptions = {
  * marks, an item's owner chip and the list's owner column, so the same colleague
  * is the same colour and the same two letters wherever they turn up.
  */
+export type BadgeTone = 'neutral' | 'accent' | 'muted';
+
+export type BadgeOptions = {
+  label: string;
+  /** `accent` for the state that is working, `muted` for one that is not. */
+  tone?: BadgeTone;
+  className?: string;
+  attrs?: Attrs;
+};
+
+/**
+ * A pill carrying one word about a thing's state — a membership's status.
+ *
+ * Distinct from `Tag`, which is filled with a colour that comes from the *data*.
+ * A badge names a state the product defines, so it is outlined and takes its
+ * colour from the theme.
+ */
+export function Badge(options: BadgeOptions): HTMLSpanElement {
+  const { label, tone = 'neutral', className, attrs } = options;
+  return el('span', { class: classes('ds-Badge', className), ...data({ tone }), ...attrs }, label);
+}
+
 export type AvatarStackOptions = {
   children?: Child;
   ariaLabel?: string;

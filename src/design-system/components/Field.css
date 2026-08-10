@@ -49,6 +49,26 @@
   display: none;
 }
 
+.ds-FieldNote {
+  grid-column: 1 / -1;
+  margin: var(--space-2xs) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  color: var(--fg-muted);
+}
+
+.ds-FieldNote[hidden] {
+  display: none;
+}
+
+/* A row of chips that is read-only — no ChipBox around it, because there is no
+   input to frame. The gap is the ChipBox's own, so the two read alike. */
+.ds-ChipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+}
+
 /* ---- Fieldset -------------------------------------------------------------- */
 
 /* A hairline plus a caption, not a box: a full frame around two fields competes

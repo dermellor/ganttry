@@ -44,6 +44,8 @@ import { GROUP_DIM } from './listGrouping';
 import { commitItemForm } from './persistence';
 import type { PresenceUser } from './presence';
 import { loadUserDirectory } from './users';
+import { normalizeMemberRole, roleAllows } from './access';
+import { openMemberAdmin } from './memberAdmin';
 import { deleteItem } from './itemForm';
 import { hideDetail, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
@@ -89,7 +91,11 @@ async function loadCurrentUser(): Promise<PresenceUser | null> {
   try {
     const res = await fetch('/api/me');
     if (!res.ok) return null;
-    const data = (await res.json()) as { email?: unknown; name?: unknown };
+    const data = (await res.json()) as { email?: unknown; name?: unknown; role?: unknown; status?: unknown };
+    // The role rides along on the same probe. It is absent whenever access
+    // control is off, which is exactly when there is nothing to administer.
+    state.currentRole =
+      data.status === 'active' ? (normalizeMemberRole(data.role) ?? null) : null;
     if (typeof data.email === 'string' && data.email) {
       return { email: data.email, name: typeof data.name === 'string' ? data.name : undefined };
     }
@@ -292,6 +298,13 @@ async function bootstrap() {
   syncUrl();
 
   // Safety net: flush + persist an open item form if the tab closes mid-edit.
+  // Only an admin is offered the screen. Hiding it is an affordance, never the
+  // permission: /api/members refuses anyone else regardless of what is on screen.
+  if (state.currentRole && roleAllows(state.currentRole, 'manage')) {
+    els.membersBtn.hidden = false;
+    els.membersBtn.addEventListener('click', () => void openMemberAdmin());
+  }
+
   window.addEventListener('beforeunload', () => commitItemForm());
 
   els.milestonesOnly.checked = state.milestonesOnly;

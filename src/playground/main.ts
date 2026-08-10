@@ -19,19 +19,23 @@ import './playground.css';
 import {
   AppMain,
   Avatar,
+  Badge,
   AvatarStack,
   Button,
+  Callout,
   Checkbox,
   Chip,
   ChipBox,
   ChipBoxSlot,
   ContentArea,
   DescriptionList,
+  Dialog,
   Disclosure,
   Dot,
   el,
   Field,
   FieldError,
+  FieldNote,
   Fieldset,
   FormActions,
   FormGrid,
@@ -68,6 +72,7 @@ import {
   TableRow,
   Tabs,
   Tag,
+  TreeToggle,
   Text,
   TextArea,
   TextInput,
@@ -331,6 +336,9 @@ const marksSection = section(
       specimen('Tag', Tag({ label: 'Infra', color: '#2f0d5b' })),
       specimen('Tag, andere Farbe', Tag({ label: 'Vertrieb', color: '#e8ac68' })),
       specimen('Tag, compact', Tag({ label: 'Infra', color: '#2f0d5b', compact: true })),
+      specimen('Badge', Badge({ label: 'Eingeladen' })),
+      specimen('Badge, accent', Badge({ label: 'Aktiv', tone: 'accent' })),
+      specimen('Badge, muted', Badge({ label: 'Gesperrt', tone: 'muted' })),
     ),
     row(
       specimen('Avatar md', Avatar({ initials: 'AM', hue: 260 })),
@@ -366,6 +374,7 @@ const formSection = section(
         Field({ label: 'Start', control: TextInput({ type: 'date', value: '2026-09-01' }) }),
         Field({ label: 'Ende', hint: 'optional', muted: true, control: TextInput({ type: 'date', value: '' }) }),
         FieldError({ text: 'Das Ende liegt vor dem Start.' }),
+        FieldNote({ text: 'Zwei Untereinträge liegen außerhalb dieses Zeitraums.' }),
         Field({
           label: 'Gruppe',
           control: Select({ options: [{ value: 'g', label: 'Plattform' }] }),
@@ -670,8 +679,12 @@ const tableSection = section(
           TableRow({
             interactive: true,
             selected: true,
+            summary: true,
             children: [
-              TableCell({ primary: true, children: [Icon({ name: 'launch' }), 'Rollout Phase 2'] }),
+              TableCell({
+                primary: true,
+                children: [TreeToggle({ expanded: true, label: 'Untereinträge ausblenden' }), Icon({ name: 'launch' }), 'Rollout Phase 2'],
+              }),
               TableCell({ nowrap: true, muted: true, children: '2026-09-01' }),
               TableCell({ nowrap: true, muted: true, children: 'Zeitraum' }),
               TableCell({ nowrap: true, muted: true, children: [StatusDot({ status: 'Doing' }), ' Doing'] }),
@@ -685,7 +698,11 @@ const tableSection = section(
           TableRow({
             interactive: true,
             children: [
-              TableCell({ primary: true, children: [Icon({ name: 'milestone' }), 'Freigabe'] }),
+              TableCell({
+                primary: true,
+                depth: 1,
+                children: [TreeToggle(), Icon({ name: 'milestone' }), 'Freigabe'],
+              }),
               TableCell({ nowrap: true, muted: true, children: '2026-11-15' }),
               TableCell({ nowrap: true, muted: true, children: 'Zeitpunkt' }),
               TableCell({ nowrap: true, muted: true, children: [StatusDot({ status: 'Open' }), ' Open'] }),
@@ -756,6 +773,34 @@ const frameSection = section(
 );
 
 /* ------------------------------------------------------------------------- */
+/* Callout and Dialog                                                        */
+/* ------------------------------------------------------------------------- */
+
+const dialogDemo = Dialog({
+  title: 'Benutzer',
+  className: 'pg-StaticDialog',
+  children: Text({
+    as: 'p',
+    text: 'Ein Dialog sagt: nichts anderes, bis das hier erledigt ist. Das Panel daneben lässt den Inhalt benutzbar.',
+    tone: 'muted',
+    size: 'sm',
+  }),
+});
+dialogDemo.setAttribute('open', '');
+
+const messageSection = section(
+  'messages',
+  'Callout · Dialog',
+  'Der Callout steht dort, wo der Inhalt gewesen wäre: die Fußzeile allein lässt eine leere Fläche zurück, und leer liest sich als „kaputt" statt als „abgelehnt".',
+  el('div', { class: 'pg-Stack' }, [
+    Callout({ text: 'Diese Quelle konnte nicht geladen werden: 403 Forbidden.', tone: 'danger' }),
+    Callout({ text: 'Diese Ansicht ist schreibgeschützt.', tone: 'warning' }),
+    Callout({ text: 'Drei Einträge liegen außerhalb des sichtbaren Zeitraums.', tone: 'info' }),
+    el('div', { class: 'pg-DialogHost' }, dialogDemo),
+  ]),
+);
+
+/* ------------------------------------------------------------------------- */
 /* Layout                                                                    */
 /* ------------------------------------------------------------------------- */
 
@@ -819,6 +864,7 @@ const body = el('div', { class: 'pg-Body' }, [
   selectorSection,
   surfaceSection,
   tableSection,
+  messageSection,
   frameSection,
   layoutSection,
 ]);

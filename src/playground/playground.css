@@ -228,6 +228,14 @@
   --timeline-pad-x: 0px;
 }
 
+/* An `open` dialog without `showModal()` is an ordinary block, which is what
+   lets it be shown here in the flow instead of over the page. */
+.pg-DialogHost .pg-StaticDialog {
+  position: static;
+  margin: 0;
+  width: 100%;
+}
+
 /* The layout primitives need a bounded box to divide up; on this page nothing
    else provides one. */
 .pg-LayoutHost {

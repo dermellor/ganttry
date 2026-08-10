@@ -16,6 +16,7 @@ import type { BuiltConfig, SourceLive, TimelineFile, View } from './types';
 import type { BuildResult } from './buildItems';
 import type { JiraIssue } from './jira';
 import type { PresenceUser } from './presence';
+import type { MemberRole } from './access';
 import type { PresenceHandle } from './realtime';
 import { mountAppShell } from './appShell';
 import { isoDateOnly } from './editor';
@@ -46,6 +47,13 @@ export const GROUP_BY_KEY = 'timelines.listGroupBy';
 // another. Both shared across the timeline and list views. Persisted.
 export const FILTER_DIM_KEY = 'timelines.filterDim';
 export const FILTER_VALUES_KEY = 'timelines.filterValues';
+// Which parent items have their subtree folded away, per source: item ids are
+// only unique within one timeline, so a flat list would fold an unrelated item
+// in the next source that happens to share an id. Persisted because a fold is a
+// statement about how you want to read this timeline, like the grouping and the
+// filter next to it — and unlike them it would otherwise be undone by every
+// reload, which is what makes folding a large tree not worth doing.
+export const COLLAPSED_ITEMS_KEY = 'timelines.collapsedItems';
 
 // Re-exported so the modules that already imported it from here keep working; the
 // encoding itself lives in the plugin host, next to the parser both the URL and
@@ -103,6 +111,10 @@ export interface AppState {
   // dependsOn IDs for the form currently open. Mutated by the deps autosuggest
   // chips; read back in applyItemForm.
   formDependsOn: string[];
+  // The parent item id for the form currently open ('' = none). A scalar, not a
+  // list: an item has at most one parent, which is what storing the link on the
+  // child buys (see itemHierarchy.ts).
+  formParent: string;
   // Tags for the form currently open. Mutated by the tags autosuggest chips;
   // read back in applyItemForm.
   formTags: string[];
@@ -122,6 +134,11 @@ export interface AppState {
   // Signed-in user (from /api/me); labels our own presence avatar. Null when the
   // site isn't gated / identity is unknown.
   currentUser: PresenceUser | null;
+  // What this instance says the current user may do, from the same probe. Null
+  // when access control is off, which is also what the interface reads as „no
+  // membership screen": there is nothing to administer then. Only ever an
+  // affordance hint — every route enforces for itself.
+  currentRole: MemberRole | null;
   realtimeRefreshTimer: ReturnType<typeof setTimeout> | null;
   // Debounce for reactive form edits: coalesces rapid keystrokes into one
   // model update + live rebuild (see scheduleLiveEdit).
@@ -139,6 +156,10 @@ export interface AppState {
   // off) and the selected bucket values within it.
   filterDim: string;
   filterValues: string[];
+  // Parent items whose children are folded away in the ACTIVE source (see
+  // COLLAPSED_ITEMS_KEY). Swapped wholesale by loadCollapsedItems on every view
+  // change, so nothing here ever refers to another timeline's ids.
+  collapsedItems: Set<string>;
   persisting: boolean;
   persistAgain: boolean;
   lastFormPersistAt: number;
@@ -164,6 +185,7 @@ export const state: AppState = {
   formRebuilding: false,
   formJiraIssues: [],
   formDependsOn: [],
+  formParent: '',
   formTags: [],
   formCustomMulti: {},
   saveTimer: null,
@@ -171,6 +193,7 @@ export const state: AppState = {
   presenceHandle: null,
   presenceSourceId: null,
   currentUser: null,
+  currentRole: null,
   realtimeRefreshTimer: null,
   liveEditTimer: null,
   selectedItemId: null,
@@ -193,11 +216,50 @@ export const state: AppState = {
       return [];
     }
   })(),
+  collapsedItems: new Set(),
   persisting: false,
   persistAgain: false,
   lastFormPersistAt: 0,
   throttlePersistTimer: null,
 };
+
+// The whole per-source fold store, `{ [sourceId]: itemId[] }`. A malformed or
+// absent entry reads as „nothing folded" rather than throwing: a fold is a view
+// preference, and losing one must never keep a timeline from rendering.
+function readCollapsedStore(): Record<string, string[]> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COLLAPSED_ITEMS_KEY) || '{}');
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Swap `state.collapsedItems` to the folds saved for `sourceId`. */
+export function loadCollapsedItems(sourceId: string | null): void {
+  const stored = sourceId ? readCollapsedStore()[sourceId] : undefined;
+  state.collapsedItems = new Set(Array.isArray(stored) ? stored.filter((v) => typeof v === 'string') : []);
+}
+
+/**
+ * Fold or unfold one parent item and persist the result. The entry is deleted
+ * rather than stored empty once the last fold is undone, so the store does not
+ * grow a key per timeline anybody ever opened.
+ */
+export function toggleItemCollapsed(itemId: string): void {
+  if (state.collapsedItems.has(itemId)) state.collapsedItems.delete(itemId);
+  else state.collapsedItems.add(itemId);
+  const sourceId = state.activeSourceId;
+  if (!sourceId) return;
+  const store = readCollapsedStore();
+  if (state.collapsedItems.size) store[sourceId] = [...state.collapsedItems];
+  else delete store[sourceId];
+  try {
+    localStorage.setItem(COLLAPSED_ITEMS_KEY, JSON.stringify(store));
+  } catch {
+    // A full or disabled localStorage must not break folding for this session.
+  }
+}
 
 export function setStatus(text: string): void {
   els.status.textContent = text;

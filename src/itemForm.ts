@@ -23,6 +23,7 @@ import {
   el,
   Field,
   FieldError,
+  FieldNote,
   FormActions,
   fromHtml,
   highlightSuggestion,
@@ -63,6 +64,12 @@ import {
 import type { DirectoryUser, TimelineFileItem } from './types';
 import { directoryState, displayName, resolveOwner, searchUsers, userAvatar } from './users';
 import { assignableLeaves, parentGroupIds } from './groupHierarchy';
+import {
+  PARENT_META_KEY,
+  extentOverflow,
+  readParentId,
+  wouldCreateCycle,
+} from './itemHierarchy';
 import { state, els, setStatus, revealBesidePanel, clearFormSlots } from './state';
 import { parseLocalDay, durationToMs, shiftDays } from './date';
 import { describeReversedExtent, isReversedExtent } from './itemExtent';
@@ -560,6 +567,7 @@ export function showItemForm(
   const metadata = (item.metadata ?? {}) as Record<string, unknown>;
   const dependsOn = Array.isArray(metadata.dependsOn) ? (metadata.dependsOn as unknown[]).map(String) : [];
   state.formDependsOn = [...dependsOn];
+  state.formParent = readParentId(metadata) ?? '';
   const owner = typeof metadata.owner === 'string' ? metadata.owner : '';
   state.formJiraIssues = readJiraIssues(metadata);
   state.formTags = readTags(metadata);
@@ -658,6 +666,27 @@ export function showItemForm(
     ]),
 
     panel('rel', [
+      chipField({
+        label: 'Übergeordnet',
+        hint: '(Teil von)',
+        inputId: 'f-parent',
+        placeholder: 'Eintrag suchen…',
+        chipRole: 'parent-chip',
+        listRole: 'parent-list',
+        full: true,
+      }),
+      // Read-only: a child is linked from its own form, so this field shows the
+      // subtree rather than editing it. Hidden until there is one.
+      Field({
+        label: 'Untereinträge',
+        full: true,
+        hidden: true,
+        attrs: { 'data-role': 'children-field' },
+        control: [
+          ChipBoxSlot({ className: 'ds-ChipRow', attrs: { 'data-role': 'children-chips' } }),
+          FieldNote({ hidden: true, attrs: { 'data-role': 'children-overflow' } }),
+        ],
+      }),
       chipField({
         label: 'Depends on',
         hint: '(Einträge verknüpfen)',
@@ -795,6 +824,7 @@ export function showItemForm(
   wirePickDismiss();
   wireBodyEditor(form);
   wireJiraAutosuggest(form);
+  wireParentPicker(form, id);
   wireDepsAutosuggest(form, id);
   wireTagsAutosuggest(form);
   wireOwnerPicker(form);
@@ -1040,6 +1070,150 @@ function wireJiraAutosuggest(form: HTMLFormElement): void {
     // Let a mousedown on a suggestion fire first, then close.
     setTimeout(closeList, 120);
   });
+}
+
+/**
+ * The „Übergeordnet" picker plus the read-only „Untereinträge" list under it —
+ * the two sides of one relationship, so they are rendered by one function and
+ * cannot end up describing different links.
+ *
+ * The suggestions leave out every item that would close a cycle (the item
+ * itself, and anything already below it). Offering those and having
+ * `resolveParents` drop the link afterwards looks exactly like a pick that did
+ * not register.
+ */
+function wireParentPicker(form: HTMLFormElement, selfId: string): void {
+  const chip = form.querySelector<HTMLElement>('[data-role="parent-chip"]');
+  const input = form.querySelector<HTMLInputElement>('#f-parent');
+  const list = form.querySelector<HTMLUListElement>('[data-role="parent-list"]');
+  if (!chip || !input || !list) return;
+
+  const renderChip = (): void => {
+    chip.replaceChildren(
+      ...(state.formParent
+        ? [
+            Chip({
+              label: depLabel(state.formParent),
+              title: state.formParent,
+              removable: true,
+              attrs: { 'data-clear-parent': '' },
+            }),
+          ]
+        : []),
+    );
+    chip.querySelector<HTMLButtonElement>('[data-clear-parent] .ds-Chip-remove')?.addEventListener('click', () => {
+      state.formParent = '';
+      renderChip();
+      // A single-valued picker hides its input once filled; clearing brings it
+      // back, so the next parent can be typed without reopening the form.
+      input.hidden = false;
+      scheduleLiveEdit();
+    });
+    input.hidden = !!state.formParent;
+  };
+
+  const closeList = () => {
+    list.hidden = true;
+    list.innerHTML = '';
+  };
+
+  const candidates = (q: string): TimelineFileItem[] => {
+    // Read the *live* hierarchy, not the one this form was opened with: the
+    // user may have re-parented another item since.
+    const parents = state.activeBuild?.parents ?? new Map<string, string>();
+    const needle = q.toLowerCase();
+    return (state.activeSourceFile?.items ?? [])
+      .filter((it) => it.id && !wouldCreateCycle(parents, selfId, it.id))
+      .filter(
+        (it) =>
+          !needle ||
+          (it.content ?? '').toLowerCase().includes(needle) ||
+          (it.id ?? '').toLowerCase().includes(needle),
+      )
+      .slice(0, 8);
+  };
+
+  const renderList = (items: TimelineFileItem[]): void => {
+    if (!items.length) {
+      closeList();
+      return;
+    }
+    list.replaceChildren(
+      ...items.map((it) =>
+        SuggestItem({
+          layout: 'stacked',
+          label: it.content?.trim() || it.id || '',
+          description: it.id ?? '',
+          attrs: { 'data-id': it.id ?? '' },
+        }),
+      ),
+    );
+    list.hidden = false;
+    list.querySelectorAll<HTMLLIElement>('.ds-SuggestItem').forEach((li) => {
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        state.formParent = li.dataset.id ?? '';
+        input.value = '';
+        closeList();
+        renderChip();
+        scheduleLiveEdit();
+      });
+    });
+  };
+
+  input.addEventListener('input', () => renderList(candidates(input.value.trim())));
+  input.addEventListener('focus', () => renderList(candidates(input.value.trim())));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeList();
+  });
+  // Let a mousedown on a suggestion fire first, then close.
+  input.addEventListener('blur', () => setTimeout(closeList, 120));
+
+  renderChip();
+  renderChildren(form, selfId);
+}
+
+/**
+ * The children an item has, as read-only chips, plus the one place the rollup is
+ * stated: where the children run outside the parent's own dates.
+ *
+ * The parent's dates stay authoritative — they are maintained by hand and a
+ * rollup that overwrote them would silently replace a decision with a
+ * calculation. So this reports the discrepancy and changes nothing.
+ */
+function renderChildren(form: HTMLFormElement, selfId: string): void {
+  const field = form.querySelector<HTMLElement>('[data-role="children-field"]');
+  const chips = form.querySelector<HTMLElement>('[data-role="children-chips"]');
+  const note = form.querySelector<HTMLElement>('[data-role="children-overflow"]');
+  if (!field || !chips || !note) return;
+
+  const parents = state.activeBuild?.parents ?? new Map<string, string>();
+  const childIds = [...parents.entries()].filter(([, p]) => p === selfId).map(([c]) => c);
+  field.hidden = childIds.length === 0;
+  if (!childIds.length) return;
+
+  // No remove button: a child is linked from its own form, so this row shows the
+  // subtree rather than editing it.
+  chips.replaceChildren(...childIds.map((cid) => Chip({ label: depLabel(cid), title: cid })));
+
+  const byId = new Map((state.activeSourceFile?.items ?? []).map((it) => [it.id, it]));
+  const self = byId.get(selfId);
+  const { before, after } = extentOverflow(
+    { start: self?.start, end: self?.end },
+    childIds.map((cid) => ({ start: byId.get(cid)?.start, end: byId.get(cid)?.end })),
+  );
+  const parts: string[] = [];
+  if (before) parts.push(`beginnen am ${formatDay(before)}`);
+  if (after) parts.push(`laufen bis ${formatDay(after)}`);
+  note.hidden = parts.length === 0;
+  note.textContent = parts.length ? `Untereinträge ${parts.join(' und ')}.` : '';
+}
+
+// "2026-07-16" → "16.07.2026". Same reading as the list view's dates; anything
+// unparseable falls back to the raw day so an odd value still shows something.
+function formatDay(value: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : value;
 }
 
 // Resolves a dependsOn id to a readable label (the item's title, falling back
@@ -1666,6 +1840,9 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     item.metadata != null && Object.keys(item.metadata as object).length === 0;
   const meta = (item.metadata ??= {}) as Record<string, unknown>;
   writeListMeta(meta, 'dependsOn', state.formDependsOn);
+
+  if (state.formParent) meta[PARENT_META_KEY] = state.formParent;
+  else delete meta[PARENT_META_KEY];
 
   const owner = get('owner');
   if (owner) meta.owner = owner;

@@ -60,6 +60,68 @@
   font-weight: var(--weight-medium);
 }
 
+/* One indent step per level. `.ds-TableRow` in the selector so this outweighs
+   the cell padding above rather than fighting it. */
+.ds-TableRow .ds-TableCell[data-indented] {
+  padding-left: calc(var(--space-md) + var(--ds-depth, 0) * 18px);
+}
+
+/* A row with rows under it reads as their heading, matching what a summary bar
+   does in the timeline. */
+.ds-TableRow[data-summary] .ds-TableCell[data-primary] {
+  font-weight: 650;
+}
+
+/* ---- TreeToggle -------------------------------------------------------------- */
+
+.ds-TreeSlot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  margin-right: var(--space-2xs);
+  vertical-align: -3px;
+}
+
+.ds-TreeToggle {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.12s linear;
+}
+
+.ds-TreeToggle::after {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-color: currentColor;
+  -webkit-mask: var(--ui-icon-caret) center / 12px no-repeat;
+  mask: var(--ui-icon-caret) center / 12px no-repeat;
+  transition: transform 0.12s ease;
+}
+
+.ds-TreeToggle[data-collapsed]::after {
+  transform: rotate(-90deg);
+}
+
+.ds-TreeToggle:hover {
+  opacity: 1;
+}
+
+.ds-TreeToggle:focus-visible {
+  opacity: 1;
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
 /* A slightly wider gap to the row text than a glyph carries in running prose. */
 .ds-TableCell .ds-Icon {
   margin-right: 0.4em;

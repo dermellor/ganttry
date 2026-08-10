@@ -1,0 +1,34 @@
+/* Dialog — the native `<dialog>`, dressed. */
+
+.ds-Dialog {
+  width: min(720px, calc(100vw - 2 * var(--space-3xl)));
+  max-height: min(80vh, 720px);
+  padding: 0 var(--space-2xl) var(--space-2xl);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow-popover);
+  overflow-y: auto;
+}
+
+.ds-Dialog::backdrop {
+  background: var(--scrim);
+}
+
+/* Sticky, like the panel's header and for the same reason: the close button has
+   to stay reachable while a long list scrolls under it. */
+.ds-Dialog-head {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  /* Bleeds to the dialog's edges so the sticky background covers the full width
+     while the content below keeps the dialog's padding. */
+  margin: 0 calc(-1 * var(--space-2xl));
+  padding: var(--space-xl) var(--space-2xl) var(--space-md);
+  background: var(--surface);
+}

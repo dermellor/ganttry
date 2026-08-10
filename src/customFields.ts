@@ -30,7 +30,7 @@ import { type CustomFieldDef, type CustomFieldOption } from './types';
 // metadata keys managed by their own dedicated form control (the reserved
 // built-ins handled directly in itemForm) — used to keep them out of the
 // free-form "Other metadata" JSON box. Custom-field keys are added on top.
-const RESERVED_META_KEYS = new Set(['dependsOn', 'owner', 'jira', 'tags', 'tag']);
+const RESERVED_META_KEYS = new Set(['dependsOn', 'parent', 'owner', 'jira', 'tags', 'tag']);
 
 const FALLBACK_COLOR = '#64748B';
 

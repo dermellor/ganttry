@@ -74,6 +74,17 @@ export function FieldError(options: FieldErrorOptions = {}): HTMLParagraphElemen
   return el('p', { class: classes('ds-FieldError', className), id, hidden, role: 'alert', ...attrs }, text);
 }
 
+/**
+ * A statement about the data rather than a refused edit — where the children of
+ * a summary item run outside its own dates, say. Muted rather than `--danger`:
+ * the value stays authoritative and nothing is being rejected, which is exactly
+ * the distinction a red sentence would erase.
+ */
+export function FieldNote(options: FieldErrorOptions = {}): HTMLParagraphElement {
+  const { text, id, hidden, className, attrs } = options;
+  return el('p', { class: classes('ds-FieldNote', className), id, hidden, ...attrs }, text);
+}
+
 export type FieldsetOptions = {
   legend: string;
   children?: Child;

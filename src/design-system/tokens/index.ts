@@ -39,6 +39,8 @@ export const tokens = {
     success: 'var(--success)',
     /** `#f32ed4` */
     magenta: 'var(--magenta)',
+    /** `rgba(0, 0, 0, 0.35)` */
+    scrim: 'var(--scrim)',
   },
 
   /** Item status (Open/Doing/Done, see src/status.ts). The status dot maps a
@@ -325,6 +327,7 @@ export const TOKEN_NAMES: readonly string[] = [
   '--highlight',
   '--success',
   '--magenta',
+  '--scrim',
   '--status-open',
   '--status-doing',
   '--status-done',

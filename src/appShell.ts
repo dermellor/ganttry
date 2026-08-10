@@ -68,6 +68,7 @@ export type AppShellElements = {
   milestonesOnly: HTMLInputElement;
   milestonesControl: HTMLElement;
   presence: HTMLElement;
+  membersBtn: HTMLButtonElement;
   addBtn: HTMLButtonElement;
   exportBtn: HTMLButtonElement;
   status: HTMLElement;
@@ -164,6 +165,15 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   const milestonesOnly = milestonesControl.querySelector('input') as HTMLInputElement;
 
   const presence = AvatarStack({ ariaLabel: 'Online', hidden: true, attrs: { id: 'presence' } });
+  // Only an admin is offered the screen (main.ts unhides it). Hiding it is an
+  // affordance, never the permission: /api/members refuses anyone else whatever
+  // is on screen.
+  const membersBtn = Button({
+    label: 'Benutzer',
+    variant: 'outline',
+    ariaLabel: 'Benutzer dieser Instanz verwalten',
+    attrs: { id: 'members-btn', hidden: true },
+  });
   const addBtn = Button({
     label: '+ Eintrag',
     variant: 'outline',
@@ -182,7 +192,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
           milestonesControl,
         ],
       }),
-      ToolbarGroup({ end: true, children: [presence, addBtn] }),
+      ToolbarGroup({ end: true, children: [presence, membersBtn, addBtn] }),
     ],
   });
 
@@ -270,6 +280,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       milestonesOnly,
       milestonesControl,
       presence,
+      membersBtn,
       addBtn,
       exportBtn,
       status,

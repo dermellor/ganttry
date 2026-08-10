@@ -24,14 +24,16 @@ import {
   TableRow,
   Tag,
   Text,
+  TreeToggle,
 } from './design-system';
-import { addNewItem, filterBuildForDisplay, displayIdsFor } from './render';
+import { addNewItem, filterBuildForDisplay, displayIdsFor, toggleItemChildren } from './render';
 import { showDetailForId } from './detailPanel';
 import { state, els, syncUrl, isEditableView } from './state';
 import { computeSections, GROUP_DIM } from './listGrouping';
 import { metaOf, resolveGrouping, sectionContext, syncGroupByControl } from './grouping';
 import { syncFilterControl } from './filterControl';
 import { parentGroupIds } from './groupHierarchy';
+import { treeOrder } from './itemHierarchy';
 import { ownerCell } from './users';
 
 const TYPE_LABELS: Record<TimelineItem['type'], string> = {
@@ -57,7 +59,13 @@ function ownerOf(id: string): string {
 
 const EMPTY = () => Text({ text: '—', tone: 'muted' });
 
-function row(item: TimelineItem, selected: boolean): HTMLElement {
+function row(
+  item: TimelineItem,
+  selected: boolean,
+  depth: number,
+  hasChildren: boolean,
+  hasTree: boolean,
+): HTMLElement {
   const marks = [
     ...(item.tags ?? []).map((tag) => Tag({ label: tag, color: tagColor(tag) })),
     item.icon ? Icon({ name: String(item.icon) }) : null,
@@ -65,13 +73,30 @@ function row(item: TimelineItem, selected: boolean): HTMLElement {
   // `label`, not `content`: the latter is escaped markup for vis-timeline, and
   // setting it as a text node shows the entities.
   const content = item.label ?? '';
+  const collapsed = state.collapsedItems.has(item.id);
 
   return TableRow({
     interactive: true,
     selected,
+    summary: hasChildren,
     attrs: { 'data-id': item.id, role: 'button' },
     children: [
-      TableCell({ primary: true, children: marks.length || content ? [marks, content] : EMPTY() }),
+      TableCell({
+        primary: true,
+        depth: hasTree ? depth : undefined,
+        children: [
+          // The slot sits on every row of a table that has a tree in it, so the
+          // labels line up whether or not a row has children.
+          hasTree
+            ? TreeToggle({
+                expanded: hasChildren ? !collapsed : undefined,
+                label: collapsed ? 'Untereinträge einblenden' : 'Untereinträge ausblenden',
+                attrs: hasChildren ? { 'data-collapse': item.id } : undefined,
+              })
+            : null,
+          marks.length || content ? [marks, content] : EMPTY(),
+        ],
+      }),
       TableCell({ nowrap: true, muted: true, children: formatDate(item.start) }),
       TableCell({ nowrap: true, muted: true, children: item.type === 'point' ? '—' : formatDate(item.end) }),
       TableCell({ nowrap: true, muted: true, children: TYPE_LABELS[item.type] ?? item.type }),
@@ -126,26 +151,39 @@ export function renderListView(): void {
     return;
   }
 
-  const body = sections.flatMap((s) => [
-    grouped
-      ? TableGroupRow({
-          title: s.label,
-          colspan: COLUMNS.length,
-          action:
-            showAdd && !s.empty && !parents.has(s.id)
-              ? Button({
-                  label: '+ Eintrag',
-                  variant: 'outline',
-                  size: 'sm',
-                  reveal: true,
-                  className: 'list-add-item',
-                  attrs: { 'data-add-group': s.id },
-                })
-              : undefined,
-        })
-      : null,
-    ...s.items.map((it) => row(it, it.id === sel)),
-  ]);
+  // Parent/child inside a section: children follow their parent, one indent step
+  // per level. A section can hold a child whose parent fell outside it (a tag
+  // section, say) — treeOrder leaves that one at the top level rather than
+  // dropping it, so nothing disappears from a view it belongs in.
+  const itemParents = state.activeBuild?.parents ?? new Map<string, string>();
+  const hasChildren = new Set(itemParents.values());
+
+  const body = sections.flatMap((s) => {
+    const ordered = treeOrder(s.items, itemParents);
+    const hasTree = ordered.some((e) => e.depth > 0 || hasChildren.has(e.item.id));
+    return [
+      grouped
+        ? TableGroupRow({
+            title: s.label,
+            colspan: COLUMNS.length,
+            action:
+              showAdd && !s.empty && !parents.has(s.id)
+                ? Button({
+                    label: '+ Eintrag',
+                    variant: 'outline',
+                    size: 'sm',
+                    reveal: true,
+                    className: 'list-add-item',
+                    attrs: { 'data-add-group': s.id },
+                  })
+                : undefined,
+          })
+        : null,
+      ...ordered.map((e) =>
+        row(e.item, e.item.id === sel, e.depth, hasChildren.has(e.item.id), hasTree),
+      ),
+    ];
+  });
 
   els.listBody.replaceChildren(
     Table({ children: [TableHead({ columns: COLUMNS }), el('tbody', {}, body)] }),
@@ -165,6 +203,13 @@ export function setupListView(): void {
     const addBtn = (target as HTMLElement | null)?.closest<HTMLElement>('.list-add-item');
     if (addBtn) {
       addNewItem(addBtn.dataset.addGroup ?? null);
+      return;
+    }
+    // The fold caret sits inside a row, so it has to be handled before the row
+    // activation below — otherwise folding would also open the entry's form.
+    const caret = (target as HTMLElement | null)?.closest<HTMLElement>('.ds-TreeToggle');
+    if (caret?.dataset.collapse) {
+      toggleItemChildren(caret.dataset.collapse);
       return;
     }
     const row = (target as HTMLElement | null)?.closest<HTMLElement>('.ds-TableRow');

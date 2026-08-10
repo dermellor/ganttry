@@ -78,6 +78,27 @@
   vertical-align: baseline;
 }
 
+/* ---- Badge ------------------------------------------------------------------ */
+
+.ds-Badge {
+  display: inline-block;
+  padding: 0.1rem var(--space-sm);
+  /* Not `--mark-radius`: that token is 50%, meant for round item marks, and it
+     turns a text pill into an ellipse. */
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.ds-Badge[data-tone='accent'] {
+  border-color: var(--accent);
+}
+
+.ds-Badge[data-tone='muted'] {
+  color: var(--fg-muted);
+}
+
 /* ---- AvatarStack ------------------------------------------------------------ */
 
 .ds-AvatarStack {

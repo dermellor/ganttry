@@ -34,6 +34,8 @@ export * from './Tabs';
 export * from './Menu';
 
 // Surfaces that do not.
+export * from './Callout';
+export * from './Dialog';
 export * from './Panel';
 export * from './Prose';
 export * from './DescriptionList';

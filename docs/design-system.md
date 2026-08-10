@@ -31,8 +31,12 @@ code it explains.
 The first three of those are checked by
 [`scripts/ci/check-design-system.sh`](../scripts/ci/check-design-system.sh) and
 fail CI. The exemptions it grants are named in the script with their reasons —
-there are three, and each is a place where following the rule would produce worse
-code than breaking it.
+there are four, and each is a place where following the rule would produce worse
+code than breaking it. Two of them are the marks inside a timeline bar (the
+delete affordance and the fold caret): a `<button>` for the hit area and the
+keyboard, with every visual property set by the chart's stylesheet. The list's
+fold caret is *not* exempt — it sits in ordinary layout, and it is the
+`TreeToggle` component.
 
 ## The three layers
 
@@ -116,6 +120,7 @@ it is the one that will be argued about:
 | [`src/styles/timeline.css`](../src/styles/timeline.css) | vis-timeline's own furniture as this app dresses it: `.vis-item`, the item rail, the phase band, the dependency arrows. Not components — a third-party chart's internals. It spends tokens like everything else. |
 | [`src/styles/wysiwyg.css`](../src/styles/wysiwyg.css) | The frame around the Markdown editor. What the text inside it looks like is the `Prose` component, which the reading view uses too. |
 | [`src/styles/app.css`](../src/styles/app.css) | App composition that is not a component. Currently one rule. The bar is deliberately high — two call sites and it becomes a component. |
+| [`src/styles/members.css`](../src/styles/members.css) | How the „Benutzer" screen arranges components it does not own. Imported by `memberAdmin.ts`, so an instance where nobody opens the screen never downloads it. |
 
 A plugin's own stylesheet
 ([`pricing.css`](../src/plugins/product-roadmap/pricing.css)) sits in the same

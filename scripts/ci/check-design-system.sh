@@ -111,19 +111,22 @@ spacing_hits=$(
 #                        markup out by hand. The classes it writes are the
 #                        contract, and they are commented as such there.
 #   src/itemRail.ts      the delete affordance inside a timeline bar. It is a
-#                        `<button>` for the hit area and the keyboard, and
+#   src/itemCollapse.ts  `<button>` for the hit area and the keyboard, and
 #                        nothing else: the rail's stylesheet sets its box, its
 #                        position, its glyph and its resting opacity. Rendering
-#                        it as an IconButton and then overriding every visual
+#                        either as an IconButton and then overriding every visual
 #                        property the component brings would be the violation
-#                        wearing the component's name.
+#                        wearing the component's name. Note that the *list's*
+#                        fold caret is not exempt — it sits in ordinary layout,
+#                        and it is the `TreeToggle` component.
 
 button_hits=$(
   grep -rnE "<button|createElement\('button'\)|createElement\(\"button\"\)" \
     --include='*.ts' src 2>/dev/null |
     grep -v '^src/design-system/' |
     grep -v '^src/export.ts:' |
-    grep -v '^src/itemRail.ts:' ||
+    grep -v '^src/itemRail.ts:' |
+    grep -v '^src/itemCollapse.ts:' ||
     true
 )
 [ -n "$button_hits" ] && report \

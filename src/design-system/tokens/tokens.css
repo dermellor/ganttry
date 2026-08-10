@@ -22,6 +22,7 @@
   --highlight: #f5e3cf;
   --success: #94d825;
   --magenta: #f32ed4;
+  --scrim: rgba(0, 0, 0, 0.35);
 
   /* status: Item status (Open/Doing/Done, see src/status.ts). The status dot maps a
      value to one of these and nothing else does, so a fourth status needs a

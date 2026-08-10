@@ -1,0 +1,20 @@
+/* Callout — a statement in the space where content would have been. */
+
+.ds-Callout {
+  margin: var(--space-3xl) auto;
+  max-width: 42rem;
+  padding: var(--space-lg) var(--space-xl);
+  border: 1px solid var(--border);
+  /* The tone rides on one edge rather than on the whole frame: a fully coloured
+     box competes with the interface around it for a sentence that is meant to be
+     read once. */
+  border-left: 3px solid var(--ds-callout-accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+  line-height: var(--leading-normal);
+}
+
+.ds-Callout[data-tone='danger'] { --ds-callout-accent: var(--danger); }
+.ds-Callout[data-tone='warning'] { --ds-callout-accent: var(--warning); }
+.ds-Callout[data-tone='info'] { --ds-callout-accent: var(--accent); }

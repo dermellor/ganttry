@@ -263,6 +263,15 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
   // Session lapsed while the tab was open (a live-reload re-fetch) — send the
   // user to the login instead of surfacing a bare "HTTP 401".
   if (apiRes && apiRes.status === 401) handleSessionExpired();
+  // A refusal is not a malfunction, and „HTTP 403" reads like one. The person
+  // in front of it can do exactly one thing about it, so the message says that
+  // instead of a status code. Deliberately NOT a redirect: they are signed in,
+  // and sending them back to a login they already passed is a loop.
+  if (apiRes && apiRes.status === 403) {
+    throw new Error(
+      `Für die Timeline „${id}“ fehlt dir die Berechtigung. Bitte eine Administratorin oder einen Administrator dieser Instanz um Zugriff.`,
+    );
+  }
   const reason = apiRes ? `HTTP ${apiRes.status}` : 'keine Verbindung zur API';
   throw new Error(
     `Timeline „${id}“ konnte nicht aus der DB geladen werden (${reason}).`,

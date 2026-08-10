@@ -1,0 +1,85 @@
+/* The „Benutzer" screen's own composition (src/memberAdmin.ts).
+ *
+ * What is *not* here, because it comes from the design system: the modal and its
+ * backdrop (`Dialog`), the table (`Table`), the status pill (`Badge`), the
+ * controls (`TextInput`, `Select`, `Button`), and the message above the list
+ * (`Callout`). What is left is how this one screen arranges them — which is the
+ * bar the contract sets for a stylesheet outside the layer
+ * (docs/design-system.md → „What is not in the design system").
+ *
+ * Imported by memberAdmin.ts rather than by the app, so an instance where nobody
+ * ever opens the screen never downloads it.
+ */
+
+/* Wider than the design system's default: five columns of member data do not fit
+   a dialog sized for a form. */
+.member-dialog {
+  width: min(860px, calc(100vw - 2 * var(--space-3xl)));
+}
+
+/* Invite in one line: address, role, submit. It is the screen's primary action
+   and sits above the list it adds to. */
+.member-invite-form {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-md);
+}
+
+.member-invite-form .ds-Input[type='email'] {
+  flex: 1 1 16rem;
+}
+
+/* The generated link, shown once. A block rather than a line, because the whole
+   point is that it can be read and copied before it is gone. */
+.member-invite {
+  margin-bottom: var(--space-md);
+  padding: var(--space-md);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.member-invite-row {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  margin-top: var(--space-sm);
+}
+
+.member-invite-row .ds-Input {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+/* The Callout above the list is a message about one action, not a page-wide
+   statement, so it drops the component's centred column and generous margins. */
+.member-note {
+  margin: 0 0 var(--space-md);
+  max-width: none;
+}
+
+.member-table-wrap {
+  overflow-x: auto;
+}
+
+/* A removed member stays listed — an item's owner may still point at them — but
+   reads as past tense. */
+.member-row.is-removed {
+  opacity: 0.6;
+}
+
+.member-mail {
+  font-size: 0.85em;
+  margin-left: 0.4em;
+}
+
+/* On a div inside the cell, never on the `<td>` itself: a flex table cell stops
+   participating in the table's column sizing, which makes every row a different
+   height and pushes the buttons past the dialog's edge. */
+.member-actions {
+  display: flex;
+  gap: var(--space-xs);
+  justify-content: flex-end;
+}
