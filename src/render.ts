@@ -35,7 +35,7 @@ import { HierarchyFolders } from './hierarchyFolders';
 import { PhaseBand } from './phaseBand';
 import { MilestoneRail, railMarks } from './milestoneRail';
 import { scrollItemIntoView } from './visGeometry';
-import { withLaneShift } from './laneTransition';
+import { withLaneShift, type LaneCounts } from './laneTransition';
 import { iconSpanHtml } from './icons';
 import { DEFAULT_STATUS } from './status';
 import {
@@ -948,14 +948,12 @@ function refreshItemOverlays(): void {
   arrows?.refresh();
 }
 
-// Lanes in the densest track, which is what decides whether a lane shift is
-// worth animating at all (see DENSE_LANE_LIMIT in laneTransition.ts). Read back
-// out of the group styles the packing just wrote, so it is the count vis is
-// about to lay out rather than the one on screen.
-function densestTrackLanes(): number {
-  let lanes = 1;
-  for (const g of displayGroups) lanes = Math.max(lanes, laneCountOf(g.style));
-  return lanes;
+// Lanes per track, which is what decides whether that track's lane shift is
+// worth animating (see DENSE_LANE_LIMIT in laneTransition.ts). Read back out of
+// the group styles the packing just wrote, so it is the count vis is about to
+// lay out rather than the one on screen.
+function laneCountsByGroup(): LaneCounts {
+  return new Map(displayGroups.map((g) => [String(g.id), laneCountOf(g.style)]));
 }
 
 // Coalesce re-packs to one per animation frame: `rangechange` fires many times
@@ -1019,7 +1017,7 @@ export function repackLanes(): void {
   // directly, and easing those in would read as lag.
   if (changed.length) {
     withLaneShift(els.timeline, () => itemsDs!.update(changed), {
-      lanes: densestTrackLanes(),
+      lanes: laneCountsByGroup(),
       onFrame: refreshItemOverlays,
     });
   }
@@ -1048,7 +1046,7 @@ export function repackLanes(): void {
       // it, an amount the first pass could not have measured yet.
       requestAnimationFrame(() =>
         withLaneShift(els.timeline, () => timeline?.redraw(), {
-          lanes: densestTrackLanes(),
+          lanes: laneCountsByGroup(),
           onFrame: refreshItemOverlays,
         }),
       );

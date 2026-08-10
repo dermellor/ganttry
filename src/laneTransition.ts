@@ -43,21 +43,27 @@ const SHIFT_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
 const MIN_SHIFT_PX = 1;
 
 /**
- * Above this many lanes in the densest track, the shift is not animated at all.
+ * Above this many lanes, a track's items are not animated.
  *
  * The animation buys one thing: you can follow an individual item to its new
  * row. Once a track is a wall of bars that stops being true, and easing a
- * hundred of them at once is motion without information. Lane count is the
- * signal rather than the number of items on screen, because vis unmounts items
- * outside the *vertical* viewport too — measured on the same 752-item timeline,
- * widening the window from two to four years took the mounted count *down* from
- * 292 to 191 while the densest track went from 10 lanes to 16. Lanes climbed
- * monotonically across the whole zoom range (5, 5, 6, 6, 7, 10, 16, 26 from one
- * month to eight years), which is what makes it usable as a threshold.
+ * hundred of them at once is motion without information.
  *
- * Taken over every track, not the visible ones: a 26-lane track means the
- * layout is a wall wherever you happen to be looking, and the reservation ties
- * lane counts to the current zoom anyway.
+ * Lane count is the signal rather than the number of items on screen, because
+ * vis unmounts items outside the *vertical* viewport too — on a 752-item test
+ * timeline, widening the window from two to four years took the mounted count
+ * *down* from 292 to 191 while the densest track went from 10 lanes to 16.
+ * Lanes climb monotonically across the whole zoom range (5, 5, 6, 6, 7, 10, 16,
+ * 26 from one month to eight years), which is what makes them usable at all.
+ *
+ * **Per track, and that correction came from real data.** Taking the maximum
+ * over the whole timeline looked equivalent on an evenly generated fixture and
+ * fell over on the first live one: fifteen tracks at
+ * `[1, 1, 9, 7, 4, 3, 2, 1, 6, 26, 3, 1, 6, 10, 1]` lanes, so a single outlier
+ * track switched the animation off on the fourteen readable ones. A track is
+ * its own visual field here — `stack: false` with fixed lanes means nothing
+ * crosses between them — so one track opting out while its neighbours ease is
+ * the behaviour that matches what you can actually follow.
  */
 const DENSE_LANE_LIMIT = 12;
 
@@ -70,7 +76,14 @@ const ITEM_SELECTOR = '.vis-item:not(.vis-background):not(.vis-line)';
 type Positions = Map<HTMLElement, number>;
 
 /** vis hangs the Item instance off its own DOM (`ItemSet.itemFromElement`). */
-type VisItem = { top?: number; parent?: { top?: number } };
+type VisItem = { top?: number; parent?: { top?: number; groupId?: string | number } };
+
+/** Lanes each track was packed into, by group id. */
+export type LaneCounts = Map<string, number>;
+
+function visItem(el: HTMLElement): VisItem | undefined {
+  return (el as unknown as Record<string, VisItem | undefined>)['vis-item'];
+}
 
 /**
  * Where the item sits vertically inside the item set, in layout terms: the
@@ -78,19 +91,26 @@ type VisItem = { top?: number; parent?: { top?: number } };
  * not positioned yet, which is skipped rather than animated from zero.
  */
 function basePos(el: HTMLElement): number | null {
-  const item = (el as unknown as Record<string, VisItem | undefined>)['vis-item'];
+  const item = visItem(el);
   const own = item?.top;
   const track = item?.parent?.top;
   return typeof own === 'number' && typeof track === 'number' ? track + own : null;
+}
+
+/** Whether this item's track is still sparse enough for the movement to read. */
+function trackIsFollowable(el: HTMLElement, lanes: LaneCounts): boolean {
+  const groupId = visItem(el)?.parent?.groupId;
+  return (lanes.get(String(groupId)) ?? 1) <= DENSE_LANE_LIMIT;
 }
 
 function prefersReducedMotion(): boolean {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 }
 
-function capture(host: HTMLElement): Positions {
+function capture(host: HTMLElement, lanes: LaneCounts): Positions {
   const positions: Positions = new Map();
   for (const el of host.querySelectorAll<HTMLElement>(ITEM_SELECTOR)) {
+    if (!trackIsFollowable(el, lanes)) continue;
     const pos = basePos(el);
     if (pos !== null) positions.set(el, pos);
   }
@@ -142,13 +162,16 @@ function playShift(before: Positions, onFrame?: () => void): void {
 export function withLaneShift(
   host: HTMLElement,
   mutate: () => void,
-  { lanes, onFrame }: { lanes: number; onFrame?: () => void },
+  { lanes, onFrame }: { lanes: LaneCounts; onFrame?: () => void },
 ): void {
-  if (prefersReducedMotion() || lanes > DENSE_LANE_LIMIT) {
+  if (prefersReducedMotion()) {
     mutate();
     return;
   }
-  const before = capture(host);
+  // A track that gets denser is judged by the lane count it had when it was
+  // still followable: the item is leaving a layout the user could read, so the
+  // move out of it is the one worth showing.
+  const before = capture(host, lanes);
   mutate();
   requestAnimationFrame(() => playShift(before, onFrame));
 }

@@ -732,17 +732,25 @@ the position an item would sit at with nothing animating, which is the only
 stable thing to difference against. After the switch the same zoom starts 546,
 and 200 frames of panning start 35.
 
-**Past a certain density it is switched off.** The animation buys exactly one
-thing: you can follow an individual item to its new row. In a track that is a
-wall of bars that stops being true, and easing a hundred of them at once is
-motion without information. The signal is the lane count of the densest track,
-not the number of items on screen: vis unmounts items outside the *vertical*
-viewport too, so widening the window from two to four years took the mounted
-count **down** from 292 to 191 while the densest track went from 10 lanes to 16.
-Lanes climb monotonically across the whole zoom range (5, 5, 6, 6, 7, 10, 16, 26
-from one month to eight years), which is what makes them usable as a threshold.
+**Past a certain density a track stops animating.** The animation buys exactly
+one thing: you can follow an individual item to its new row. In a track that is
+a wall of bars that stops being true, and easing a hundred of them at once is
+motion without information. The signal is the lane count, not the number of
+items on screen: vis unmounts items outside the *vertical* viewport too, so
+widening the window from two to four years took the mounted count **down** from
+292 to 191 while the densest track went from 10 lanes to 16. Lanes climb
+monotonically across the whole zoom range (5, 5, 6, 6, 7, 10, 16, 26 from one
+month to eight years), which is what makes them usable as a threshold.
 `DENSE_LANE_LIMIT` is that knob; measured at 12, panning starts animations up to
 10 lanes and none from 15 up.
+
+**It is decided per track, and that correction came from real data.** Taking the
+maximum over the whole timeline looked equivalent on an evenly generated fixture
+and fell over on the first live one: fifteen tracks at
+`[1, 1, 9, 7, 4, 3, 2, 1, 6, 26, 3, 1, 6, 10, 1]` lanes, so a single outlier
+track would have switched the animation off on the fourteen readable ones. Under
+`stack: false` with fixed lanes nothing crosses between tracks, so a track is its
+own visual field and can opt out on its own.
 
 **The dependency arrows have to be driven per frame while it runs** (`refresh()`
 on [`src/arrows.ts`](../src/arrows.ts)): they measure item DOM, and vis emits no
