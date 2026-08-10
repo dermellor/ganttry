@@ -30,8 +30,9 @@
   font-family: var(--font-body) !important;
 }
 
-.vis-time-axis .vis-text.vis-major {
+.vis-time-axis .vis-text.vis-major:not(.vis-measure) {
   font-weight: 500;
+  padding-inline-start: var(--space-md);
 }
 
 .vis-labelset .vis-label {
