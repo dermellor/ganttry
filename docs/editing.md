@@ -732,6 +732,18 @@ the position an item would sit at with nothing animating, which is the only
 stable thing to difference against. After the switch the same zoom starts 546,
 and 200 frames of panning start 35.
 
+**Past a certain density it is switched off.** The animation buys exactly one
+thing: you can follow an individual item to its new row. In a track that is a
+wall of bars that stops being true, and easing a hundred of them at once is
+motion without information. The signal is the lane count of the densest track,
+not the number of items on screen: vis unmounts items outside the *vertical*
+viewport too, so widening the window from two to four years took the mounted
+count **down** from 292 to 191 while the densest track went from 10 lanes to 16.
+Lanes climb monotonically across the whole zoom range (5, 5, 6, 6, 7, 10, 16, 26
+from one month to eight years), which is what makes them usable as a threshold.
+`DENSE_LANE_LIMIT` is that knob; measured at 12, panning starts animations up to
+10 lanes and none from 15 up.
+
 **The dependency arrows have to be driven per frame while it runs** (`refresh()`
 on [`src/arrows.ts`](../src/arrows.ts)): they measure item DOM, and vis emits no
 `changed` event during the easing, so an arrow would otherwise hang in mid-air

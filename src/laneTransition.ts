@@ -42,6 +42,25 @@ const SHIFT_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
 // Below this the "jump" is sub-pixel rounding, not a lane change.
 const MIN_SHIFT_PX = 1;
 
+/**
+ * Above this many lanes in the densest track, the shift is not animated at all.
+ *
+ * The animation buys one thing: you can follow an individual item to its new
+ * row. Once a track is a wall of bars that stops being true, and easing a
+ * hundred of them at once is motion without information. Lane count is the
+ * signal rather than the number of items on screen, because vis unmounts items
+ * outside the *vertical* viewport too — measured on the same 752-item timeline,
+ * widening the window from two to four years took the mounted count *down* from
+ * 292 to 191 while the densest track went from 10 lanes to 16. Lanes climbed
+ * monotonically across the whole zoom range (5, 5, 6, 6, 7, 10, 16, 26 from one
+ * month to eight years), which is what makes it usable as a threshold.
+ *
+ * Taken over every track, not the visible ones: a 26-lane track means the
+ * layout is a wall wherever you happen to be looking, and the reservation ties
+ * lane counts to the current zoom anyway.
+ */
+const DENSE_LANE_LIMIT = 12;
+
 // Background items are the phase tints: full-height chrome that never sits in a
 // lane. A box item's `.vis-line` is the stem down to the axis, whose *height*
 // changes rather than its position, so translating it would detach it from its
@@ -123,9 +142,9 @@ function playShift(before: Positions, onFrame?: () => void): void {
 export function withLaneShift(
   host: HTMLElement,
   mutate: () => void,
-  onFrame?: () => void,
+  { lanes, onFrame }: { lanes: number; onFrame?: () => void },
 ): void {
-  if (prefersReducedMotion()) {
+  if (prefersReducedMotion() || lanes > DENSE_LANE_LIMIT) {
     mutate();
     return;
   }

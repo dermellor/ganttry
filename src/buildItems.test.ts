@@ -4,6 +4,7 @@ import {
   assignLanes,
   assignLaneSubgroups,
   backgroundLabelId,
+  laneCountOf,
   laneCountStyle,
   withBackgroundLabelItems,
   withHierarchyMarks,
@@ -328,4 +329,16 @@ test('remembering a lane never costs the track an extra lane', () => {
   assignLaneSubgroups(items, groups, new Map(), new Map());
   assert.equal(groups[0].style, laneCountStyle(2));
   assert.equal(Math.max(...items.map((i) => i.subgroup ?? 0)) + 1, 2);
+});
+
+// The lane count is written as inline style text and read back out of it to
+// decide whether a lane shift is dense enough to skip animating. Round-tripping
+// is what keeps the two halves from drifting apart over a rename.
+test('a lane count survives the round trip through the group style', () => {
+  for (const lanes of [1, 2, 7, 26]) {
+    assert.equal(laneCountOf(laneCountStyle(lanes)), lanes);
+  }
+  // A group vis never laid out carries no style; one lane is the honest floor.
+  assert.equal(laneCountOf(undefined), 1);
+  assert.equal(laneCountOf('color: red;'), 1);
 });

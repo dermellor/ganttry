@@ -11,6 +11,7 @@ import {
   withBackgroundLabelItems,
   buildFromJson,
   decodeEntities,
+  laneCountOf,
   tagPillsHtml,
   withHierarchyMarks,
   withStatusMarks,
@@ -947,6 +948,16 @@ function refreshItemOverlays(): void {
   arrows?.refresh();
 }
 
+// Lanes in the densest track, which is what decides whether a lane shift is
+// worth animating at all (see DENSE_LANE_LIMIT in laneTransition.ts). Read back
+// out of the group styles the packing just wrote, so it is the count vis is
+// about to lay out rather than the one on screen.
+function densestTrackLanes(): number {
+  let lanes = 1;
+  for (const g of displayGroups) lanes = Math.max(lanes, laneCountOf(g.style));
+  return lanes;
+}
+
 // Coalesce re-packs to one per animation frame: `rangechange` fires many times
 // during a single zoom/pan gesture, but the lanes only need recomputing once
 // per painted frame.
@@ -1006,7 +1017,12 @@ export function repackLanes(): void {
   // (`laneTransition.ts` carries the why). Scoped to the repack on purpose: a
   // rebuild, a filter or a drag moves items for reasons the user just caused
   // directly, and easing those in would read as lag.
-  if (changed.length) withLaneShift(els.timeline, () => itemsDs!.update(changed), refreshItemOverlays);
+  if (changed.length) {
+    withLaneShift(els.timeline, () => itemsDs!.update(changed), {
+      lanes: densestTrackLanes(),
+      onFrame: refreshItemOverlays,
+    });
+  }
 
   // The reservation has to reach the label too, or the track keeps yesterday's
   // height. It matters that the reservation always covers the lanes the packing just
@@ -1031,7 +1047,10 @@ export function repackLanes(): void {
       // whole tracks: a track that gained or lost a lane pushes everything below
       // it, an amount the first pass could not have measured yet.
       requestAnimationFrame(() =>
-        withLaneShift(els.timeline, () => timeline?.redraw(), refreshItemOverlays),
+        withLaneShift(els.timeline, () => timeline?.redraw(), {
+          lanes: densestTrackLanes(),
+          onFrame: refreshItemOverlays,
+        }),
       );
     }
   }

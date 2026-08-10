@@ -149,6 +149,16 @@ export function laneCountStyle(lanes: number): string {
   return `${LANE_COUNT_PROPERTY}: ${Math.max(1, lanes)};`;
 }
 
+/**
+ * Read a lane count back out of a group's inline style. Here rather than at the
+ * call site so the property name stays spelled in one place; a second copy of it
+ * would silently start reading nothing the day this one is renamed.
+ */
+export function laneCountOf(style: string | undefined): number {
+  const match = style?.match(new RegExp(`${LANE_COUNT_PROPERTY}:\\s*(\\d+)`));
+  return match ? Number(match[1]) : 1;
+}
+
 const LANE_COUNT = 6;
 
 function laneClass(index: number): string {
