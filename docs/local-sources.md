@@ -268,7 +268,8 @@ on top of sources rather than a reason to keep a second data path alive.
 ## Constraints that must hold
 
 - **View ids may not change.** `localStorage['timelines.view']` persists the
-  active view id, and `timelines.viewMode` persists the mode. Markdown views keep
+  active view id, and the mode is persisted per timeline (see „Where the display
+  state lives" (docs/editing.md)). Markdown views keep
   the ids from `timelines.config.json` (`kurzbeitraege`), JSON sources keep
   `src:<basename>`. Changing either silently resets every user's saved view, the
   same trap „The name covers the product" (AGENTS.md) records for the
