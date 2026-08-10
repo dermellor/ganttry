@@ -722,6 +722,30 @@ active state driven by `aria-pressed`) switches between two renderings of the
   as a level. A section can hold a child whose parent fell outside it (they carry
   different tags, say); that one stays at the top level rather than disappearing.
 
+**Stored backgrounds stay editable.** vis-timeline deliberately gives a
+`type: "background"` item no selection target, because the library treats it as
+decoration. Zeitlines uses that type for two different things: generated phase
+tints (`.phase-bg`) really are decoration, while a stored background is a real
+entry such as an absence or a blocking interval. `backgroundItemSelection.ts`
+marks only the latter after vis mounts it and delegates click/Enter/Space to the
+same `selectItemById` path every other item uses. The full-height rendering is
+therefore preserved without making phase tints editable.
+
+Their labels reserve lanes too. The display model splits a stored background
+into its full-height tint and a foreground-only label range. Every label shares
+one header subgroup; ordinary bars start in the subgroup after it. Overlapping
+tints stack in depth instead of pushing their titles onto separate rows. The
+upper layer is progressively lighter (35%, 25%, 15%, then a 12% floor), so the
+overlap remains legible without making the header taller. The title itself has
+no fill of its own; it sits directly on the full-height tint. Its display extent
+is subtracted from every higher phase, so the lower title ends where the upper
+phase begins instead of leaving two label boxes geometrically overlapping. This
+makes the clearance structural rather than a CSS translation. Like an ordinary
+range bar, the title stays clipped to its own date span. The label-derived
+group-height floor includes both the header and item rows, so it does not
+reintroduce the vertical jumping described in „Why a track reserves its height"
+above.
+
 ### Loading placeholder
 
 Until a source has been fetched, the timeline area carries a placeholder drawn by
