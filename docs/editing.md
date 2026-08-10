@@ -708,7 +708,7 @@ in one tick collapse into one and do not help.
 Everything above shrinks the number of moves. The ones that remain are real and
 they land inside a single frame, on top of a horizontal movement the user is
 driving themselves. [`src/laneTransition.ts`](../src/laneTransition.ts) plays
-that step out over 260ms instead. It hangs off `rangechange` and off
+that step out over 170ms instead. It hangs off `rangechange` and off
 `repackLanes`, and off nothing else: a rebuild, a filter or a drag moves items
 for a reason the user just caused directly, and easing those in would read as lag.
 

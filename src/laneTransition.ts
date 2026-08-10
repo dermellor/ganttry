@@ -47,9 +47,10 @@
  * `hierarchyFolders.ts` do the same.)
  */
 
-// Long enough to read as movement, short enough that a re-centre mid-pan is over
-// before the pointer has travelled far. Tuning knob for the experiment.
-const SHIFT_MS = 260;
+// Long enough to read as movement, short enough that a shift mid-pan is over
+// before the pointer has travelled far. Tuning knob for the experiment; 260ms
+// was the first try and read as sluggish against a pan the user is driving.
+const SHIFT_MS = 170;
 // Fast out, settle in — the item should look like it is catching up with a
 // layout that has already happened, which is exactly what it is doing.
 const SHIFT_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
