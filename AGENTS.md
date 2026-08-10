@@ -291,6 +291,16 @@ so the two cannot drift apart. The client reads it through
 [`src/data-base.ts`](src/data-base.ts) rather than hardcoding `/data`.
 `public/data-*/` is gitignored.
 
+**Two servers out of the *same* checkout collide the same way, and one of them
+usually does not look like an instance at all.** A second `dev:worktree` started
+only with `TIMELINES_SOURCES_SUBDIR` still inherits `TIMELINES_INSTANCE` from
+`.env.local`, so it inherits that instance's `TIMELINES_DATA_DIR` too and its
+`build:data` overwrites the other server's `public/<dir>/config.json`. The
+symptom is not an error: the older server keeps running and simply starts serving
+the *other* server's timeline, which reads as "the view is wrong" or, worse, gets
+mistaken for a data problem in the timeline being debugged. Give every server its
+own `TIMELINES_DATA_DIR` on the command line, not just its own port.
+
 One consequence worth knowing: `vite build` copies all of `public/`, so a local
 build carries every instance's data directory into `dist/`. Host builds run from
 a fresh clone where those directories do not exist, so this only matters if you
