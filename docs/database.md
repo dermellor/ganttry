@@ -121,13 +121,24 @@ runner works against any Postgres).
   „Standalone JSON timelines" (docs/data-model.md)). There is no DB CHECK for it, because `start` and
   `end` are `text` columns.
 - `timeline_groups` — id, content, nested_groups, show_nested, sort.
-- `app_users` — the **user directory** an item owner points at (migration
-  `0015`): `email` as PK, optional `name`, `first_seen_at`, `last_seen_at`. Not
-  timeline-scoped (a collection-level concept, like `listTimelines`), with no
-  `version` column and no optimistic locking: a row carries no user-written
-  content, only the identity the auth provider asserts anyway. No anon SELECT —
-  it is read through the server-gated `/api/users` endpoint (service key) and
-  never subscribed to. It fills itself (see „Item owner" (docs/items.md)).
+- `app_users` — the **user directory and the member list**, which are one table
+  because they are one set of people (migrations `0015` and `0016`): `email` as
+  PK, optional `name`, `first_seen_at`, `last_seen_at`, plus `role`, `status` and
+  the invitation columns (`invited_by`, `invited_at`, `accepted_at`,
+  `invite_token_hash`, `invite_expires_at`). Not timeline-scoped (a
+  collection-level concept, like `listTimelines`), with no `version` column and
+  no optimistic locking: a row carries no user-written content, only the identity
+  the auth provider asserts and the verdict an admin gave it. No anon SELECT — it
+  is read through the server-gated `/api/users` (the picker's view: address and
+  name) and `/api/members` (administration) endpoints, and never subscribed to.
+  Only the token's hash is stored, never the token.
+
+  `0015` created it as a directory that filled itself and was explicitly *not* a
+  membership list; `0016` made it one, because once an invitation is the only way
+  in the two are the same people and two tables would be two copies of one
+  statement. The self-filling behaviour survives only while
+  `TIMELINES_ACCESS_CONTROL` is off, where the owner picker has no other source.
+  The whole model is „Users" (docs/users.md).
 - **Pricing tables** (migration `0009`, only relevant to product-roadmap
   timelines): `pricing_features`, `pricing_tiers`, `pricing_highlights`, one row
   per entity with its own `version` column (trigger bump, optimistic locking like
