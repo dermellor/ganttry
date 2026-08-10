@@ -91,6 +91,35 @@ test('a parent takes a lane above every one of its children', () => {
   assert.equal(laneOf(items, 'c1'), laneOf(items, 'c2'));
 });
 
+test('an unrelated root never lands between a parent and its children', () => {
+  const items = [
+    range('p', '2026-02-01', '2026-02-20'),
+    range('x', '2026-02-01', '2026-02-20'),
+    range('c1', '2026-02-02', '2026-02-05'),
+    range('c2', '2026-02-10', '2026-02-15'),
+  ];
+  assignLaneSubgroups(items, GROUPS, new Map(), new Map([['c1', 'p'], ['c2', 'p']]));
+  assert.equal(laneOf(items, 'p'), 0);
+  assert.equal(laneOf(items, 'c1'), 1);
+  assert.equal(laneOf(items, 'c2'), 1);
+  assert.ok(laneOf(items, 'x')! > laneOf(items, 'c2')!);
+});
+
+test('folding a subtree does not move an unrelated item across its parent', () => {
+  const parents = new Map([['hidden-child', 'p']]);
+  const expanded = [
+    range('x', '2026-02-01', '2026-02-20'),
+    range('p', '2026-02-01', '2026-02-20'),
+    range('hidden-child', '2026-02-02', '2026-02-05'),
+  ];
+  assignLaneSubgroups(expanded, GROUPS, new Map(), parents);
+  assert.ok(laneOf(expanded, 'x')! < laneOf(expanded, 'p')!);
+
+  const folded = expanded.filter((it) => it.id !== 'hidden-child');
+  assignLaneSubgroups(folded, GROUPS, new Map(), parents);
+  assert.ok(laneOf(folded, 'x')! < laneOf(folded, 'p')!);
+});
+
 test('a grandchild lands below its parent, which is below the root', () => {
   const items = [
     range('root', '2026-02-01', '2026-02-20'),
@@ -100,6 +129,24 @@ test('a grandchild lands below its parent, which is below the root', () => {
   assignLaneSubgroups(items, GROUPS, new Map(), new Map([['mid', 'root'], ['leaf', 'mid']]));
   assert.ok(laneOf(items, 'root')! < laneOf(items, 'mid')!);
   assert.ok(laneOf(items, 'mid')! < laneOf(items, 'leaf')!);
+});
+
+test('a nested subtree finishes before its parent\'s next child starts', () => {
+  const items = [
+    range('root', '2026-02-01', '2026-02-20'),
+    range('mid', '2026-02-02', '2026-02-18'),
+    range('sibling', '2026-02-03', '2026-02-17'),
+    range('leaf', '2026-02-04', '2026-02-16'),
+  ];
+  assignLaneSubgroups(
+    items,
+    GROUPS,
+    new Map(),
+    new Map([['mid', 'root'], ['sibling', 'root'], ['leaf', 'mid']]),
+  );
+  assert.ok(laneOf(items, 'root')! < laneOf(items, 'mid')!);
+  assert.ok(laneOf(items, 'mid')! < laneOf(items, 'leaf')!);
+  assert.ok(laneOf(items, 'leaf')! < laneOf(items, 'sibling')!);
 });
 
 // The dependency staircase still applies, but only inside one hierarchy band —
@@ -131,11 +178,11 @@ const PARENTS = new Map([['c', 'p']]);
 const identity = (id: string) => id;
 const classOf = (items: TimelineItem[], id: string) => items.find((i) => i.id === id)!.className;
 
-test('a parent is marked, a child and a loner are left alone', () => {
+test('a parent and child are marked, a loner is left alone', () => {
   const items = [range('p', '2026-02-01', '2026-02-20'), range('c', '2026-02-02', '2026-02-05'), range('x', '2026-03-01', '2026-03-05')];
   const out = withHierarchyMarks(items, PARENTS, new Set(), identity);
   assert.equal(classOf(out, 'p'), 'item-summary');
-  assert.equal(classOf(out, 'c'), undefined);
+  assert.equal(classOf(out, 'c'), 'item-child');
   // Untouched items are returned as-is, so the persist diff never sees a display
   // concern (same reason withStatusMarks copies only what it marks).
   assert.equal(out[2], items[2]);
