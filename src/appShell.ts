@@ -67,8 +67,6 @@ export type AppShellElements = {
   viewSelect: HTMLSelectElement;
   modeTimelineBtn: HTMLButtonElement;
   modeListBtn: HTMLButtonElement;
-  milestonesOnly: HTMLInputElement;
-  milestonesControl: HTMLElement;
   presence: HTMLElement;
   settingsBtn: HTMLButtonElement;
   settings: HTMLElement;
@@ -165,14 +163,9 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   modeTimelineBtn.id = 'mode-timeline';
   modeListBtn.id = 'mode-list';
 
-  const milestonesControl = Checkbox({
-    id: 'milestones-only',
-    label: 'Nur Meilensteine',
-    className: 'ds-ToolbarControl',
-    attrs: { id: 'milestones-control' },
-  });
-  const milestonesOnly = milestonesControl.querySelector('input') as HTMLInputElement;
-
+  // „Nur Meilensteine" used to sit here, two rows above the filter it belonged
+  // with. It is a value of the type dimension now (see src/filterControl.ts), so
+  // the header no longer carries a narrowing at all.
   const presence = AvatarStack({ ariaLabel: 'Online', hidden: true, attrs: { id: 'presence' } });
   // Only an admin is offered the area (main.ts unhides it). Hiding it is an
   // affordance, never the permission: /api/settings and /api/members refuse
@@ -202,7 +195,6 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
           el('div', { class: 'app-timeline-controls' }, [
             ToolbarControl({ label: 'View', children: viewSelect }),
             modeToggle,
-            milestonesControl,
           ]),
         ],
       }),
@@ -355,8 +347,6 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       viewSelect,
       modeTimelineBtn,
       modeListBtn,
-      milestonesOnly,
-      milestonesControl,
       presence,
       settingsBtn,
       settings,

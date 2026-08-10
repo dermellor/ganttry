@@ -69,6 +69,7 @@ import {
   showOnlyPluginSection,
 } from './pluginHost/views';
 import { dataUrl } from './data-base';
+import { MILESTONES_ONLY_SELECTION } from './viewPrefs';
 import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 import { hostApiFor } from './pluginHost/hostBackend';
 import { setTimelineRefresh } from './pluginHost/refresh';
@@ -118,21 +119,22 @@ async function applyView(viewId: string) {
   localStorage.setItem('timelines.view', viewId);
   els.viewSelect.value = viewId;
   hideDetail();
-  // Before the render that reads them: presentation, grouping, filter and the
-  // milestones narrowing belong to the timeline being opened, and a link may
-  // override them (state.pendingPrefs). Both halves have to be in place first, or
-  // the first paint shows the previous timeline's filter.
+  // Before the render that reads them: presentation, grouping and filter belong to
+  // the timeline being opened, and a link may override them (state.pendingPrefs).
+  // Both halves have to be in place first, or the first paint shows the previous
+  // timeline's filter.
   loadViewPrefs(viewId);
   const wanted = state.pendingPrefs;
   state.pendingPrefs = null;
   if (wanted) {
-    if (wanted.milestonesOnly != null) state.milestonesOnly = wanted.milestonesOnly;
     if (wanted.mode) state.viewMode = wanted.mode;
+    // A link's narrowing joins the stored one rather than replacing it, because
+    // that is what `m=1` did: it composed with whatever filter was set.
+    if (wanted.filters) state.filters = { ...state.filters, ...wanted.filters };
     // A followed link becomes this timeline's stored state, exactly as the
     // instance-wide key used to be written when a link carried a mode.
     saveViewPrefs(viewId);
   }
-  els.milestonesOnly.checked = state.milestonesOnly;
   setModeButtons(state.viewMode);
   await renderTimeline(view);
   // The mode is per timeline now, so a switch can change it: the sections have to
@@ -324,9 +326,12 @@ async function bootstrap() {
   // own state and can let the link win over it. Only keys the link actually
   // carries: an absent one means „whatever this timeline remembers", which is why
   // this is not simply read as false / 'timeline'.
-  if (urlState.milestones != null || urlState.mode) {
+  if (urlState.milestones || urlState.mode) {
     state.pendingPrefs = {
-      ...(urlState.milestones != null && { milestonesOnly: !!urlState.milestones }),
+      // `m=1` predates the type dimension and sits in every link ever shared, so
+      // it is still read: it means „narrow the type dimension to Meilenstein".
+      // Nothing writes it any more (see syncUrl).
+      ...(urlState.milestones && { filters: MILESTONES_ONLY_SELECTION }),
       // A shared link may carry a pre-plugin mode id (`mode=pricing`), so it goes
       // through the same legacy lookup as the stored value.
       ...(urlState.mode && { mode: readViewMode(urlState.mode, legacyViewMode) }),
@@ -367,19 +372,6 @@ async function bootstrap() {
 
   // Safety net: flush + persist an open item form if the tab closes mid-edit.
   window.addEventListener('beforeunload', () => commitItemForm());
-
-  els.milestonesOnly.checked = state.milestonesOnly;
-  els.milestonesOnly.addEventListener('change', () => {
-    state.milestonesOnly = els.milestonesOnly.checked;
-    saveViewPrefs();
-    if (state.activeView && state.activeBuild) {
-      applyBuildToDataSets();
-      repackLanes();
-      setStatus(statusFor(state.activeView, state.activeBuild));
-      state.timeline?.redraw();
-    }
-    syncUrl();
-  });
 
   els.viewSelect.addEventListener('change', () => {
     // Cleared before the switch so the presence re-join announces no item (the
@@ -464,10 +456,14 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
       await showSettings(wantSettings);
     }
 
-    // An incoming hash is authoritative about the whole display state, absences
-    // included: no `m` means milestones off, no `mode` means the timeline. That is
-    // what makes back/forward reverse a narrowing rather than leave it standing.
-    const wantMilestones = !!incoming.milestones;
+    // An incoming hash is authoritative about what it carries: no `mode` means the
+    // timeline, which is what makes back/forward reverse a switch to the list.
+    //
+    // It is deliberately NOT authoritative about the filter. The filter has never
+    // been in the hash, and `m=1` — the one narrowing that was — is no longer
+    // written, so an absent `m` says nothing about the type dimension. Reading it
+    // as „no type filter" would clear a selection the user made in the panel on
+    // every back step.
     const wantMode: ViewMode = readViewMode(incoming.mode, legacyViewMode);
 
     const targetViewId = incoming.view ?? state.config.defaultView;
@@ -477,10 +473,13 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
     // On a switch these go through pendingPrefs, or applyView's load would
     // overwrite them with the target timeline's stored state.
     if (switching) {
-      state.pendingPrefs = { milestonesOnly: wantMilestones, mode: wantMode };
-    } else if (wantMilestones !== state.milestonesOnly) {
-      state.milestonesOnly = wantMilestones;
-      els.milestonesOnly.checked = wantMilestones;
+      state.pendingPrefs = {
+        mode: wantMode,
+        ...(incoming.milestones && { filters: MILESTONES_ONLY_SELECTION }),
+      };
+    } else if (incoming.milestones) {
+      // An old link pasted into the running app: add the narrowing it asks for.
+      state.filters = { ...state.filters, ...MILESTONES_ONLY_SELECTION };
       saveViewPrefs();
       if (state.activeView && state.activeBuild) {
         applyBuildToDataSets();

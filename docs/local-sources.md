@@ -275,7 +275,7 @@ on top of sources rather than a reason to keep a second data path alive.
   same trap „The name covers the product" (AGENTS.md) records for the
   `timelines.*` key prefix.
 - **The source *kind* is not persisted anywhere** (verified: `localStorage` holds
-  view, view mode, filter, groupBy and milestones-only, and no kind), and views
+  view, view mode, filter and groupBy, and no kind), and views
   are regenerated on every build. So renaming `file` to `local` needs no migration
   and no legacy alias.
 - **A missing notes directory stays non-fatal.** CI builds with no credentials and

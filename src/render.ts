@@ -354,9 +354,13 @@ function pruneGroupsToItems(items: TimelineItem[], groups: TimelineGroup[]): Tim
     );
 }
 
-// Items + groups actually shown, after the milestones-only toggle and the value
-// filter (both shared across the timeline and list views). Background phase-tint
-// items always pass the value filter. Empty lanes are pruned once at the end.
+// Items + groups actually shown, after the value filter (shared across the
+// timeline and list views). Background phase-tint items always pass it. Empty
+// lanes are pruned once at the end.
+//
+// „Nur Meilensteine" used to be a second narrowing here, composed with the filter
+// in this function. It is a value of the type dimension now, so there is one
+// narrowing left and this reads as one thing.
 export function filterBuildForDisplay(build: BuildResult): {
   items: TimelineItem[];
   groups: TimelineGroup[];
@@ -367,12 +371,11 @@ export function filterBuildForDisplay(build: BuildResult): {
   // screen. It also runs before the tag/field regrouping, so a hidden child
   // never gets cloned into a lane in the first place.
   const hidden = hiddenByCollapse(build.parents, state.collapsedItems);
-  if (!state.milestonesOnly && !filterOn && hidden.size === 0) {
+  if (!filterOn && hidden.size === 0) {
     return { items: build.items, groups: build.groups };
   }
   let items = build.items;
   if (hidden.size) items = items.filter((it) => !hidden.has(it.id));
-  if (state.milestonesOnly) items = items.filter((it) => it.type === 'point');
   if (filterOn) {
     items = items.filter((it) => it.type === 'background' || passesFilter(it, build.groups));
   }
@@ -496,12 +499,16 @@ function syncDataSet(ds: DataSet<any>, next: Array<{ id?: string | number }>): v
 
 export function statusFor(view: View, build: BuildResult): string {
   const filtered = filterBuildForDisplay(build);
-  const suffix = state.milestonesOnly ? ' · nur Meilensteine' : '';
+  // „· nur Meilensteine" used to be appended here, for the one narrowing that had
+  // a control of its own. Every narrowing is a filter value now, so naming one of
+  // them and none of the others would be the misleading half; the filter's own
+  // trigger says how many values are selected, right above this line.
+  //
   // Start-less items exist in the data but can't be placed on the timeline —
   // surface the count so they aren't silently missing from the timeline view.
   const dateless = filtered.items.length - timelineItems(filtered.items).length;
   const datelessHint = dateless > 0 ? ` · ${dateless} ohne Start (nur Liste)` : '';
-  return `${filtered.items.length} items in „${view.name}" · ${filtered.groups.length} groups${suffix}${datelessHint}`;
+  return `${filtered.items.length} items in „${view.name}" · ${filtered.groups.length} groups${datelessHint}`;
 }
 
 /**

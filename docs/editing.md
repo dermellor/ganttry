@@ -302,7 +302,7 @@ them off their dates.
   dates and the drift grows with every member. The exact date stays in the tooltip,
   and zooming in separates the marks for real.
 - **It reads the display set**, the same post-filter, post-regroup item list the
-  timeline is fed, so it follows „Nur Meilensteine" and the value filter without a
+  timeline is fed, so it follows the value filter without a
   second derivation of what is visible. When a tag/custom-field regroup clones a
   multi-valued item across lanes, the clones collapse back to one mark.
 - **Positioning goes through vis's own conversion**
@@ -787,8 +787,8 @@ active state driven by `aria-pressed`) switches between two renderings of the
 - **Liste** — a scrollable, grouped table ([`src/listView.ts`](../src/listView.ts)):
   sections along the active **grouping dimension** (items sorted by start),
   with columns Eintrag (icon + tag pills + content), Start, Ende, Typ, Status,
-  Owner. Phase background items are omitted. The milestones-only filter applies
-  here too. Children follow their parent, indented one step per level, with the
+  Owner. Phase background items are omitted. The value filter applies here too.
+  Children follow their parent, indented one step per level, with the
   same fold caret the timeline's summary bars carry (see „Parent and children"
   (docs/items.md)) — a section that has no tree in it reserves no caret column at
   all, since an indent only some rows take reads as a rendering bug rather than
@@ -900,7 +900,8 @@ lives in [`src/grouping.ts`](../src/grouping.ts), the pure sectioning stays in
   items and is **independent** of grouping. One popover (`#filter-menu`) holds
   **every dimension** the timeline offers, each as a titled section with its values
   as checkboxes: **Gruppe**, **Tag**, **Status** and one per custom field, the same
-  vocabulary Gruppieren uses. Selecting values in two dimensions narrows to items
+  vocabulary Gruppieren uses, plus **Typ** (Meilenstein / Zeitraum / Markierung),
+  offered when the timeline actually holds more than one kind. Selecting values in two dimensions narrows to items
   that satisfy **both** (AND across dimensions, OR within one), an item with no
   value for a dimension passes it only via the "Ohne …" bucket (`NO_BUCKET`), and an
   **empty selection means no restriction**. Persisted per timeline (see „Where the
@@ -911,8 +912,21 @@ lives in [`src/grouping.ts`](../src/grouping.ts), the pure sectioning stays in
   „Nur Meilensteine" existed as a separate checkbox in the header because that
   second narrowing had nowhere else to go, and it composed with the filter in
   `filterBuildForDisplay` — which is exactly the combination the single-dimension
-  shape could not express. Removing the limit is what lets the type become an
+  shape could not express. Removing the limit is what let the type become an
   ordinary dimension.
+
+  **„Nur Meilensteine" is that dimension's `Meilenstein` value now**, and the
+  checkbox in the header is gone with it. What it cost while it was its own control:
+  a second narrowing composed in `filterBuildForDisplay`, its own storage key, its
+  own hash parameter, its own line in the status line, and a place two rows from
+  the filter it belonged with. What it costs now is one checkbox in the panel.
+
+  Both spellings of it are still **read**: a stored `milestonesOnly: true` folds into
+  the type dimension (and joins whatever else was selected, because the two used to
+  compose), and a link carrying `m=1` does the same. Neither is written again. The
+  type vocabulary lives in [`src/itemType.ts`](../src/itemType.ts), which is also
+  where the item form's picker and the list's Typ column read their labels — they
+  were two hand-kept copies before, already disagreeing about `box`.
 
   **The rule is DOM-free and tested** in [`src/filterRule.ts`](../src/filterRule.ts)
   (`passesFilters`, `pruneFilters`, `withFilterValues`); `passesFilter` in
@@ -984,15 +998,23 @@ saved view, grouping and filter, which is the trap
 
 ## URL state
 
-Selected view, opened item, visible time window, milestones-only filter, and the
-view mode are encoded in the location hash so links can be shared and
-back/forward navigation works. Format:
+Selected view, opened item, visible time window and the view mode are encoded in
+the location hash so links can be shared and back/forward navigation works.
+Format:
 
 ```
-#view=<id>&item=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&m=1&mode=list
+#view=<id>&item=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&mode=list
 ```
 
-Only non-default values are written (`mode` only when `list`). Switching views
+Only non-default values are written (`mode` only when `list`).
+
+**`m=1` is read and never written.** It carried „nur Meilensteine" while that was a
+control of its own; it now means „narrow the type dimension to Meilenstein", and it
+stays readable because it sits in every link ever shared. Writing it again would
+claim the hash describes the filter, and the filter as a whole has never been in
+there — so an incoming hash is authoritative about the mode and the window, and
+deliberately says nothing about the filter. Reading an absent `m` as „no type
+filter" would clear a selection made in the panel on every back step. Switching views
 via the dropdown clears `item` and `from`/`to`. Hash changes from outside the
 app (paste, back/forward) re-apply state without reload.
 

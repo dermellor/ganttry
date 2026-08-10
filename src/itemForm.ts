@@ -51,6 +51,7 @@ import {
 } from './design-system';
 import { TIMELINE_ICONS } from './icons';
 import { ITEM_STATUSES, statusOrDefault, statusToStore, type StatusKey } from './status';
+import { ITEM_TYPES, type ItemTypeKey } from './itemType';
 import { findItemIndex, isoDateOnly } from './editor';
 import { applyFieldPick, writeListMeta } from './fieldValue';
 import { createMarkdownEditor, type MarkdownEditor } from './wysiwyg';
@@ -282,20 +283,30 @@ const ICON_SPEC: PickerSpec = {
 
 // The mark *is* the temporal shape the option produces: a diamond for a
 // milestone, a bar for a range, a dashed band for a background phase.
+// The marks are the form's own: the value set is shared
+// ([`src/itemType.ts`](./itemType.ts)), a glyph for it is not. „Automatisch" is a
+// stored type of nothing, resolved at build time from whether the item has an
+// extent, so it is an editor affordance rather than a member of the value set.
+// Background says what it *looks* like here, because the form is where that choice
+// is made.
+const TYPE_MARKS: Record<ItemTypeKey, string> = {
+  point: '<path d="M12 4l8 8-8 8-8-8z" />',
+  range: '<rect x="3" y="9" width="18" height="6" rx="2" />',
+  background: '<rect x="2.5" y="5" width="19" height="14" rx="1.5" stroke-dasharray="3 2.5" />',
+  box: '<rect x="7" y="7" width="10" height="10" rx="1.5" />',
+};
+
 const TYPE_SPEC: PickerSpec = {
   name: 'type',
   title: 'Type',
   layout: 'list',
   options: [
     { value: '', label: 'Automatisch', mark: svgMark('<path d="M6 3.5v5M3.5 6h5M16 13v7M12.5 16.5h7" />') },
-    { value: 'point', label: 'Meilenstein', mark: svgMark('<path d="M12 4l8 8-8 8-8-8z" />') },
-    { value: 'range', label: 'Zeitraum', mark: svgMark('<rect x="3" y="9" width="18" height="6" rx="2" />') },
-    {
-      value: 'background',
-      label: 'Phase (Hintergrund)',
-      mark: svgMark('<rect x="2.5" y="5" width="19" height="14" rx="1.5" stroke-dasharray="3 2.5" />'),
-    },
-    { value: 'box', label: 'Markierung', mark: svgMark('<rect x="7" y="7" width="10" height="10" rx="1.5" />') },
+    ...ITEM_TYPES.map(({ key, label }) => ({
+      value: key,
+      label: key === 'background' ? `${label} (Hintergrund)` : label,
+      mark: svgMark(TYPE_MARKS[key]),
+    })),
   ],
 };
 

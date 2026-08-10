@@ -82,6 +82,10 @@ function buildHash(state: UrlState): string {
   if (state.item) map.item = state.item;
   if (state.from) map.from = state.from;
   if (state.to) map.to = state.to;
+  // `m` is read but never written: „nur Meilensteine" is a value of the filter's
+  // type dimension now, and the filter has never been in the hash. Writing this
+  // one dimension of it would claim the hash describes the narrowing, which it
+  // does not. `UrlState.milestones` therefore only ever arrives from outside.
   if (state.milestones) map.m = '1';
   // 'timeline' is the default and stays out of the hash, so a plain link keeps
   // looking plain. Everything else (list, or a plugin view) is written verbatim.

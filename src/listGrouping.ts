@@ -5,11 +5,13 @@
 
 import type { TimelineItem } from './buildItems';
 import { ITEM_STATUSES } from './status';
+import { ITEM_TYPES } from './itemType';
 import type { CustomFieldDef } from './types';
 
 export const GROUP_DIM = 'group';
 export const TAG_DIM = 'tag';
 export const STATUS_DIM = 'status';
+export const TYPE_DIM = 'type';
 export const CF_PREFIX = 'cf:';
 // Sentinel bucket key for entries that carry no value for the active dimension
 // (the "Ohne …" section). Exported so the filter can offer it as a selectable
@@ -50,6 +52,10 @@ export function bucketsFor(item: TimelineItem, dim: string, ctx: SectionContext)
   // docs/items.md) and filtering for `Open` must not sweep in items that only
   // display as one.
   if (dim === STATUS_DIM) return item.status ? [item.status] : [];
+  // Every built item has a resolved type, so this dimension has no „Ohne …"
+  // bucket in practice. It is what „nur Meilensteine" became: a value among
+  // values, rather than a checkbox of its own two rows from the filter.
+  if (dim === TYPE_DIM) return item.type ? [item.type] : [];
   if (dim.startsWith(CF_PREFIX)) return toValues(ctx.metaOf(item.id)?.[dim.slice(CF_PREFIX.length)]);
   // Default: the item's own group, if it resolves to a real group.
   const groupIds = new Set(ctx.groups.map((g) => g.id));
@@ -78,6 +84,10 @@ export function groupByOptions(
   const opts: GroupByOption[] = [{ key: GROUP_DIM, label: 'Gruppe' }];
   if (entries.some((it) => (it.tags?.length ?? 0) > 0)) opts.push({ key: TAG_DIM, label: 'Tag' });
   if (entries.some((it) => it.status)) opts.push({ key: STATUS_DIM, label: 'Status' });
+  // On evidence, like Status: a timeline whose items are all ranges has one
+  // bucket here, and narrowing to „the only kind there is" does nothing. Two
+  // distinct kinds is exactly the case „nur Meilensteine" existed for.
+  if (new Set(entries.map((it) => it.type)).size > 1) opts.push({ key: TYPE_DIM, label: 'Typ' });
   for (const f of customFields) opts.push({ key: `${CF_PREFIX}${f.key}`, label: dimensionLabel(f) });
   return opts;
 }
@@ -87,6 +97,7 @@ export function groupByOptions(
 // declares nothing and is ordered by first appearance.
 function declaredOrder(dim: string, ctx: SectionContext): { value: string; label?: string }[] {
   if (dim === STATUS_DIM) return ITEM_STATUSES.map((s) => ({ value: s.key, label: s.label }));
+  if (dim === TYPE_DIM) return ITEM_TYPES.map((t) => ({ value: t.key, label: t.label }));
   if (dim.startsWith(CF_PREFIX)) {
     return ctx.customFields.find((f) => `${CF_PREFIX}${f.key}` === dim)?.options ?? [];
   }
