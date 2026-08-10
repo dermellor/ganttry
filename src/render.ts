@@ -8,6 +8,7 @@ import { Callout } from './design-system';
 import {
   assignLaneSubgroups,
   assignLanes,
+  withBackgroundLabelItems,
   buildFromJson,
   decodeEntities,
   tagPillsHtml,
@@ -64,6 +65,7 @@ import {
   snapshotSaved,
 } from './persistence';
 import { attachItemPresence } from './itemPresence';
+import { attachBackgroundItemSelection } from './backgroundItemSelection';
 import { attachItemRail } from './itemRail';
 import { attachItemCollapse } from './itemCollapse';
 import { attachItemContextMenu } from './contextMenu';
@@ -261,10 +263,18 @@ function computeDisplay(): { items: TimelineItem[]; groups: TimelineGroup[] } {
   regroupedMode = dim !== GROUP_DIM;
 
   const regroup = regroupForTimeline(filtered.items, filtered.groups, dim, options);
-  displayItems = regroup.items;
+  displayItems = withBackgroundLabelItems(regroup.items);
   displayGroups = regroup.groups;
   displayToReal = regroup.displayToReal;
   realToDisplay = regroup.realToDisplay;
+  for (const item of displayItems) {
+    if (!item.className?.split(/\s+/).includes('background-item-label')) continue;
+    const realId = realIdOf(item.id);
+    displayToReal.set(item.id, realId);
+    const ids = realToDisplay.get(realId) ?? [realId];
+    if (!ids.includes(item.id)) ids.push(item.id);
+    realToDisplay.set(realId, ids);
+  }
   // Cross-lane dependency arrows only make sense along the item's own group; a
   // tag/field regroup would tangle them across values, so it runs deps-free.
   displayDeps = regroupedMode ? new Map() : build.dependencies;
@@ -683,6 +693,9 @@ export async function renderTimeline(view: View) {
   state.timeline = timeline;
   // Re-apply other users' item marks whenever vis (re)mounts item DOM.
   attachItemPresence(timeline);
+  // vis-timeline intentionally makes background items inert. Stored ones are
+  // still real entries; only the generated phase tints remain pure chrome.
+  attachBackgroundItemSelection(timeline, els.timeline, selectItemById);
   // Same for the rail's delete mark — ours rather than vis's `editable.remove`
   // button, which only ever appears on a *selected* item (see itemRail.ts).
   attachItemRail(timeline, els.timeline, deleteItem);
@@ -1314,4 +1327,3 @@ export function toggleItemChildren(realId: string): void {
   toggleItemCollapsed(realId);
   refreshDisplay();
 }
-

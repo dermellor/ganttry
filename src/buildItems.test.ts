@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assignLanes,
   assignLaneSubgroups,
+  backgroundLabelId,
   laneCountStyle,
+  withBackgroundLabelItems,
   withHierarchyMarks,
   type LanePackOptions,
   type TimelineGroup,
@@ -173,6 +176,48 @@ test('a track publishes the number of lanes it needs', () => {
   ];
   assignLaneSubgroups(items, groups, new Map(), new Map());
   assert.equal(groups[0].style, laneCountStyle(3));
+});
+
+test('stored background labels reserve rows above ordinary item lanes', () => {
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const source: TimelineItem[] = [
+    { ...range('absence-a', '2026-02-01', '2026-02-10'), type: 'background' },
+    { ...range('absence-b', '2026-02-02', '2026-02-05'), type: 'background' },
+    range('work', '2026-02-01', '2026-02-10'),
+    // Generated phase tints have no group and reserve no label row.
+    { id: '__phase', start: '2026-01-01', end: '2026-03-01', content: '', label: '', type: 'background' },
+  ];
+  const items = withBackgroundLabelItems(source);
+
+  assignLaneSubgroups(items, groups, new Map(), new Map());
+
+  const tintA = items.find((item) => item.id === 'absence-a')!;
+  const tintB = items.find((item) => item.id === 'absence-b')!;
+  const labelA = items.find((item) => item.id === backgroundLabelId('absence-a'))!;
+  const labelB = items.find((item) => item.id === backgroundLabelId('absence-b'))!;
+  const work = items.find((item) => item.id === 'work')!;
+  assert.equal(tintA.content, '');
+  assert.equal(tintB.content, '');
+  assert.equal(labelA.type, 'range');
+  assert.equal(labelA.subgroup, 0);
+  assert.equal(labelB.subgroup, 0, 'all background titles share one header row');
+  assert.equal(labelA.start, '2026-02-01');
+  assert.equal(labelA.end, '2026-02-02', 'the lower title stops where the upper phase begins');
+  assert.equal(labelB.start, '2026-02-02');
+  assert.equal(labelB.end, '2026-02-05');
+  assert.match(tintA.style!, /--background-stack: 0/);
+  assert.match(tintA.style!, /--background-tint: 35%/);
+  assert.match(tintB.style!, /--background-stack: 1/);
+  assert.match(tintB.style!, /--background-tint: 25%/);
+  assert.match(labelA.style!, /--background-stack: 0/);
+  assert.match(labelB.style!, /--background-stack: 1/);
+  assert.equal(work.subgroup, 1, 'ordinary bars must start after the shared header row');
+  assert.equal(groups[0].style, laneCountStyle(2));
+
+  assignLanes(items, groups);
+  assert.equal(labelA.className, 'lane-0 background-item-label');
+  assert.equal(work.className, 'lane-0');
+  assert.equal(items.find((item) => item.id === '__phase')!.style, undefined);
 });
 
 test('a track with no items reserves no room', () => {

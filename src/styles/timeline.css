@@ -130,12 +130,12 @@
   --rail-w: calc(var(--rail-slots) * var(--rail-slot) + var(--rail-inset));
 }
 
-.vis-item.lane-0 { background-color: var(--lane-0-bg) !important; border-color: var(--lane-0-border) !important; }
-.vis-item.lane-1 { background-color: var(--lane-1-bg) !important; border-color: var(--lane-1-border) !important; }
-.vis-item.lane-2 { background-color: var(--lane-2-bg) !important; border-color: var(--lane-2-border) !important; }
-.vis-item.lane-3 { background-color: var(--lane-3-bg) !important; border-color: var(--lane-3-border) !important; }
-.vis-item.lane-4 { background-color: var(--lane-4-bg) !important; border-color: var(--lane-4-border) !important; }
-.vis-item.lane-5 { background-color: var(--lane-5-bg) !important; border-color: var(--lane-5-border) !important; }
+.vis-item.lane-0 { --timeline-lane-bg: var(--lane-0-bg); background-color: var(--lane-0-bg) !important; border-color: var(--lane-0-border) !important; }
+.vis-item.lane-1 { --timeline-lane-bg: var(--lane-1-bg); background-color: var(--lane-1-bg) !important; border-color: var(--lane-1-border) !important; }
+.vis-item.lane-2 { --timeline-lane-bg: var(--lane-2-bg); background-color: var(--lane-2-bg) !important; border-color: var(--lane-2-border) !important; }
+.vis-item.lane-3 { --timeline-lane-bg: var(--lane-3-bg); background-color: var(--lane-3-bg) !important; border-color: var(--lane-3-border) !important; }
+.vis-item.lane-4 { --timeline-lane-bg: var(--lane-4-bg); background-color: var(--lane-4-bg) !important; border-color: var(--lane-4-border) !important; }
+.vis-item.lane-5 { --timeline-lane-bg: var(--lane-5-bg); background-color: var(--lane-5-bg) !important; border-color: var(--lane-5-border) !important; }
 
 .vis-item.vis-point.lane-0 .vis-dot { border-color: var(--lane-0-border) !important; background: var(--lane-0-border) !important; }
 .vis-item.vis-point.lane-1 .vis-dot { border-color: var(--lane-1-border) !important; background: var(--lane-1-border) !important; }
@@ -683,6 +683,57 @@
 .vis-item.vis-background.phase-bg {
   border: none;
   box-shadow: inset -3px 0 0 0 var(--surface);
+}
+
+/* Stored backgrounds keep their full-height tint and share one header row for
+   their display-only labels. Ordinary items start in the next subgroup. */
+.vis-item.vis-background:not(.phase-bg) {
+  z-index: calc(1 + var(--background-stack, 0));
+  background-color: color-mix(
+    in srgb,
+    var(--timeline-lane-bg, var(--item-bg)) var(--background-tint, 35%),
+    var(--surface)
+  ) !important;
+}
+
+/* Background stack indices only order tints against other tints. Separate
+   stacking contexts keep them inside the background layer; without this, a
+   lighter tint with z-index 2 covered the second title and ordinary bars. */
+.vis-itemset > .vis-background {
+  z-index: 0;
+}
+
+.vis-itemset > .vis-foreground {
+  z-index: 1;
+}
+
+/* The title is a display-only foreground range in a real subgroup row. It has
+   no bar treatment: only its content is visible, centred on the phase extent.
+   Ordinary items start in the next subgroup, which creates the guaranteed gap the
+   old absolute-positioned BackgroundItem content could not provide. */
+.vis-item.vis-range.background-item-label {
+  z-index: calc(20 + var(--background-stack, 0));
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.vis-item.vis-range.background-item-label > .vis-item-overflow {
+  overflow: hidden;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+/* vis-timeline treats every background as inert chrome. Stored backgrounds are
+   entries, though, and backgroundItemSelection marks those after vis mounts
+   them. An inset ring remains visible inside the clipped group background. */
+.vis-item.vis-background.interactive-background {
+  cursor: pointer;
+}
+
+.vis-item.vis-background.interactive-background.vis-selected,
+.vis-item.vis-background.interactive-background:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  outline: none;
 }
 
 /* Inside a bar the tag pill runs a shade smaller than it does in a table row:

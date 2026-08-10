@@ -5,6 +5,7 @@ import { isOverdue, normalizeStatus } from './status';
 import type { StatusKey } from './status';
 import { durationToMs } from './date';
 import { hierarchyDepth, readParentId, resolveParents } from './itemHierarchy';
+import { CLONE_SEP } from './cloneId';
 
 export const UNGROUPED = '_ungrouped';
 
@@ -68,6 +69,81 @@ export type TimelineGroup = {
 // viewport, and `timeline.css` turns this number into its `min-height`. Same
 // mechanism the phase-band spacer already uses (`withBandSpacer` in render.ts).
 const LANE_COUNT_PROPERTY = '--lanes';
+export const BACKGROUND_LABEL_CLASS = 'background-item-label';
+const BACKGROUND_STACK_PROPERTY = '--background-stack';
+const BACKGROUND_TINT_PROPERTY = '--background-tint';
+
+export function backgroundLabelId(id: string): string {
+  return `${id}${CLONE_SEP}background-label`;
+}
+
+export function isBackgroundLabel(item: TimelineItem): boolean {
+  return item.className?.split(/\s+/).includes(BACKGROUND_LABEL_CLASS) ?? false;
+}
+
+function withBackgroundStack(style: string | undefined, stack: number): string {
+  const cleaned = (style ?? '')
+    .replace(/--background-(?:stack|tint):\s*[^;]+;?/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Later overlap layers paint above earlier ones and get progressively lighter.
+  const tint = Math.max(12, 35 - stack * 10);
+  return [cleaned, `${BACKGROUND_STACK_PROPERTY}: ${stack};`, `${BACKGROUND_TINT_PROPERTY}: ${tint}%;`]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function firstVisibleLabelExtent(
+  item: TimelineItem,
+  backgrounds: TimelineItem[],
+  stackOf: ReadonlyMap<string, number>,
+): { start: string; end: string } | null {
+  if (!item.start || !item.end) return null;
+  const ownStack = stackOf.get(item.id) ?? 0;
+  let segments = [{ start: item.start, end: item.end }];
+  for (const blocker of backgrounds) {
+    if (!blocker.start || !blocker.end || (stackOf.get(blocker.id) ?? 0) <= ownStack) continue;
+    const bs = new Date(blocker.start).getTime();
+    const be = new Date(blocker.end).getTime();
+    segments = segments.flatMap((segment) => {
+      const ss = new Date(segment.start).getTime();
+      const se = new Date(segment.end).getTime();
+      if (be <= ss || bs >= se) return [segment];
+      const visible: { start: string; end: string }[] = [];
+      if (bs > ss) visible.push({ start: segment.start, end: blocker.start! });
+      if (be < se) visible.push({ start: blocker.end!, end: segment.end });
+      return visible;
+    });
+  }
+  return segments[0] ?? null;
+}
+
+/**
+ * Split a stored background into two display-only pieces: the original
+ * full-height tint (without content) and a foreground label that can occupy a
+ * real subgroup row. Keeping the title inside vis' BackgroundItem was the wrong
+ * seam: all backgrounds share one non-stacking layer, so overlapping titles
+ * stayed on top of each other no matter how their content was nudged with CSS.
+ */
+export function withBackgroundLabelItems(items: TimelineItem[]): TimelineItem[] {
+  const out: TimelineItem[] = [];
+  for (const item of items) {
+    if (item.type !== 'background' || !item.group || !item.start || !item.end || !item.content) {
+      out.push(item);
+      continue;
+    }
+    out.push({ ...item, content: '', icon: undefined, status: undefined, tags: undefined });
+    out.push({
+      ...item,
+      id: backgroundLabelId(item.id),
+      type: 'range',
+      className: BACKGROUND_LABEL_CLASS,
+      status: undefined,
+      tags: undefined,
+    });
+  }
+  return out;
+}
 
 export function laneCountStyle(lanes: number): string {
   return `${LANE_COUNT_PROPERTY}: ${Math.max(1, lanes)};`;
@@ -91,7 +167,9 @@ export function assignLanes(items: TimelineItem[], groups: TimelineGroup[]): voi
   for (const item of items) {
     if (!item.group) continue;
     const cls = laneByGroup.get(item.group);
-    if (cls) item.className = cls;
+    if (cls) {
+      item.className = isBackgroundLabel(item) ? `${cls} ${BACKGROUND_LABEL_CLASS}` : cls;
+    }
   }
 }
 
@@ -474,13 +552,62 @@ export function assignLaneSubgroups(
   // lanes that no longer have anything in them.
   for (const g of groups) g.style = undefined;
 
+  // A stored background's tint stays full-height, while its display-only label
+  // is a foreground range in one shared header subgroup. Overlapping tints are
+  // layered in depth (later layers paint above and lighter), not given separate
+  // vertical title rows. Every ordinary item starts below the one header row.
+  const backgroundRows = new Map<string, number>();
+  const backgroundsByGroup = new Map<string, TimelineItem[]>();
+  for (const it of items) {
+    if (!it.group || it.type !== 'background' || !it.start) continue;
+    let bucket = backgroundsByGroup.get(it.group);
+    if (!bucket) backgroundsByGroup.set(it.group, (bucket = []));
+    bucket.push(it);
+  }
+  for (const [groupId, backgrounds] of backgroundsByGroup) {
+    const rowOf = new Map<string, number>();
+    packBand(
+      backgrounds,
+      0,
+      rowOf,
+      (it) => new Date(it.start!).getTime(),
+      (it) => new Date(it.end ?? it.start!).getTime(),
+    );
+    backgroundRows.set(groupId, backgrounds.length ? 1 : 0);
+    for (const it of backgrounds) {
+      const label = items.find((candidate) => candidate.id === backgroundLabelId(it.id));
+      const stack = rowOf.get(it.id) ?? 0;
+      if (label) {
+        label.subgroup = 0;
+        const extent = firstVisibleLabelExtent(it, backgrounds, rowOf);
+        if (extent) {
+          label.start = extent.start;
+          label.end = extent.end;
+        } else {
+          // A phase completely covered by higher layers has no visible header
+          // segment. Keep the full-height tint selectable instead of painting a
+          // title through the phase above it.
+          label.start = undefined;
+          label.end = undefined;
+        }
+      }
+      it.style = withBackgroundStack(it.style, stack);
+      if (label) label.style = withBackgroundStack(label.style, stack);
+    }
+    const group = groups.find((g) => g.id === groupId);
+    if (group) {
+      group.style = laneCountStyle(1);
+      group.subgroupOrder = 'subgroup';
+    }
+  }
+
   const byGroup = new Map<string, TimelineItem[]>();
   for (const it of items) {
     // Background items (phase tints) span the full group height and are not
     // laned; everything else gets a subgroup so nothing overlaps under
     // `stack: false`. Start-less items never reach the timeline DataSet, so
     // they get no lane (their NaN start would corrupt the packing math).
-    if (!it.group || it.type === 'background' || !it.start) continue;
+    if (!it.group || it.type === 'background' || isBackgroundLabel(it) || !it.start) continue;
     let bucket = byGroup.get(it.group);
     if (!bucket) byGroup.set(it.group, (bucket = []));
     bucket.push(it);
@@ -503,7 +630,8 @@ export function assignLaneSubgroups(
     // The lane each item sat in before this pass, read off the items themselves
     // (`subgroup` is only overwritten further down, after packing). Feeding it back
     // in is what keeps a re-pack from moving items that did not have to move.
-    const prevLane = (it: TimelineItem) => it.subgroup;
+    const headerRows = backgroundRows.get(groupId) ?? 0;
+    const prevLane = (it: TimelineItem) => it.subgroup == null ? undefined : Math.max(0, it.subgroup - headerRows);
 
     const laneOf = new Map<string, number>();
     let base = 0;
@@ -515,7 +643,7 @@ export function assignLaneSubgroups(
     // Numeric lane ids so vis-timeline's `subgroupOrder` (numeric `a - b` sort)
     // keeps lanes in the computed top-to-bottom order (lane 0 = top).
     for (const it of groupItems) {
-      it.subgroup = laneOf.get(it.id) ?? 0;
+      it.subgroup = headerRows + (laneOf.get(it.id) ?? 0);
     }
     const g = groups.find((x) => x.id === groupId);
     if (g) {
@@ -523,7 +651,7 @@ export function assignLaneSubgroups(
       // `base` is the number of lanes the track ended up using. Publishing it lets
       // the label reserve the room, which is what keeps the track's height
       // independent of the current time window (see LANE_COUNT_PROPERTY).
-      g.style = laneCountStyle(base);
+      g.style = laneCountStyle(base + headerRows);
     }
   }
 }
@@ -675,4 +803,3 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
   assignLanes(items, groups);
   return { items, groups, details, dependencies, parents, phases };
 }
-
