@@ -55,3 +55,19 @@
 [[edge_functions]]
   function = "jira-api"
   path = "/api/jira/search"
+
+# The invitation link lands in the app, not on a 404.
+#
+# `/invite/<token>` is a real URL an admin hands to somebody, but its landing
+# page belongs to #51 and does not exist yet. Without this the link still
+# „works" — the auth gate sends the visitor to Google, the membership check
+# accepts their invitation, a session is set — and then drops them on Netlify's
+# 404, which reads as „the invitation was broken" when in fact they are now in.
+#
+# 302 rather than a 200 rewrite: the address bar should end up somewhere that
+# exists, so a reload does not go back through a path with no page behind it.
+# When #51 adds the landing page, this rule is what it replaces.
+[[redirects]]
+  from = "/invite/*"
+  to = "/"
+  status = 302
