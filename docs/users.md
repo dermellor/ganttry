@@ -176,9 +176,14 @@ an operator believing they had enabled something.
 Both are avoidable, and both are why the rollout below has an order.
 
 **No admin.** Until one row carries `admin` with status `active`, nobody can
-invite. **`TIMELINES_BOOTSTRAP_ADMIN`** names the address that is treated as an
-admin and gets its row created on first sign-in. Keep it set: it is the
-instance's master key.
+invite. **`TIMELINES_BOOTSTRAP_ADMIN`** names the address that is made an active
+admin on sign-in, whatever state its row is in — created when missing, promoted
+when it is an editor, restored when it is suspended or removed. That breadth is
+the point: an instance that has been running already has its owner in
+`app_users` (migration `0015` backfilled every past editor), so a rule that only
+created a missing row would have signed the owner in as an editor into an
+instance with **no admin at all**. Keep the variable set: it is the master key,
+and it is what gets you back in.
 
 **Emptying `ALLOWED_EMAIL_DOMAINS` too early.** While the switch is off, that
 list is what `readSession` validates *every existing cookie* against. Clearing it
@@ -191,8 +196,9 @@ once the switch is on.
    directory becomes an `active` `editor`, so nothing changes. This is a
    deliberate manual step: a schema change does not happen as a side effect of a
    deploy.
-2. **Set `TIMELINES_BOOTSTRAP_ADMIN`** to your own address, and raise your row to
-   `admin`.
+2. **Set `TIMELINES_BOOTSTRAP_ADMIN`** to your own address. Your next sign-in
+   makes that row an active admin; no SQL is needed, and it works whether or not
+   the address is already in the directory.
 3. **Review the member list.** Who should be `viewer`, who should be `removed`.
    The migration made everyone an editor, which is the old behaviour rather than
    a decision.
