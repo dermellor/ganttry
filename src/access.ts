@@ -131,6 +131,35 @@ export function accessControlEnabled(raw: string | undefined | null): boolean {
   return raw === 'true';
 }
 
+/**
+ * Does the bootstrap address need to be made an admin before this sign-in counts?
+ *
+ * The variable is the instance's master key, so it has to hold whatever state the
+ * row is in — not only „no row yet". An instance that has been running has every
+ * past editor in `app_users` already (migration `0015` backfilled them from edit
+ * attribution, `0016` made them active editors), so the owner's own address
+ * almost certainly exists. Firing only on a missing row would let them sign in as
+ * an editor into an instance with no admin at all: nobody can invite, nobody can
+ * restore, and the only way out is SQL. That is precisely the lockout the
+ * variable exists to prevent.
+ *
+ * It also covers a suspended or removed master key, which is the other moment
+ * somebody reaches for it.
+ *
+ * Returns false when the address is not the bootstrap one, when none is
+ * configured, or when the row is already an active admin — so the common case
+ * costs nothing but a comparison.
+ */
+export function needsBootstrapPromotion(
+  member: MemberLike | null | undefined,
+  email: string,
+  bootstrapAddress: string | undefined | null,
+): boolean {
+  const bootstrap = (bootstrapAddress ?? '').trim().toLowerCase();
+  if (!bootstrap || bootstrap !== email.trim().toLowerCase()) return false;
+  return !member || member.role !== 'admin' || member.status !== 'active';
+}
+
 /** Why a sign-in was refused. Each maps to its own line on the gate's error page. */
 export type SignInRefusal =
   | 'not_a_member'
