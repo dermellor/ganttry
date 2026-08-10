@@ -36,9 +36,9 @@ describe('planFor', () => {
   });
 
   test('a vendored artifact may go without a hash: the deploy serves its own bytes', () => {
-    assert.deepEqual(planFor(at('vendored', '/plugins/sprints/index.js')), {
+    assert.deepEqual(planFor(at('vendored', '/plugins/com.example.sprints/index.js')), {
       action: 'fetch',
-      url: '/plugins/sprints/index.js',
+      url: '/plugins/com.example.sprints/index.js',
     });
   });
 });

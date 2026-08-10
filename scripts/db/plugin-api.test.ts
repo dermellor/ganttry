@@ -14,7 +14,7 @@ import type { TimelineRepo } from './repo.ts';
 import type { PluginManifest } from '../../src/pluginHost/manifest.ts';
 
 const DEMO: PluginManifest = {
-  id: 'demo',
+  id: 'com.example.demo',
   name: 'Demo',
   version: '1.0.0',
   apiVersion: '^1',
@@ -41,7 +41,7 @@ const NO_STORAGE: PluginManifest = {
 };
 
 const manifests: ManifestSource = async (id) => {
-  const manifest = id === 'demo' ? DEMO : id === 'viewer' ? NO_STORAGE : null;
+  const manifest = id === 'com.example.demo' ? DEMO : id === 'viewer' ? NO_STORAGE : null;
   return manifest ? { manifest, enabled: true } : null;
 };
 
@@ -58,7 +58,7 @@ function arrange() {
     handlePluginApi(store.repo, manifests, {
       method,
       timelineId: TL,
-      path: { pluginId: path.pluginId ?? 'demo', collection: path.collection, rowId: path.rowId },
+      path: { pluginId: path.pluginId ?? 'com.example.demo', collection: path.collection, rowId: path.rowId },
       body,
       ifMatch,
     });
@@ -85,7 +85,7 @@ describe('handlePluginApi: what it refuses before touching the store', () => {
     const res = await call('POST', { collection: 'teirs' }, { data: { name: 'Pro' } });
     assert.equal(res.status, 404);
     assert.equal((res.json as { error: string }).error, 'unknown_collection');
-    assert.equal(store.dump(TL, 'demo', 'teirs').length, 0);
+    assert.equal(store.dump(TL, 'com.example.demo', 'teirs').length, 0);
   });
 });
 
@@ -106,7 +106,7 @@ describe('handlePluginApi: shape', () => {
     assert.match(message, /missing required "name"/);
     assert.match(message, /price: expected string/);
     assert.match(message, /unknown property "typo"/);
-    assert.equal(store.dump(TL, 'demo', 'tiers').length, 0, 'a rejected write must store nothing');
+    assert.equal(store.dump(TL, 'com.example.demo', 'tiers').length, 0, 'a rejected write must store nothing');
   });
 
   test('a collection with no declared schema accepts any object', async () => {
@@ -132,13 +132,13 @@ describe('handlePluginApi: shape', () => {
 describe('handlePluginApi: composite identity', () => {
   test('the row id is derived from the key fields, and the same pair updates one row', async () => {
     const { call, store } = arrange();
-    store.seed(TL, 'demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
-    store.seed(TL, 'demo', 'features', [{ id: 'calls', data: {} }]);
+    store.seed(TL, 'com.example.demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
+    store.seed(TL, 'com.example.demo', 'features', [{ id: 'calls', data: {} }]);
 
     const first = await call('POST', { collection: 'cells' }, { data: { tierId: 'pro', featureId: 'calls', value: true } });
     assert.equal((first.json as { id: string }).id, 'pro:calls');
     await call('POST', { collection: 'cells' }, { data: { tierId: 'pro', featureId: 'calls', value: '3.000' } });
-    assert.equal(store.dump(TL, 'demo', 'cells').length, 1, 'the same coordinates are one row, not two');
+    assert.equal(store.dump(TL, 'com.example.demo', 'cells').length, 1, 'the same coordinates are one row, not two');
   });
 
   test('a missing key field is refused: the row would have no address', async () => {
@@ -150,9 +150,9 @@ describe('handlePluginApi: composite identity', () => {
 
   test('patching a key field is refused rather than silently making it a new row', async () => {
     const { call, store } = arrange();
-    store.seed(TL, 'demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }, { id: 'lite', data: { name: 'Lite' } }]);
-    store.seed(TL, 'demo', 'features', [{ id: 'calls', data: {} }]);
-    store.seed(TL, 'demo', 'cells', [{ id: 'pro:calls', data: { tierId: 'pro', featureId: 'calls' } }]);
+    store.seed(TL, 'com.example.demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }, { id: 'lite', data: { name: 'Lite' } }]);
+    store.seed(TL, 'com.example.demo', 'features', [{ id: 'calls', data: {} }]);
+    store.seed(TL, 'com.example.demo', 'cells', [{ id: 'pro:calls', data: { tierId: 'pro', featureId: 'calls' } }]);
 
     const res = await call('PATCH', { collection: 'cells', rowId: 'pro:calls' }, { data: { tierId: 'lite' } });
     assert.equal(res.status, 400);
@@ -163,14 +163,14 @@ describe('handlePluginApi: composite identity', () => {
 describe('handlePluginApi: references', () => {
   test('a reference that resolves is accepted', async () => {
     const { call, store } = arrange();
-    store.seed(TL, 'demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
-    store.seed(TL, 'demo', 'features', [{ id: 'calls', data: {} }]);
+    store.seed(TL, 'com.example.demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
+    store.seed(TL, 'com.example.demo', 'features', [{ id: 'calls', data: {} }]);
     assert.equal((await call('POST', { collection: 'cells' }, { data: { tierId: 'pro', featureId: 'calls' } })).status, 201);
   });
 
   test('a dangling reference is refused — there is no foreign key left to catch it', async () => {
     const { call, store } = arrange();
-    store.seed(TL, 'demo', 'features', [{ id: 'calls', data: {} }]);
+    store.seed(TL, 'com.example.demo', 'features', [{ id: 'calls', data: {} }]);
     const res = await call('POST', { collection: 'cells' }, { data: { tierId: 'ghost', featureId: 'calls' } });
     assert.equal(res.status, 400);
     assert.match((res.json as { message: string }).message, /tierId „ghost" is not a row of "tiers"/);
@@ -178,9 +178,9 @@ describe('handlePluginApi: references', () => {
 
   test('deleting a parent takes its children with it', async () => {
     const { call, store } = arrange();
-    store.seed(TL, 'demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
-    store.seed(TL, 'demo', 'features', [{ id: 'calls', data: {} }, { id: 'sms', data: {} }]);
-    store.seed(TL, 'demo', 'cells', [
+    store.seed(TL, 'com.example.demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
+    store.seed(TL, 'com.example.demo', 'features', [{ id: 'calls', data: {} }, { id: 'sms', data: {} }]);
+    store.seed(TL, 'com.example.demo', 'cells', [
       { id: 'pro:calls', data: { tierId: 'pro', featureId: 'calls' } },
       { id: 'pro:sms', data: { tierId: 'pro', featureId: 'sms' } },
     ]);
@@ -188,7 +188,7 @@ describe('handlePluginApi: references', () => {
     const res = await call('DELETE', { collection: 'features', rowId: 'calls' });
     assert.equal(res.status, 200);
     assert.deepEqual((res.json as { cascaded: unknown }).cascaded, [{ collection: 'cells', rowIds: ['pro:calls'] }]);
-    assert.deepEqual(store.dump(TL, 'demo', 'cells').map((r) => r.id), ['pro:sms']);
+    assert.deepEqual(store.dump(TL, 'com.example.demo', 'cells').map((r) => r.id), ['pro:sms']);
   });
 
   test('a restrict reference blocks the delete and removes nothing', async () => {
@@ -197,25 +197,25 @@ describe('handlePluginApi: references', () => {
       references: [{ from: 'cells', field: 'tierId', to: 'tiers', onDelete: 'restrict' }],
     };
     const store = makeMemoryStore();
-    store.seed(TL, 'demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
-    store.seed(TL, 'demo', 'cells', [{ id: 'pro:calls', data: { tierId: 'pro', featureId: 'calls' } }]);
+    store.seed(TL, 'com.example.demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
+    store.seed(TL, 'com.example.demo', 'cells', [{ id: 'pro:calls', data: { tierId: 'pro', featureId: 'calls' } }]);
 
     const res = await handlePluginApi(store.repo, async () => ({ manifest: restrictive, enabled: true }), {
       method: 'DELETE',
       timelineId: TL,
-      path: { pluginId: 'demo', collection: 'tiers', rowId: 'pro' },
+      path: { pluginId: 'com.example.demo', collection: 'tiers', rowId: 'pro' },
     });
     assert.equal(res.status, 409);
     assert.equal((res.json as { error: string }).error, 'reference_restrict');
-    assert.equal(store.dump(TL, 'demo', 'cells').length, 1, 'a blocked delete must not half-apply');
-    assert.equal(store.dump(TL, 'demo', 'tiers').length, 1);
+    assert.equal(store.dump(TL, 'com.example.demo', 'cells').length, 1, 'a blocked delete must not half-apply');
+    assert.equal(store.dump(TL, 'com.example.demo', 'tiers').length, 1);
   });
 });
 
 describe('handlePluginApi: merge and locking', () => {
   function seeded() {
     const { call, store } = arrange();
-    store.seed(TL, 'demo', 'tiers', [{ id: 'pro', data: { name: 'Pro', price: '49 €' } }]);
+    store.seed(TL, 'com.example.demo', 'tiers', [{ id: 'pro', data: { name: 'Pro', price: '49 €' } }]);
     return { call, store };
   }
 
@@ -239,7 +239,7 @@ describe('handlePluginApi: merge and locking', () => {
     const res = await call('PATCH', { collection: 'tiers', rowId: 'pro' }, { data: { name: null } });
     assert.equal(res.status, 400);
     assert.match((res.json as { message: string }).message, /missing required "name"/);
-    assert.deepEqual(store.dump(TL, 'demo', 'tiers')[0].data, { name: 'Pro', price: '49 €' });
+    assert.deepEqual(store.dump(TL, 'com.example.demo', 'tiers')[0].data, { name: 'Pro', price: '49 €' });
   });
 
   test('a stale If-Match is a 409 instead of an overwrite', async () => {
@@ -259,7 +259,7 @@ describe('handlePluginApi: merge and locking', () => {
 describe('handlePluginApi: ordering', () => {
   function three() {
     const { call, store } = arrange();
-    store.seed(TL, 'demo', 'features', [{ id: 'a', data: {} }, { id: 'b', data: {} }, { id: 'c', data: {} }]);
+    store.seed(TL, 'com.example.demo', 'features', [{ id: 'a', data: {} }, { id: 'b', data: {} }, { id: 'c', data: {} }]);
     return { call, store };
   }
 
@@ -274,12 +274,12 @@ describe('handlePluginApi: ordering', () => {
     const res = await call('POST', { collection: 'features', rowId: MOVE_SEGMENT }, { id: 'a', after: 'b' });
     assert.equal(res.status, 200);
     assert.deepEqual((res.json as { order: string[] }).order, ['b', 'a', 'c']);
-    assert.deepEqual(store.dump(TL, 'demo', 'features').map((r) => r.id), ['b', 'a', 'c']);
+    assert.deepEqual(store.dump(TL, 'com.example.demo', 'features').map((r) => r.id), ['b', 'a', 'c']);
   });
 
   test('a collection that did not declare an order refuses the move rather than inventing one', async () => {
     const { call, store } = arrange();
-    store.seed(TL, 'demo', 'cells', [{ id: 'x', data: {} }, { id: 'y', data: {} }]);
+    store.seed(TL, 'com.example.demo', 'cells', [{ id: 'x', data: {} }, { id: 'y', data: {} }]);
     const res = await call('POST', { collection: 'cells', rowId: MOVE_SEGMENT }, { id: 'x', after: 'y' });
     assert.equal(res.status, 400);
     assert.equal((res.json as { error: string }).error, 'not_ordered');
@@ -289,13 +289,13 @@ describe('handlePluginApi: ordering', () => {
     const { call, store } = three();
     assert.equal((await call('POST', { collection: 'features', rowId: MOVE_SEGMENT }, { id: 'a' })).status, 400);
     assert.equal((await call('POST', { collection: 'features', rowId: MOVE_SEGMENT }, { id: 'z', after: 'a' })).status, 404);
-    assert.deepEqual(store.dump(TL, 'demo', 'features').map((r) => r.id), ['a', 'b', 'c']);
+    assert.deepEqual(store.dump(TL, 'com.example.demo', 'features').map((r) => r.id), ['a', 'b', 'c']);
   });
 
   test('a rewrite keeps a row where it was instead of moving it to the end', async () => {
     const { call, store } = three();
     await call('POST', { collection: 'features' }, { id: 'a', data: { changed: true } });
-    assert.deepEqual(store.dump(TL, 'demo', 'features').map((r) => r.id), ['a', 'b', 'c']);
+    assert.deepEqual(store.dump(TL, 'com.example.demo', 'features').map((r) => r.id), ['a', 'b', 'c']);
   });
 
   test('a row whose id is "move" is still addressable — the segment shadows nothing', async () => {
@@ -303,15 +303,15 @@ describe('handlePluginApi: ordering', () => {
     await call('POST', { collection: 'features' }, { id: MOVE_SEGMENT, data: { real: true } });
     const res = await call('PATCH', { collection: 'features', rowId: MOVE_SEGMENT }, { data: { real: false } });
     assert.equal(res.status, 200);
-    assert.deepEqual(store.dump(TL, 'demo', 'features').find((r) => r.id === 'move')?.data, { real: false });
+    assert.deepEqual(store.dump(TL, 'com.example.demo', 'features').find((r) => r.id === 'move')?.data, { real: false });
   });
 });
 
 describe('purgePlugin', () => {
   test('an uninstall takes the rows and reports the items it cleaned', async () => {
     const store = makeMemoryStore();
-    store.seed(TL, 'demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
-    store.seed('other', 'demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
+    store.seed(TL, 'com.example.demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
+    store.seed('other', 'com.example.demo', 'tiers', [{ id: 'pro', data: { name: 'Pro' } }]);
 
     let strippedKeys: string[] | null = null;
     const repo = {
@@ -325,16 +325,16 @@ describe('purgePlugin', () => {
     const result = await purgePlugin(repo, DEMO);
     assert.deepEqual(strippedKeys, ['demoTier'], 'the declared item keys go with the rows');
     assert.equal(result.metadataKeysStrippedFrom, 2);
-    assert.equal(store.dump(TL, 'demo', 'tiers').length, 0);
-    assert.equal(store.dump('other', 'demo', 'tiers').length, 0, 'no timeline id means instance-wide');
+    assert.equal(store.dump(TL, 'com.example.demo', 'tiers').length, 0);
+    assert.equal(store.dump('other', 'com.example.demo', 'tiers').length, 0, 'no timeline id means instance-wide');
   });
 
   test('scoping to one timeline leaves the others alone', async () => {
     const store = makeMemoryStore();
-    store.seed(TL, 'demo', 'tiers', [{ id: 'pro', data: {} }]);
-    store.seed('other', 'demo', 'tiers', [{ id: 'pro', data: {} }]);
+    store.seed(TL, 'com.example.demo', 'tiers', [{ id: 'pro', data: {} }]);
+    store.seed('other', 'com.example.demo', 'tiers', [{ id: 'pro', data: {} }]);
     await purgePlugin(store.repo, { ...DEMO, metadataKeys: [] }, TL);
-    assert.equal(store.dump(TL, 'demo', 'tiers').length, 0);
-    assert.equal(store.dump('other', 'demo', 'tiers').length, 1);
+    assert.equal(store.dump(TL, 'com.example.demo', 'tiers').length, 0);
+    assert.equal(store.dump('other', 'com.example.demo', 'tiers').length, 1);
   });
 });

@@ -125,7 +125,7 @@ parameters for exactly one consumer.
 So the endpoint is **retired**: it answers `410 Gone` and names its successor,
 
 ```
-GET /api/public/plugin/product-roadmap/<timelineId>
+GET /api/public/plugin/dev.zeitlines.product-roadmap/<timelineId>
 ```
 
 That is a break, chosen over a shim, and the reasoning is that the alternative is

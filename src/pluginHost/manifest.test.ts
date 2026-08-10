@@ -10,7 +10,7 @@ import { productRoadmapManifest } from '../plugins/product-roadmap/manifest';
 // outcome: the plugin then behaves as if it had access it was never granted.
 
 const base = (over: Partial<PluginManifest> = {}): unknown => ({
-  id: 'sprints',
+  id: 'com.example.sprints',
   name: 'Sprints',
   version: '1.0.0',
   apiVersion: '^1',
@@ -28,12 +28,25 @@ test('a minimal manifest validates', () => {
 });
 
 test('identity fields are checked', () => {
-  assert.match(problems(base({ id: 'Sprints' }))[0], /id must be/);
+  assert.deepEqual(problems(base({ id: 'com.acme.sprints' })), []);
+  assert.match(problems(base({ id: 'Com.Acme.Sprints' }))[0], /id must be/, 'lowercase only');
   assert.match(problems(base({ id: 'has space' }))[0], /id must be/);
-  assert.deepEqual(problems(base({ id: '@acme/sprints' })), []);
   assert.match(problems(base({ version: '1.0' }))[0], /semver/);
   assert.match(problems(base({ name: '  ' }))[0], /name is required/);
   assert.equal(validateManifest('nope').ok, false);
+});
+
+test('an id has to be reverse-DNS, and the two near-misses are refused', () => {
+  // A bare word is the name a hundred people would pick, and the id keys data on
+  // every instance that installs it — so a collision is a data collision.
+  assert.match(problems(base({ id: 'sprints' }))[0], /reverse-DNS/);
+  // An npm scope expresses the same idea but breaks the id's other two jobs: it
+  // is a path segment and a directory name, and `/` ruins both.
+  assert.match(problems(base({ id: '@acme/sprints' }))[0], /reverse-DNS/);
+  // Malformed dotted forms are not „close enough".
+  for (const id of ['com..sprints', 'com.sprints.', '.com.sprints']) {
+    assert.match(problems(base({ id }))[0], /id must be/, id);
+  }
 });
 
 test('every problem is reported, not just the first', () => {

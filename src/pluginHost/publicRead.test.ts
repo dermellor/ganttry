@@ -17,7 +17,7 @@ import type { PluginManifest } from './manifest.ts';
 import type { PluginCollectionData } from '../types.ts';
 
 const base: PluginManifest = {
-  id: 'demo',
+  id: 'com.example.demo',
   name: 'Demo',
   version: '1.0.0',
   apiVersion: '^1',
@@ -164,24 +164,24 @@ describe('stripForMaterialization', () => {
 });
 
 describe('stripFileForPublication', () => {
-  const manifestFor = (id: string) => (id === 'demo' ? base : null);
+  const manifestFor = (id: string) => (id === 'com.example.demo' ? base : null);
 
   const file = {
-    plugins: [{ id: 'demo', public: true }],
-    pluginData: { demo: stored },
+    plugins: [{ id: 'com.example.demo', public: true }],
+    pluginData: { 'com.example.demo': stored },
     items: [],
   } as any;
 
   test('a consenting timeline keeps only what the plugin declared', () => {
     const out = stripFileForPublication(file, manifestFor);
-    assert.deepEqual(Object.keys(out.pluginData.demo).sort(), ['features', 'tiers']);
-    assert.ok(!('secrets' in out.pluginData.demo));
+    assert.deepEqual(Object.keys(out.pluginData['com.example.demo']).sort(), ['features', 'tiers']);
+    assert.ok(!('secrets' in out.pluginData['com.example.demo']));
   });
 
   test('without consent the plugin data leaves the materialized copy entirely', () => {
     // The per-timeline opt-in cannot be the only guard on a file that is served
     // verbatim: opting out has to REMOVE the rows, not merely decline to serve.
-    const out = stripFileForPublication({ ...file, plugins: [{ id: 'demo' }] }, manifestFor);
+    const out = stripFileForPublication({ ...file, plugins: [{ id: 'com.example.demo' }] }, manifestFor);
     assert.equal(out.pluginData, undefined);
   });
 
@@ -196,7 +196,7 @@ describe('stripFileForPublication', () => {
 
   test('host bookkeeping is gone from the copy', () => {
     const out = stripFileForPublication(file, manifestFor);
-    assert.deepEqual(Object.keys(out.pluginData.demo.tiers[0]).sort(), ['data', 'id']);
+    assert.deepEqual(Object.keys(out.pluginData['com.example.demo'].tiers[0]).sort(), ['data', 'id']);
   });
 
   test('a file with no plugin data is returned untouched', () => {

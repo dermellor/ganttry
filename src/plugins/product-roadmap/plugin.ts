@@ -19,7 +19,7 @@ import { pluginConfig } from '../../pluginHost/plugins.ts';
 import type { PluginRef, TimelineFile } from '../../types.ts';
 
 /** Stable id of the product-roadmap (pricing matrix/cards) plugin. */
-export const PRODUCT_ROADMAP_PLUGIN = 'product-roadmap';
+export const PRODUCT_ROADMAP_PLUGIN = 'dev.zeitlines.product-roadmap';
 
 /** Item metadata key holding the feature ids an item is assigned to (string[]). */
 export const PRICING_FEATURE_META_KEY = 'featureIds';

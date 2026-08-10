@@ -21,7 +21,7 @@ const status = (over: Partial<PluginStatus> & { id: string }): PluginStatus => (
 
 describe('pluginLines', () => {
   test('an installed plugin the timeline uses is marked as active here', () => {
-    const [line] = pluginLines([status({ id: 'demo', manifest: { name: 'Demo' } })], ['demo']);
+    const [line] = pluginLines([status({ id: 'com.example.demo', manifest: { name: 'Demo' } })], ['com.example.demo']);
     assert.equal(line.name, 'Demo');
     assert.equal(line.enabledHere, true);
     assert.equal(line.running, true);
@@ -30,19 +30,19 @@ describe('pluginLines', () => {
   test('installed but not enabled on this timeline is still listed', () => {
     // The whole point of the panel: a plugin that is there but off has to be
     // distinguishable from one that is not installed at all.
-    const [line] = pluginLines([status({ id: 'demo' })], []);
+    const [line] = pluginLines([status({ id: 'com.example.demo' })], []);
     assert.equal(line.enabledHere, false);
   });
 
   test('a plugin that cannot run carries its reason', () => {
-    const [line] = pluginLines([status({ id: 'demo', loadable: false, problem: 'update the host' })], ['demo']);
+    const [line] = pluginLines([status({ id: 'com.example.demo', loadable: false, problem: 'update the host' })], ['com.example.demo']);
     assert.equal(line.running, false);
     assert.equal(line.problem, 'update the host');
   });
 
   test('a manifest with no usable name falls back to the id rather than showing nothing', () => {
-    assert.equal(pluginLines([status({ id: 'sprints', manifest: {} })], [])[0].name, 'sprints');
-    assert.equal(pluginLines([status({ id: 'sprints', manifest: { name: '  ' } })], [])[0].name, 'sprints');
+    assert.equal(pluginLines([status({ id: 'com.example.sprints', manifest: {} })], [])[0].name, 'com.example.sprints');
+    assert.equal(pluginLines([status({ id: 'com.example.sprints', manifest: { name: '  ' } })], [])[0].name, 'com.example.sprints');
   });
 
   test('sorted by name, which is the column a reader scans', () => {
@@ -57,7 +57,7 @@ describe('pluginLines', () => {
   });
 
   test('an empty registry yields no lines rather than a placeholder row', () => {
-    assert.deepEqual(pluginLines([], ['demo']), []);
+    assert.deepEqual(pluginLines([], ['com.example.demo']), []);
   });
 
   test('a timeline enabling a plugin the instance does not have adds no line', () => {
@@ -69,14 +69,14 @@ describe('pluginLines', () => {
 });
 
 describe('pluginLines: folding in what the loader actually did', () => {
-  const ok = status({ id: 'demo', manifest: { name: 'Demo' } });
+  const ok = status({ id: 'com.example.demo', manifest: { name: 'Demo' } });
 
   test("the loader's verdict wins over the host's willingness", () => {
     // The host was willing (`loadable`), the artifact was not there. Reporting
     // „active" because the host had no objection would be the wrong half of the
     // story.
-    const [line] = pluginLines([ok], ['demo'], [
-      { pluginId: 'demo', loaded: false, reason: 'unreachable', problem: 'could not fetch /p.js: HTTP 404' },
+    const [line] = pluginLines([ok], ['com.example.demo'], [
+      { pluginId: 'com.example.demo', loaded: false, reason: 'unreachable', problem: 'could not fetch /p.js: HTTP 404' },
     ]);
     assert.equal(line.running, false);
     assert.equal(line.reason, 'unreachable');
@@ -84,15 +84,15 @@ describe('pluginLines: folding in what the loader actually did', () => {
   });
 
   test('a skipped plugin keeps the host reason, since the loader never tried', () => {
-    const refused = status({ id: 'demo', loadable: false, reason: 'disabled', problem: 'switched off for this instance' });
+    const refused = status({ id: 'com.example.demo', loadable: false, reason: 'disabled', problem: 'switched off for this instance' });
     const [line] = pluginLines([refused], [], [
-      { pluginId: 'demo', loaded: false, reason: 'skipped', problem: 'switched off for this instance' },
+      { pluginId: 'com.example.demo', loaded: false, reason: 'skipped', problem: 'switched off for this instance' },
     ]);
     assert.equal(line.reason, 'disabled', '„skipped" says nothing a reader can act on');
   });
 
   test('a successful load reports running, and the timeline question comes back', () => {
-    const [line] = pluginLines([ok], ['demo'], [{ pluginId: 'demo', loaded: true }]);
+    const [line] = pluginLines([ok], ['com.example.demo'], [{ pluginId: 'com.example.demo', loaded: true }]);
     assert.equal(line.running, true);
     assert.equal(line.enabledHere, true);
     assert.equal(line.reason, undefined);
@@ -111,23 +111,23 @@ describe('pluginLines: folding in what the loader actually did', () => {
   test('integrity failure is distinguishable from every other failure', () => {
     // This is the one an operator has to act on differently: the artifact changed
     // under a version somebody approved.
-    const [line] = pluginLines([ok], ['demo'], [
-      { pluginId: 'demo', loaded: false, reason: 'integrity', problem: 'does not match its pinned hash' },
+    const [line] = pluginLines([ok], ['com.example.demo'], [
+      { pluginId: 'com.example.demo', loaded: false, reason: 'integrity', problem: 'does not match its pinned hash' },
     ]);
     assert.equal(line.reason, 'integrity');
   });
 });
 
 describe('pluginLines: a plugin installed after boot', () => {
-  const ok = status({ id: 'demo', manifest: { name: 'Demo' } });
-  const other = status({ id: 'product-roadmap', manifest: { name: 'Produkt' } });
+  const ok = status({ id: 'com.example.demo', manifest: { name: 'Demo' } });
+  const other = status({ id: 'dev.zeitlines.product-roadmap', manifest: { name: 'Produkt' } });
 
   test('is not reported as running just because the host would be willing', () => {
     // The trap this closes, found while testing the loader by hand: the panel
     // claimed „active" for a plugin whose artifact had failed its integrity
     // check, because the page it was reading had booted before the install.
-    const lines = pluginLines([other, ok], [], [{ pluginId: 'product-roadmap', loaded: true }]);
-    const demo = lines.find((l) => l.id === 'demo')!;
+    const lines = pluginLines([other, ok], [], [{ pluginId: 'dev.zeitlines.product-roadmap', loaded: true }]);
+    const demo = lines.find((l) => l.id === 'com.example.demo')!;
     assert.equal(demo.running, false);
   });
 

@@ -25,7 +25,7 @@ import { validateRow } from '../../src/pluginHost/dataSchema.ts';
 import { pluginStatus } from '../../src/pluginHost/installed.ts';
 import { mayPublish, projectCollections, publicCollections } from '../../src/pluginHost/publicRead.ts';
 import { originOf } from '../../src/pluginHost/csp.ts';
-import { installedPluginStatuses, makeManifestSource, type ManifestSource } from './plugin-manifests.ts';
+import { builtInManifest, installedPluginStatuses, makeManifestSource, type ManifestSource } from './plugin-manifests.ts';
 import { isOperator, operatorRefusal, type Caller } from './operator.ts';
 import {
   cascadeFor,
@@ -657,6 +657,19 @@ export async function handlePluginsApi(
       if (confirm !== pluginId) {
         return err(400, 'confirmation_required', {
           message: `uninstalling removes „${pluginId}" from this instance; repeat its id as ?confirm=${pluginId}`,
+        });
+      }
+      // A built-in cannot be uninstalled, and saying so beats doing nothing.
+      // Its code is compiled into the running build: removing the registry row
+      // would delete the operator's decisions about it and change nothing else,
+      // and the plugin would still be there on the next request. „Switch it off"
+      // is the operation that exists (`PATCH … {enabled:false}`), and it is a row
+      // rather than the absence of one.
+      if (builtInManifest(pluginId)) {
+        return err(400, 'builtin_plugin', {
+          message:
+            `„${pluginId}" is compiled into this build and cannot be uninstalled. Switch it off ` +
+            `with PATCH /api/plugins/${pluginId} {"enabled": false}; to remove its data, purge it there.`,
         });
       }
       // Purging is opt-IN. The default keeps the rows, so an uninstall meant as

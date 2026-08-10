@@ -34,28 +34,28 @@ describe('parseSourcePath: the pre-existing sub-resources', () => {
 
 describe('parseSourcePath: the plugin namespace', () => {
   test('plugin id and collection are split out, not left as one child id', () => {
-    assert.deepEqual(parseSourcePath('/plan/plugin/demo/tiers'), {
+    assert.deepEqual(parseSourcePath('/plan/plugin/com.example.demo/tiers'), {
       id: 'plan',
-      sub: { kind: 'plugin', childId: 'demo/tiers', plugin: { pluginId: 'demo', collection: 'tiers' } },
+      sub: { kind: 'plugin', childId: 'com.example.demo/tiers', plugin: { pluginId: 'com.example.demo', collection: 'tiers' } },
     });
   });
 
   test('a row id is the third part', () => {
-    const parsed = parseSourcePath('/plan/plugin/demo/tiers/pro');
-    assert.deepEqual(parsed?.sub?.plugin, { pluginId: 'demo', collection: 'tiers', rowId: 'pro' });
+    const parsed = parseSourcePath('/plan/plugin/com.example.demo/tiers/pro');
+    assert.deepEqual(parsed?.sub?.plugin, { pluginId: 'com.example.demo', collection: 'tiers', rowId: 'pro' });
   });
 
   test('a collection named like a sub-resource is NOT read as one', () => {
     // Without the namespace rule the right-to-left scan finds `tier` first and
     // the timeline id swallows `plan/plugin/demo` — a write would then land on
     // the pricing tier of a timeline that does not exist.
-    const parsed = parseSourcePath('/plan/plugin/demo/tier/pro');
+    const parsed = parseSourcePath('/plan/plugin/com.example.demo/tier/pro');
     assert.equal(parsed?.sub?.kind, 'plugin');
-    assert.deepEqual(parsed?.sub?.plugin, { pluginId: 'demo', collection: 'tier', rowId: 'pro' });
+    assert.deepEqual(parsed?.sub?.plugin, { pluginId: 'com.example.demo', collection: 'tier', rowId: 'pro' });
   });
 
   test('a namespaced timeline id keeps its slashes', () => {
-    const parsed = parseSourcePath('/acme/plan/plugin/demo/tiers');
+    const parsed = parseSourcePath('/acme/plan/plugin/com.example.demo/tiers');
     assert.equal(parsed?.id, 'acme/plan');
   });
 
@@ -68,17 +68,17 @@ describe('parseSourcePath: the plugin namespace', () => {
     // rowIdFor encodes each key part and joins with ":"; the client then encodes
     // the whole id for the path. A value that itself carried a ":" is therefore
     // double-encoded and must not decode into an extra separator.
-    const parsed = parseSourcePath('/plan/plugin/demo/cells/pro%253Ax%3Acalls');
+    const parsed = parseSourcePath('/plan/plugin/com.example.demo/cells/pro%253Ax%3Acalls');
     assert.equal(parsed?.sub?.plugin?.rowId, 'pro%3Ax:calls');
   });
 
   test('a fourth segment is refused rather than joined into the row id', () => {
     // Accepting it would make `a/b` and `a%2Fb` two spellings of one row id.
-    assert.equal(parseSourcePath('/plan/plugin/demo/tiers/pro/extra'), null);
+    assert.equal(parseSourcePath('/plan/plugin/com.example.demo/tiers/pro/extra'), null);
   });
 
   test('the move verb arrives as the row id, for the dispatcher to recognise', () => {
-    assert.equal(parseSourcePath('/plan/plugin/demo/tiers/move')?.sub?.plugin?.rowId, 'move');
+    assert.equal(parseSourcePath('/plan/plugin/com.example.demo/tiers/move')?.sub?.plugin?.rowId, 'move');
   });
 
   test('a trailing `plugin` with nothing after it is not a plugin path', () => {

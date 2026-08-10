@@ -30,6 +30,23 @@ behind it. Packaging it as `@zeitlines/plugin-api` is
 [#15](https://github.com/dermellor/zeitlines/issues/15); until then, that path is
 the reference.
 
+## Choosing an id
+
+**Reverse-DNS, from a domain you own:** `com.acme.sprints`. The validator refuses
+anything else, and the reason is not tidiness — an id is global. It keys the
+plugin's rows in the store, its registration on every timeline, and the metadata
+it writes on items. There is no central registry handing names out, so the only
+thing that makes a name safe to claim is that it comes from something already
+yours. `sprints` is the name a hundred people would pick; a collision between two
+of them is a collision in somebody's data.
+
+The same string is a **path segment**, a **directory name** and a database key at
+once, which is why an npm scope (`@acme/sprints`) was rejected: the `/` has to be
+percent-encoded in every URL and makes the vendored directory a nested one.
+
+An id is permanent in practice. Changing it after anyone has installed the plugin
+orphans their rows, so pick it before you publish.
+
 ## What it exports
 
 | Export | Called when | Shape |
@@ -186,7 +203,7 @@ Either way, enabling it on a timeline is a second, separate step — a row with 
 plugin's config:
 
 ```json
-{ "id": "sprints", "config": { "start": "2026-01-05", "length": "2w", "count": 26 } }
+{ "id": "com.acme.sprints", "config": { "start": "2026-01-05", "length": "2w", "count": 26 } }
 ```
 
 ## Local development

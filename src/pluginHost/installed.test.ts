@@ -5,7 +5,7 @@ import { manifestOf, pluginStatus } from './installed.ts';
 import type { InstalledPlugin } from '../types.ts';
 
 const MANIFEST = {
-  id: 'demo',
+  id: 'com.example.demo',
   name: 'Demo',
   version: '1.2.0',
   apiVersion: '^1',
@@ -13,7 +13,7 @@ const MANIFEST = {
 };
 
 const row = (over: Partial<InstalledPlugin> = {}): InstalledPlugin => ({
-  id: 'demo',
+  id: 'com.example.demo',
   version: '1.2.0',
   apiVersion: '^1',
   artifact: { kind: 'builtin' },
@@ -71,7 +71,7 @@ describe('pluginStatus', () => {
 
 describe('manifestOf', () => {
   test('a valid stored manifest comes back', () => {
-    assert.equal(manifestOf(row())?.id, 'demo');
+    assert.equal(manifestOf(row())?.id, 'com.example.demo');
   });
 
   test('an empty one is null — the caller asks the build instead', () => {
@@ -79,6 +79,6 @@ describe('manifestOf', () => {
   });
 
   test('an invalid one is null rather than half-trusted', () => {
-    assert.equal(manifestOf(row({ manifest: { id: 'demo' } })), null);
+    assert.equal(manifestOf(row({ manifest: { id: 'com.example.demo' } })), null);
   });
 });

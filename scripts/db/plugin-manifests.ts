@@ -67,12 +67,16 @@ export function makeManifestSource(repo: TimelineRepo): ManifestSource {
         registry = [];
       }
     }
-    if (registry.length === 0) {
+    const row = registry.find((p) => p.id === pluginId);
+    if (!row) {
+      // Not in the registry, but compiled into this build: a built-in ships with
+      // the host and is installed by definition. This used to apply only to an
+      // EMPTY registry, which meant installing any unrelated plugin made every
+      // built-in's data unwritable and its public read answer 404 — a feature
+      // disappearing because something else was installed.
       const built = builtInManifest(pluginId);
       return built ? { manifest: built, enabled: true } : null;
     }
-    const row = registry.find((p) => p.id === pluginId);
-    if (!row) return null;
     // A manifest the registry does not carry comes from the build — that is the
     // seeded row, and the built-in case. Falling through to null instead would
     // make every seeded plugin's data unwritable after the migration.
@@ -82,10 +86,33 @@ export function makeManifestSource(repo: TimelineRepo): ManifestSource {
   };
 }
 
+/** A built-in as a registry row. It ships with the host, so it is always installed. */
+function builtInRow(manifest: PluginManifest): InstalledPlugin {
+  return {
+    id: manifest.id,
+    version: manifest.version,
+    apiVersion: manifest.apiVersion,
+    artifact: { kind: 'builtin' },
+    capabilities: [...(manifest.capabilities ?? [])],
+    manifest: manifest as unknown as Record<string, unknown>,
+    enabled: true,
+  };
+}
+
 /**
  * The registry as the interface and the loader read it: every installed plugin
- * with the host's verdict on it, plus the built-ins on an instance with no
- * registry so „nothing installed" is never shown to a deploy that is running one.
+ * with the host's verdict on it.
+ *
+ * **The built-ins are always in it, and the registry is layered on top.** They
+ * used to be a fallback for an EMPTY registry, and that was wrong in a way that
+ * only showed once anything else was installed: the moment one row existed, the
+ * built-ins vanished from the list — so a plugin compiled into the running build
+ * was reported as not installed, its public read answered 404, and the only
+ * symptom was a feature quietly disappearing on the instance that installed
+ * something unrelated.
+ *
+ * A row with a built-in's id still wins, because that is how an operator
+ * switches one off (`enabled: false`) without a build.
  */
 export async function installedPluginStatuses(repo: TimelineRepo): Promise<PluginStatus[]> {
   let registry: InstalledPlugin[] = [];
@@ -94,30 +121,22 @@ export async function installedPluginStatuses(repo: TimelineRepo): Promise<Plugi
   } catch {
     registry = [];
   }
-  if (registry.length === 0) {
-    return BUILT_IN.map((manifest) =>
-      pluginStatus({
-        id: manifest.id,
-        version: manifest.version,
-        apiVersion: manifest.apiVersion,
-        artifact: { kind: 'builtin' },
-        capabilities: [...(manifest.capabilities ?? [])],
-        manifest: manifest as unknown as Record<string, unknown>,
-        enabled: true,
-      }),
-    );
-  }
-  return registry.map((row) => {
+
+  const rows = new Map<string, InstalledPlugin>(BUILT_IN.map((m) => [m.id, builtInRow(m)]));
+  for (const row of registry) {
     // Show the build's manifest for a row that carries none, so the interface
     // lists a real name and version instead of a bare id.
     const manifest = manifestOf(row) ?? builtInManifest(row.id);
-    const merged: InstalledPlugin = manifest
-      ? {
-          ...row,
-          version: row.version === '0.0.0' ? manifest.version : row.version,
-          manifest: manifest as unknown as Record<string, unknown>,
-        }
-      : row;
-    return pluginStatus(merged);
-  });
+    rows.set(
+      row.id,
+      manifest
+        ? {
+            ...row,
+            version: row.version === '0.0.0' ? manifest.version : row.version,
+            manifest: manifest as unknown as Record<string, unknown>,
+          }
+        : row,
+    );
+  }
+  return [...rows.values()].map((row) => pluginStatus(row));
 }

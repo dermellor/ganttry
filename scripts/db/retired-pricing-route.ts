@@ -21,7 +21,7 @@
 // exception is deletable in a single commit once the deprecation window closes;
 // an exception carved into the dispatcher would outlive the route.
 
-const PLUGIN_ID = 'product-roadmap';
+const PLUGIN_ID = 'dev.zeitlines.product-roadmap';
 
 /** The 410, with the concrete successor URL for this id when there is one. */
 export function retiredPricingResponse(pathname: string): Response {

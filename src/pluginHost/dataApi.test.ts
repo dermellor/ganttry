@@ -12,7 +12,7 @@ import { collectionPath, createDataApi } from './dataApi';
 
 type Call = { url: string; init?: RequestInit };
 
-function harness(pluginId = 'sprints', body: unknown = {}) {
+function harness(pluginId = 'com.example.sprints', body: unknown = {}) {
   const calls: Call[] = [];
   const api = createDataApi(pluginId, {
     sourceId: () => 'wt/plan',
@@ -34,19 +34,19 @@ describe('collectionPath', () => {
   });
 
   test('the timeline id keeps its slashes, because it is a path', () => {
-    assert.equal(collectionPath('acme/plan', 'sprints', 'entries'), '/api/source/acme/plan/plugin/sprints/entries');
+    assert.equal(collectionPath('acme/plan', 'com.example.sprints', 'entries'), '/api/source/acme/plan/plugin/com.example.sprints/entries');
   });
 });
 
 describe('createDataApi', () => {
   test('the plugin id is bound, so a collection name cannot reach another plugin', async () => {
-    const { api, calls } = harness('sprints', { rows: [] });
+    const { api, calls } = harness('com.example.sprints', { rows: [] });
     await api.list('entries');
-    assert.equal(calls[0].url, '/api/source/wt/plan/plugin/sprints/entries');
+    assert.equal(calls[0].url, '/api/source/wt/plan/plugin/com.example.sprints/entries');
     // There is no argument that could have named a different plugin: the only
     // string the caller supplies is the collection, and it is encoded.
     await api.list('../../other/plugin/product-roadmap/tiers');
-    assert.ok(calls[1].url.startsWith('/api/source/wt/plan/plugin/sprints/'));
+    assert.ok(calls[1].url.startsWith('/api/source/wt/plan/plugin/com.example.sprints/'));
     assert.ok(!calls[1].url.includes('product-roadmap/tiers'), 'the traversal is encoded away');
   });
 
@@ -67,20 +67,20 @@ describe('createDataApi', () => {
   test('a composite row id is encoded, so it arrives as one segment', async () => {
     const { api, calls } = harness();
     await api.remove('tier-values', 'pro:calls');
-    assert.equal(calls[0].url, '/api/source/wt/plan/plugin/sprints/tier-values/pro%3Acalls');
+    assert.equal(calls[0].url, '/api/source/wt/plan/plugin/com.example.sprints/tier-values/pro%3Acalls');
     assert.equal(calls[0].init!.method, 'DELETE');
   });
 
   test('move posts the anchor and returns the order the host decided', async () => {
-    const { api, calls } = harness('sprints', { order: ['b', 'a'] });
+    const { api, calls } = harness('com.example.sprints', { order: ['b', 'a'] });
     const order = await api.move('entries', 'b', { before: 'a' });
-    assert.equal(calls[0].url, '/api/source/wt/plan/plugin/sprints/entries/move');
+    assert.equal(calls[0].url, '/api/source/wt/plan/plugin/com.example.sprints/entries/move');
     assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { id: 'b', before: 'a' });
     assert.deepEqual(order, ['b', 'a'], 'the host owns the order; the caller adopts it');
   });
 
   test('a host answering nothing useful yields empty rather than undefined', async () => {
-    const { api } = harness('sprints', null);
+    const { api } = harness('com.example.sprints', null);
     assert.deepEqual(await api.list('entries'), []);
     assert.deepEqual(await api.move('entries', 'a', { after: 'b' }), []);
   });

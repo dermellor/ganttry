@@ -30,15 +30,15 @@ test('versionsFromConfig tolerates missing / malformed lists', () => {
 test('pluginsForWrite: a plugin with rows in the payload is enabled', () => {
   // Otherwise a bulk write stores rows nothing reads, and the timeline looks
   // empty while the data sits there.
-  const file = base({ pluginData: { sprints: { entries: [{ id: 'e1', data: {} }] } } });
+  const file = base({ pluginData: { 'com.example.sprints': { entries: [{ id: 'e1', data: {} }] } } });
   const rows = pluginsForWrite(file);
-  assert.deepEqual(rows, [{ id: 'sprints', config: {} }]);
+  assert.deepEqual(rows, [{ id: 'com.example.sprints', config: {} }]);
 });
 
 test('pluginsForWrite: an already-listed plugin keeps its config and consent', () => {
   const file = base({
-    plugins: [{ id: 'sprints', config: { keep: 1 }, public: true }],
-    pluginData: { sprints: { entries: [] } },
+    plugins: [{ id: 'com.example.sprints', config: { keep: 1 }, public: true }],
+    pluginData: { 'com.example.sprints': { entries: [] } },
   });
   const rows = pluginsForWrite(file);
   assert.equal(rows.length, 1, 'not added a second time');
@@ -47,8 +47,8 @@ test('pluginsForWrite: an already-listed plugin keeps its config and consent', (
 });
 
 test('pluginsForWrite: a plugin enabled without data stays enabled', () => {
-  const file = base({ plugins: [{ id: 'sprints' }] });
-  assert.deepEqual(pluginsForWrite(file), [{ id: 'sprints', config: {} }]);
+  const file = base({ plugins: [{ id: 'com.example.sprints' }] });
+  assert.deepEqual(pluginsForWrite(file), [{ id: 'com.example.sprints', config: {} }]);
 });
 
 test('pluginsForWrite: no plugins and no data is an empty list, not a guess', () => {

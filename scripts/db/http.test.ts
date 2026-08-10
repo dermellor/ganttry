@@ -58,7 +58,7 @@ test('without a DB a read 404s and a write 503s — never a static fallback', as
 test('the public plugin route stays cross-origin readable, errors included', async () => {
   // The consumer is a page on another origin fetching at build time. Without
   // CORS on the error paths a 404 reaches it as an opaque network failure.
-  const res = (await call('/api/public/plugin/demo/x'))!;
+  const res = (await call('/api/public/plugin/com.example.demo/x'))!;
   assert.equal(res.status, 503); // no backend in this context
   assert.equal(res.headers.get('Access-Control-Allow-Origin'), '*');
   assert.equal(res.headers.get('Cache-Control'), 'no-store'); // never cache a miss

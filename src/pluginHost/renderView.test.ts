@@ -39,7 +39,7 @@ describe('renderPluginViewInto', () => {
         container.append({ tag: 'painted' });
       },
     };
-    renderPluginViewInto(section, 'demo', 'board', mod as never, host);
+    renderPluginViewInto(section, 'com.example.demo', 'board', mod as never, host);
     assert.equal(section.children.length, 1);
     assert.deepEqual(section.children[0].children, [{ tag: 'painted' }]);
   });
@@ -58,8 +58,8 @@ describe('renderPluginViewInto', () => {
         });
       },
     };
-    renderPluginViewInto(section, 'demo', 'board', mod as never, host);
-    renderPluginViewInto(section, 'demo', 'board', mod as never, host);
+    renderPluginViewInto(section, 'com.example.demo', 'board', mod as never, host);
+    renderPluginViewInto(section, 'com.example.demo', 'board', mod as never, host);
     assert.equal(section.children.length, 0, 'nothing is shown until a render settles');
 
     gates[0]();
@@ -82,8 +82,8 @@ describe('renderPluginViewInto', () => {
         });
       },
     });
-    renderPluginViewInto(section, 'demo', 'board', paint('old') as never, host);
-    renderPluginViewInto(section, 'demo', 'board', paint('new') as never, host);
+    renderPluginViewInto(section, 'com.example.demo', 'board', paint('old') as never, host);
+    renderPluginViewInto(section, 'com.example.demo', 'board', paint('new') as never, host);
 
     // The newer one finishes FIRST, then the stale one — the interleaving that a
     // „last write wins" swap would get wrong.
@@ -106,7 +106,7 @@ describe('renderPluginViewInto', () => {
         throw new Error('boom');
       },
     };
-    renderPluginViewInto(section, 'demo', 'board', mod as never, host);
+    renderPluginViewInto(section, 'com.example.demo', 'board', mod as never, host);
     assert.equal(section.children.length, 1);
     assert.deepEqual(section.children[0].children, [{ tag: 'failure notice' }]);
   });
@@ -119,7 +119,7 @@ describe('renderPluginViewInto', () => {
         return Promise.reject(new Error('boom'));
       },
     };
-    renderPluginViewInto(section, 'demo', 'board', mod as never, host);
+    renderPluginViewInto(section, 'com.example.demo', 'board', mod as never, host);
     await Promise.resolve();
     await Promise.resolve();
     assert.equal(section.children.length, 1);

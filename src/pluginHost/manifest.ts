@@ -124,11 +124,31 @@ export type ValidationResult =
   | { ok: true; manifest: PluginManifest }
   | { ok: false; problems: ManifestProblem[] };
 
-// Reverse-DNS or npm-style. Ids are global — they key `timeline_plugins` rows and
-// the plugin's own data — so a collision is a data collision, not a naming
-// annoyance. Restricting the shape is what keeps two plugins from claiming one id
-// by accident.
-const ID_RE = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+/**
+ * **Reverse-DNS, and nothing else.**
+ *
+ * An id is global — it keys `timeline_plugins`, the plugin's own rows in
+ * `plugin_data` and the metadata on items — so a collision is a data collision
+ * rather than a naming annoyance. With no central registry to hand out names,
+ * the only thing that makes a name safe to claim is that it derives from
+ * something the author already owns: a domain.
+ *
+ * An npm scope (`@acme/sprints`) expresses the same idea and was rejected,
+ * because this id is three things at once and that form breaks two of them:
+ *
+ *   - a **path segment** (`/api/source/<id>/plugin/<pluginId>/…`), where `@` and
+ *     `/` have to be percent-encoded at every call site and in every hand-written
+ *     request;
+ *   - a **directory name** (`plugins/<id>/manifest.json`), where a slash makes it
+ *     a nested directory and the flat scan stops finding it;
+ *   - a database key, which is the only one it survives.
+ *
+ * `com.acme.sprints` is a plain segment in all three.
+ *
+ * Two labels minimum, so a bare word cannot be claimed: `sprints` is the name a
+ * hundred people would pick, `com.acme.sprints` is one nobody else will.
+ */
+const ID_RE = /^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+$/;
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -152,7 +172,10 @@ export function validateManifest(input: unknown, host?: ApiVersion): ValidationR
   const m = input as Partial<PluginManifest>;
 
   if (typeof m.id !== 'string' || !ID_RE.test(m.id)) {
-    problems.push('id must be npm-style or scoped, lowercase (e.g. "sprints" or "@acme/sprints")');
+    problems.push(
+      'id must be reverse-DNS: at least two lowercase labels separated by dots, derived from a domain ' +
+        'you own (e.g. "com.acme.sprints"). A bare name is not global enough to key data with.',
+    );
   }
   if (typeof m.name !== 'string' || !m.name.trim()) problems.push('name is required');
   if (typeof m.version !== 'string' || !SEMVER_RE.test(m.version)) {

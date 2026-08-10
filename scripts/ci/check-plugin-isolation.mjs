@@ -74,17 +74,39 @@ const REPO_METHODS = [
   'orderPluginRows', 'purgePluginData', 'purgeItemMetadata',
 ];
 
+/** The source folder an id lives in. Filled once the manifests are read. */
+const folders = new Map();
+const folderFor = (id) => folders.get(id) ?? id;
+
 const problems = [];
 const note = (file, message) => problems.push(`${file}: ${message}`);
 
 // ---- the plugins that exist -------------------------------------------------
 
 const PLUGIN_ROOT = join(ROOT, 'src/plugins');
-const pluginIds = readdirSync(PLUGIN_ROOT).filter(
+
+/**
+ * The ids are read out of each plugin's manifest, not taken from its directory
+ * name. Since ids became reverse-DNS, a source folder called
+ * `dev.zeitlines.product-roadmap` would be the only way to keep those in step —
+ * and a dotted directory name in `src/` buys nothing and reads badly. A vendored
+ * artifact still has to match, because the URL is built from that directory name;
+ * that is a different directory and its own rule.
+ */
+const pluginIds = readdirSync(PLUGIN_ROOT)
   // `_template` is scaffolding rather than a plugin; it ships no id and nothing
   // may import it either way.
-  (name) => !name.startsWith('_') && statSync(join(PLUGIN_ROOT, name)).isDirectory(),
-);
+  .filter((name) => !name.startsWith('_') && statSync(join(PLUGIN_ROOT, name)).isDirectory())
+  .map((name) => {
+    const manifest = readFileSync(join(PLUGIN_ROOT, name, 'manifest.ts'), 'utf8');
+    const found = /\bid:\s*'([^']+)'/.exec(manifest);
+    if (!found) {
+      console.error(`check-plugin-isolation: no id found in src/plugins/${name}/manifest.ts`);
+      process.exit(1);
+    }
+    folders.set(found[1], name);
+    return found[1];
+  });
 if (!pluginIds.length) {
   console.error('check-plugin-isolation: no plugins found under src/plugins — the checks below would pass vacuously');
   process.exit(1);
@@ -135,9 +157,9 @@ function checkFile(path) {
   const code = stripComments(source);
 
   for (const id of pluginIds) {
-    const importPattern = new RegExp(`from ['"][^'"]*plugins/${id}/`);
+    const importPattern = new RegExp(`from ['"][^'"]*plugins/${folderFor(id)}/`);
     if (importPattern.test(code) && !IMPORT_ALLOWLIST.has(rel)) {
-      note(rel, `imports from src/plugins/${id}/ — only a registry or a dated migration may`);
+      note(rel, `imports from src/plugins/${folderFor(id)}/ — only a registry or a dated migration may`);
     }
     const literalPattern = new RegExp(`['"\`]${id}['"\`]`);
     if (literalPattern.test(code) && !LITERAL_ALLOWLIST.has(rel) && !IMPORT_ALLOWLIST.has(rel)) {

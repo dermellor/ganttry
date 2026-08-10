@@ -18,7 +18,7 @@ import type { PluginManifest } from './manifest.ts';
  * blocks its parent instead.
  */
 const MANIFEST: PluginManifest = {
-  id: 'demo',
+  id: 'com.example.demo',
   name: 'Demo',
   version: '1.0.0',
   apiVersion: '^1',

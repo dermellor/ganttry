@@ -21,7 +21,7 @@ export const PRICING_COLLECTIONS = {
 } as const;
 
 export const productRoadmapManifest: PluginManifest = {
-  id: 'product-roadmap',
+  id: 'dev.zeitlines.product-roadmap',
   name: 'Produkt',
   version: '1.0.0',
   apiVersion: '^1',

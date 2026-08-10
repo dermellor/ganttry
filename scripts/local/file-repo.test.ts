@@ -291,20 +291,20 @@ describe('makeFileRepo: a plugin writes to a file the user owns', () => {
   test('a row survives a write and comes back with a version', async () => {
     await seed('plug-1');
     const repo = makeFileRepo(dirs);
-    const written = await repo.putPluginRow('plug-1', 'sprints', 'entries', { id: 'e1', data: { name: 'Sprint 1' } });
+    const written = await repo.putPluginRow('plug-1', 'com.example.sprints', 'entries', { id: 'e1', data: { name: 'Sprint 1' } });
     assert.equal(written.id, 'e1');
     assert.ok(written.version, 'the store hands back a counter to send as If-Match');
-    const rows = await repo.listPluginRows('plug-1', 'sprints', 'entries');
+    const rows = await repo.listPluginRows('plug-1', 'com.example.sprints', 'entries');
     assert.deepEqual(rows.map((r) => r.data), [{ name: 'Sprint 1' }]);
   });
 
   test('a deleted row is gone from the file, not just from the answer', async () => {
     await seed('plug-2');
     const repo = makeFileRepo(dirs);
-    await repo.putPluginRow('plug-2', 'sprints', 'entries', { id: 'e1', data: {} });
-    await repo.deletePluginRow('plug-2', 'sprints', 'entries', 'e1');
+    await repo.putPluginRow('plug-2', 'com.example.sprints', 'entries', { id: 'e1', data: {} });
+    await repo.deletePluginRow('plug-2', 'com.example.sprints', 'entries', 'e1');
     const reread = makeFileRepo(dirs);
-    assert.deepEqual(await reread.listPluginRows('plug-2', 'sprints', 'entries'), []);
+    assert.deepEqual(await reread.listPluginRows('plug-2', 'com.example.sprints', 'entries'), []);
   });
 });
 
@@ -469,23 +469,23 @@ describe('plugin data: a JSON file holds it', () => {
   test('a written row lands in the file and comes back in order', async () => {
     await seed('pd-write');
     const repo = makeFileRepo(dirs);
-    await repo.putPluginRow('pd-write', 'demo', 'tiers', { id: 'pro', data: { name: 'Pro' } });
-    await repo.putPluginRow('pd-write', 'demo', 'tiers', { id: 'lite', data: { name: 'Lite' } });
+    await repo.putPluginRow('pd-write', 'com.example.demo', 'tiers', { id: 'pro', data: { name: 'Pro' } });
+    await repo.putPluginRow('pd-write', 'com.example.demo', 'tiers', { id: 'lite', data: { name: 'Lite' } });
 
     const onDisk = await raw('pd-write');
     assert.deepEqual(
-      onDisk.pluginData?.demo?.tiers?.map((r) => r.id),
+      onDisk.pluginData?.['com.example.demo']?.tiers?.map((r) => r.id),
       ['pro', 'lite'],
       'the array order IS the order — a local file has no sort column',
     );
-    assert.deepEqual((await repo.listPluginRows('pd-write', 'demo', 'tiers')).map((r) => r.id), ['pro', 'lite']);
+    assert.deepEqual((await repo.listPluginRows('pd-write', 'com.example.demo', 'tiers')).map((r) => r.id), ['pro', 'lite']);
   });
 
   test('the row keeps the plugin object untouched and the host fields beside it', async () => {
     await seed('pd-shape');
     const repo = makeFileRepo(dirs);
-    await repo.putPluginRow('pd-shape', 'demo', 'tiers', { id: 'pro', data: { name: 'Pro', nested: { a: [1] } } }, undefined, 'someone@example.com');
-    const [row] = (await raw('pd-shape')).pluginData!.demo.tiers;
+    await repo.putPluginRow('pd-shape', 'com.example.demo', 'tiers', { id: 'pro', data: { name: 'Pro', nested: { a: [1] } } }, undefined, 'someone@example.com');
+    const [row] = (await raw('pd-shape')).pluginData!['com.example.demo'].tiers;
     assert.deepEqual(row.data, { name: 'Pro', nested: { a: [1] } });
     assert.equal(row.updatedBy, 'someone@example.com');
     assert.ok(row.updatedAt);
@@ -495,31 +495,31 @@ describe('plugin data: a JSON file holds it', () => {
   test('a rewrite keeps the row in place instead of moving it to the end', async () => {
     await seed('pd-keep');
     const repo = makeFileRepo(dirs);
-    for (const id of ['a', 'b', 'c']) await repo.putPluginRow('pd-keep', 'demo', 'f', { id, data: {} });
-    await repo.putPluginRow('pd-keep', 'demo', 'f', { id: 'a', data: { changed: true } });
-    assert.deepEqual((await repo.listPluginRows('pd-keep', 'demo', 'f')).map((r) => r.id), ['a', 'b', 'c']);
+    for (const id of ['a', 'b', 'c']) await repo.putPluginRow('pd-keep', 'com.example.demo', 'f', { id, data: {} });
+    await repo.putPluginRow('pd-keep', 'com.example.demo', 'f', { id: 'a', data: { changed: true } });
+    assert.deepEqual((await repo.listPluginRows('pd-keep', 'com.example.demo', 'f')).map((r) => r.id), ['a', 'b', 'c']);
   });
 
   test('a patch merges, and a null clears the key', async () => {
     await seed('pd-patch');
     const repo = makeFileRepo(dirs);
-    await repo.putPluginRow('pd-patch', 'demo', 'tiers', { id: 'pro', data: { name: 'Pro', price: '49' } });
-    const patched = await repo.patchPluginRow('pd-patch', 'demo', 'tiers', 'pro', { price: null, tagline: 'x' });
+    await repo.putPluginRow('pd-patch', 'com.example.demo', 'tiers', { id: 'pro', data: { name: 'Pro', price: '49' } });
+    const patched = await repo.patchPluginRow('pd-patch', 'com.example.demo', 'tiers', 'pro', { price: null, tagline: 'x' });
     assert.deepEqual(patched.data, { name: 'Pro', tagline: 'x' });
   });
 
   test('patching a row that is not there is a NotFound, not a silent insert', async () => {
     await seed('pd-404');
     const repo = makeFileRepo(dirs);
-    await assert.rejects(() => repo.patchPluginRow('pd-404', 'demo', 'tiers', 'ghost', { a: 1 }), NotFoundError);
+    await assert.rejects(() => repo.patchPluginRow('pd-404', 'com.example.demo', 'tiers', 'ghost', { a: 1 }), NotFoundError);
   });
 
   test('deleting the last row of a collection leaves no empty husk in the file', async () => {
     await seed('pd-empty');
     const repo = makeFileRepo(dirs);
-    await repo.putPluginRow('pd-empty', 'demo', 'tiers', { id: 'pro', data: {} });
-    await repo.deletePluginRow('pd-empty', 'demo', 'tiers', 'pro');
-    // This is a file somebody reads and edits by hand; `"pluginData": { "demo": { "tiers": [] } }`
+    await repo.putPluginRow('pd-empty', 'com.example.demo', 'tiers', { id: 'pro', data: {} });
+    await repo.deletePluginRow('pd-empty', 'com.example.demo', 'tiers', 'pro');
+    // This is a file somebody reads and edits by hand; `"pluginData": { "com.example.demo": { "tiers": [] } }`
     // is residue that reads as breakage.
     assert.ok(!('pluginData' in (await raw('pd-empty'))));
   });
@@ -527,11 +527,11 @@ describe('plugin data: a JSON file holds it', () => {
   test('order is rewritten by orderPluginRows, and rows it omits are kept', async () => {
     await seed('pd-order');
     const repo = makeFileRepo(dirs);
-    for (const id of ['a', 'b', 'c']) await repo.putPluginRow('pd-order', 'demo', 'f', { id, data: {} });
-    await repo.orderPluginRows('pd-order', 'demo', 'f', ['c', 'a']);
+    for (const id of ['a', 'b', 'c']) await repo.putPluginRow('pd-order', 'com.example.demo', 'f', { id, data: {} });
+    await repo.orderPluginRows('pd-order', 'com.example.demo', 'f', ['c', 'a']);
     // `b` was not named. Dropping it would let an order list built from a stale
     // read delete rows, so it keeps its place at the end instead.
-    assert.deepEqual((await repo.listPluginRows('pd-order', 'demo', 'f')).map((r) => r.id), ['c', 'a', 'b']);
+    assert.deepEqual((await repo.listPluginRows('pd-order', 'com.example.demo', 'f')).map((r) => r.id), ['c', 'a', 'b']);
   });
 });
 
@@ -539,25 +539,25 @@ describe('plugin data: the file is the lock', () => {
   test('every row reports the file version, and it moves on each write', async () => {
     await seed('pd-ver');
     const repo = makeFileRepo(dirs);
-    await repo.putPluginRow('pd-ver', 'demo', 'tiers', { id: 'pro', data: {} });
-    await repo.putPluginRow('pd-ver', 'demo', 'tiers', { id: 'lite', data: {} });
-    const rows = await repo.listPluginRows('pd-ver', 'demo', 'tiers');
+    await repo.putPluginRow('pd-ver', 'com.example.demo', 'tiers', { id: 'pro', data: {} });
+    await repo.putPluginRow('pd-ver', 'com.example.demo', 'tiers', { id: 'lite', data: {} });
+    const rows = await repo.listPluginRows('pd-ver', 'com.example.demo', 'tiers');
     const versions = new Set(rows.map((r) => r.version));
     assert.equal(versions.size, 1, 'one document, one version');
-    const after = await repo.putPluginRow('pd-ver', 'demo', 'tiers', { id: 'pro', data: { x: 1 } });
+    const after = await repo.putPluginRow('pd-ver', 'com.example.demo', 'tiers', { id: 'pro', data: { x: 1 } });
     assert.ok(after.version! > [...versions][0]!);
   });
 
   test('a stale If-Match is refused — coarser than the DB, and deliberately so', async () => {
     await seed('pd-conf');
     const repo = makeFileRepo(dirs);
-    await repo.putPluginRow('pd-conf', 'demo', 'tiers', { id: 'pro', data: {} });
-    const stale = (await repo.listPluginRows('pd-conf', 'demo', 'tiers'))[0].version!;
+    await repo.putPluginRow('pd-conf', 'com.example.demo', 'tiers', { id: 'pro', data: {} });
+    const stale = (await repo.listPluginRows('pd-conf', 'com.example.demo', 'tiers'))[0].version!;
     // Another row of the same collection, so a DB source would allow both. Here
     // the file changed, and that is what the header means.
-    await repo.putPluginRow('pd-conf', 'demo', 'tiers', { id: 'lite', data: {} });
+    await repo.putPluginRow('pd-conf', 'com.example.demo', 'tiers', { id: 'lite', data: {} });
     await assert.rejects(
-      () => repo.putPluginRow('pd-conf', 'demo', 'tiers', { id: 'pro', data: { x: 1 } }, stale),
+      () => repo.putPluginRow('pd-conf', 'com.example.demo', 'tiers', { id: 'pro', data: { x: 1 } }, stale),
       ConflictError,
     );
   });
@@ -565,22 +565,22 @@ describe('plugin data: the file is the lock', () => {
   test('the plugin rows travel with getTimeline, stamped like the items', async () => {
     await seed('pd-get');
     const repo = makeFileRepo(dirs);
-    await repo.putPluginRow('pd-get', 'demo', 'tiers', { id: 'pro', data: { name: 'Pro' } });
+    await repo.putPluginRow('pd-get', 'com.example.demo', 'tiers', { id: 'pro', data: { name: 'Pro' } });
     const file = await repo.getTimeline('pd-get');
-    const row = file!.pluginData!.demo.tiers[0];
+    const row = file!.pluginData!['com.example.demo'].tiers[0];
     assert.equal(row.version, file!.items[0].version, 'the whole document shares one version');
   });
 
   test('a bulk replace preserves the section instead of emptying it', async () => {
     await seed('pd-bulk');
     const repo = makeFileRepo(dirs);
-    await repo.putPluginRow('pd-bulk', 'demo', 'tiers', { id: 'pro', data: { name: 'Pro' } });
+    await repo.putPluginRow('pd-bulk', 'com.example.demo', 'tiers', { id: 'pro', data: { name: 'Pro' } });
     const file = await repo.getTimeline('pd-bulk');
     await repo.replaceTimeline('pd-bulk', file!);
     const back = await repo.getTimeline('pd-bulk');
-    assert.deepEqual(back!.pluginData!.demo.tiers[0].data, { name: 'Pro' });
+    assert.deepEqual(back!.pluginData!['com.example.demo'].tiers[0].data, { name: 'Pro' });
     // The round trip must not write the stamped version back into the file.
-    assert.ok(!('version' in (await raw('pd-bulk')).pluginData!.demo.tiers[0]));
+    assert.ok(!('version' in (await raw('pd-bulk')).pluginData!['com.example.demo'].tiers[0]));
   });
 });
 
@@ -588,11 +588,11 @@ describe('plugin data: uninstall', () => {
   test('purging drops one plugin and leaves the others', async () => {
     await seed('pd-purge');
     const repo = makeFileRepo(dirs);
-    await repo.putPluginRow('pd-purge', 'demo', 'tiers', { id: 'pro', data: {} });
+    await repo.putPluginRow('pd-purge', 'com.example.demo', 'tiers', { id: 'pro', data: {} });
     await repo.putPluginRow('pd-purge', 'other', 'things', { id: 'x', data: {} });
-    await repo.purgePluginData('demo', 'pd-purge');
+    await repo.purgePluginData('com.example.demo', 'pd-purge');
     const onDisk = await raw('pd-purge');
-    assert.equal(onDisk.pluginData?.demo, undefined);
+    assert.equal(onDisk.pluginData?.['com.example.demo'], undefined);
     assert.equal(onDisk.pluginData?.other?.things?.length, 1);
   });
 
@@ -626,11 +626,11 @@ describe('plugin data: a directory keeps it in the container', () => {
   test('a row written to a directory source lands in timeline.json, not in a note', async () => {
     const dir = await seedDir('pd-dir', {}, { 'a.md': NOTE_A });
     const repo = makeFileRepo(dirs);
-    await repo.putPluginRow('pd-dir', 'demo', 'tiers', { id: 'pro', data: { name: 'Pro' } });
+    await repo.putPluginRow('pd-dir', 'com.example.demo', 'tiers', { id: 'pro', data: { name: 'Pro' } });
     const container = JSON.parse(await readFile(join(dir, 'timeline.json'), 'utf8'));
-    assert.deepEqual(container.pluginData.demo.tiers[0].data, { name: 'Pro' });
+    assert.deepEqual(container.pluginData['com.example.demo'].tiers[0].data, { name: 'Pro' });
     assert.ok(!('items' in container), 'the notes stay the only definition of the items');
-    assert.equal((await repo.listPluginRows('pd-dir', 'demo', 'tiers')).length, 1);
+    assert.equal((await repo.listPluginRows('pd-dir', 'com.example.demo', 'tiers')).length, 1);
   });
 });
 
@@ -639,36 +639,36 @@ describe('plugin enablement on a local timeline', () => {
   test('enabling writes a plugin ref into the file, and the config with it', async () => {
     await seed('pe-on');
     const repo = makeFileRepo(dirs);
-    await repo.setTimelinePlugin('pe-on', 'demo', { versions: ['1.0'] });
-    assert.deepEqual((await raw('pe-on')).plugins, [{ id: 'demo', config: { versions: ['1.0'] } }]);
+    await repo.setTimelinePlugin('pe-on', 'com.example.demo', { versions: ['1.0'] });
+    assert.deepEqual((await raw('pe-on')).plugins, [{ id: 'com.example.demo', config: { versions: ['1.0'] } }]);
   });
 
   test('an empty config leaves the ref bare rather than storing an empty object', async () => {
     await seed('pe-bare');
     const repo = makeFileRepo(dirs);
-    await repo.setTimelinePlugin('pe-bare', 'demo', {});
-    assert.deepEqual((await raw('pe-bare')).plugins, [{ id: 'demo' }]);
+    await repo.setTimelinePlugin('pe-bare', 'com.example.demo', {});
+    assert.deepEqual((await raw('pe-bare')).plugins, [{ id: 'com.example.demo' }]);
   });
 
   test('enabling twice reconfigures instead of adding a second ref', async () => {
     await seed('pe-twice');
     const repo = makeFileRepo(dirs);
-    await repo.setTimelinePlugin('pe-twice', 'demo', { a: 1 });
-    await repo.setTimelinePlugin('pe-twice', 'demo', { a: 2 });
-    assert.deepEqual((await raw('pe-twice')).plugins, [{ id: 'demo', config: { a: 2 } }]);
+    await repo.setTimelinePlugin('pe-twice', 'com.example.demo', { a: 1 });
+    await repo.setTimelinePlugin('pe-twice', 'com.example.demo', { a: 2 });
+    assert.deepEqual((await raw('pe-twice')).plugins, [{ id: 'com.example.demo', config: { a: 2 } }]);
   });
 
   test('disabling removes the ref and keeps the rows the plugin owns', async () => {
     await seed('pe-off');
     const repo = makeFileRepo(dirs);
-    await repo.setTimelinePlugin('pe-off', 'demo', {});
-    await repo.putPluginRow('pe-off', 'demo', 'entries', { id: 'e1', data: { a: 1 } });
-    await repo.removeTimelinePlugin('pe-off', 'demo');
+    await repo.setTimelinePlugin('pe-off', 'com.example.demo', {});
+    await repo.putPluginRow('pe-off', 'com.example.demo', 'entries', { id: 'e1', data: { a: 1 } });
+    await repo.removeTimelinePlugin('pe-off', 'com.example.demo');
     const onDisk = await raw('pe-off');
     // Reversible by design: the destructive operation is the instance-level
     // uninstall, and that one asks.
     assert.ok(!('plugins' in onDisk), 'an empty array reads as \u201esomething broke here"');
-    assert.equal(onDisk.pluginData?.demo?.entries?.length, 1);
+    assert.equal(onDisk.pluginData?.['com.example.demo']?.entries?.length, 1);
   });
 
   test('disabling one plugin leaves the others enabled', async () => {
@@ -683,9 +683,9 @@ describe('plugin enablement on a local timeline', () => {
   test('a directory source keeps the refs in its container', async () => {
     const dir = await seedDir('pe-dir', {}, { 'a.md': NOTE_A });
     const repo = makeFileRepo(dirs);
-    await repo.setTimelinePlugin('pe-dir', 'demo', { x: 1 });
+    await repo.setTimelinePlugin('pe-dir', 'com.example.demo', { x: 1 });
     const container = JSON.parse(await readFile(join(dir, 'timeline.json'), 'utf8'));
-    assert.deepEqual(container.plugins, [{ id: 'demo', config: { x: 1 } }]);
+    assert.deepEqual(container.plugins, [{ id: 'com.example.demo', config: { x: 1 } }]);
   });
 
   test('installing instance-wide is refused on a file-backed instance, truthfully', async () => {

@@ -190,7 +190,7 @@ export type CustomFieldDef = {
 // A plugin (a.k.a. timeline kind) enabled on a timeline. Enablement is pure data
 // — a row in `timeline_plugins`, no core-schema change — so this array replaces
 // the old plugin-specific `type` column/field. `config` is the plugin's opaque
-// bag; for 'product-roadmap' it carries `{ versions: string[] }`. Helpers +
+// bag; for 'dev.zeitlines.product-roadmap' it carries `{ versions: string[] }`. Helpers +
 // stable ids live in ./plugins.
 export type PluginRef = {
   id: string;
@@ -332,7 +332,7 @@ export type TimelineFile = {
   name?: string;
   description?: string;
   groupBy?: string;
-  // Plugins enabled on this timeline (e.g. 'product-roadmap' → pricing matrix).
+  // Plugins enabled on this timeline (e.g. 'dev.zeitlines.product-roadmap' → pricing matrix).
   // Replaces the former `type: 'product'` gate; see ./plugins.
   plugins?: PluginRef[];
   // Rows owned by the enabled plugins, stored generically by the host. A plugin

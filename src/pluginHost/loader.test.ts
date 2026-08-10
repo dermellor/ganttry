@@ -13,7 +13,7 @@ import type { PluginManifest } from './manifest.ts';
 import type { PluginStatus } from '../types.ts';
 
 const MANIFEST: PluginManifest = {
-  id: 'sprints',
+  id: 'com.example.sprints',
   name: 'Sprints',
   version: '1.0.0',
   apiVersion: '^1',
@@ -32,7 +32,7 @@ const FIELDS_ONLY: PluginManifest = {
 const status = (over: Partial<PluginStatus> & { id: string }): PluginStatus => ({
   version: '1.0.0',
   apiVersion: '^1',
-  artifact: { kind: 'vendored', source: '/plugins/sprints/index.js' },
+  artifact: { kind: 'vendored', source: '/plugins/com.example.sprints/index.js' },
   capabilities: [],
   manifest: MANIFEST as unknown as Record<string, unknown>,
   enabled: true,
@@ -56,9 +56,9 @@ function deps(over: Partial<LoaderDeps> = {}): LoaderDeps & { registered: string
 describe('loadInstalledPlugins: the happy path', () => {
   test('a vendored plugin is fetched, imported and registered', async () => {
     const d = deps();
-    const [outcome] = await loadInstalledPlugins([status({ id: 'sprints' })], d);
-    assert.deepEqual(outcome, { pluginId: 'sprints', loaded: true });
-    assert.deepEqual(d.registered, ['sprints']);
+    const [outcome] = await loadInstalledPlugins([status({ id: 'com.example.sprints' })], d);
+    assert.deepEqual(outcome, { pluginId: 'com.example.sprints', loaded: true });
+    assert.deepEqual(d.registered, ['com.example.sprints']);
   });
 
   test('a built-in is reported as loaded without being fetched', async () => {
@@ -67,10 +67,10 @@ describe('loadInstalledPlugins: the happy path', () => {
     let fetched = false;
     const d = deps({ fetchArtifact: async () => { fetched = true; return SOURCE; } });
     const [outcome] = await loadInstalledPlugins(
-      [status({ id: 'product-roadmap', artifact: { kind: 'builtin' } })],
+      [status({ id: 'dev.zeitlines.product-roadmap', artifact: { kind: 'builtin' } })],
       d,
     );
-    assert.deepEqual(outcome, { pluginId: 'product-roadmap', loaded: true });
+    assert.deepEqual(outcome, { pluginId: 'dev.zeitlines.product-roadmap', loaded: true });
     assert.equal(fetched, false);
     assert.deepEqual(d.registered, [], 'the static import owns that registration');
   });
@@ -80,7 +80,7 @@ describe('loadInstalledPlugins: the happy path', () => {
     const integrity = `sha384-${Buffer.from(new Uint8Array(digest)).toString('base64')}`;
     const d = deps();
     const [outcome] = await loadInstalledPlugins(
-      [status({ id: 'sprints', artifact: { kind: 'url', source: 'https://x/p.js', integrity } })],
+      [status({ id: 'com.example.sprints', artifact: { kind: 'url', source: 'https://x/p.js', integrity } })],
       d,
     );
     assert.equal(outcome.loaded, true);
@@ -90,7 +90,7 @@ describe('loadInstalledPlugins: the happy path', () => {
 describe('loadInstalledPlugins: every failure is named and contained', () => {
   test('a plugin the host already refused is skipped, keeping that reason', async () => {
     const [outcome] = await loadInstalledPlugins(
-      [status({ id: 'sprints', loadable: false, problem: 'switched off for this instance' })],
+      [status({ id: 'com.example.sprints', loadable: false, problem: 'switched off for this instance' })],
       deps(),
     );
     assert.equal(outcome.reason, 'skipped');
@@ -99,10 +99,10 @@ describe('loadInstalledPlugins: every failure is named and contained', () => {
 
   test('an unreachable artifact says which URL and why', async () => {
     const d = deps({ fetchArtifact: async () => { throw new Error('HTTP 404'); } });
-    const [outcome] = await loadInstalledPlugins([status({ id: 'sprints' })], d);
+    const [outcome] = await loadInstalledPlugins([status({ id: 'com.example.sprints' })], d);
     assert.equal(outcome.loaded, false);
     assert.equal(outcome.reason, 'unreachable');
-    assert.match(outcome.problem!, /\/plugins\/sprints\/index\.js.*HTTP 404/);
+    assert.match(outcome.problem!, /\/plugins\/com\.example\.sprints\/index\.js.*HTTP 404/);
     assert.deepEqual(d.registered, []);
   });
 
@@ -112,7 +112,7 @@ describe('loadInstalledPlugins: every failure is named and contained', () => {
     let imported = false;
     const d = deps({ importModule: async () => { imported = true; return {}; } });
     const [outcome] = await loadInstalledPlugins(
-      [status({ id: 'sprints', artifact: { kind: 'url', source: 'https://x/p.js', integrity: 'sha384-d3Jvbmc=' } })],
+      [status({ id: 'com.example.sprints', artifact: { kind: 'url', source: 'https://x/p.js', integrity: 'sha384-d3Jvbmc=' } })],
       d,
     );
     assert.equal(outcome.reason, 'integrity');
@@ -122,7 +122,7 @@ describe('loadInstalledPlugins: every failure is named and contained', () => {
 
   test('an artifact that throws while executing is contained', async () => {
     const d = deps({ importModule: async () => { throw new SyntaxError('Unexpected token'); } });
-    const [outcome] = await loadInstalledPlugins([status({ id: 'sprints' })], d);
+    const [outcome] = await loadInstalledPlugins([status({ id: 'com.example.sprints' })], d);
     assert.equal(outcome.reason, 'threw');
     assert.match(outcome.problem!, /failed to execute.*Unexpected token/);
   });
@@ -131,7 +131,7 @@ describe('loadInstalledPlugins: every failure is named and contained', () => {
     // The button would otherwise appear and do nothing, which reads as a broken
     // app rather than a broken plugin.
     const d = deps({ importModule: async () => ({}) });
-    const [outcome] = await loadInstalledPlugins([status({ id: 'sprints' })], d);
+    const [outcome] = await loadInstalledPlugins([status({ id: 'com.example.sprints' })], d);
     assert.equal(outcome.reason, 'invalid-module');
     assert.match(outcome.problem!, /exports no renderView/);
     assert.deepEqual(d.registered, []);
@@ -141,7 +141,7 @@ describe('loadInstalledPlugins: every failure is named and contained', () => {
     let fetched = false;
     const d = deps({ fetchArtifact: async () => { fetched = true; return SOURCE; } });
     const [outcome] = await loadInstalledPlugins(
-      [status({ id: 'sprints', artifact: { kind: 'package', source: 'sprints@1' } })],
+      [status({ id: 'com.example.sprints', artifact: { kind: 'package', source: 'sprints@1' } })],
       d,
     );
     assert.equal(outcome.reason, 'unsupported-artifact');
@@ -151,7 +151,7 @@ describe('loadInstalledPlugins: every failure is named and contained', () => {
   test('a stored manifest that no longer validates fails with a sentence, not a crash', async () => {
     const d = deps();
     const [outcome] = await loadInstalledPlugins(
-      [status({ id: 'sprints', manifest: { id: 'sprints' } })],
+      [status({ id: 'com.example.sprints', manifest: { id: 'com.example.sprints' } })],
       d,
     );
     assert.equal(outcome.reason, 'invalid-module');
@@ -167,16 +167,16 @@ describe('loadInstalledPlugins: every failure is named and contained', () => {
       },
     });
     const outcomes = await loadInstalledPlugins(
-      [status({ id: 'broken' }), status({ id: 'sprints' })],
+      [status({ id: 'broken' }), status({ id: 'com.example.sprints' })],
       d,
     );
     assert.deepEqual(outcomes.map((o) => o.loaded), [false, true]);
-    assert.deepEqual(d.registered, ['sprints']);
+    assert.deepEqual(d.registered, ['com.example.sprints']);
   });
 
   test('a registration that throws is reported rather than propagated', async () => {
     const d = deps({ registerPlugin: () => { throw new Error('duplicate view id'); } });
-    const [outcome] = await loadInstalledPlugins([status({ id: 'sprints' })], d);
+    const [outcome] = await loadInstalledPlugins([status({ id: 'com.example.sprints' })], d);
     assert.equal(outcome.reason, 'threw');
     assert.match(outcome.problem!, /registration failed.*duplicate view id/);
   });
@@ -197,7 +197,7 @@ describe('moduleProblems', () => {
 });
 
 describe('descriptorFor', () => {
-  const enabledFile = { items: [], plugins: [{ id: 'sprints' }] } as any;
+  const enabledFile = { items: [], plugins: [{ id: 'com.example.sprints' }] } as any;
   const otherFile = { items: [] } as any;
 
   test('availability comes from enablement, not from the plugin', () => {
