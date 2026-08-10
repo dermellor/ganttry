@@ -303,3 +303,29 @@ test('administration is refused while access control is off, database or not', a
   }))!;
   assert.equal(write.status, 503, 'inviting is refused for the same reason');
 });
+
+test('an unreadable member list refuses, and names the likely cause', async () => {
+  // Turning the switch on before applying the migration is the ordering mistake
+  // this guards: without it every request, sign-in included, becomes a 500 whose
+  // cause is only in a log.
+  const brokenDb = {
+    from: () => ({
+      select: () => ({
+        ilike: () => ({
+          maybeSingle: async () => {
+            throw new Error('column "role" does not exist');
+          },
+        }),
+      }),
+    }),
+  };
+  const res = (await call('/api/sources', undefined, {
+    conns: { supabase: brokenDb } as unknown as DbConnections,
+    accessControl: true,
+    caller: { email: 'someone@example.test' },
+  }))!;
+  assert.equal(res.status, 503);
+  const body = (await res.json()) as any;
+  assert.equal(body.error, 'membership_unavailable');
+  assert.match(body.message, /db:migrate/);
+});

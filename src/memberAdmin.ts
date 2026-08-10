@@ -62,6 +62,7 @@ const ERROR_TEXT: Record<string, string> = {
   nothing_to_resend: 'Diese Mitgliedschaft wartet auf keine Einladung.',
   db_not_configured: 'Für Mitgliedschaften braucht diese Instanz eine Datenbank.',
   access_control_disabled: 'Die Benutzerverwaltung ist auf dieser Instanz nicht eingeschaltet.',
+  membership_unavailable: 'Die Mitgliederliste ist nicht lesbar. Vermutlich fehlt die Migration.',
   forbidden: 'Dafür fehlen dir die Rechte.',
   invalid_request: 'Diese Eingabe ist nicht gültig.',
   'not found': 'Diese Adresse ist kein Mitglied.',
@@ -309,7 +310,14 @@ function build(): HTMLDialogElement {
       el('div', { id: 'member-note' }),
 
       el('div', { id: 'member-invite', class: 'member-invite', hidden: true }, [
-        Text({ as: 'p', children: ['Einladungslink für ', el('strong', { class: 'member-invite-for' }), '. Er wird nur dieses eine Mal angezeigt.'] }),
+        Text({
+          as: 'p',
+          children: [
+            'Einladungslink für ',
+            el('strong', { class: 'member-invite-for' }),
+            '. Er wird nur dieses eine Mal angezeigt. Die Person kann sich auch einfach unter der normalen Adresse anmelden: die Einladung hängt an ihrer E-Mail-Adresse, nicht am Link.',
+          ],
+        }),
         el('div', { class: 'member-invite-row' }, [
           TextInput({
             id: 'member-invite-url',

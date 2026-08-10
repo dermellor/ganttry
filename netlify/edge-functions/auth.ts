@@ -20,7 +20,7 @@
 
 import type { Context, Config } from '@netlify/edge-functions';
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
-import { accessControlEnabled, decideSignIn } from '../../src/access.ts';
+import { accessControlEnabled, decideSignIn, needsBootstrapPromotion } from '../../src/access.ts';
 import {
   getMember,
   inviteMember,
@@ -300,9 +300,12 @@ async function admit(
   // The bootstrap address is how an instance gets its first admin. Without it a
   // fresh member list has nobody who can invite, and the instance is closed to
   // everyone including its owner.
-  const bootstrap = (Deno.env.get('TIMELINES_BOOTSTRAP_ADMIN') ?? '').trim().toLowerCase();
-  if (!member && bootstrap && bootstrap === email) {
+  // The master key holds whatever state its row is in, including „already an
+  // editor" — see `needsBootstrapPromotion` for why „create if missing" would
+  // have locked every existing instance out of its own administration.
+  if (needsBootstrapPromotion(member, email, Deno.env.get('TIMELINES_BOOTSTRAP_ADMIN'))) {
     await inviteMember(db, { email, role: 'admin' });
+    await setMemberStatus(db, email, 'active');
     member = await getMember(db, email);
   }
 

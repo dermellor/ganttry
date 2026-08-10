@@ -116,6 +116,17 @@ async function readBody(req: Request, method: string): Promise<unknown> {
 }
 
 /**
+ * Every path this module answers for.
+ *
+ * Exported because the same list has to exist twice more — in the edge
+ * function's `config.path` and in `netlify.toml` — and those two are hand-kept.
+ * A route added here alone works in the Vite dev middleware, which matches all
+ * of `/api/`, and 404s in production, where an edge function only ever sees the
+ * paths it declares. `scripts/ci/edge-routes.test.ts` asserts the three agree.
+ */
+export const OWNED_API_PATHS = ['/api/source/*', '/api/sources', '/api/users', '/api/members'] as const;
+
+/**
  * Is this one of ours at all?
  *
  * Needed as its own question because authorization has to run after „yes" and
@@ -221,7 +232,28 @@ async function authorize(path: string, method: string, ctx: ApiContext): Promise
     );
   }
 
-  const member = await repo.getMember(email);
+  let member;
+  try {
+    member = await repo.getMember(email);
+  } catch (e) {
+    // The switch is on and the member list cannot be read. In practice that is
+    // one thing: the migration has not been applied to this database, and the
+    // columns do not exist yet. Without this the failure surfaces as a 500 on
+    // every request including the sign-in, with the cause only in a log — the
+    // exact footgun of turning the switch on before running `db:migrate`.
+    //
+    // Refusing rather than passing through: a database that cannot answer „may
+    // this caller do this" has not answered yes.
+    return json(
+      {
+        error: 'membership_unavailable',
+        message:
+          'TIMELINES_ACCESS_CONTROL is on, but the member list could not be read. Apply the pending migrations (npm run db:migrate).',
+        detail: e instanceof Error ? e.message : String(e),
+      },
+      503,
+    );
+  }
   // One message for „not a member" and „wrong role" on purpose: the difference
   // is only interesting to somebody probing which addresses exist.
   return memberCan(member, capability) ? null : deny(`${email} may not ${capability} here`);
