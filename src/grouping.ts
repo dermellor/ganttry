@@ -10,7 +10,6 @@ import { escapeHtml, type TimelineGroup, type TimelineItem } from './buildItems'
 import { state, els } from './state';
 import { getCustomFields } from './customFields';
 import {
-  bucketsFor,
   computeSections,
   groupByOptions,
   GROUP_DIM,
@@ -18,6 +17,7 @@ import {
   type GroupByOption,
   type SectionContext,
 } from './listGrouping';
+import { isFilterSelectionActive, passesFilters } from './filterRule';
 
 // The synthetic-id vocabulary lives in cloneId.ts (DOM-free) so a consumer that
 // only needs the display-id → item-id mapping does not have to import this
@@ -60,23 +60,21 @@ export function filterValueOptions(
   return sections.map((s) => ({ value: s.empty ? NO_BUCKET : s.id, label: s.label }));
 }
 
-// A filter is only in effect when a dimension is chosen AND at least one value is
-// selected — an empty selection means "no restriction" (classic faceted filter).
+// A filter is only in effect while some dimension has a value selected — an empty
+// selection means "no restriction" (classic faceted filter).
 export function isFilterActive(): boolean {
-  return !!state.filterDim && state.filterValues.length > 0;
+  return isFilterSelectionActive(state.filters);
 }
 
-// Does an item pass the active value filter? Items with no value for the filter
-// dimension pass only when the "Ohne …" bucket (NO_BUCKET) is among the selected
-// values. Callers should gate on isFilterActive() first.
+// Does an item pass the active value filter? The rule itself (AND across
+// dimensions, OR within one, the "Ohne …" bucket per dimension) is in
+// filterRule.ts, DOM-free and unit-tested; this only supplies the app state.
+// Callers should gate on isFilterActive() first.
 export function passesFilter(
   item: TimelineItem,
   groups: { id: string; content: string }[],
 ): boolean {
-  if (!state.filterDim) return true;
-  const buckets = bucketsFor(item, state.filterDim, sectionContext(groups));
-  if (buckets.length === 0) return state.filterValues.includes(NO_BUCKET);
-  return buckets.some((b) => state.filterValues.includes(b));
+  return passesFilters(item, state.filters, sectionContext(groups));
 }
 
 // Options offered for the current entries plus the resolved active dimension

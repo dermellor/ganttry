@@ -508,6 +508,30 @@ const menuSection = section(
       ]),
     ),
     specimen(
+      'Sektionen mit Titel (Facetten)',
+      el('div', { class: 'pg-MenuHost' }, [
+        Popover({
+          placement: 'fixed',
+          layer: 'popover',
+          className: 'pg-StaticPopover',
+          children: [
+            MenuSection({
+              label: 'Status',
+              children: ITEM_STATUSES.map(({ key, label }) =>
+                Checkbox({ label, value: key, checked: key === 'Open', className: 'ds-MenuItem' }),
+              ),
+            }),
+            MenuSection({
+              label: 'Tier',
+              children: ['Free', 'Scale'].map((v) =>
+                Checkbox({ label: v, value: v, className: 'ds-MenuItem' }),
+              ),
+            }),
+          ],
+        }),
+      ]),
+    ),
+    specimen(
       'PickerGrid',
       el('div', { class: 'pg-MenuHost' }, [
         Popover({

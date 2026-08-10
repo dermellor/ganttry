@@ -80,16 +80,31 @@ export type MenuSectionOptions = {
    *  by a visible caption: three bare words above „Löschen" would otherwise read
    *  as four actions, and the rule does that job without costing a line. */
   ariaLabel?: string;
+  /**
+   * A visible caption, for the case the rule alone cannot carry: a panel whose
+   * sections hold *values* rather than actions. Stacked facets („Open, Doing,
+   * Done" above „Free, Scale") are unreadable without saying which dimension
+   * each belongs to. Labels the group too, so `ariaLabel` is not needed with it.
+   */
+  label?: string;
   className?: string;
   attrs?: Attrs;
 };
 
 export function MenuSection(options: MenuSectionOptions = {}): HTMLDivElement {
-  const { children, ariaLabel, className, attrs } = options;
+  const { children, ariaLabel, label, className, attrs } = options;
+  const caption = label
+    ? el('div', { class: 'ds-MenuSection-label', 'aria-hidden': 'true' }, label)
+    : undefined;
   return el(
     'div',
-    { class: classes('ds-MenuSection', className), role: 'group', 'aria-label': ariaLabel, ...attrs },
-    children,
+    {
+      class: classes('ds-MenuSection', className),
+      role: 'group',
+      'aria-label': ariaLabel ?? label,
+      ...attrs,
+    },
+    caption ? [caption, children] : children,
   );
 }
 

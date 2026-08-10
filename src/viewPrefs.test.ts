@@ -20,21 +20,15 @@ function get(store: Record<string, string>): (key: string) => string | null {
 }
 
 test('a timeline nobody looked at reads as the default', () => {
-  const prefs = viewPrefsFor({}, 'roadmap');
-  assert.deepEqual(prefs, { ...DEFAULT_VIEW_PREFS, filterValues: [] });
+  assert.deepEqual(viewPrefsFor({}, 'roadmap'), { ...DEFAULT_VIEW_PREFS, filters: {} });
 });
 
 test('one timeline’s filter is invisible to another', () => {
   let store: ViewPrefsStore = {};
-  store = withViewPrefs(store, 'a', {
-    ...DEFAULT_VIEW_PREFS,
-    filterDim: 'cf:tier',
-    filterValues: ['Free'],
-  });
+  store = withViewPrefs(store, 'a', { ...DEFAULT_VIEW_PREFS, filters: { 'cf:tier': ['Free'] } });
 
-  assert.deepEqual(viewPrefsFor(store, 'a').filterValues, ['Free']);
-  assert.equal(viewPrefsFor(store, 'b').filterDim, '');
-  assert.deepEqual(viewPrefsFor(store, 'b').filterValues, []);
+  assert.deepEqual(viewPrefsFor(store, 'a').filters, { 'cf:tier': ['Free'] });
+  assert.deepEqual(viewPrefsFor(store, 'b').filters, {});
 });
 
 test('a timeline back at its default keeps no entry', () => {
@@ -51,14 +45,10 @@ test('only what differs from the default is written', () => {
   assert.deepEqual(store.a, { mode: 'list' });
 });
 
-test('the returned filterValues never aliases the stored array', () => {
-  const store = withViewPrefs({}, 'a', {
-    ...DEFAULT_VIEW_PREFS,
-    filterDim: 'status',
-    filterValues: ['Open'],
-  });
-  viewPrefsFor(store, 'a').filterValues.push('Done');
-  assert.deepEqual(viewPrefsFor(store, 'a').filterValues, ['Open']);
+test('the returned selection never aliases the stored one', () => {
+  const store = withViewPrefs({}, 'a', { ...DEFAULT_VIEW_PREFS, filters: { status: ['Open'] } });
+  viewPrefsFor(store, 'a').filters.status.push('Done');
+  assert.deepEqual(viewPrefsFor(store, 'a').filters, { status: ['Open'] });
 });
 
 test('a null view id reads as the default rather than throwing', () => {
@@ -73,25 +63,48 @@ test('malformed storage reads as nothing stored', () => {
 
 test('a stored field of the wrong type reads as absent', () => {
   const store = parseViewPrefsStore(
-    JSON.stringify({ a: { mode: 42, groupBy: 'tag', filterValues: ['x', 7], milestonesOnly: 'yes' } }),
+    JSON.stringify({
+      a: { mode: 42, groupBy: 'tag', filters: { status: ['Open', 7], tag: 'x' }, milestonesOnly: 'yes' },
+    }),
   );
   const prefs = viewPrefsFor(store, 'a');
   assert.equal(prefs.mode, 'timeline');
   assert.equal(prefs.groupBy, 'tag');
-  assert.deepEqual(prefs.filterValues, ['x']);
+  // The malformed dimension drops out, the well-typed one keeps its string values.
+  assert.deepEqual(prefs.filters, { status: ['Open'] });
   assert.equal(prefs.milestonesOnly, false);
 });
 
 test('a round trip through the serialized store survives', () => {
   const store = withViewPrefs({}, 'a', {
-    ...DEFAULT_VIEW_PREFS,
     mode: 'plugin:product-roadmap:pricing',
     groupBy: 'cf:tier',
-    filterDim: 'status',
-    filterValues: ['Open', 'Doing'],
+    filters: { status: ['Open', 'Doing'], 'cf:tier': ['Free'] },
     milestonesOnly: true,
   });
   assert.deepEqual(parseViewPrefsStore(JSON.stringify(store)), store);
+});
+
+test('a stored single-dimension pair is read as a selection', () => {
+  const store = parseViewPrefsStore(
+    JSON.stringify({ a: { filterDim: 'status', filterValues: ['Open'] } }),
+  );
+  assert.deepEqual(viewPrefsFor(store, 'a').filters, { status: ['Open'] });
+});
+
+test('the current shape wins over a pair left beside it', () => {
+  const store = parseViewPrefsStore(
+    JSON.stringify({ a: { filters: { tag: ['x'] }, filterDim: 'status', filterValues: ['Open'] } }),
+  );
+  assert.deepEqual(viewPrefsFor(store, 'a').filters, { tag: ['x'] });
+});
+
+test('saving drops the legacy pair rather than carrying it along', () => {
+  const store = parseViewPrefsStore(
+    JSON.stringify({ a: { filterDim: 'status', filterValues: ['Open'] } }),
+  );
+  const saved = withViewPrefs(store, 'a', viewPrefsFor(store, 'a'));
+  assert.deepEqual(saved.a, { filters: { status: ['Open'] } });
 });
 
 test('the instance-wide keys carry over', () => {
@@ -107,8 +120,7 @@ test('the instance-wide keys carry over', () => {
   assert.deepEqual(prefs, {
     mode: 'list',
     groupBy: 'tag',
-    filterDim: 'status',
-    filterValues: ['Open'],
+    filters: { status: ['Open'] },
     milestonesOnly: true,
   });
 });

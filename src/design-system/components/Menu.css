@@ -58,6 +58,18 @@
   border-top: 1px solid var(--border);
 }
 
+/* The caption of a section holding values rather than actions. Quiet and small:
+   it says which dimension the rows below belong to and must not compete with
+   them for attention. */
+.ds-MenuSection-label {
+  padding: var(--space-3xs) var(--space-2xs);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
 /* ---- MenuItem -------------------------------------------------------------- */
 
 .ds-MenuItem {

@@ -62,7 +62,6 @@ export type AppShellElements = {
   viewToolbar: HTMLElement;
   groupBy: HTMLSelectElement;
   filterControl: HTMLElement;
-  filterDim: HTMLSelectElement;
   filterToggle: HTMLButtonElement;
   filterMenu: HTMLElement;
   viewSelect: HTMLSelectElement;
@@ -212,7 +211,9 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   });
 
   const groupBy = Select({ id: 'groupby' });
-  const filterDim = Select({ id: 'filter-dim', attrs: { 'aria-label': 'Filter-Dimension' } });
+  // No dimension dropdown beside it any more: the panel holds every dimension at
+  // once, so picking one was a step that bought nothing and a limit that cost the
+  // combination of two narrowings (see src/filterControl.ts).
   const filterToggle = Button({
     label: 'Alle Werte',
     variant: 'trigger',
@@ -226,12 +227,12 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     attrs: { id: 'filter-menu' },
   });
   const filterControl = ToolbarControl({
-    label: 'Filter',
-    // Not a `<label>`: it holds two controls, and a label element would claim
-    // only the first of them.
+    // Not a `<label>`: the trigger is a button, and a label element pointing at it
+    // would duplicate its own accessible name.
     labelled: false,
+    label: 'Filter',
     attrs: { id: 'filter-control' },
-    children: [filterDim, ToolbarAnchor({ children: [filterToggle, filterMenu] })],
+    children: ToolbarAnchor({ children: [filterToggle, filterMenu] }),
   });
 
   const viewToolbar = Toolbar({
@@ -349,7 +350,6 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       viewToolbar,
       groupBy,
       filterControl,
-      filterDim,
       filterToggle,
       filterMenu,
       viewSelect,

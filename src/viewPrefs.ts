@@ -20,16 +20,32 @@
 // string: turning it into a `ViewMode` needs the registry's legacy lookup, and
 // that decision stays at the one call site that already makes it.
 
+import { filterSelectionFromPair, isFilterSelectionActive, type FilterSelection } from './filterRule';
 import { GROUP_DIM } from './listGrouping';
 
-/** What one timeline remembers about the way it is displayed. */
+/** What one timeline remembers, as it sits in storage. */
 export type StoredViewPrefs = {
   /** A `ViewMode`, unparsed: see the module comment. */
   mode?: string;
   groupBy?: string;
+  /** Selected values per filter dimension. */
+  filters?: FilterSelection;
+  /**
+   * The shape `filters` replaced: one dimension plus its values. Still read,
+   * never written. It sits in the stored state of everybody who used the
+   * single-dimension filter, and ignoring it clears their saved narrowing.
+   */
   filterDim?: string;
   filterValues?: string[];
   milestonesOnly?: boolean;
+};
+
+/** The same thing resolved, which is what the app works with. */
+export type ViewPrefs = {
+  mode: string;
+  groupBy: string;
+  filters: FilterSelection;
+  milestonesOnly: boolean;
 };
 
 export type ViewPrefsStore = Record<string, StoredViewPrefs>;
@@ -52,17 +68,35 @@ export const LEGACY_PREF_KEYS = {
 } as const;
 
 /** The state of a timeline nobody has looked at yet. */
-export const DEFAULT_VIEW_PREFS: Required<StoredViewPrefs> = {
+export const DEFAULT_VIEW_PREFS: ViewPrefs = {
   mode: 'timeline',
   groupBy: GROUP_DIM,
-  filterDim: '',
-  filterValues: [],
+  filters: {},
   milestonesOnly: false,
 };
 
 function stringList(raw: unknown): string[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   return raw.filter((v): v is string => typeof v === 'string');
+}
+
+/** A selection with every entry copied, so no caller shares an array with the store. */
+function copySelection(filters: FilterSelection): FilterSelection {
+  const out: FilterSelection = {};
+  for (const [dim, values] of Object.entries(filters)) {
+    if (values.length) out[dim] = [...values];
+  }
+  return out;
+}
+
+function selection(raw: unknown): FilterSelection | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: FilterSelection = {};
+  for (const [dim, values] of Object.entries(raw as Record<string, unknown>)) {
+    const list = stringList(values);
+    if (dim && list?.length) out[dim] = list;
+  }
+  return out;
 }
 
 /**
@@ -76,6 +110,8 @@ function sanitize(raw: unknown): StoredViewPrefs {
   const out: StoredViewPrefs = {};
   if (typeof rec.mode === 'string') out.mode = rec.mode;
   if (typeof rec.groupBy === 'string') out.groupBy = rec.groupBy;
+  const filters = selection(rec.filters);
+  if (filters) out.filters = filters;
   if (typeof rec.filterDim === 'string') out.filterDim = rec.filterDim;
   const values = stringList(rec.filterValues);
   if (values) out.filterValues = values;
@@ -100,27 +136,36 @@ export function parseViewPrefsStore(raw: string | null | undefined): ViewPrefsSt
   return out;
 }
 
+/**
+ * The selection a stored entry carries: the current shape when it has one, the
+ * single-dimension pair otherwise. `filters` wins, so a re-saved entry stops
+ * consulting the old pair without it having to be deleted.
+ */
+function storedSelection(stored: StoredViewPrefs | undefined): FilterSelection {
+  if (!stored) return {};
+  if (stored.filters) return copySelection(stored.filters);
+  return filterSelectionFromPair(stored.filterDim, stored.filterValues);
+}
+
 /** What `viewId` remembers, filled up with the defaults. */
 export function viewPrefsFor(
   store: ViewPrefsStore,
   viewId: string | null | undefined,
-): Required<StoredViewPrefs> {
+): ViewPrefs {
   const stored = viewId ? store[viewId] : undefined;
   return {
-    ...DEFAULT_VIEW_PREFS,
-    ...(stored ?? {}),
-    // Spread copies the array reference, and the default one is shared: a caller
-    // mutating it would edit every other timeline's default.
-    filterValues: [...(stored?.filterValues ?? DEFAULT_VIEW_PREFS.filterValues)],
+    mode: stored?.mode ?? DEFAULT_VIEW_PREFS.mode,
+    groupBy: stored?.groupBy ?? DEFAULT_VIEW_PREFS.groupBy,
+    filters: storedSelection(stored),
+    milestonesOnly: stored?.milestonesOnly ?? DEFAULT_VIEW_PREFS.milestonesOnly,
   };
 }
 
-function isDefault(prefs: Required<StoredViewPrefs>): boolean {
+function isDefault(prefs: ViewPrefs): boolean {
   return (
     prefs.mode === DEFAULT_VIEW_PREFS.mode &&
     prefs.groupBy === DEFAULT_VIEW_PREFS.groupBy &&
-    prefs.filterDim === DEFAULT_VIEW_PREFS.filterDim &&
-    prefs.filterValues.length === 0 &&
+    !isFilterSelectionActive(prefs.filters) &&
     prefs.milestonesOnly === DEFAULT_VIEW_PREFS.milestonesOnly
   );
 }
@@ -130,11 +175,14 @@ function isDefault(prefs: Required<StoredViewPrefs>): boolean {
  * is written, and a timeline back at its default loses its entry entirely — the
  * same reason `toggleItemCollapsed` deletes instead of storing an empty list:
  * otherwise the store grows a key per timeline anybody ever opened.
+ *
+ * The legacy `filterDim` / `filterValues` pair is never written back, so a
+ * timeline that has been saved once carries only the current shape.
  */
 export function withViewPrefs(
   store: ViewPrefsStore,
   viewId: string,
-  prefs: Required<StoredViewPrefs>,
+  prefs: ViewPrefs,
 ): ViewPrefsStore {
   const next: ViewPrefsStore = { ...store };
   if (isDefault(prefs)) {
@@ -144,8 +192,7 @@ export function withViewPrefs(
   const entry: StoredViewPrefs = {};
   if (prefs.mode !== DEFAULT_VIEW_PREFS.mode) entry.mode = prefs.mode;
   if (prefs.groupBy !== DEFAULT_VIEW_PREFS.groupBy) entry.groupBy = prefs.groupBy;
-  if (prefs.filterDim !== DEFAULT_VIEW_PREFS.filterDim) entry.filterDim = prefs.filterDim;
-  if (prefs.filterValues.length) entry.filterValues = [...prefs.filterValues];
+  if (isFilterSelectionActive(prefs.filters)) entry.filters = copySelection(prefs.filters);
   if (prefs.milestonesOnly) entry.milestonesOnly = true;
   next[viewId] = entry;
   return next;
@@ -153,12 +200,12 @@ export function withViewPrefs(
 
 /**
  * The state left behind by the instance-wide keys, or null when none of them is
- * set. `null` and „all five at their default" are deliberately the same answer:
- * both mean there is nothing to carry over.
+ * set. `null` and „all of them at their default" are deliberately the same
+ * answer: both mean there is nothing to carry over.
  */
 export function legacyViewPrefs(
   get: (key: string) => string | null,
-): StoredViewPrefs | null {
+): Partial<ViewPrefs> | null {
   const raw = {
     mode: get(LEGACY_PREF_KEYS.mode),
     groupBy: get(LEGACY_PREF_KEYS.groupBy),
@@ -168,14 +215,14 @@ export function legacyViewPrefs(
   };
   if (Object.values(raw).every((v) => v == null)) return null;
 
-  const prefs: StoredViewPrefs = {};
+  const prefs: Partial<ViewPrefs> = {};
   if (raw.mode) prefs.mode = raw.mode;
   if (raw.groupBy) prefs.groupBy = raw.groupBy;
-  if (raw.filterDim) prefs.filterDim = raw.filterDim;
-  if (raw.filterValues) {
+  if (raw.filterDim && raw.filterValues) {
     try {
       const values = stringList(JSON.parse(raw.filterValues));
-      if (values?.length) prefs.filterValues = values;
+      const filters = filterSelectionFromPair(raw.filterDim, values);
+      if (isFilterSelectionActive(filters)) prefs.filters = filters;
     } catch {
       // A malformed list carries over as „no selection", which is what an empty
       // selection already means: no restriction.
