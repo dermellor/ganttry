@@ -167,6 +167,17 @@ is a missed conflict rather than corruption. If that proves too coarse,
 `ifMatch` widens to `number | string` and the value becomes a content hash; the
 adapter interface does not otherwise change.
 
+**The version is per document, so the client has to carry it forward across its
+own writes.** One version covers every item in the file, and each write bumps it;
+the second item written in one pass therefore held an `If-Match` that our *own*
+first write had just invalidated, and the `409` sent the client into its
+reload-authoritative-state branch, discarding the rest of the pass. Nothing wrote
+two items at once until moving an item took its children along (see „Parent and
+children" (docs/items.md)), which made it happen every time. `adoptDocumentVersion`
+in [`src/persistence.ts`](../src/persistence.ts) hands the returned version to
+every item of a `local` source; a DB source keeps its per-row versions, which are
+unrelated to each other and must not be overwritten.
+
 ### Patching frontmatter surgically
 
 This is the one piece of genuinely non-obvious work.
