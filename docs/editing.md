@@ -622,6 +622,58 @@ without one vanishes from the timeline.
 
 Persistence path: viewer → item-level calls (`POST/PATCH/DELETE /api/source/<id>/item`, `PUT …/phases`) → middleware (`vite.config.ts`) → Supabase via `scripts/db/api.ts`. `PATCH` carries the item `version` in `If-Match`; a stale version returns `409` and the client reloads that item. Only DB-backed sources are editable; genuine file-based sources (the examples) load read-only from their static `/data/sources/<id>.json`. Builds (`npm run build`) and exported HTML have no edit endpoint. DB-backed timelines are discovered from the DB at build time (`collectDbSources`); the registration **stub** (`name` + `items: []`, no content) is written only to the gitignored build output `public/data/sources/<id>.json` — nothing DB-backed is committed, and there is deliberately no committed content cache (see „Principle: no emergency or fallback data").
 
+### Why a track reserves its height
+
+Scrolling a dense timeline used to shuffle it vertically: tracks changed height,
+rows moved, and the total content height oscillated. Two independent causes, both
+measured on a six-track, 84-item timeline.
+
+**vis derives a track's height from what it has drawn.** `Group._calculateHeight`
+runs over `visibleItems`, so a track whose items all sit outside the current time
+window collapses to its label height and every track below it jumps up. In one
+window holding seven and six items respectively, two tracks rendered *zero* items
+and stayed at 28px, while a third still showed eleven with only two in the window:
+`Group._redrawItems` only restacks a track while it is inside the vertical viewport
+(`isVisible && !lastIsVisible`), so a track outside keeps stale items and a stale
+height until it is scrolled into view, and then pops. Directly after load the
+content measured 1050px; a later redraw with no input at all made 560px of it.
+
+That behaviour is right for the mode vis was written around, where `stack: true`
+resolves overlaps among the items on screen and vertical position is a function of
+the window. This viewer runs the opposite mode: `stack: false` with lanes
+precomputed into `subgroup` (`assignLaneSubgroups`), so an item's row follows from
+the data. vis has no concept for „this lane exists regardless of what is visible",
+so the reservation is made where vis does take a number from us: **the group label**.
+`_calculateHeight` ends in `Math.max(height, props.label.height)` and falls back to
+the label height when nothing is drawn, so a label that is `lanes × lane pitch` tall
+pins the track. `laneCountStyle` publishes the lane count as `--lanes` on the group
+(`DataGroup.style`, a documented property), `timeline.css` turns it into a
+`min-height`, and `--lane-pitch` is measured from a rendered bar rather than written
+down twice. The phase-band spacer above already works this way.
+
+The cost is the one the overrun line already pays: a track is as tall as its densest
+stretch needs, so a sparse window shows empty rows. That is the trade for a layout
+that does not move, and it is visible rather than hidden.
+
+**Zoom re-packed more than it had to.** A point item reserves its label width
+translated through px/day, so every zoom step could reassign lanes — and packing
+from scratch moved items that had no reason to move. `packBand` now prefers the lane
+an item already sat in whenever that lane is still free, which costs nothing: with
+items processed in start order and a new lane opened only when every existing one is
+busy, the lane count is the widest overlap no matter which free lane is picked.
+`packingPxPerDay` additionally snaps the density to quarter-octave steps, rounding
+*down* so the reserved width errs generous and the snapping can never let two labels
+overlap.
+
+What is verified: across six pan steps at fixed zoom, no item changes row and no
+track changes height (it was 560 ↔ 1050 before), and a track with none of its items
+in the window keeps its full height instead of 28px. **Zoom still reflows**: the lane
+count legitimately changes with the reserved label width, and the new reservation
+reaches the track one redraw late, because vis measures the label in `_didResize`,
+which its redraw queue runs *after* the `_calculateHeight` that consumes the
+measurement. `repackLanes` schedules a redraw on the next frame for it; two calls in
+one tick collapse into one and do not help.
+
 ## View modes: Timeline / Liste
 
 The header **Ansicht** icon toggle (a segmented two-button control, styled in

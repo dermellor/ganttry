@@ -40,6 +40,25 @@
   font-family: var(--font-body) !important;
 }
 
+/* A track reserves room for the lanes it needs, and keeps it whatever the current
+   time window shows. vis-timeline derives a group's height from the items it has
+   *drawn* and ends in `Math.max(height, props.label.height)`, so a track whose
+   items all sit outside the window collapses to label height and every track below
+   it jumps up — which is what made scrolling and zooming shuffle the layout
+   vertically. The label is the one height vis takes from us, so the reservation
+   lives here. `--lanes` comes from the group's inline style (`laneCountStyle` in
+   buildItems.ts) and is absent on a track with no items, where `0` correctly asks
+   for no reserve at all. `--lane-pitch` is measured from a rendered bar
+   (`syncLanePitch` in render.ts); the value below only has to carry the first paint,
+   before there is a bar to measure. */
+.timeline {
+  --lane-pitch: 42px;
+}
+
+.timeline .vis-labelset .vis-label .vis-inner {
+  min-height: calc(var(--lanes, 0) * var(--lane-pitch));
+}
+
 .vis-labelset .vis-label .vis-inner {
   padding: 6px 10px;
   font-size: 12px;

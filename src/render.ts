@@ -277,6 +277,23 @@ function computeDisplay(): { items: TimelineItem[]; groups: TimelineGroup[] } {
   return { items: displayItems, groups: withBandSpacer(displayGroups) };
 }
 
+// The gap vis-timeline leaves between two rows of a track, and half of it above
+// and below the track's edges. Named because the lane pitch below is derived from
+// it: the two have to agree or the label reserves the wrong height.
+const ITEM_MARGIN_VERTICAL = 12;
+
+// Vertical pitch of one lane, published to CSS as `--lane-pitch` so the group
+// label can reserve `--lanes × pitch` (see LANE_COUNT_PROPERTY in buildItems.ts).
+// Measured from a rendered bar rather than written down: the bar's height is a
+// consequence of its padding, font and line-height, so a second copy of the number
+// here would drift the moment a type token moves. The stylesheet carries a
+// fallback for the first paint, before any bar exists to measure.
+function syncLanePitch(): void {
+  const bar = els.timeline.querySelector<HTMLElement>('.vis-item.vis-range, .vis-item.vis-box');
+  const h = bar?.offsetHeight ?? 0;
+  if (h > 0) els.timeline.style.setProperty('--lane-pitch', `${h + ITEM_MARGIN_VERTICAL}px`);
+}
+
 // Point-label measurement (see repackLanes). A single off-DOM canvas measures
 // text width in the timeline's own font; results are cached by `font|text`.
 // `labelFont` is resolved lazily from a rendered item and reset per render.
@@ -429,6 +446,11 @@ export function applyBuildToDataSets(): void {
   // The head rail reads the same display set, so it follows the filter and the
   // grouping dimension without a second derivation of "what is visible".
   milestoneRail?.setItems(display.items);
+  // `computeDisplay` packs without zoom information, so the reservation it just
+  // wrote onto the groups is the coarse one (points reserve no label width there)
+  // and every track would briefly shrink to it. Re-pack with the real px/day right
+  // away, so an edit never flashes a layout that belongs to no zoom level.
+  repackLanes();
   // Keep the list view in sync when it's the active display (edits, drags,
   // milestones-only toggle all funnel through here).
   if (state.viewMode === 'list') renderListView();
@@ -625,7 +647,7 @@ export async function renderTimeline(view: View) {
     // sitting 6px from its neighbour, and read as glued to the line. Doubling
     // the vertical gap buys the edges their 6px; the rows are further apart for
     // it, which a track carrying a summary bar and its children needs anyway.
-    margin: { item: { horizontal: 6, vertical: 12 }, axis: axisMargin },
+    margin: { item: { horizontal: 6, vertical: ITEM_MARGIN_VERTICAL }, axis: axisMargin },
     orientation: { axis: 'top', item: 'top' },
     locale: 'de',
     tooltip: { followMouse: false, overflowMethod: 'cap' },
@@ -688,6 +710,9 @@ export async function renderTimeline(view: View) {
     // real width changes (window resize), which shift px/day — so re-evaluate
     // tag-density and re-pack point-label lanes.
     updateTagDensity();
+    // The lane pitch too: a brand or type change reaches the bars through CSS, and
+    // the reservation is expressed in multiples of it (see syncLanePitch).
+    syncLanePitch();
     scheduleRepack();
   });
   ro.observe(els.timeline);
@@ -697,6 +722,7 @@ export async function renderTimeline(view: View) {
     // Re-pack lanes with the real px/day + measurable item font before the
     // timeline becomes visible, so the first painted frame already reserves
     // room for point labels instead of flashing the overlap.
+    syncLanePitch();
     repackLanes();
     timeline?.redraw();
     // Re-apply the pre-render vertical offset once the new timeline has laid out
@@ -881,8 +907,9 @@ export function repackLanes(): void {
   // Pack the *display* set (regrouped/cloned when grouping by tag/field), so the
   // clones on their derived lanes get label-width-aware spacing too.
   const before = new Map(displayItems.map((it) => [it.id, it.subgroup]));
+  const beforeStyles = new Map(displayGroups.map((g) => [g.id, g.style]));
   assignLaneSubgroups(displayItems, displayGroups, displayDeps, displayParents(), {
-    pxPerDay,
+    pxPerDay: packingPxPerDay(pxPerDay),
     pointLabelPx: measurePointLabelPx,
   });
 
@@ -893,6 +920,43 @@ export function repackLanes(): void {
     .filter((it) => present.has(String(it.id)) && it.subgroup !== before.get(it.id))
     .map((it) => ({ id: it.id, subgroup: it.subgroup }));
   if (changed.length) itemsDs.update(changed);
+
+  // The reservation has to reach the label too, or the track keeps yesterday's
+  // height. It matters that the reservation always covers the lanes the packing just
+  // used: vis takes the *larger* of the label reservation and the height its drawn
+  // items need, and the second term is what depends on the time window. Keeping the
+  // first one on top is what makes the track's height a function of the data and the
+  // zoom alone, so panning and scrolling cannot move it.
+  if (groupsDs) {
+    const movedGroups = displayGroups
+      .filter((g) => g.style !== beforeStyles.get(g.id))
+      .map((g) => ({ id: g.id, style: g.style }));
+    if (movedGroups.length) {
+      groupsDs.update(movedGroups);
+      // And a redraw one frame later. vis measures the group label in `_didResize`,
+      // which its redraw queue runs *after* the `_calculateHeight` that consumes the
+      // measurement, so a fresh reservation only lands on the following pass — and
+      // two `redraw()` calls in the same tick collapse into one, which is why this
+      // waits for the next frame. Without it the track keeps the height of the
+      // previous lane count and its label overflows the row.
+      requestAnimationFrame(() => timeline?.redraw());
+    }
+  }
+}
+
+// Zoom levels, in px/day, snapped to a ladder of quarter-octave steps (≈19% apart)
+// and always rounded *down*. Two reasons for the ladder: it keeps a pinch from
+// re-packing on every frame (px/day changes continuously, the bucket rarely), and
+// it makes the layout a function of the bucket, so zooming out and back in returns
+// to the layout you left instead of a slightly different one. Rounding down means
+// the reserved label width errs on the generous side, so the snapping can cost a
+// lane but can never let two labels overlap.
+const PACK_STEPS_PER_OCTAVE = 4;
+
+function packingPxPerDay(pxPerDay: number): number {
+  if (!Number.isFinite(pxPerDay) || pxPerDay <= 0) return pxPerDay;
+  const step = Math.floor(Math.log2(pxPerDay) * PACK_STEPS_PER_OCTAVE) / PACK_STEPS_PER_OCTAVE;
+  return 2 ** step;
 }
 
 // Estimate the rendered width (px) of a point item's label: dot + optional icon
