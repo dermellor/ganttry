@@ -691,16 +691,31 @@
   overflow: hidden;
 }
 
-/* Height of the reserved strip. Read back in render.ts, which sizes the spacer
-   group's row from it, so the ribbon and the row it sits over cannot drift. */
+/* The heights of the two overlays pinned to the top of the center panel. Both
+   are read back by the spacer strut below, so an overlay and the row it sits
+   over cannot drift apart. */
 .timeline {
   --phase-band-reserve: 30px;
+  /* Only the *lower* half of a milestone mark reaches into the content: the
+     marks are centred on the axis line, so that is all the room they take away
+     from the rows. The upper half is paid for by the axis instead — see the
+     label shift further down. */
+  --milestone-rail-reserve: 12px;
 }
 
-/* Phase ribbon — pinned to the top of the center panel */
+/* Offsets the ribbon below the marks; unset without a rail, so the fallback in
+   `top` is what keeps the ribbon at the panel edge on a timeline without one.
+   `has-milestone-rail` is toggled by the rail itself. */
+.timeline.has-milestone-rail {
+  --milestone-rail-h: var(--milestone-rail-reserve);
+}
+
+/* Phase ribbon — pinned to the top of the center panel, below the milestone
+   marks when those are present: they hang half their height past the axis line
+   into this panel, and a ribbon at `top: 0` would cover their lower halves. */
 .phase-band {
   position: absolute;
-  top: 0;
+  top: var(--milestone-rail-h, 0px);
   left: 0;
   right: 0;
   height: 28px;
@@ -709,10 +724,10 @@
   overflow: hidden;
 }
 
-/* Reserve vertical room for the ribbon so the first group row starts *below* it
-   instead of sitting behind it. The reserve is an empty **group**, prepended to
-   the group set by render.ts (`BAND_SPACER_GROUP_ID`), and this rule is what
-   gives it its height.
+/* Reserve vertical room for the overlays pinned to the top of the center panel,
+   so the first group row starts *below* them instead of sitting behind them.
+   The reserve is an empty **group**, prepended to the group set by render.ts
+   (`BAND_SPACER_GROUP_ID`), and these rules are what give it its height.
 
    It used to be `padding-top` on the group set, which is what made the bottom
    track uncuttable-off-able only by luck: padding is invisible to vis, which
@@ -722,7 +737,8 @@
    hidden` — clipped the rest. Measured on a fourteen-track roadmap at vis's
    own maximum scroll: last row 837→883, panel 216→884, clipping edge 849, so
    12 of 46 pixels survived. A group costs vis nothing to account for, because
-   counting groups is what it already does. */
+   counting groups is what it already does.
+
    The height comes from a strut inside the label rather than from a `height`
    rule on the row, because vis measures the label and stores *that* as the
    group's height. Forcing the row's height in CSS leaves vis's number at zero,
@@ -739,8 +755,30 @@
   padding: 0 !important;
 }
 
+/* Which overlays the strut pays for is decided per render, by the classes
+   render.ts writes into it — never by a class toggled on the container
+   afterwards. Both overlays can be present at once, so the reserve is a sum:
+   hardcoding one number is how adding the second one silently drops the first
+   row behind it.
+
+   The classes have to be on the element as it is inserted, because vis measures
+   the label once and keeps the number. A container class toggled after that
+   changes what the strut looks like and not what vis believes, which is the
+   same discrepancy in a new place. */
 .band-spacer-strut {
+  height: 0;
+}
+
+.band-spacer-strut.reserves-band {
   height: var(--phase-band-reserve);
+}
+
+.band-spacer-strut.reserves-rail {
+  height: var(--milestone-rail-reserve);
+}
+
+.band-spacer-strut.reserves-band.reserves-rail {
+  height: calc(var(--phase-band-reserve) + var(--milestone-rail-reserve));
 }
 
 .phase-seg {
@@ -803,6 +841,84 @@
 body.phase-dragging {
   user-select: none;
 }
+
+/* ── Milestone rail — marks sitting on the axis line ──────────────────────────
+   Written by src/milestoneRail.ts, into `.vis-panel.vis-top` rather than the
+   center panel it annotates (the center panel clips, so a mark centred on its
+   top edge would lose its upper half; the axis panel does not clip and paints
+   after it). Anchored to that panel's bottom edge, which *is* the line under the
+   date labels — the top border of `.vis-panel.vis-center`.
+
+   Zero height on purpose: the rail is an anchor, not a row. Its marks are
+   centred on its own edge and overflow it in both directions, so no box here has
+   to be kept in sync with the mark size. `top` is written per redraw from the
+   measured position of the line, rather than pinned to the panel's bottom — the
+   two are normally the same edge, but vis derives the center panel's offset from
+   its own axis measurement, and anything that nudges that measurement parts the
+   line from the panel edge without warning. */
+.milestone-rail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 4;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* Lift the date labels clear of the marks' upper halves, into the ~22px of empty
+   space vis leaves above the major label — so nothing is pushed out of the axis.
+
+   A transform, because it is the only shift vis cannot see: it derives the axis
+   height (and from it the center panel's offset) by measuring its label boxes,
+   and `offsetHeight` ignores transforms. `margin-top` was the first attempt and
+   fed straight back into that measurement — vis then placed the center panel 12px
+   higher than the axis panel actually ends, and the line the marks sit on parted
+   company with the panel edge. Padding fails the other way round: vis does not
+   re-measure it at all, so the box just grows down through the line.
+
+   Moving the foreground only leaves the background grid lines where they are. */
+.timeline.has-milestone-rail .vis-time-axis.vis-foreground {
+  transform: translateY(-8px);
+}
+
+/* A diamond, centred on its date *and* on the axis line: the rotation is what
+   makes a plain square read as a milestone, and `translate(-50%, -50%)` puts its
+   centre — not its corner — on both, so the mark sits on the line and lines up
+   with the point in the lane. */
+.milestone-mark {
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: var(--accent);
+  /* Milestones sharing a date are fanned apart by `spreadCoincident`, which
+     derives its spacing from this box (MARK_BOX_PX in milestoneRail.ts, 10px
+     border-box → ≈14.1px across once turned 45°). Changing the size here means
+     changing that constant with it, or fanned marks start intersecting again.
+     The ring separates a mark from whatever it overlaps — a neighbour, or the
+     axis line it sits on. */
+  border: 1px solid var(--bg);
+  border-radius: 2px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.milestone-mark:hover,
+.milestone-mark:focus-visible {
+  outline: none;
+  transform: translate(-50%, -50%) rotate(45deg) scale(1.25);
+}
+
+.milestone-mark.lane-0 { background: var(--lane-0-border); }
+.milestone-mark.lane-1 { background: var(--lane-1-border); }
+.milestone-mark.lane-2 { background: var(--lane-2-border); }
+.milestone-mark.lane-3 { background: var(--lane-3-border); }
+.milestone-mark.lane-4 { background: var(--lane-4-border); }
+.milestone-mark.lane-5 { background: var(--lane-5-border); }
 
 /* ── Per-item presence (who else is on this item) ─────────────────────────────
    Marks written onto vis-timeline's own item elements by src/itemPresence.ts:

@@ -3,6 +3,7 @@ import { phaseCssId, type ResolvedPhase } from './buildItems';
 import { parseLocalDay } from './date';
 import { phaseGapBounds } from './phaseOverlap';
 import { iconSpanHtml } from './icons';
+import { centerWidth, timeToX } from './visGeometry';
 
 // Pointer travel (px) below which a press-release counts as a click, not a drag.
 const CLICK_SLOP_PX = 3;
@@ -15,22 +16,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // a window-clipped edge, where the phase continues off-screen. Two adjacent bars
 // therefore sit `2 * PHASE_SEG_GAP_PX` apart.
 const PHASE_SEG_GAP_PX = 2;
-
-// vis-timeline positions its items (including the phase background tints) with an
-// internal time→pixel conversion, `body.util.toScreen`, applied over
-// `body.domProps.center.width` — the panel's *content* width, which already
-// subtracts a reserved vertical scrollbar (`verticalScroll`). Re-deriving the
-// mapping ourselves from `getWindow()` + `getBoundingClientRect().width` (the
-// border box, which still includes the scrollbar gutter) makes the ribbon drift
-// right of the tints, growing toward the right edge. We therefore reuse vis's own
-// conversion so the ribbon segment and the tint share one coordinate system.
-// These internals aren't part of vis-timeline's public typings.
-type VisInternals = {
-  body: {
-    util: { toScreen(time: Date): number };
-    domProps: { center: { width: number } };
-  };
-};
 
 // Timeline events the band redraws on: a re-layout plus the window-motion pair
 // (continuous during pan/zoom, and on settle after the initial load).
@@ -156,18 +141,13 @@ export class PhaseBand {
     this.styleEl.remove();
   }
 
-  // vis's own time→pixel conversion (see `VisInternals`), so ribbon segments
-  // land on the exact same x as the phase tints.
-  private get vis(): VisInternals {
-    return this.timeline as unknown as VisInternals;
-  }
+  // vis's own time→pixel conversion (see visGeometry.ts), so ribbon segments land
+  // on the exact same x as the phase tints.
   private contentWidth(): number {
-    return this.vis.body.domProps.center.width;
+    return centerWidth(this.timeline);
   }
   private toX(time: number | string | Date): number {
-    // Parse day strings as *local* midnight (as vis does) — a UTC `new Date(iso)`
-    // would offset the segment from its tint by the timezone offset. See date.ts.
-    return this.vis.body.util.toScreen(parseLocalDay(time));
+    return timeToX(this.timeline, time);
   }
 
   // Screen box for a segment: clip [left, right] to the panel [0, width] and pull

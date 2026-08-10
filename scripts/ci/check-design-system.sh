@@ -119,6 +119,12 @@ spacing_hits=$(
 #                        wearing the component's name. Note that the *list's*
 #                        fold caret is not exempt — it sits in ordinary layout,
 #                        and it is the `TreeToggle` component.
+#   src/milestoneRail.ts the same bare hit area again, one panel up: a 10px
+#                        diamond absolutely positioned on the axis line, whose
+#                        box, rotation, colour and ring all come from
+#                        timeline.css. The element is a `<button>` so the mark
+#                        can be reached by keyboard and carry an `aria-label` —
+#                        there is no text node to read a name from.
 
 button_hits=$(
   grep -rnE "<button|createElement\('button'\)|createElement\(\"button\"\)" \
@@ -126,7 +132,8 @@ button_hits=$(
     grep -v '^src/design-system/' |
     grep -v '^src/export.ts:' |
     grep -v '^src/itemRail.ts:' |
-    grep -v '^src/itemCollapse.ts:' ||
+    grep -v '^src/itemCollapse.ts:' |
+    grep -v '^src/milestoneRail.ts:' ||
     true
 )
 [ -n "$button_hits" ] && report \

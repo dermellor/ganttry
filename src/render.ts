@@ -9,6 +9,7 @@ import {
   assignLaneSubgroups,
   assignLanes,
   buildFromJson,
+  decodeEntities,
   tagPillsHtml,
   withHierarchyMarks,
   withStatusMarks,
@@ -29,6 +30,8 @@ import { syncFilterControl } from './filterControl';
 import { GROUP_DIM } from './listGrouping';
 import { DependencyArrows } from './arrows';
 import { PhaseBand } from './phaseBand';
+import { MilestoneRail, railMarks } from './milestoneRail';
+import { scrollItemIntoView } from './visGeometry';
 import { iconSpanHtml } from './icons';
 import { DEFAULT_STATUS } from './status';
 import {
@@ -75,10 +78,11 @@ import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 // Render-internal handles. `timeline` mirrors state.timeline (kept in sync on
 // every assignment) so other modules can read the current instance while this
 // module keeps a non-null-narrowable local for its own setup code. arrows,
-// phaseBand and the DataSets are only ever touched here.
+// phaseBand, milestoneRail and the DataSets are only ever touched here.
 let timeline: Timeline | null = null;
 let arrows: DependencyArrows | null = null;
 let phaseBand: PhaseBand | null = null;
+let milestoneRail: MilestoneRail | null = null;
 // Holds only start-bearing items (vis-timeline can't place a date-less item);
 // `timelineItems()` narrows to that before every populate.
 let itemsDs: DataSet<TimelineItemWithStart> | null = null;
@@ -106,6 +110,43 @@ export function displayIdsFor(realId: string): string[] {
   return realToDisplay.get(realId) ?? [realId];
 }
 
+/**
+ * Make `realId` the selected item: highlight it on the timeline, put it in the
+ * URL, tell the other users, and open its detail/edit panel.
+ *
+ * The one selection path, shared by a click on the item itself and by a click on
+ * its mark in the head rail — the rail's whole point is to behave like the item
+ * it stands for, and a second copy of these five steps is how the two drift
+ * (a rail click that forgets `publishSelfPresence`, say, goes unnoticed locally
+ * and only shows up as a stale avatar on someone else's screen).
+ *
+ * `setSelection` runs unconditionally rather than only for multi-lane items:
+ * from the rail nothing has selected the item yet, and re-selecting an already
+ * selected item is a no-op for vis.
+ *
+ * The item is then scrolled into view if it isn't. From the rail that is the
+ * whole point — its marks stand for milestones that are off screen, so opening a
+ * form for a row the user still cannot see only answers half the click. For a
+ * click on the item itself it costs nothing, since a visible item needs no
+ * scrolling.
+ */
+function selectItemById(realId: string): void {
+  state.selectedItemId = realId;
+  const displayIds = displayIdsFor(realId);
+  try {
+    timeline?.setSelection(displayIds);
+  } catch {
+    /* item may not exist in this build */
+  }
+  // The first clone is arbitrary but stable — with several, any one of them
+  // brings the item on screen, and scrolling to each in turn would just fight
+  // itself.
+  if (timeline && displayIds[0]) scrollItemIntoView(timeline, displayIds[0], els.timeline);
+  syncUrl();
+  publishSelfPresence();
+  showDetailForId(realId);
+}
+
 // The parent map the lane packer may use for the current display set: the real
 // one along the item's own group, empty once the lanes are derived values.
 function displayParents(): Map<string, string> {
@@ -113,23 +154,28 @@ function displayParents(): Map<string, string> {
 }
 
 /**
- * An empty first row that reserves the phase ribbon's strip.
+ * An empty first row that reserves the strip taken by the overlays pinned to the
+ * top of the center panel: the phase ribbon, the milestone rail, or both.
  *
- * The ribbon is pinned to the top of the center panel, so without a reservation
- * it sits on the first track. Reserving the strip with CSS padding on the group
- * set is what this replaces, and the reason is that vis cannot see padding: it
- * derives its content height *and* its vertical scroll range from the sum of the
- * group heights, so the panel ended up holding more than vis knew about. The
- * scroll then stopped short by the height of the reserve and `.vis-timeline`
- * (fixed height, `overflow: hidden`) cut off whatever hung below — always the
- * last track, which is exactly where a folded summary item leaves a single short
- * row.
+ * Without a reservation an overlay sits on the first track. Reserving the strip
+ * with CSS padding on the group set is what this replaces, and the reason is that
+ * vis cannot see padding: it derives its content height *and* its vertical scroll
+ * range from the sum of the group heights, so the panel ended up holding more than
+ * vis knew about. The scroll then stopped short by the height of the reserve and
+ * `.vis-timeline` (fixed height, `overflow: hidden`) cut off whatever hung below —
+ * always the last track, which is exactly where a folded summary item leaves a
+ * single short row.
  *
  * A group costs nothing to account for, because counting groups is what vis
  * already does. It carries no items, so nothing can be assigned to it, and it is
  * added *after* filtering and lane assignment: `pruneGroupsToItems` would drop an
  * item-less group, and `assignLanes` colours lanes by index, so prepending
  * earlier would shift every track's colour.
+ *
+ * Which overlays are present is decided here, and written into the strut as
+ * classes, because vis measures that label once and keeps the number: a class
+ * toggled on the container afterwards resizes the strut without vis ever hearing
+ * about it, which is the same discrepancy the group replaced.
  */
 export const BAND_SPACER_GROUP_ID = '__phase_band_spacer';
 
@@ -151,15 +197,22 @@ function visViewportHeight(el: HTMLElement): number {
 }
 
 function withBandSpacer(groups: TimelineGroup[]): TimelineGroup[] {
-  // Keyed off the phases themselves, not off the `has-phase-band` class: the
-  // class is toggled further down in renderTimeline, after computeDisplay has
-  // already run, so the first render would come out without the reservation.
+  // Keyed off the phases and the marks themselves, not off the `has-phase-band` /
+  // `has-milestone-rail` classes: both are toggled further down, after
+  // computeDisplay has already run, so the first render would come out without
+  // the reservation.
   const hasPhases = (state.activeBuild?.phases.length ?? 0) > 0;
-  if (!hasPhases || groups.length === 0) return groups;
+  // The rail's own predicate, so „is there a mark" cannot come to mean two
+  // different things — the rail decides what it draws with the same call.
+  const hasRail = railMarks(displayItems).length > 0;
+  if ((!hasPhases && !hasRail) || groups.length === 0) return groups;
   // A strut, not an empty string: vis measures the label to get the group's
   // height, so the reserve has to be something it can measure.
+  const strut = ['band-spacer-strut', hasPhases && 'reserves-band', hasRail && 'reserves-rail']
+    .filter(Boolean)
+    .join(' ');
   return [
-    { id: BAND_SPACER_GROUP_ID, content: '<div class="band-spacer-strut"></div>', className: 'band-spacer' },
+    { id: BAND_SPACER_GROUP_ID, content: `<div class="${strut}"></div>`, className: 'band-spacer' },
     ...groups,
   ];
 }
@@ -373,6 +426,9 @@ export function applyBuildToDataSets(): void {
   // never collapses and the scroll position is left untouched.
   if (itemsDs) syncDataSet(itemsDs, timelineItems(display.items));
   if (groupsDs) syncDataSet(groupsDs, display.groups);
+  // The head rail reads the same display set, so it follows the filter and the
+  // grouping dimension without a second derivation of "what is visible".
+  milestoneRail?.setItems(display.items);
   // Keep the list view in sync when it's the active display (edits, drags,
   // milestones-only toggle all funnel through here).
   if (state.viewMode === 'list') renderListView();
@@ -490,6 +546,10 @@ export async function renderTimeline(view: View) {
   if (phaseBand) {
     phaseBand.dispose();
     phaseBand = null;
+  }
+  if (milestoneRail) {
+    milestoneRail.dispose();
+    milestoneRail = null;
   }
   if (timeline) {
     (timeline as any)._ro?.disconnect();
@@ -701,6 +761,25 @@ export async function renderTimeline(view: View) {
     setTimeout(initBand, 500);
   }
 
+  // The milestone rail is created unconditionally, unlike the ribbon above: the
+  // set of milestones changes with the *filter*, not only with the build, so a
+  // view that currently shows none may show some a moment later. It hides itself
+  // (and releases the row reserve) while the count is 0, which the phase ribbon's
+  // create-only-if-present shape could not do without a full re-render.
+  const initRail = () => {
+    if (!timeline || milestoneRail) return;
+    try {
+      milestoneRail = new MilestoneRail(timeline, els.timeline);
+      milestoneRail.setOnSelect(selectItemById);
+      milestoneRail.setItems(displayItems);
+    } catch {
+      // panel not ready yet — a later attempt will pick it up
+    }
+  };
+  requestAnimationFrame(initRail);
+  setTimeout(initRail, 100);
+  setTimeout(initRail, 500);
+
   updateTagDensity();
   // `rangechange` fires continuously while zooming/panning. `updateTagDensity`
   // is a no-op unless the compact state flips, and `scheduleRepack` coalesces to
@@ -718,21 +797,8 @@ export async function renderTimeline(view: View) {
       publishSelfPresence();
       return;
     }
-    // The clicked id may be a clone; track/select by the real item id. When the
-    // item lives in several lanes, highlight all of its clones at once.
-    const id = realIdOf(clicked);
-    state.selectedItemId = id;
-    const clones = displayIdsFor(id);
-    if (clones.length > 1) {
-      try {
-        timeline?.setSelection(clones);
-      } catch {
-        /* ignore */
-      }
-    }
-    syncUrl();
-    publishSelfPresence();
-    showDetailForId(id);
+    // The clicked id may be a clone; track/select by the real item id.
+    selectItemById(realIdOf(clicked));
   });
 
   timeline.on('rangechanged', (props: { start: Date; end: Date; byUser: boolean }) => {
@@ -873,15 +939,6 @@ function currentLabelFont(): string {
   const font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
   if (sample) labelFont = font;
   return font;
-}
-
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&');
 }
 
 function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) => void): void {

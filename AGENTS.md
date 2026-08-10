@@ -15,7 +15,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/architecture.md`](docs/architecture.md) | The two extension seams: source adapters (where data comes from) and plugins (what a timeline carries beyond items). |
 | [`docs/data-model.md`](docs/data-model.md) | The timeline file format, date extraction, and `timelines.config.json`. |
 | [`docs/items.md`](docs/items.md) | What an item carries beyond dates: icons, status, owner, custom fields. |
-| [`docs/editing.md`](docs/editing.md) | Editing in the interface: the item rail, the context menu, drag and form behaviour, the two view modes, URL state. |
+| [`docs/editing.md`](docs/editing.md) | Editing in the interface: the item rail, the milestone rail, the context menu, drag and form behaviour, the two view modes, URL state. |
 | [`docs/database.md`](docs/database.md) | Postgres as the data source: schema, the two drivers, optimistic locking, live updates, presence. |
 | [`docs/users.md`](docs/users.md) | Who belongs to an instance: roles, invitations, the switch that turns membership into authorization, and the order to roll it out in. |
 | [`docs/self-hosting.md`](docs/self-hosting.md) | Running it yourself: the three deployment shapes, the one-command container, and the access gate. |

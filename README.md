@@ -113,7 +113,8 @@ npm run dev
 Add `"$schema": "../schema/timeline.schema.json"` at the top and your editor
 completes and validates the file. That schema is generated from the TypeScript
 types, so it cannot drift from what the app actually reads.
-`data/example-projektplan.json` and `data/launch-roadmap.json` are reference files;
+`data/example-projektplan.json`, `data/launch-roadmap.json` and
+`data/programm-2026.json` are reference files;
 [`AGENTS.md`](AGENTS.md) explains the constraints a schema cannot express, such as
 why `end` and `duration` are mutually exclusive.
 
