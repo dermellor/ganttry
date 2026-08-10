@@ -37,6 +37,7 @@ import {
   withViewPrefs,
   type ViewPrefsStore,
 } from './viewPrefs';
+import type { FilterSelection } from './filterRule';
 
 // The frame is built rather than looked up: `index.html` carries no markup any
 // more, because `src/export.ts` needs the same frame and two hand-kept copies of
@@ -170,10 +171,10 @@ export interface AppState {
   // the active build on render, falling back to 'group' when the stored
   // dimension is not available on this timeline.
   groupBy: string;
-  // Shared value filter: the dimension to filter on ('' = off) and the selected
-  // bucket values within it. Independent of the grouping dimension.
-  filterDim: string;
-  filterValues: string[];
+  // Shared value filter: selected bucket values per dimension, AND across
+  // dimensions and OR within one (see src/filterRule.ts). An empty record means
+  // no restriction. Independent of the grouping dimension.
+  filters: FilterSelection;
   // Display state a link asked for, applied on top of what the timeline being
   // opened remembers. Same pattern as pendingItem / pendingWindow above: the URL
   // is read before the view exists, so it waits here until applyView has loaded
@@ -232,8 +233,7 @@ export const state: AppState = {
   milestonesOnly: DEFAULT_VIEW_PREFS.milestonesOnly,
   viewMode: 'timeline',
   groupBy: DEFAULT_VIEW_PREFS.groupBy,
-  filterDim: DEFAULT_VIEW_PREFS.filterDim,
-  filterValues: [],
+  filters: {},
   pendingPrefs: null,
   collapsedItems: new Set(),
   persisting: false,
@@ -265,11 +265,7 @@ function adoptLegacyViewPrefs(store: ViewPrefsStore, viewId: string): ViewPrefsS
   if (!legacy) return store;
   const next = store[viewId]
     ? store
-    : withViewPrefs(store, viewId, {
-        ...DEFAULT_VIEW_PREFS,
-        ...legacy,
-        filterValues: legacy.filterValues ?? [],
-      });
+    : withViewPrefs(store, viewId, { ...DEFAULT_VIEW_PREFS, ...legacy });
   for (const key of Object.values(LEGACY_PREF_KEYS)) localStorage.removeItem(key);
   if (next !== store) writeViewPrefsStore(next);
   return next;
@@ -289,8 +285,7 @@ export function loadViewPrefs(viewId: string | null): void {
   // that would silently reset every user's saved view.
   state.viewMode = readViewMode(prefs.mode, legacyViewMode);
   state.groupBy = prefs.groupBy;
-  state.filterDim = prefs.filterDim;
-  state.filterValues = prefs.filterValues;
+  state.filters = prefs.filters;
   state.milestonesOnly = prefs.milestonesOnly;
 }
 
@@ -301,8 +296,7 @@ export function saveViewPrefs(viewId: string | null = state.activeView?.id ?? nu
     withViewPrefs(readViewPrefsStore(), viewId, {
       mode: state.viewMode,
       groupBy: state.groupBy,
-      filterDim: state.filterDim,
-      filterValues: state.filterValues,
+      filters: state.filters,
       milestonesOnly: state.milestonesOnly,
     }),
   );

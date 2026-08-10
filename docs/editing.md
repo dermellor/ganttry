@@ -824,17 +824,35 @@ lives in [`src/grouping.ts`](../src/grouping.ts), the pure sectioning stays in
   (`assignLaneSubgroups`/`assignLanes`) and repacking run on this display set.
 
 - **Filter** ([`src/filterControl.ts`](../src/filterControl.ts)) narrows the visible
-  items. It is **independent** of grouping: a dimension `<select>` (`#filter-dim`,
-  same categories as Gruppieren, plus an "Aus" option) selects *what* to filter
-  on, and a popover checklist (`#filter-menu`) of that dimension's values selects
-  *which* to keep. An item passes if it carries a selected value (the "Ohne …"
-  bucket, `NO_BUCKET`, is selectable to keep value-less items); an **empty
-  selection means no restriction**. Persisted per timeline (see „Where the display
-  state lives"); a stored dimension that no longer exists on this timeline turns
-  the filter off. The filtering itself lives in `filterBuildForDisplay`
-  ([`src/render.ts`](../src/render.ts)) via `passesFilter`, so every consumer
-  (timeline, list, export, status line) honours it from one place, composed with
-  the milestones-only toggle; empty lanes are pruned once by `pruneGroupsToItems`.
+  items and is **independent** of grouping. One popover (`#filter-menu`) holds
+  **every dimension** the timeline offers, each as a titled section with its values
+  as checkboxes: **Gruppe**, **Tag**, **Status** and one per custom field, the same
+  vocabulary Gruppieren uses. Selecting values in two dimensions narrows to items
+  that satisfy **both** (AND across dimensions, OR within one), an item with no
+  value for a dimension passes it only via the "Ohne …" bucket (`NO_BUCKET`), and an
+  **empty selection means no restriction**. Persisted per timeline (see „Where the
+  display state lives").
+
+  **The dimension dropdown is gone, and that is the point.** It used to select
+  *which* dimension the value list belonged to, so only one could narrow at a time.
+  „Nur Meilensteine" existed as a separate checkbox in the header because that
+  second narrowing had nowhere else to go, and it composed with the filter in
+  `filterBuildForDisplay` — which is exactly the combination the single-dimension
+  shape could not express. Removing the limit is what lets the type become an
+  ordinary dimension.
+
+  **The rule is DOM-free and tested** in [`src/filterRule.ts`](../src/filterRule.ts)
+  (`passesFilters`, `pruneFilters`, `withFilterValues`); `passesFilter` in
+  [`src/grouping.ts`](../src/grouping.ts) only supplies the app state, and the
+  filtering runs once in `filterBuildForDisplay`
+  ([`src/render.ts`](../src/render.ts)), so every consumer (timeline, list, export,
+  status line) honours it from one place. Empty lanes are pruned once by
+  `pruneGroupsToItems`.
+
+  **Pruning is per dimension.** A custom field that was removed takes its own
+  selection with it and leaves the others in force. Dropping the whole filter on one
+  vanished dimension would throw away narrowings that are still valid, which is a
+  bug the single-dimension shape could not have.
 
 The per-section "+ Eintrag" button (list) shows only in the Gruppe dimension (it
 pins the new item to that group).
@@ -850,8 +868,8 @@ deep-linked and survive reload.
 
 ### Where the display state lives
 
-Presentation, grouping dimension, value filter and the milestones narrowing are
-stored **per timeline**, in one `localStorage` key holding
+Presentation, grouping dimension, value filter (a selection per dimension) and the
+milestones narrowing are stored **per timeline**, in one `localStorage` key holding
 `{ [viewId]: … }` ([`src/viewPrefs.ts`](../src/viewPrefs.ts), swapped by
 `loadViewPrefs` and written by `saveViewPrefs` in
 [`src/state.ts`](../src/state.ts)). Each of them says how *one* timeline is being
@@ -877,6 +895,12 @@ Three consequences worth knowing:
   about all of it, absences included, which is what makes back reverse a
   narrowing rather than leave it standing. The result is stored on the timeline
   that was opened.
+
+The filter's own shape changed once more after that, from one dimension plus its
+values (`filterDim` / `filterValues`) to a selection per dimension (`filters`). The
+old pair is still **read** and never written, so a stored single-dimension filter
+survives and a re-saved entry carries only the current shape. Skipping that read
+would clear every saved narrowing, which is the same trap one level down.
 
 The five instance-wide keys this replaces (`timelines.viewMode`,
 `timelines.listGroupBy`, `timelines.filterDim`, `timelines.filterValues`,
