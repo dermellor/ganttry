@@ -616,6 +616,9 @@ export async function renderTimeline(view: View) {
   // font and measurements so point-label widths get re-measured.
   labelFont = null;
   labelWidthCache.clear();
+  // And the reserved stretch belongs to the window this render opens on, not to
+  // whatever the previous view was looking at.
+  reservedRange = null;
 
   // The data is here and the real chart takes over from this line on. (A
   // preceding timeline already took the placeholder with it via the
@@ -905,13 +908,20 @@ export function repackLanes(): void {
   if (pxPerDay === null) return;
 
   // Pack the *display* set (regrouped/cloned when grouping by tag/field), so the
-  // clones on their derived lanes get label-width-aware spacing too.
+  // clones on their derived lanes get label-width-aware spacing too. Restricted to
+  // the reserved neighbourhood, which is what keeps both the lanes and the reserved
+  // height tight: packing the whole timeline would spread a track over every lane
+  // its busiest stretch needs, wherever you happen to be looking.
   const before = new Map(displayItems.map((it) => [it.id, it.subgroup]));
   const beforeStyles = new Map(displayGroups.map((g) => [g.id, g.style]));
-  assignLaneSubgroups(displayItems, displayGroups, displayDeps, displayParents(), {
-    pxPerDay: packingPxPerDay(pxPerDay),
-    pointLabelPx: measurePointLabelPx,
-  });
+  const reservation = reservationFor(timeline.getWindow());
+  assignLaneSubgroups(
+    displayItems.filter((it) => withinReservation(it, reservation)),
+    displayGroups,
+    displayDeps,
+    displayParents(),
+    { pxPerDay: packingPxPerDay(pxPerDay), pointLabelPx: measurePointLabelPx },
+  );
 
   // Only touch items that are actually mounted (milestones-only filter may hide
   // some) and whose lane moved — a partial update keeps vis's redraw minimal.
@@ -942,6 +952,46 @@ export function repackLanes(): void {
       requestAnimationFrame(() => timeline?.redraw());
     }
   }
+}
+
+// The stretch of time a track reserves height for.
+//
+// Not the whole timeline: a track would then always be as tall as its densest
+// stretch, and a sparse window shows more empty rows than content — measured on a
+// real roadmap, a screen that held fourteen tracks held two. Not the visible window
+// either, because a reservation that moves with every pan puts the jumping straight
+// back. So: a neighbourhood one window wide on each side, and it stays put until the
+// window travels close to its edge. Panning and scrolling then happen entirely
+// inside a reservation that does not move, and a long journey costs one reflow.
+const RESERVE_MARGIN_WINDOWS = 1;
+let reservedRange: { start: number; end: number } | null = null;
+
+function reservationFor(win: { start: Date; end: Date }): { start: number; end: number } {
+  const start = win.start.getTime();
+  const end = win.end.getTime();
+  const width = Math.max(end - start, 1);
+  const margin = width * RESERVE_MARGIN_WINDOWS;
+  // Re-centre when the window is within half a margin of the edge, or when its width
+  // changed at all: the neighbourhood is defined in window widths, so a zoom step
+  // invalidates it by definition.
+  const kept = reservedRange;
+  const keep =
+    kept !== null &&
+    kept.end - kept.start === width + 2 * margin &&
+    start - kept.start >= margin / 2 &&
+    kept.end - end >= margin / 2;
+  if (keep) return kept;
+  return (reservedRange = { start: start - margin, end: end + margin });
+}
+
+// Does the item's own extent reach into the reserved stretch? Items outside keep
+// whatever lane they had: they are not drawn (the window sits inside the
+// reservation), so their lane cannot be seen until a later pass repacks them.
+function withinReservation(it: TimelineItem, r: { start: number; end: number }): boolean {
+  if (!it.start) return false;
+  const start = new Date(it.start).getTime();
+  const end = new Date(it.end ?? it.start).getTime();
+  return start <= r.end && end >= r.start;
 }
 
 // Zoom levels, in px/day, snapped to a ladder of quarter-octave steps (≈19% apart)
