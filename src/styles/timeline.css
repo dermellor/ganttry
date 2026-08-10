@@ -32,7 +32,14 @@
 
 .vis-time-axis .vis-text.vis-major:not(.vis-measure) {
   font-weight: 500;
-  padding-inline-start: var(--space-md);
+}
+
+.vis-ltr .vis-time-axis .vis-text.vis-major:not(.vis-measure) {
+  padding-left: var(--space-lg) !important;
+}
+
+.vis-rtl .vis-time-axis .vis-text.vis-major:not(.vis-measure) {
+  padding-right: var(--space-lg) !important;
 }
 
 .vis-labelset .vis-label {
