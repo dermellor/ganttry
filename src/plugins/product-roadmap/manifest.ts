@@ -4,7 +4,7 @@
 // demanding plugin that exists here (four kinds of rows, a composite key, two
 // cascades, ordering, item links and a public endpoint), so anything it cannot
 // declare is a gap in the manifest rather than a licence for it to stay special.
-// See <https://github.com/zeitlines/zeitlines/issues/17>.
+// See <https://github.com/dermellor/zeitlines/issues/17>.
 //
 // The `collections`, `references` and `publicRead` sections describe what the
 // `pricing_*` tables and the `pricing-api` edge function do today. They are
@@ -21,7 +21,7 @@ export const PRICING_COLLECTIONS = {
 } as const;
 
 export const productRoadmapManifest: PluginManifest = {
-  id: 'product-roadmap',
+  id: 'dev.zeitlines.product-roadmap',
   name: 'Produkt',
   version: '1.0.0',
   apiVersion: '^1',
@@ -67,6 +67,18 @@ export const productRoadmapManifest: PluginManifest = {
   references: [
     { from: PRICING_COLLECTIONS.tierValues, field: 'tierId', to: PRICING_COLLECTIONS.tiers, onDelete: 'cascade' },
     { from: PRICING_COLLECTIONS.tierValues, field: 'featureId', to: PRICING_COLLECTIONS.features, onDelete: 'cascade' },
+    // The third relation, and the one Postgres never enforced: a highlight
+    // bundles a LIST of feature ids. `deleteFeature` strips a deleted id out of
+    // every highlight by hand today (timeline-repo.ts), which is the loop this
+    // declaration replaces. `unlink` rather than `cascade` because the tile is
+    // the point: losing one of five features must not delete it.
+    {
+      from: PRICING_COLLECTIONS.highlights,
+      field: 'featureIds',
+      to: PRICING_COLLECTIONS.features,
+      array: true,
+      onDelete: 'unlink',
+    },
   ],
 
   // Item metadata this plugin owns (see ./plugin.ts for why the keys are what

@@ -19,10 +19,8 @@
 import type { CustomFieldDef, TimelineFile } from '../types';
 import { pluginViewMode, type PluginViewMode } from './viewMode';
 import { validateManifest, type ManifestView, type PluginManifest } from './manifest';
-import { PRODUCT_ROADMAP_PLUGIN } from '../plugins/product-roadmap/plugin';
-import { productRoadmapManifest } from '../plugins/product-roadmap/manifest';
-import { productRoadmapFields } from '../plugins/product-roadmap/fields';
-import { hasPlugin } from './plugins';
+import { productRoadmapDescriptor } from '../plugins/product-roadmap/descriptor';
+import type { HostApi } from './hostApi';
 
 /**
  * One view a plugin adds to the header's mode toggle. Declared in the manifest,
@@ -35,8 +33,16 @@ export interface PluginModule {
   /**
    * Render `viewId` into the container the host created for it. Called on entry
    * and on every repaint, so it has to be idempotent.
+   *
+   * `host` is the plugin's gated API (`createHostApi`): the timeline, its own
+   * config, its own rows, and a change signal. It arrives as an ARGUMENT rather
+   * than through an import, which is the whole reason a plugin can be a file
+   * fetched from a URL — there is nothing for it to resolve at load time. It is
+   * a third parameter rather than a new export so an artifact written against
+   * the two-parameter shape keeps working: JavaScript ignores what it does not
+   * take.
    */
-  renderView(container: HTMLElement, viewId: string): void;
+  renderView(container: HTMLElement, viewId: string, host: HostApi): void | Promise<void>;
 }
 
 export interface PluginDescriptor {
@@ -106,22 +112,24 @@ export function pluginViews(plugin: PluginDescriptor): PluginView[] {
   return plugin.manifest.views ?? [];
 }
 
-register({
-  manifest: productRoadmapManifest,
-  // Enabled by the product-roadmap plugin registration (a data row), plus a
-  // populated pricing model. Still a cheap sync check that pulls in no pricing
-  // code, so the generic bundle never reaches the plugin's chunk.
-  matches: (f) =>
-    hasPlugin(f, PRODUCT_ROADMAP_PLUGIN) &&
-    !!f?.pricing &&
-    (f.pricing.tiers.length > 0 || f.pricing.features.length > 0),
-  applies: (f) => hasPlugin(f, PRODUCT_ROADMAP_PLUGIN),
-  realtimeTables: ['pricing_features', 'pricing_tiers', 'pricing_tier_values', 'pricing_highlights'],
-  fields: productRoadmapFields,
-  load: () => import('../plugins/product-roadmap/index'),
-});
+// The one built-in plugin, registered from its own folder. The host imports a
+// descriptor it does not understand — the same thing it will do for a plugin
+// loaded at runtime (src/pluginHost/loader.ts). Nothing about product-roadmap is
+// decided here any more.
+register(productRoadmapDescriptor);
 
 /** Every registered plugin, in registration order. */
+/**
+ * One registered plugin by id, or null.
+ *
+ * The render path needs it to build that plugin's gated host API, which is
+ * derived from its manifest — so the lookup has to be by id rather than by
+ * descriptor, since a view mode carries the id and nothing else.
+ */
+export function pluginById(pluginId: string): PluginDescriptor | null {
+  return allPlugins().find((p) => p.manifest.id === pluginId) ?? null;
+}
+
 export function allPlugins(): readonly PluginDescriptor[] {
   return PLUGINS;
 }

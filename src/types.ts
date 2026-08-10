@@ -44,7 +44,16 @@ export type SourceCapabilities = { editable: boolean; live: SourceLive };
 //   n — item count (catches inserts/deletes, which v/t alone miss)
 //   t — max `updated_at` across the items and the timeline row (ISO string),
 //       so item edits, phase/meta writes and renames all bump it
-export type Watermark = { v: number; n: number; t: string | null };
+//   pv/pn — the same pair over the plugin-owned rows (`plugin_data`).
+//
+// The plugin dimension is two extra fields rather than a widening of `v`/`n`,
+// because those two carry documented meanings the rest of the code relies on —
+// `v` is the item row version, and folding a second counter space into it would
+// make it useless for the own-echo hint. They are optional so a source without
+// plugin rows omits them, and both sides of a compare then agree on `undefined`.
+// A local source leaves them unset on purpose: its version IS the file's mtime,
+// which a plugin write moves along with everything else.
+export type Watermark = { v: number; n: number; t: string | null; pv?: number; pn?: number };
 
 /**
  * One entry of the user directory (`app_users`, served by `GET /api/users`).
@@ -212,119 +221,145 @@ export type CustomFieldDef = {
   contextMenu?: boolean;
 };
 
-// Pricing model, only meaningful for product-roadmap timelines. Two entities:
-// features (the capabilities a product ships) and tiers (named, priced plans
-// that each bundle a subset of features). A timeline *item* links to features
-// via metadata[PRICING_FEATURE_META_KEY] (string[]). The whole model is a
-// timeline-level config blob, stored like `phases` / `customFields`.
-export type PricingFeature = {
-  id: string;
-  name: string;
-  // Optional grouping label for the matrix rows, e.g. "Funktionen".
-  group?: string;
-  description?: string;
-  // Version from which this feature is available; must be one of Pricing.versions.
-  // Absent = available from the start (always shown, regardless of the switcher).
-  version?: string;
-  // Version-scoped display-name overrides, keyed by a Pricing.versions entry.
-  // Resolved cumulatively like `version` (see resolveFeatureName in pricing.ts):
-  // the latest override at or before the selected version wins, falling back to
-  // `name`. Lets a feature rename itself across versions without becoming a
-  // different feature id, e.g. "Termine vereinbaren" (1.0/2.0) → "Termine
-  // vereinbaren und ändern" (ab 3.0).
-  nameByVersion?: Record<string, string>;
-  // Additive, version-scoped descriptions on top of `description`, keyed by a
-  // Pricing.versions entry (PR #22). Unlike `nameByVersion` (a cumulative
-  // *override* of the name), these are ADDITIVE changelog notes: the base
-  // `description` always stays, and each entry renders as its own
-  // "ab <version>: <text>" line, in declared version order (see
-  // resolveFeatureDescription in pricing.ts).
-  descriptionByVersion?: Record<string, string>;
-  // Server-managed optimistic-lock counter of the backing row (peer of
-  // TimelineFileItem.version). Named `rowVersion` — NOT `version` — because
-  // `version` above is the domain "available from" label. Surfaced only on the
-  // editable path (getTimeline), sent back as If-Match on a granular feature
-  // PATCH, and stripped from public output. Ignored by render / markdown.
-  rowVersion?: number;
-};
-
-export type PricingTier = {
-  id: string;
-  name: string;
-  // Optional segment/tagline shown under the tier name on the card
-  // (e.g. "Micro · 1–5 Anrufe/Tag").
-  tagline?: string;
-  // One-line positioning / primary use case (e.g. "Verpasste Anrufe auffangen").
-  // Shown as the card's sub-headline (falls back to `tagline`).
-  useCase?: string;
-  // Longer target-group description ("Einstiegslösung für kleine Unternehmen").
-  // Shown as a "Zielgruppe" block at the top of the card body.
-  targetGroup?: string;
-  // Free-form price string — carries currency and qualifiers ("ab 449,95 €").
-  price: string;
-  // Per-tier feature values, keyed by feature id:
-  //   true          → included, rendered as a check (✓)
-  //   false / absent → not included, rendered as a dash (–)
-  //   string         → shown verbatim in the cell ("3.000", "unbegrenzt (RAG)")
-  // This lets one feature (e.g. "Inkludierte Minuten") differ per tier instead of
-  // exploding into a boolean row per value.
-  values: Record<string, string | boolean>;
-  // Optional per-cell "available from" version labels, keyed by feature id (a
-  // subset of `values`' keys). A cell listed here counts as included only from
-  // that version onward; before it the cell renders as "–" (see
-  // cellActiveForVersion in pricing.ts). The stored `values[fid]` stays the
-  // end-state value — this map only gates *when* it appears, mirroring
-  // PricingFeature.version but at the tier×feature level. Absent key = available
-  // from the start (unchanged behaviour). An additive sibling of `values`, so
-  // every existing reader of `values` is untouched.
-  valueVersions?: Record<string, string>;
-  // Server-managed optimistic-lock counter of the backing tier row (see
-  // PricingFeature.rowVersion). Stripped from public output.
-  rowVersion?: number;
-};
-
-// A curated highlight tile for the card view: bundles one or more raw features
-// under a simplified label (the "Zwischenschicht"). Only features referenced by
-// some highlight are considered important and surface in the card view; the raw
-// matrix still shows everything. Per-tier presence/value is derived from the
-// tiers' existing `values`, so there is no separate per-tier maintenance.
-export type PricingHighlight = {
-  id: string;
-  label: string;
-  // Card section this bullet belongs to (e.g. "Inkludiert", "Agent Skills").
-  // Highlights are grouped by section on the tier cards; order follows first-seen.
-  section?: string;
-  // Optional semantic icon key (resolved by the brand, like item icons).
-  icon?: string;
-  // Raw feature ids this tile summarizes.
-  featureIds: string[];
-  description?: string;
-  // Version-scoped label overrides, same semantics as PricingFeature.nameByVersion.
-  labelByVersion?: Record<string, string>;
-  // Server-managed optimistic-lock counter of the backing highlight row (see
-  // PricingFeature.rowVersion). Stripped from public output.
-  rowVersion?: number;
-};
-
-export type Pricing = {
-  features: PricingFeature[];
-  tiers: PricingTier[];
-  // Curated tiles for the card view (bundle features). Absent/empty = card view
-  // shows nothing (fall back to the matrix).
-  highlights?: PricingHighlight[];
-  // Ordered list of version labels (e.g. ["1.0", "2.0", "3.0"]). Defines both the
-  // ordering used for the cumulative version filter and the options of the
-  // version switcher in the matrix view. A feature's `version` references one of
-  // these. Absent/empty = no versioning (switcher hidden).
-  versions?: string[];
-};
 
 // A plugin (a.k.a. timeline kind) enabled on a timeline. Enablement is pure data
 // — a row in `timeline_plugins`, no core-schema change — so this array replaces
 // the old plugin-specific `type` column/field. `config` is the plugin's opaque
-// bag; for 'product-roadmap' it carries `{ versions: string[] }`. Helpers +
+// bag; for 'dev.zeitlines.product-roadmap' it carries `{ versions: string[] }`. Helpers +
 // stable ids live in ./plugins.
-export type PluginRef = { id: string; config?: Record<string, unknown> };
+export type PluginRef = {
+  id: string;
+  config?: Record<string, unknown>;
+  /**
+   * Consent to serve this plugin's declared `publicRead` collections without
+   * authentication. Absent = no.
+   *
+   * Separate from being enabled, and deliberately so: plenty of timelines carry a
+   * pricing model that is not meant to be public, and „the plugin is on" must not
+   * be read as „the world may read it". On a `db` source this is the
+   * `timeline_plugins.public` column; here it is the same fact on the file, so the
+   * decision travels with the document a user owns.
+   */
+  public?: boolean;
+};
+
+/**
+ * Where a plugin's code came from.
+ *
+ * Recorded rather than inferred, because uninstalling, re-verifying and
+ * reinstalling all need to know: a URL can be refetched, a package resolved
+ * again, a vendored directory re-read. `builtin` is the honest label for a plugin
+ * that shipped inside the build and has no artifact of its own — an instance can
+ * only run what it shipped with until the loader exists (issue #14), and calling
+ * that anything else would invite a reinstall of something that was never
+ * fetched.
+ */
+export type PluginArtifactKind = 'builtin' | 'url' | 'package' | 'vendored';
+
+/**
+ * One installed plugin, at INSTANCE level.
+ *
+ * Two levels, deliberately separate: installed (here) is „this instance has this
+ * plugin's code and granted it these capabilities", enabled is a `PluginRef` on
+ * one timeline. A plugin has to be installed before it can be enabled anywhere,
+ * and disabling it on a timeline says nothing about the install.
+ *
+ * `manifest` is stored, not re-derived: the host has to be able to list, verify
+ * and version-check a plugin without executing it, and it is also what the write
+ * path enforces a plugin's collections against (docs/plugin-storage.md). Keeping
+ * the copy that was validated at install time is what makes those checks
+ * independent of whether the artifact is reachable right now.
+ */
+export type InstalledPlugin = {
+  id: string;
+  /** The artifact's own version, as its manifest declared it. */
+  version: string;
+  /** The host contract range the artifact was built against, e.g. `^1`. */
+  apiVersion: string;
+  artifact: { kind: PluginArtifactKind; source?: string; integrity?: string };
+  /** Capabilities granted at install time — never widened by the plugin itself. */
+  capabilities: string[];
+  manifest: Record<string, unknown>;
+  /**
+   * Instance-level off switch. Distinct from „not enabled on this timeline": this
+   * one stops the plugin everywhere without discarding what it stored, which is
+   * what makes turning it back on lossless.
+   */
+  enabled: boolean;
+  installedAt?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+/**
+ * An installed plugin plus what the host currently thinks of it — the shape the
+ * interface and the loader read.
+ *
+ * `problem` is a sentence for the person who installed it, not a code. A version
+ * error nobody can read is indistinguishable from a broken plugin and gets
+ * reported as one.
+ */
+export type PluginStatus = InstalledPlugin & {
+  /** May the host run this plugin's code? False when `problem` is set. */
+  loadable: boolean;
+  /**
+   * Why not, as a code the interface can word itself. Absent when the plugin is
+   * fine.
+   *
+   * It exists alongside `problem` because the two have different readers: this
+   * one is for the viewer, which is German and must not print a server's English
+   * sentence at a user; `problem` is the diagnostic, which carries detail no
+   * fixed phrase can (which version, which manifest field) and goes into logs
+   * and to whoever wrote the plugin.
+   */
+  reason?: 'disabled' | 'api-version' | 'invalid-manifest';
+  /** Why not, in one sentence with the specifics. Absent when the plugin is fine. */
+  problem?: string;
+};
+
+/**
+ * One row of a collection a plugin owns, in the shape it travels in everywhere:
+ * the wire, the host API, and the section a local file carries.
+ *
+ * `data` is the plugin's own object, validated against the collection's declared
+ * JSON Schema on the write path. Everything beside it is host-managed and a
+ * plugin never sets it.
+ *
+ * `version` is the optimistic-lock counter sent back as `If-Match`. What it
+ * counts differs by backing store, and the difference is real rather than
+ * cosmetic: a DB row has its own counter, so two people can edit two rows of one
+ * collection at once; a local file has one version for the whole document, so
+ * the same header there means „the file has not changed since you read it".
+ * Items already work exactly this way — see „Locking" in docs/plugin-storage.md.
+ *
+ * There is no `sort` field. Order is the array's order in `PluginCollectionData`,
+ * which is the only representation a JSON file has; the DB's `sort` column exists
+ * to reproduce it and stays behind the repo.
+ */
+export type PluginDataRow = {
+  id: string;
+  data: Record<string, unknown>;
+  version?: number;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+/** A plugin's collections, keyed by the collection id its manifest declares. */
+export type PluginCollectionData = Record<string, PluginDataRow[]>;
+
+/**
+ * Every enabled plugin's rows, keyed by plugin id.
+ *
+ * It sits on the timeline file rather than behind a second request because a
+ * local source has no server to ask: a static deploy materializes the file and
+ * that copy has to be complete, or the plugin renders nothing. Making the DB
+ * path match means one payload shape for both, and it keeps a local timeline
+ * self-contained — copying the file copies the plugin's data with it.
+ *
+ * Only plugins actually enabled on the timeline are included, which is the same
+ * gate that decides whether their code loads at all.
+ */
+export type PluginData = Record<string, PluginCollectionData>;
 
 export type TimelineFile = {
   /** Points editors at schema/timeline.schema.json for completion + validation. */
@@ -332,12 +367,15 @@ export type TimelineFile = {
   name?: string;
   description?: string;
   groupBy?: string;
-  // Plugins enabled on this timeline (e.g. 'product-roadmap' → pricing matrix).
+  // Plugins enabled on this timeline (e.g. 'dev.zeitlines.product-roadmap' → pricing matrix).
   // Replaces the former `type: 'product'` gate; see ./plugins.
   plugins?: PluginRef[];
+  // Rows owned by the enabled plugins, stored generically by the host. A plugin
+  // never ships a migration, so this is where a plugin's own data lives on every
+  // source kind; see docs/plugin-storage.md.
+  pluginData?: PluginData;
   phases?: TimelinePhase[];
   customFields?: CustomFieldDef[];
-  pricing?: Pricing;
   items: TimelineFileItem[];
   groups?: {
     id: string;
@@ -385,4 +423,16 @@ export type Config = {
  * validated against `schema/config.schema.json`; this one is a build artefact
  * and needs no schema.
  */
-export type BuiltConfig = Config & { views: View[] };
+export type BuiltConfig = Config & {
+  views: View[];
+  /**
+   * The instance's install registry as of the build.
+   *
+   * Baked in for the same reason a plugin's rows travel inside the timeline file:
+   * a static deploy has no API to ask. A served instance re-reads it from
+   * `GET /api/plugins`, so this copy is a starting point rather than the truth —
+   * and it is metadata about which plugins exist, never anybody's content, which
+   * is what keeps it clear of „No fallback data, ever".
+   */
+  plugins?: PluginStatus[];
+};

@@ -18,11 +18,10 @@ import type { MemberRole, MemberStatus } from '../../src/access';
 import type {
   CustomFieldDef,
   DirectoryUser,
+  InstalledPlugin,
   Member,
-  Pricing,
-  PricingFeature,
-  PricingHighlight,
-  PricingTier,
+  PluginData,
+  PluginDataRow,
   TimelineFile,
   TimelineFileItem,
   TimelinePhase,
@@ -57,7 +56,6 @@ export type MemberInvite = {
   expiresAt?: string | null;
 };
 
-export type PublicPricing = { id: string; name?: string; pricing: Pricing };
 
 // Error classes are shared (not re-defined per driver) so `instanceof` in the
 // dispatcher's catch block works regardless of which driver threw — two
@@ -104,16 +102,22 @@ export class ValidationError extends Error {
  * Every storage operation with the DB client already bound. The two driver
  * factories return an object satisfying this; `handleTimelineApi` dispatches
  * through it and never sees the underlying client. Pure helpers (row mappers,
- * `reorderIds`, `stripRowVersions`, `enforceExtentExclusivity`,
- * `assemblePricing`) stay as standalone functions in the impl modules — they are
- * DB-shape utilities, not part of the request-serving surface.
+ * `reorderIds`, `enforceExtentExclusivity`) stay as standalone functions in the
+ * impl modules — they are DB-shape utilities, not part of the request-serving
+ * surface.
+ *
+ * **No method here names a plugin, and a CI check asserts it.** For four years
+ * this interface carried fifteen `addFeature` / `setTierValue` / `replacePricing`
+ * methods for one plugin, which meant a third-party plugin could not store
+ * anything without a change to every driver — the privilege issue #17 removed.
+ * The generic plugin-store methods above are what replaced them: a plugin
+ * declares its collections, and the store does not care what they mean.
  */
 export interface TimelineRepo {
   // reads
   listTimelines(): Promise<TimelineMeta[]>;
   getTimeline(id: string): Promise<TimelineFile | null>;
   getWatermark(id: string): Promise<Watermark>;
-  getPublicPricing(id: string): Promise<PublicPricing | null>;
 
   // user directory (`app_users`) — not timeline-scoped, like listTimelines()
   /** The whole directory, ordered for a picker (named users first, then by name). */
@@ -184,53 +188,124 @@ export interface TimelineRepo {
     },
   ): Promise<void>;
 
-  // pricing — features
-  addFeature(timelineId: string, feature: PricingFeature, updatedBy?: string): Promise<PricingFeature>;
-  updateFeature(
-    timelineId: string,
-    featureId: string,
-    patch: Partial<PricingFeature>,
-    expectedVersion?: number,
-    updatedBy?: string,
-  ): Promise<PricingFeature>;
-  deleteFeature(timelineId: string, featureId: string): Promise<void>;
-  moveFeature(
-    timelineId: string,
-    featureId: string,
-    anchor: { after?: string; before?: string },
-    updatedBy?: string,
-  ): Promise<string[]>;
+  // ---- the instance's install registry ------------------------------------
+  // Instance-level, not timeline-level, which is why none of these takes a
+  // timeline id. „Installed" is „this instance has the code"; „enabled" is a
+  // `timeline_plugins` row and stays where it is.
 
-  // pricing — tiers + matrix cells
-  addTier(timelineId: string, tier: PricingTier, updatedBy?: string): Promise<PricingTier>;
-  updateTier(
+  /** Every installed plugin, enabled or not, ordered by id. */
+  listInstalledPlugins(): Promise<InstalledPlugin[]>;
+  /**
+   * Install or re-install one plugin (upsert by id). Re-installing is how a
+   * version is changed, so it keeps the row's identity rather than making the
+   * caller delete first — a delete-then-insert would take the plugin's data with
+   * it through the purge, which is not what „update" means.
+   */
+  installPlugin(plugin: InstalledPlugin, updatedBy?: string): Promise<InstalledPlugin>;
+  /** The instance-level off switch. Keeps the row and everything the plugin stored. */
+  setPluginInstalledEnabled(pluginId: string, enabled: boolean, updatedBy?: string): Promise<void>;
+  /**
+   * Remove the registry row. The plugin's DATA is not touched here — purging it
+   * is a separate, explicit step (`purgePlugin`), so that the destructive half of
+   * an uninstall is never a side effect of the bookkeeping half.
+   */
+  removeInstalledPlugin(pluginId: string): Promise<void>;
+
+  // ---- a plugin's enablement on ONE timeline ------------------------------
+
+  /**
+   * Enable a plugin on a timeline, or replace its config. Upsert, because
+   * „enable" and „reconfigure" are the same write from the caller's side and
+   * splitting them would only add a 404 nobody can act on.
+   */
+  setTimelinePlugin(
     timelineId: string,
-    tierId: string,
-    patch: Partial<PricingTier>,
-    expectedVersion?: number,
-    updatedBy?: string,
-  ): Promise<PricingTier>;
-  deleteTier(timelineId: string, tierId: string): Promise<void>;
-  setTierValue(
-    timelineId: string,
-    tierId: string,
-    featureId: string,
-    value: string | boolean | null | undefined,
-    updatedBy?: string,
-    availableFrom?: string | null,
+    pluginId: string,
+    config: Record<string, unknown>,
+    options?: { public?: boolean },
   ): Promise<void>;
-  clearTierValue(timelineId: string, tierId: string, featureId: string): Promise<void>;
-
-  // pricing — highlights + versions + bulk
-  addHighlight(timelineId: string, highlight: PricingHighlight, updatedBy?: string): Promise<PricingHighlight>;
-  updateHighlight(
+  /**
+   * What one timeline says about one plugin: its config, and whether the timeline
+   * consents to publishing that plugin's declared collections.
+   *
+   * Deliberately NOT `getTimeline`, which the public path could otherwise reuse:
+   * that one loads every item, and the endpoint this serves is unauthenticated.
+   * Reading a timeline's whole content to answer „may I publish four rows" is both
+   * wasteful and the kind of shortcut that turns into a leak the day somebody
+   * returns more of it than they meant to.
+   */
+  getTimelinePlugin(
     timelineId: string,
-    highlightId: string,
-    patch: Partial<PricingHighlight>,
+    pluginId: string,
+  ): Promise<{ timelineName?: string; config: Record<string, unknown>; public: boolean } | null>;
+  /**
+   * Disable a plugin on a timeline. Deliberately keeps every row the plugin owns,
+   * so re-enabling is lossless — the destructive operation is the instance-level
+   * uninstall, and that one asks.
+   */
+  removeTimelinePlugin(timelineId: string, pluginId: string): Promise<void>;
+
+  // ---- plugin-owned rows (the generic store) ------------------------------
+  // Eight methods that together replace the per-plugin ones below: a plugin
+  // installed at runtime cannot add to this interface, so the interface has to
+  // stop naming plugins. What they store differs per backing store — a
+  // `plugin_data` table for `db`, a section in the user's own file for `local` —
+  // and only that difference lives in the implementations. The rules (shape,
+  // references, ordering, composite identity) sit ABOVE this seam, in
+  // [`src/pluginHost/dataStore.ts`](../../src/pluginHost/dataStore.ts), so all
+  // three implementations are held to them by one piece of code.
+
+  /** One collection's rows, in order. Empty when the plugin stored nothing. */
+  listPluginRows(timelineId: string, pluginId: string, collection: string): Promise<PluginDataRow[]>;
+  /**
+   * Every collection of the named plugins, for folding into `getTimeline`.
+   * Omitting `pluginIds` means „whichever plugins this timeline has enabled" —
+   * the store knows that without being told, and a caller that had to look it up
+   * first would make two round trips out of one.
+   */
+  listPluginData(timelineId: string, pluginIds?: string[]): Promise<PluginData>;
+  /**
+   * Create or replace one row's `data` wholesale. Upsert rather than insert,
+   * because a collection with `keyFields` has no separate create: writing the
+   * cell (tier, feature) twice addresses the same row both times.
+   */
+  putPluginRow(
+    timelineId: string,
+    pluginId: string,
+    collection: string,
+    row: PluginDataRow,
     expectedVersion?: number,
     updatedBy?: string,
-  ): Promise<PricingHighlight>;
-  deleteHighlight(timelineId: string, highlightId: string): Promise<void>;
-  updateVersions(id: string, versions: string[]): Promise<void>;
-  replacePricing(id: string, pricing: Pricing): Promise<void>;
+  ): Promise<PluginDataRow>;
+  /** Merge `patch` into an existing row's `data` (shallow, top-level keys). */
+  patchPluginRow(
+    timelineId: string,
+    pluginId: string,
+    collection: string,
+    rowId: string,
+    patch: Record<string, unknown>,
+    expectedVersion?: number,
+    updatedBy?: string,
+  ): Promise<PluginDataRow>;
+  deletePluginRow(timelineId: string, pluginId: string, collection: string, rowId: string): Promise<void>;
+  /** Persist an explicit row order for an `ordered` collection. */
+  orderPluginRows(
+    timelineId: string,
+    pluginId: string,
+    collection: string,
+    orderedIds: string[],
+    updatedBy?: string,
+  ): Promise<void>;
+  /**
+   * Drop every row of a plugin. `timelineId: null` is the instance-wide
+   * uninstall; a timeline id scopes it to that one timeline.
+   */
+  purgePluginData(pluginId: string, timelineId?: string | null): Promise<void>;
+  /**
+   * Strip the given `metadata` keys off items. The other half of an uninstall:
+   * without it a plugin's keys stay behind in the raw metadata box of every item
+   * that ever carried one, visible and unexplained.
+   */
+  purgeItemMetadata(keys: string[], timelineId?: string | null): Promise<number>;
+
 }

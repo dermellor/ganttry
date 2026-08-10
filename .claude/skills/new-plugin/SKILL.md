@@ -45,8 +45,8 @@ Do not run these phases together. Each ends with something the user has to see.
 - **After phase 0**, report which of the four shapes the plugin has (fields, data,
   view, tools) and whether any core file would have to change. If one would, stop and
   say so: that is a finding for
-  [#10](https://github.com/zeitlines/zeitlines/issues/10) or
-  [#11](https://github.com/zeitlines/zeitlines/issues/11), not something to work
+  [#10](https://github.com/dermellor/zeitlines/issues/10) or
+  [#11](https://github.com/dermellor/zeitlines/issues/11), not something to work
   around.
 - **After phase 1**, show the domain model, the confidence statement with its open
   questions, the target questions, the baseline and the terminology table. Get
@@ -65,7 +65,7 @@ level.
 
 **Before starting the batch:**
 
-- Check whether [#14](https://github.com/zeitlines/zeitlines/issues/14) has landed. If
+- Check whether [#14](https://github.com/dermellor/zeitlines/issues/14) has landed. If
   the loader reads manifests from the plugin folders, a plugin touches no shared file
   and subagents can run fully in parallel. If it has not, the single
   `register()` line in

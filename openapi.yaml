@@ -7,7 +7,7 @@ info:
   description: |-
       Read and write timelines. Served identically by the Vite dev middleware and the deployed edge function: both dispatch through handleTimelineApi in scripts/db/api.ts.
 
-      Authentication: every endpoint sits behind the auth gate when AUTH_REQUIRED=true, except GET /api/pricing/{id}, which is deliberately public. An MCP client may bypass the gate with a valid X-MCP-Token header.
+      Authentication: every endpoint sits behind the auth gate when AUTH_REQUIRED=true, except the public plugin read route and the retired GET /api/pricing/{id}. An MCP client may bypass the gate with a valid X-MCP-Token header.
 
       Concurrency: a PATCH sends the row version in If-Match and gets 409 on a mismatch. A PATCH only touches keys present in the body, so clearing an optional field requires sending it as an explicit null.
 
@@ -580,7 +580,7 @@ paths:
     get:
       operationId: getSourceByIdWatermark
       summary: "Cheap change marker for polling"
-      description: "Max item version, item count and max updated_at across items plus the timeline row. A client in `poll` mode compares it and does a full reload when it moves. Does not cover the pricing tables."
+      description: "Max item version, item count and max updated_at across items plus the timeline row, and the same pair (`pv`/`pn`) over the plugin-owned rows. A client in `poll` mode compares it and does a full reload when it moves. Does not cover the pricing tables, which move onto the generic store in issue #17."
       responses:
         "200":
           description: "The current watermark."
@@ -618,7 +618,325 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
-  "/api/source/{id}/pricing":
+  "/api/public/plugin/{pluginId}/{timelineId}":
+    parameters:
+      - name: pluginId
+        in: path
+        required: true
+        description: "Plugin id, percent-encoded."
+        schema:
+          type: string
+      - name: timelineId
+        in: path
+        required: true
+        description: "Timeline id. May contain slashes; it is the whole remaining path."
+        schema:
+          type: string
+    get:
+      operationId: getPublicPluginByPluginIdByTimelineId
+      summary: "A plugin's published collections, without authentication"
+      description: |-
+          The generic replacement for a per-plugin public endpoint. Three gates must all pass: the instance has the plugin installed and switched on, the plugin was granted `public:read` and declares `publicRead` collections, and THIS timeline consented (`public` on its plugin entry, off by default). Every failure answers 404 — one status for all of them, because the endpoint is reachable by anyone and distinguishing „no such timeline" from „exists but is not published" would turn it into a probe for which timelines exist.
+
+          Narrow with `?collection=<id>`; an undeclared collection answers 404. A query parameter rather than a path segment because a timeline id may contain slashes, which would make a trailing segment ambiguous.
+
+          The host always removes `version`, `updatedAt` and `updatedBy` from every row, whatever the plugin declared — `updatedBy` is an e-mail address. A `fields` projection in the manifest narrows further, as an allowlist.
+
+          Cacheable (`max-age=300`) and `Access-Control-Allow-Origin: *`, the same contract the pricing endpoint offers.
+      security: []
+      responses:
+        "200":
+          description: "The published collections."
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - plugin
+                  - collections
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  plugin:
+                    type: string
+                  config:
+                    type: object
+                  collections:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          - id
+                          - data
+                        properties:
+                          id:
+                            type: string
+                          data:
+                            type: object
+        "404":
+          description: "not found — unknown plugin, switched off, nothing declared public, or this timeline has not consented. Deliberately indistinguishable."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed — this endpoint is read-only."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "503":
+          description: db_not_configured.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+  "/api/plugins":
+    get:
+      operationId: getPlugins
+      summary: "The instance's installed plugins"
+      description: "Each with the host's verdict: `loadable`, and a `problem` sentence when it is not (switched off instance-wide, or a contract version this host does not satisfy). Readable by anyone past the auth gate — it is what the interface shows. On an instance with no registry the plugins the build shipped with are listed, because that is its truthful installed set."
+      responses:
+        "200":
+          description: "The registry."
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - plugins
+                properties:
+                  plugins:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/PluginStatus"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    post:
+      operationId: postPlugins
+      summary: "Install a plugin on the instance"
+      description: "Operator-only. Body is `{ manifest, artifact?, capabilities? }`. The manifest is validated against this host's contract version before anything is stored, so an incompatible artifact is refused here rather than at every boot. A non-builtin artifact must name a source, and a `url` one must carry an integrity hash — without it the pinned version names whatever that URL serves today. `capabilities` is what you GRANT; granting less than the manifest declares is refused rather than silently narrowed."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - manifest
+              properties:
+                manifest:
+                  type: object
+                artifact:
+                  type: object
+                  properties:
+                    kind:
+                      type: string
+                      enum:
+                        - builtin
+                        - url
+                        - package
+                        - vendored
+                    source:
+                      type: string
+                    integrity:
+                      type: string
+                capabilities:
+                  type: array
+                  items:
+                    type: string
+                enabled:
+                  type: boolean
+      responses:
+        "201":
+          description: "The installed plugin with its status."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/PluginStatus"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "403":
+          description: "forbidden — the caller is not an operator of this instance."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+  "/api/plugins/{pluginId}":
+    parameters:
+      - name: pluginId
+        in: path
+        required: true
+        description: "Plugin id, percent-encoded."
+        schema:
+          type: string
+    patch:
+      operationId: patchPluginsByPluginId
+      summary: "Switch a plugin on or off for the whole instance"
+      description: "Operator-only. Body is `{ enabled }`. Off stops the code loading everywhere and makes the plugin's data read-only; nothing is discarded, so switching back on is lossless."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - enabled
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: "The new state."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "403":
+          description: "forbidden — the caller is not an operator of this instance."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    delete:
+      operationId: deletePluginsByPluginId
+      summary: "Uninstall a plugin from the instance"
+      description: "Operator-only and guarded: repeat the plugin id as `?confirm=<pluginId>`, because this is the one operation that can delete data nothing else recovers. `?purgeData=true` also deletes every row the plugin owned and strips the item metadata keys it declared; the default keeps them, so an uninstall meant as „stop running this\" cannot silently discard a model."
+      responses:
+        "200":
+          description: "Uninstalled, saying whether the data went with it."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        "400":
+          description: "confirmation_required — the `confirm` parameter did not repeat the plugin id."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "403":
+          description: "forbidden — the caller is not an operator of this instance."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+  "/api/source/{id}/plugin/{pluginId}":
     parameters:
       - name: id
         in: path
@@ -626,19 +944,127 @@ paths:
         description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
         schema:
           type: string
+      - name: pluginId
+        in: path
+        required: true
+        description: "Plugin id, percent-encoded (a scoped id such as `@acme/sprints` arrives as `%40acme%2Fsprints`)."
+        schema:
+          type: string
+    get:
+      operationId: getSourceByIdPluginByPluginId
+      summary: "Is this plugin enabled on this timeline"
+      description: "Reports whether the instance has it installed, whether it is switched on instance-wide, whether this timeline enables it, and with what config."
+      responses:
+        "200":
+          description: "The state on this timeline."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pluginId:
+                    type: string
+                  installed:
+                    type: boolean
+                  instanceEnabled:
+                    type: boolean
+                  enabled:
+                    type: boolean
+                  config:
+                    type: object
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
     put:
-      operationId: putSourceByIdPricing
-      summary: "Replace the pricing model wholesale"
-      description: "Bulk seed. Enables the product-roadmap plugin automatically. For edits prefer the granular feature/tier/tier-value/highlight endpoints, which do not clobber concurrent changes."
+      operationId: putSourceByIdPluginByPluginId
+      summary: "Enable a plugin on this timeline, or reconfigure it"
+      description: "The granular path that previously only existed as SQL or a bulk `replace_timeline` — and a bulk write is what loses a concurrent edit. Body is `{ config }` (a bare bag is accepted too). The config is validated against the plugin's declared `configSchema`, so a bad key fails here rather than inside a render. The plugin must be installed on the instance first."
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              "$ref": "#/components/schemas/Pricing"
+              type: object
+              properties:
+                config:
+                  type: object
       responses:
         "200":
-          description: Stored.
+          description: "Enabled, with the stored config."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "403":
+          description: "plugin_disabled — the plugin is switched off for this instance."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    delete:
+      operationId: deleteSourceByIdPluginByPluginId
+      summary: "Disable a plugin on this timeline"
+      description: "Keeps every row the plugin owns, so enabling it again is lossless — the destructive operation is the instance-level uninstall. Disabling something already off is not an error: both calls describe the same state."
+      responses:
+        "200":
+          description: Disabled.
           content:
             application/json:
               schema:
@@ -673,7 +1099,7 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
-  "/api/source/{id}/feature":
+  "/api/source/{id}/plugin/{pluginId}/{collection}":
     parameters:
       - name: id
         in: path
@@ -681,23 +1107,36 @@ paths:
         description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
         schema:
           type: string
-    post:
-      operationId: postSourceByIdFeature
-      summary: "Add a pricing feature"
-      description: "Appends to the end of its group. Use feature-move to position it."
-      requestBody:
+      - name: pluginId
+        in: path
         required: true
-        content:
-          application/json:
-            schema:
-              "$ref": "#/components/schemas/PricingFeature"
+        description: "Plugin id, percent-encoded (a scoped id such as `@acme/sprints` therefore arrives as `%40acme%2Fsprints`)."
+        schema:
+          type: string
+      - name: collection
+        in: path
+        required: true
+        description: "A collection id the plugin declares in its manifest."
+        schema:
+          type: string
+    get:
+      operationId: getSourceByIdPluginByPluginIdByCollection
+      summary: "List a plugin collection's rows"
+      description: "In the collection's order. The same rows also travel inside `GET /api/source/{id}` under `pluginData`, so a client that already loaded the timeline does not need this call."
       responses:
-        "201":
-          description: "The created feature."
+        "200":
+          description: "The rows."
           content:
             application/json:
               schema:
-                "$ref": "#/components/schemas/PricingFeature"
+                type: object
+                required:
+                  - rows
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/PluginDataRow"
         "400":
           description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
           content:
@@ -710,8 +1149,14 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
+        "403":
+          description: "capability_missing — the plugin did not declare `data:own`."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
         "404":
-          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          description: "unknown_plugin / unknown_collection — the instance has no such plugin installed, or its manifest declares no such collection."
           content:
             application/json:
               schema:
@@ -728,24 +1173,10 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
-  "/api/source/{id}/feature/{featureId}":
-    parameters:
-      - name: id
-        in: path
-        required: true
-        description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
-        schema:
-          type: string
-      - name: featureId
-        in: path
-        required: true
-        description: "Feature id."
-        schema:
-          type: string
-    patch:
-      operationId: patchSourceByIdFeatureByFeatureId
-      summary: "Update a pricing feature"
-      description: "The lock version comes **only** from If-Match here, never from `body.version`: on a feature, `version` is the domain field 'available from'."
+    post:
+      operationId: postSourceByIdPluginByPluginIdByCollection
+      summary: "Create or replace a row"
+      description: "Body is `{ data, id? }`. `data` is validated against the collection's declared JSON Schema and its references must resolve. `id` is ignored for a collection with `keyFields` — there the row id is derived from the key values, so writing the same coordinates twice updates one row. An existing row keeps its position."
       parameters:
         - name: If-Match
           in: header
@@ -758,14 +1189,21 @@ paths:
         content:
           application/json:
             schema:
-              "$ref": "#/components/schemas/PricingFeature"
+              type: object
+              required:
+                - data
+              properties:
+                id:
+                  type: string
+                data:
+                  type: object
       responses:
-        "200":
-          description: "The updated feature."
+        "201":
+          description: "The stored row."
           content:
             application/json:
               schema:
-                "$ref": "#/components/schemas/PricingFeature"
+                "$ref": "#/components/schemas/PluginDataRow"
         "400":
           description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
           content:
@@ -778,8 +1216,14 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
+        "403":
+          description: "capability_missing — the plugin did not declare `data:own`."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
         "404":
-          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          description: "unknown_plugin / unknown_collection — the instance has no such plugin installed, or its manifest declares no such collection."
           content:
             application/json:
               schema:
@@ -802,47 +1246,7 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
-    delete:
-      operationId: deleteSourceByIdFeatureByFeatureId
-      summary: "Delete a pricing feature"
-      responses:
-        "200":
-          description: Deleted.
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Ok"
-        "400":
-          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "401":
-          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "404":
-          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "405":
-          description: "method not allowed for this sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "500":
-          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-  "/api/source/{id}/feature-move":
+  "/api/source/{id}/plugin/{pluginId}/{collection}/move":
     parameters:
       - name: id
         in: path
@@ -850,10 +1254,22 @@ paths:
         description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
         schema:
           type: string
+      - name: pluginId
+        in: path
+        required: true
+        description: "Plugin id, percent-encoded (a scoped id such as `@acme/sprints` therefore arrives as `%40acme%2Fsprints`)."
+        schema:
+          type: string
+      - name: collection
+        in: path
+        required: true
+        description: "A collection id the plugin declares in its manifest."
+        schema:
+          type: string
     post:
-      operationId: postSourceByIdFeatureMove
-      summary: "Reorder a feature"
-      description: "Exactly one anchor; `after` wins if both are given. The server renumbers `sort` and returns the resulting order, which the client adopts rather than replaying the move locally. PUT behaves identically."
+      operationId: postSourceByIdPluginByPluginIdByCollectionMove
+      summary: "Reposition a row"
+      description: "Body is `{ id, after? , before? }`. Only for a collection declared `ordered`; anything else answers 400. Renumbers server-side and returns the new order. This shadows no row: a row whose id is `move` is still addressed by PATCH and DELETE on this path."
       requestBody:
         required: true
         content:
@@ -861,9 +1277,9 @@ paths:
             schema:
               type: object
               required:
-                - featureId
+                - id
               properties:
-                featureId:
+                id:
                   type: string
                 after:
                   type: string
@@ -876,6 +1292,13 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  ok:
+                    type: boolean
+                  order:
+                    type: array
+                    items:
+                      type: string
         "400":
           description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
           content:
@@ -888,8 +1311,14 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
+        "403":
+          description: "capability_missing — the plugin did not declare `data:own`."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
         "404":
-          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          description: "unknown_plugin / unknown_collection — the instance has no such plugin installed, or its manifest declares no such collection."
           content:
             application/json:
               schema:
@@ -906,7 +1335,7 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
-  "/api/source/{id}/tier":
+  "/api/source/{id}/plugin/{pluginId}/{collection}/{rowId}":
     parameters:
       - name: id
         in: path
@@ -914,70 +1343,28 @@ paths:
         description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
         schema:
           type: string
-    post:
-      operationId: postSourceByIdTier
-      summary: "Add a tier"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              "$ref": "#/components/schemas/PricingTier"
-      responses:
-        "201":
-          description: "The created tier."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/PricingTier"
-        "400":
-          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "401":
-          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "404":
-          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "405":
-          description: "method not allowed for this sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "500":
-          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-  "/api/source/{id}/tier/{tierId}":
-    parameters:
-      - name: id
+      - name: pluginId
         in: path
         required: true
-        description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
+        description: "Plugin id, percent-encoded (a scoped id such as `@acme/sprints` therefore arrives as `%40acme%2Fsprints`)."
         schema:
           type: string
-      - name: tierId
+      - name: collection
         in: path
         required: true
-        description: "Tier id."
+        description: "A collection id the plugin declares in its manifest."
+        schema:
+          type: string
+      - name: rowId
+        in: path
+        required: true
+        description: "Row id, percent-encoded. For a collection with `keyFields` this is the derived composite key."
         schema:
           type: string
     patch:
-      operationId: patchSourceByIdTierByTierId
-      summary: "Update a tier"
-      description: "Touches no matrix cells: the response re-reads and returns them in full, so the column values survive."
+      operationId: patchSourceByIdPluginByPluginIdByCollectionByRowId
+      summary: "Merge into a row's data"
+      description: "Body is `{ data }`, shallow-merged into the stored object; a `null` value removes its key. The MERGED result is validated, not the patch. A field that forms the row's identity cannot be patched — that would silently make it a different row — and answers 400."
       parameters:
         - name: If-Match
           in: header
@@ -985,107 +1372,6 @@ paths:
           description: "The row version the client last saw. A mismatch answers 409 instead of overwriting. Falls back to `body.version` when the header is absent — except for pricing features, where `version` is the domain field 'available from'."
           schema:
             type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              "$ref": "#/components/schemas/PricingTier"
-      responses:
-        "200":
-          description: "The updated tier, cells included."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/PricingTier"
-        "400":
-          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "401":
-          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "404":
-          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "405":
-          description: "method not allowed for this sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "409":
-          description: "version_conflict — the stored row version differs from If-Match. The client reloads that row instead of overwriting."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "500":
-          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-    delete:
-      operationId: deleteSourceByIdTierByTierId
-      summary: "Delete a tier"
-      responses:
-        "200":
-          description: Deleted.
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Ok"
-        "400":
-          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "401":
-          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "404":
-          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "405":
-          description: "method not allowed for this sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "500":
-          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-  "/api/source/{id}/tier-value":
-    parameters:
-      - name: id
-        in: path
-        required: true
-        description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
-        schema:
-          type: string
-    put:
-      operationId: putSourceByIdTierValue
-      summary: "Set one matrix cell"
-      description: "A cell is atomic, so there is no locking here and two people can edit different cells freely. A falsy `value` deletes the cell. `availableFrom` gates when the cell counts as included; `value` stays the end state. POST behaves identically."
       requestBody:
         required: true
         content:
@@ -1093,28 +1379,17 @@ paths:
             schema:
               type: object
               required:
-                - tierId
-                - featureId
+                - data
               properties:
-                tierId:
-                  type: string
-                featureId:
-                  type: string
-                value:
-                  oneOf:
-                    - type: boolean
-                    - type: string
-                    - type: "null"
-                availableFrom:
-                  type: string
-                  description: "Version label from which the cell applies."
+                data:
+                  type: object
       responses:
         "200":
-          description: Stored.
+          description: "The stored row."
           content:
             application/json:
               schema:
-                "$ref": "#/components/schemas/Ok"
+                "$ref": "#/components/schemas/PluginDataRow"
         "400":
           description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
           content:
@@ -1127,129 +1402,14 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
-        "404":
-          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "405":
-          description: "method not allowed for this sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "500":
-          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-  "/api/source/{id}/highlight":
-    parameters:
-      - name: id
-        in: path
-        required: true
-        description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
-        schema:
-          type: string
-    post:
-      operationId: postSourceByIdHighlight
-      summary: "Add a card highlight"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              "$ref": "#/components/schemas/PricingHighlight"
-      responses:
-        "201":
-          description: "The created highlight."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/PricingHighlight"
-        "400":
-          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "401":
-          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+        "403":
+          description: "capability_missing — the plugin did not declare `data:own`."
           content:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
         "404":
-          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "405":
-          description: "method not allowed for this sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "500":
-          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-  "/api/source/{id}/highlight/{highlightId}":
-    parameters:
-      - name: id
-        in: path
-        required: true
-        description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
-        schema:
-          type: string
-      - name: highlightId
-        in: path
-        required: true
-        description: "Highlight id."
-        schema:
-          type: string
-    patch:
-      operationId: patchSourceByIdHighlightByHighlightId
-      summary: "Update a card highlight"
-      parameters:
-        - name: If-Match
-          in: header
-          required: false
-          description: "The row version the client last saw. A mismatch answers 409 instead of overwriting. Falls back to `body.version` when the header is absent — except for pricing features, where `version` is the domain field 'available from'."
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              "$ref": "#/components/schemas/PricingHighlight"
-      responses:
-        "200":
-          description: "The updated highlight."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/PricingHighlight"
-        "400":
-          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "401":
-          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "404":
-          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          description: "unknown_plugin / unknown_collection — the instance has no such plugin installed, or its manifest declares no such collection."
           content:
             application/json:
               schema:
@@ -1273,15 +1433,30 @@ paths:
               schema:
                 "$ref": "#/components/schemas/Error"
     delete:
-      operationId: deleteSourceByIdHighlightByHighlightId
-      summary: "Delete a card highlight"
+      operationId: deleteSourceByIdPluginByPluginIdByCollectionByRowId
+      summary: "Delete a row and its cascade"
+      description: "Rows referencing this one through a declared reference go with it (`onDelete: cascade`, the default) and are listed in the response. A reference declared `restrict` blocks the delete with 409 instead, and nothing is removed."
       responses:
         "200":
-          description: Deleted.
+          description: "Deleted, with what the cascade took."
           content:
             application/json:
               schema:
-                "$ref": "#/components/schemas/Ok"
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  cascaded:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        collection:
+                          type: string
+                        rowIds:
+                          type: array
+                          items:
+                            type: string
         "400":
           description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
           content:
@@ -1294,8 +1469,14 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
+        "403":
+          description: "capability_missing — the plugin did not declare `data:own`."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
         "404":
-          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          description: "unknown_plugin / unknown_collection — the instance has no such plugin installed, or its manifest declares no such collection."
           content:
             application/json:
               schema:
@@ -1306,59 +1487,8 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
-        "500":
-          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-  "/api/source/{id}/pversion":
-    parameters:
-      - name: id
-        in: path
-        required: true
-        description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
-        schema:
-          type: string
-    put:
-      operationId: putSourceByIdPversion
-      summary: "Replace the ordered version list"
-      description: "Writes only the plugin config and migrates **no** references. Renaming a version therefore orphans every gate that named it, which is why there is no version editor in the UI."
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: array
-              items:
-                type: string
-      responses:
-        "200":
-          description: Stored.
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Ok"
-        "400":
-          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "401":
-          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "404":
-          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "405":
-          description: "method not allowed for this sub-resource."
+        "409":
+          description: "reference_restrict — a reference declared `restrict` still points at this row."
           content:
             application/json:
               schema:
@@ -1706,24 +1836,16 @@ paths:
           type: string
     get:
       operationId: getPricingById
-      summary: "Public pricing model"
-      description: "**Deliberately unauthenticated**, for external pages. Serves only the pricing model, never roadmap items, and strips the internal `rowVersion` from every entity."
+      summary: "Retired: the public pricing model"
+      description: |-
+          Answers **410 Gone** and names its successor, `GET /api/public/plugin/product-roadmap/{id}`.
+
+          It served one plugin from an address of its own, which is the privilege issue #17 removes: a plugin nobody wrote into this repo could never have had a route here. Not an alias and not a redirect, because the payload changed shape — a matrix cell is now its own row in the `tier-values` collection instead of being folded into each tier's `values` map, and that folding is the plugin's knowledge rather than the host's. A consumer silently handed the new shape would render empty columns; a 410 stops its build instead.
       security: []
+      deprecated: true
       responses:
-        "200":
-          description: "The pricing model, without lock versions."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Pricing"
-        "404":
-          description: "Unknown timeline, or not a product timeline."
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/Error"
-        "500":
-          description: server_error.
+        "410":
+          description: "Gone. The body carries the successor URL."
           content:
             application/json:
               schema:
@@ -1748,12 +1870,64 @@ components:
           type: string
         config:
           "$ref": "#/components/schemas/Recordstringunknown"
+        public:
+          type: boolean
+          description: |-
+              Consent to serve this plugin's declared `publicRead` collections without authentication. Absent = no.
+
+              Separate from being enabled, and deliberately so: plenty of timelines carry a pricing model that is not meant to be public, and „the plugin is on" must not be read as „the world may read it". On a `db` source this is the `timeline_plugins.public` column; here it is the same fact on the file, so the decision travels with the document a user owns.
       required:
         - id
       additionalProperties: false
     Recordstringunknown:
       type: object
       additionalProperties: {}
+    PluginData:
+      "$ref": "#/components/schemas/RecordstringPluginCollectionData"
+      description: |-
+          Every enabled plugin's rows, keyed by plugin id.
+
+          It sits on the timeline file rather than behind a second request because a local source has no server to ask: a static deploy materializes the file and that copy has to be complete, or the plugin renders nothing. Making the DB path match means one payload shape for both, and it keeps a local timeline self-contained — copying the file copies the plugin's data with it.
+
+          Only plugins actually enabled on the timeline are included, which is the same gate that decides whether their code loads at all.
+    RecordstringPluginCollectionData:
+      type: object
+      additionalProperties:
+        "$ref": "#/components/schemas/PluginCollectionData"
+    PluginCollectionData:
+      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-14245-15421-src_types.ts-0-193121108268078"
+      description: "A plugin's collections, keyed by the collection id its manifest declares."
+    Recordstringdef-alias-src_types.ts-14245-15421-src_types.ts-0-193121108268078:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          "$ref": "#/components/schemas/PluginDataRow"
+    PluginDataRow:
+      type: object
+      properties:
+        id:
+          type: string
+        data:
+          "$ref": "#/components/schemas/Recordstringunknown"
+        version:
+          type: number
+        updatedAt:
+          type: string
+        updatedBy:
+          type: string
+      required:
+        - id
+        - data
+      additionalProperties: false
+      description: |-
+          One row of a collection a plugin owns, in the shape it travels in everywhere: the wire, the host API, and the section a local file carries.
+
+          `data` is the plugin's own object, validated against the collection's declared JSON Schema on the write path. Everything beside it is host-managed and a plugin never sets it.
+
+          `version` is the optimistic-lock counter sent back as `If-Match`. What it counts differs by backing store, and the difference is real rather than cosmetic: a DB row has its own counter, so two people can edit two rows of one collection at once; a local file has one version for the whole document, so the same header there means „the file has not changed since you read it". Items already work exactly this way — see „Locking" in docs/plugin-storage.md.
+
+          There is no `sort` field. Order is the array's order in `PluginCollectionData`, which is the only representation a JSON file has; the DB's `sort` column exists to reproduce it and stays behind the repo.
     TimelinePhase:
       type: object
       properties:
@@ -1821,115 +1995,6 @@ components:
           type: string
       required:
         - value
-      additionalProperties: false
-    Pricing:
-      type: object
-      properties:
-        features:
-          type: array
-          items:
-            "$ref": "#/components/schemas/PricingFeature"
-        tiers:
-          type: array
-          items:
-            "$ref": "#/components/schemas/PricingTier"
-        highlights:
-          type: array
-          items:
-            "$ref": "#/components/schemas/PricingHighlight"
-        versions:
-          type: array
-          items:
-            type: string
-      required:
-        - features
-        - tiers
-      additionalProperties: false
-    PricingFeature:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        group:
-          type: string
-        description:
-          type: string
-        version:
-          type: string
-        nameByVersion:
-          "$ref": "#/components/schemas/Recordstringstring"
-        descriptionByVersion:
-          "$ref": "#/components/schemas/Recordstringstring"
-        rowVersion:
-          type: number
-      required:
-        - id
-        - name
-      additionalProperties: false
-    Recordstringstring:
-      type: object
-      additionalProperties:
-        type: string
-    PricingTier:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        tagline:
-          type: string
-        useCase:
-          type: string
-        targetGroup:
-          type: string
-        price:
-          type: string
-        values:
-          "$ref": "#/components/schemas/Recordstringstringboolean"
-        valueVersions:
-          "$ref": "#/components/schemas/Recordstringstring"
-        rowVersion:
-          type: number
-      required:
-        - id
-        - name
-        - price
-        - values
-      additionalProperties: false
-    Recordstringstringboolean:
-      type: object
-      additionalProperties:
-        type:
-          - string
-          - boolean
-    PricingHighlight:
-      type: object
-      properties:
-        id:
-          type: string
-        label:
-          type: string
-        section:
-          type: string
-        icon:
-          type: string
-        featureIds:
-          type: array
-          items:
-            type: string
-        description:
-          type: string
-        labelByVersion:
-          "$ref": "#/components/schemas/Recordstringstring"
-        rowVersion:
-          type: number
-      required:
-        - id
-        - label
-        - featureIds
       additionalProperties: false
     TimelineFileItem:
       type: object
@@ -2000,6 +2065,8 @@ components:
           type: array
           items:
             "$ref": "#/components/schemas/PluginRef"
+        pluginData:
+          "$ref": "#/components/schemas/PluginData"
         phases:
           type: array
           items:
@@ -2008,8 +2075,6 @@ components:
           type: array
           items:
             "$ref": "#/components/schemas/CustomFieldDef"
-        pricing:
-          "$ref": "#/components/schemas/Pricing"
         items:
           type: array
           items:
@@ -2047,6 +2112,10 @@ components:
           type:
             - string
             - "null"
+        pv:
+          type: number
+        pn:
+          type: number
       required:
         - v
         - n
@@ -2164,6 +2233,86 @@ components:
           One instance-wide setting as served to the operator interface.
 
           The declaration it comes from lives in [`src/settings.ts`](./settings.ts), together with the reasoning for the two fields that are easy to misread: `value` is absent (rather than empty or masked) whenever the declaration does not allow the value to be served, and `set` is therefore the only thing that can be said about a secret.
+    PluginArtifactKind:
+      type: string
+      enum:
+        - builtin
+        - url
+        - package
+        - vendored
+      description: |-
+          Where a plugin's code came from.
+
+          Recorded rather than inferred, because uninstalling, re-verifying and reinstalling all need to know: a URL can be refetched, a package resolved again, a vendored directory re-read. `builtin` is the honest label for a plugin that shipped inside the build and has no artifact of its own — an instance can only run what it shipped with until the loader exists (issue #14), and calling that anything else would invite a reinstall of something that was never fetched.
+    PluginStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        loadable:
+          type: boolean
+          description: "May the host run this plugin's code? False when `problem` is set."
+        reason:
+          type: string
+          enum:
+            - disabled
+            - api-version
+            - invalid-manifest
+          description: |-
+              Why not, as a code the interface can word itself. Absent when the plugin is fine.
+
+              It exists alongside `problem` because the two have different readers: this one is for the viewer, which is German and must not print a server's English sentence at a user; `problem` is the diagnostic, which carries detail no fixed phrase can (which version, which manifest field) and goes into logs and to whoever wrote the plugin.
+        problem:
+          type: string
+          description: "Why not, in one sentence with the specifics. Absent when the plugin is fine."
+        id:
+          type: string
+        version:
+          type: string
+          description: "The artifact's own version, as its manifest declared it."
+        apiVersion:
+          type: string
+          description: "The host contract range the artifact was built against, e.g. `^1`."
+        artifact:
+          type: object
+          properties:
+            kind:
+              "$ref": "#/components/schemas/PluginArtifactKind"
+            source:
+              type: string
+            integrity:
+              type: string
+          required:
+            - kind
+          additionalProperties: false
+        capabilities:
+          type: array
+          items:
+            type: string
+          description: "Capabilities granted at install time — never widened by the plugin itself."
+        manifest:
+          "$ref": "#/components/schemas/Recordstringunknown"
+        enabled:
+          type: boolean
+          description: "Instance-level off switch. Distinct from „not enabled on this timeline\": this one stops the plugin everywhere without discarding what it stored, which is what makes turning it back on lossless."
+        installedAt:
+          type: string
+        updatedAt:
+          type: string
+        updatedBy:
+          type: string
+      required:
+        - apiVersion
+        - artifact
+        - capabilities
+        - enabled
+        - id
+        - loadable
+        - manifest
+        - version
+      description: |-
+          An installed plugin plus what the host currently thinks of it — the shape the interface and the loader read.
+
+          `problem` is a sentence for the person who installed it, not a code. A version error nobody can read is indistinguishable from a broken plugin and gets reported as one.
     Error:
       type: object
       required:

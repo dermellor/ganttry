@@ -13,7 +13,7 @@ import {
 // and — more importantly — the migration of the pre-plugin value, because getting
 // that wrong silently resets everybody's saved view and breaks shared deep links.
 
-const legacy = (id: string) => (id === 'pricing' ? pluginViewMode('product-roadmap', 'pricing') : null);
+const legacy = (id: string) => (id === 'pricing' ? pluginViewMode('dev.zeitlines.product-roadmap', 'pricing') : null);
 
 test('built-in modes stay bare', () => {
   assert.equal(readViewMode('timeline', legacy), 'timeline');
@@ -23,9 +23,9 @@ test('built-in modes stay bare', () => {
 });
 
 test('a plugin view round-trips through its encoding', () => {
-  const mode = pluginViewMode('sprints', 'board');
-  assert.equal(mode, 'plugin:sprints:board');
-  assert.deepEqual(parsePluginViewMode(mode), { pluginId: 'sprints', viewId: 'board' });
+  const mode = pluginViewMode('com.example.sprints', 'board');
+  assert.equal(mode, 'plugin:com.example.sprints:board');
+  assert.deepEqual(parsePluginViewMode(mode), { pluginId: 'com.example.sprints', viewId: 'board' });
   assert.equal(readViewMode(mode, legacy), mode);
 });
 
@@ -35,7 +35,7 @@ test('a view id may contain colons; the plugin id may not', () => {
 });
 
 test('a pre-plugin mode resolves through the legacy lookup', () => {
-  assert.equal(readViewMode('pricing', legacy), 'plugin:product-roadmap:pricing');
+  assert.equal(readViewMode('pricing', legacy), 'plugin:dev.zeitlines.product-roadmap:pricing');
 });
 
 test('unknown, empty and truncated values degrade to the timeline', () => {
@@ -44,6 +44,6 @@ test('unknown, empty and truncated values degrade to the timeline', () => {
   assert.equal(readViewMode(null, legacy), 'timeline');
   assert.equal(readViewMode(undefined, legacy), 'timeline');
   assert.equal(readViewMode('plugin:', legacy), 'timeline');
-  assert.equal(readViewMode('plugin:sprints:', legacy), 'timeline');
+  assert.equal(readViewMode('plugin:com.example.sprints:', legacy), 'timeline');
   assert.equal(readViewMode('plugin::board', legacy), 'timeline');
 });

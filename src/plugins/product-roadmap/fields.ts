@@ -19,6 +19,7 @@ import {
   PRODUCT_ROADMAP_PLUGIN,
 } from './plugin';
 import type { CustomFieldDef, TimelineFile } from '../../types';
+import { currentPricing } from './compose';
 
 // Chip colour for a derived tier option. A tier has no colour of its own in the
 // pricing model, and hand-picking one here would reintroduce exactly the
@@ -44,10 +45,14 @@ function tierColor(id: string): string {
 export function productRoadmapFields(file: TimelineFile | null | undefined): CustomFieldDef[] {
   if (!file || !hasPlugin(file, PRODUCT_ROADMAP_PLUGIN)) return [];
   const defs: CustomFieldDef[] = [];
+  // Composed from the stored rows, like everything else this plugin reads. There
+  // is no `file.pricing` any more — the core file format stopped carrying one
+  // plugin's data by name (#17).
+  const pricing = currentPricing(file);
 
   // Which pricing version this item's work targets (drives the matrix's
   // version-dependent work indicator). Single-select from the declared versions.
-  const versions = file.pricing?.versions ?? [];
+  const versions = pricing.versions ?? [];
   if (versions.length) {
     defs.push({
       key: PRICING_ITEM_VERSION_META_KEY,
@@ -63,7 +68,7 @@ export function productRoadmapFields(file: TimelineFile | null | undefined): Cus
   // model left the field offering the old label. Derived from the model, it
   // cannot drift. Values are tier *ids* (like the feature field), not names, so a
   // rename doesn't orphan the values stored on items.
-  const tiers = file.pricing?.tiers ?? [];
+  const tiers = pricing.tiers;
   if (tiers.length) {
     defs.push({
       key: PRICING_TIER_META_KEY,
@@ -75,7 +80,7 @@ export function productRoadmapFields(file: TimelineFile | null | undefined): Cus
   }
 
   // Which pricing features this item's work touches (n:m).
-  const features = file.pricing?.features ?? [];
+  const features = pricing.features;
   if (features.length) {
     defs.push({
       key: PRICING_FEATURE_META_KEY,

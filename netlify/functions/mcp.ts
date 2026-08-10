@@ -15,6 +15,7 @@ import type { Config } from '@netlify/functions';
 import { getSql } from '../../scripts/db/sql.ts';
 import { getServiceClient } from '../../scripts/db/client.ts';
 import { resolveAdapter, resolveRepo, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
+import { MOVE_SEGMENT, handlePluginsApi, type PluginsApiRequest } from '../../scripts/db/plugin-api.ts';
 import { resolveGroupPatch, resolveItemPatch, type ItemPatch } from '../../scripts/mcp/patch.ts';
 import type { TimelineGroupDecl } from '../../scripts/db/timeline-repo.ts';
 import type { TimelineFileItem } from '../../src/types.ts';
@@ -87,6 +88,21 @@ function buildServer(updatedBy: string): McpServer {
     }
     return result.json;
   };
+  // The instance registry is not timeline-scoped, so it does not go through
+  // `resolveAdapter` (which resolves a source). Presenting the MCP token already
+  // proves operator access — it is a server-side secret — so `caller.mcp` is true
+  // here; see scripts/db/operator.ts for why that equivalence is deliberate.
+  const runPlugins = async (req: Omit<PluginsApiRequest, 'caller' | 'operators'>) => {
+    const repo = resolveRepo(conns);
+    if (!repo) throw new Error('Database not configured on the server.');
+    const result = await handlePluginsApi(repo, { ...req, caller: { mcp: true }, operators: [] });
+    if (result.status >= 400) {
+      const msg = result.json as { error?: string; message?: string };
+      throw new Error(msg.message || msg.error || `error ${result.status}`);
+    }
+    return result.json;
+  };
+
   const ok = (data: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] });
 
   server.tool('list_timelines', 'List all DB-backed timelines (id, name, description).', {}, async () =>
@@ -169,7 +185,158 @@ function buildServer(updatedBy: string): McpServer {
     },
   );
 
+  // ---- plugin lifecycle ----------------------------------------------------
+  //
+  // Two levels, and the tools keep them apart because conflating them is how a
+  // plugin gets uninstalled when somebody meant to switch it off on one timeline.
+  // `enable_plugin` / `disable_plugin` are per timeline and reversible;
+  // `install_plugin` / `uninstall_plugin` are instance-wide and operator-only —
+  // the MCP token is operator access, which is why they are reachable here at all.
+
+  server.tool(
+    'list_plugins',
+    'List the plugins this instance has installed, with the host\'s verdict on each: whether it can be ' +
+      'loaded, and if not, why (switched off, or a contract version this host does not satisfy).',
+    {},
+    async () => ok(await runPlugins({ method: 'GET' })),
+  );
+  server.tool(
+    'enable_plugin',
+    'Enable one plugin on ONE timeline, or replace its config. The plugin must already be installed on ' +
+      'the instance. Config is validated against the plugin\'s declared configSchema, so a bad key fails ' +
+      'here rather than inside a render. This does not touch other timelines.',
+    { id: z.string(), pluginId: z.string(), config: z.record(z.any()).optional() },
+    async ({ id, pluginId, config }) =>
+      ok(await run({ method: 'PUT', id, sub: { kind: 'plugin', plugin: { pluginId } }, body: { config: config ?? {} } })),
+  );
+  server.tool(
+    'disable_plugin',
+    'Disable one plugin on ONE timeline. Everything it stored is KEPT, so enabling it again is lossless. ' +
+      'To remove a plugin from the whole instance use uninstall_plugin.',
+    { id: z.string(), pluginId: z.string() },
+    async ({ id, pluginId }) =>
+      ok(await run({ method: 'DELETE', id, sub: { kind: 'plugin', plugin: { pluginId } } })),
+  );
+  server.tool(
+    'install_plugin',
+    'Install a plugin on the INSTANCE, making it available to enable on timelines. Takes the plugin\'s ' +
+      'manifest, which is validated against this host\'s contract version before anything is stored. ' +
+      'artifact describes where the code comes from ({ kind: "builtin" | "url" | "package" | "vendored", ' +
+      'source?, integrity? }); a url artifact must carry an integrity hash. capabilities is what you GRANT ' +
+      'it — omit to grant exactly what the manifest declares.',
+    {
+      manifest: z.record(z.any()),
+      artifact: z.record(z.any()).optional(),
+      capabilities: z.array(z.string()).optional(),
+    },
+    async ({ manifest, artifact, capabilities }) =>
+      ok(await runPlugins({ method: 'POST', body: { manifest, artifact, capabilities } })),
+  );
+  server.tool(
+    'set_plugin_installed',
+    'Switch a plugin on or off for the WHOLE instance without uninstalling it. Off means its code stops ' +
+      'loading everywhere and its data becomes read-only; nothing is discarded.',
+    { pluginId: z.string(), enabled: z.boolean() },
+    async ({ pluginId, enabled }) => ok(await runPlugins({ method: 'PATCH', pluginId, body: { enabled } })),
+  );
+  server.tool(
+    'uninstall_plugin',
+    'Remove a plugin from the instance. Destructive and guarded: repeat the plugin id as `confirm`. ' +
+      'purgeData defaults to false, which KEEPS every row the plugin owned so a reinstall finds them; ' +
+      'passing true also deletes those rows and strips the item metadata keys the plugin declared, and ' +
+      'that cannot be undone.',
+    { pluginId: z.string(), confirm: z.string(), purgeData: z.boolean().optional() },
+    async ({ pluginId, confirm, purgeData }) =>
+      ok(
+        await runPlugins({
+          method: 'DELETE',
+          pluginId,
+          params: { confirm, purgeData: purgeData ? 'true' : 'false' },
+        }),
+      ),
+  );
+
+  // ---- plugin-owned rows: two tools for every plugin ----------------------
+  //
+  // Two generic tools, not two per plugin. The thirteen pricing tools below are
+  // what one plugin costs when the surface is per plugin, and a plugin installed
+  // at runtime could not add tools to a compiled server at all. What a caller may
+  // write is not decided here: the dispatcher checks it against the plugin's
+  // manifest, so an unknown plugin, an undeclared collection or a row that fails
+  // its schema is refused the same way it is over HTTP.
+
+  server.tool(
+    'plugin_data_list',
+    'List the rows a plugin stores on a timeline, in the collection\'s own order. ' +
+      'Collections are declared in the plugin\'s manifest (product-roadmap: features, tiers, ' +
+      'tier-values, highlights). Each row is { id, data, version } — send `version` back as ' +
+      'expectedVersion when writing.',
+    { id: z.string(), pluginId: z.string(), collection: z.string() },
+    async ({ id, pluginId, collection }) =>
+      ok(await run({ method: 'GET', id, sub: { kind: 'plugin', plugin: { pluginId, collection } } })),
+  );
+  server.tool(
+    'plugin_data_write',
+    'Write one row of a plugin collection. op="put" creates or replaces `data` wholesale; ' +
+      'op="patch" merges into it (a null value removes that key); op="delete" removes the row ' +
+      'and cascades to rows referencing it; op="move" repositions it in an ordered collection ' +
+      '(pass after or before instead of data). rowId is required for patch, delete and move; ' +
+      'for put it is derived from the key fields when the collection has them. Pass ' +
+      'expectedVersion to make the write conditional — it fails rather than overwriting a ' +
+      'change you did not see.',
+    {
+      id: z.string(),
+      pluginId: z.string(),
+      collection: z.string(),
+      op: z.enum(['put', 'patch', 'delete', 'move']),
+      rowId: z.string().optional(),
+      data: z.record(z.any()).optional(),
+      after: z.string().optional(),
+      before: z.string().optional(),
+      expectedVersion: z.number().optional(),
+    },
+    async ({ id, pluginId, collection, op, rowId, data, after, before, expectedVersion }) => {
+      const plugin = { pluginId, collection, rowId };
+      if (op === 'move') {
+        if (!rowId) throw new Error('move needs rowId');
+        return ok(
+          await run({
+            method: 'POST',
+            id,
+            sub: { kind: 'plugin', plugin: { pluginId, collection, rowId: MOVE_SEGMENT } },
+            body: { id: rowId, after, before },
+          }),
+        );
+      }
+      if (op === 'delete') {
+        if (!rowId) throw new Error('delete needs rowId');
+        return ok(await run({ method: 'DELETE', id, sub: { kind: 'plugin', plugin } }));
+      }
+      if (!data) throw new Error(`${op} needs data`);
+      if (op === 'patch') {
+        if (!rowId) throw new Error('patch needs rowId');
+        return ok(
+          await run({ method: 'PATCH', id, sub: { kind: 'plugin', plugin }, body: { data }, ifMatch: expectedVersion }),
+        );
+      }
+      return ok(
+        await run({
+          method: 'POST',
+          id,
+          sub: { kind: 'plugin', plugin: { pluginId, collection } },
+          body: { id: rowId, data },
+          ifMatch: expectedVersion,
+        }),
+      );
+    },
+  );
+
   // ---- granular pricing tools (one row per call; no whole-model dump) ------
+  //
+  // Thirteen tools for one plugin, which is the cost the two generic ones above
+  // exist to stop paying. They stay until #17 moves product-roadmap onto the
+  // generic store; removing them before its data has moved would take the MCP
+  // path away from a model that still lives in the `pricing_*` tables.
   server.tool(
     'add_feature',
     'Add a pricing feature. Body: { id, name, group?, description?, version? (the version label it is ' +

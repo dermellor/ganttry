@@ -69,10 +69,23 @@ export function subscribeTimeline(timelineId: string, onChange: (c: RemoteChange
       () => onChange({ table: 'timelines', event: 'UPDATE', id: timelineId }),
     );
 
-  // Plugin-owned tables: any row change re-reads that plugin's model. Declared
-  // per plugin (registry `realtimeTables`) rather than listed here, so a second
-  // plugin with its own rows needs no change to the core subscription. Goes away
-  // with the generic store (#12), where one table covers every plugin.
+  // The generic plugin store: one table for every plugin, so no plugin's rows
+  // need a subscription of their own. A row change re-reads the timeline, the
+  // same way an item change does.
+  channel = channel.on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'plugin_data', filter: `timeline_id=eq.${timelineId}` },
+    (payload) => {
+      const row = (payload.new ?? payload.old) as Record<string, any>;
+      onChange({ table: 'plugin_data', event: payload.eventType as RemoteChange['event'], id: row?.row_id });
+    },
+  );
+
+  // Plugin-owned tables from before the generic store. Declared per plugin
+  // (registry `realtimeTables`) rather than listed here, so a plugin with its own
+  // tables needs no change to the core subscription. The list empties itself in
+  // #17, when product-roadmap's four tables become rows in `plugin_data`; the
+  // loop then iterates nothing and can go with them.
   for (const table of pluginRealtimeTables()) {
     channel = channel.on(
       'postgres_changes',

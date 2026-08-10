@@ -79,6 +79,8 @@ export type AppShellElements = {
   settingsClose: HTMLButtonElement;
   addBtn: HTMLButtonElement;
   exportBtn: HTMLButtonElement;
+  pluginsBtn: HTMLButtonElement;
+  pluginsPanel: HTMLElement;
   status: HTMLElement;
   detail: HTMLElement;
   detailTitle: HTMLHeadingElement;
@@ -310,7 +312,31 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     ariaLabel: 'Aktuelle View als statische HTML-Datei herunterladen',
     attrs: { id: 'export-btn' },
   });
-  const footer = Toolbar({ tone: 'footer', children: [status, exportBtn] });
+  // Which plugins this instance has, and why one of them is not running. It sits
+  // in the footer rather than in a settings screen because the answer is usually
+  // wanted while looking at a timeline that is missing something.
+  const pluginsBtn = Button({
+    label: 'Plugins',
+    variant: 'link',
+    ariaLabel: 'Installierte Plugins und ihr Zustand',
+    attrs: { id: 'plugins-btn', 'aria-haspopup': 'true', 'aria-expanded': 'false' },
+  });
+  const pluginsPanel = el('div', {
+    id: 'plugins-panel',
+    class: 'plugin-panel',
+    role: 'group',
+    'aria-label': 'Plugins',
+    hidden: true,
+  });
+  // The panel is absolutely positioned above its button, so it needs a
+  // positioned ancestor of its own: anchored to the footer instead, it would sit
+  // wherever the footer's box happens to be rather than over the control that
+  // opened it.
+  const pluginsWrap = el('div', { class: 'plugin-panel-wrap' }, [pluginsBtn, pluginsPanel]);
+  const footer = Toolbar({
+    tone: 'footer',
+    children: [status, el('div', { class: 'footer-actions' }, [pluginsWrap, exportBtn])],
+  });
 
   return {
     nodes: [header, main, footer],
@@ -340,6 +366,8 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       settingsClose,
       addBtn,
       exportBtn,
+      pluginsBtn,
+      pluginsPanel,
       status,
       ...panel,
     },

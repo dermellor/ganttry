@@ -20,10 +20,15 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/users.md`](docs/users.md) | Who belongs to an instance: roles, invitations, the switch that turns membership into authorization, and the order to roll it out in. |
 | [`docs/self-hosting.md`](docs/self-hosting.md) | Running it yourself: the three deployment shapes, the one-command container, and the access gate. |
 | [`docs/local-sources.md`](docs/local-sources.md) | Files the user owns as a source: a JSON file or a directory of Markdown. Editability is decided by the runtime, not by the format. |
+| [`docs/plugin-storage.md`](docs/plugin-storage.md) | The generic store for the rows a plugin owns, on every source kind, and the rules the host enforces in place of columns and foreign keys. |
+| [`docs/plugin-lifecycle.md`](docs/plugin-lifecycle.md) | Installed (instance) versus enabled (timeline), who may install, version pinning, and what an uninstall does to the data. |
+| [`docs/plugin-public-read.md`](docs/plugin-public-read.md) | Publishing a plugin's data without an endpoint of its own: the three gates, what is stripped, and why a local source inverts the question. |
+| [`docs/plugin-authoring.md`](docs/plugin-authoring.md) | Writing a plugin outside this repository: what it exports, the host API it is handed, how to declare data, and how an instance installs it. |
+| [`docs/plugin-isolation.md`](docs/plugin-isolation.md) | Where plugin code runs, why the sandbox was rejected, what protects an instance instead, and what would bring the decision back. |
 | [`docs/settings.md`](docs/settings.md) | The instance settings area: how a setting declares where it lives, the per-setting read gate, and where the area sits. |
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server and its tools. |
 | [`docs/deploy.md`](docs/deploy.md) | The Netlify deploy, the auth gate, JIRA linking. |
-| [`docs/pricing.md`](docs/pricing.md) | The pricing model of a product-roadmap timeline. |
+| [`src/plugins/*/README.md`](src/plugins/) | Each plugin documents itself: what it does, its fields, its model, and an `AGENTS.md` with the conventions for changing it. No core chapter is the home of a plugin fact. |
 | [`docs/design-system.md`](docs/design-system.md) | Tokens, components, the playground, and the contract for using them. Read before changing anything the viewer draws. |
 | [`docs/plugin-playbook.md`](docs/plugin-playbook.md) | How a new plugin gets built: the gate, the reach research, implementation, verification, publication. |
 | [`openapi.yaml`](openapi.yaml) | The HTTP API, generated. Read this before writing a client. |
@@ -175,7 +180,7 @@ working tree.
 
 Either way, the done-gate (rule 2) applies. If a change is too risky for `main`,
 gate it with a feature flag, not a long-lived branch. Issues live in this repo's
-own tracker (<https://github.com/zeitlines/zeitlines/issues>); reference them from
+own tracker (<https://github.com/dermellor/zeitlines/issues>); reference them from
 the closing commit with `Closes #NN`.
 
 ### 4. Everything written into the history is English
@@ -440,11 +445,23 @@ reaches zero.
 
 **Bundle-split acceptance check**
 ([`scripts/ci/check-bundle-split.sh`](scripts/ci/check-bundle-split.sh)) enforces
-the promise from „Plugins" (docs/architecture.md): a generic build downloads no pricing *view*
-code. It asserts the pricing markers are absent from the entry chunk **and
-present in some lazy chunk** — the second half is what keeps it honest, since
-testing only absence turns the check into a silent pass the day those CSS class
-names are renamed. Runnable locally after `npm run build`.
+the promise from „Plugins" (docs/architecture.md): a generic build downloads no
+plugin *view* code and no plugin CSS. It asserts each marker is absent from the
+entry chunk **and present in some lazy chunk** — the second half is what keeps it
+honest, since testing only absence turns the check into a silent pass the moment
+a marker goes stale. The markers are read out of each plugin's own stylesheet
+rather than listed in the script, so a new plugin is covered as soon as it ships
+one and a renamed class updates the check by itself. Runnable locally after
+`npm run build`.
+
+**Plugin-isolation check**
+([`scripts/ci/check-plugin-isolation.mjs`](scripts/ci/check-plugin-isolation.mjs))
+is the other half of the same promise, and needs no build: no core file imports
+from a plugin folder, no plugin id appears as a literal outside its own folder,
+`TimelineRepo` carries only methods on a known-generic list, and `index.html`
+links no plugin's markup. Each was verified against a deliberately introduced
+violation. Its allowlists are short and each entry carries its reason; a new one
+is the thing to argue about in review.
 
 ## The design system
 

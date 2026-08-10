@@ -12,8 +12,8 @@ Two orthogonal extension axes keep it flexible:
   either supabase-js or native postgres.js, with optional per-source
   connections).
 - **Plugins** decide *what* a timeline carries beyond items and groups: a timeline
-  with no plugin is just timeline + list; the `product-roadmap` plugin adds a
-  pricing matrix and cards plus its own item fields, loaded lazily so a build
+  with no plugin is just timeline + list; the bundled `product-roadmap` plugin
+  adds a pricing matrix and cards plus its own item fields, loaded lazily so a build
   without it ships neither its code nor its stylesheet.
 
 ## Features
@@ -40,7 +40,8 @@ Two orthogonal extension axes keep it flexible:
 - **Static HTML export** of any view, and an **MCP server** so Claude Code can
   read and edit DB-backed timelines.
 - **Deployable behind auth:** a Netlify edge auth gate (Google OAuth + an
-  allowed-domain whitelist), JIRA issue linking, and public pricing endpoints.
+  allowed-domain whitelist), JIRA issue linking, and a public read endpoint for
+  the data a plugin publishes.
 - **Single neutral theme,** themeable through CSS custom properties.
 
 ## Quickstart
@@ -167,15 +168,16 @@ static Vite + TypeScript viewer (`src/`) renders it. The extension seams:
   static on a deploy, where nothing can change under it.
 
 The HTTP API is described in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1, generated
-from the TypeScript types), including the public, unauthenticated pricing endpoint
-and the optimistic-locking contract.
+from the TypeScript types), including the public, unauthenticated plugin read
+endpoint and the optimistic-locking contract.
 
 [`docs/overview.md`](docs/overview.md) maps the layers onto each other: the path a
 request takes from the viewer down to a store, and how one timeline type is laid
 out as Postgres rows, as a single JSON file, or as a directory of Markdown. Each
 subsystem is then documented with its reasoning in [`docs/`](docs/): data model,
-items, editing, database, local sources, MCP, deploy, pricing. [`AGENTS.md`](AGENTS.md)
-is the index plus the conventions that apply everywhere.
+items, editing, database, local sources, plugins, MCP, deploy. Each plugin
+documents itself in its own folder. [`AGENTS.md`](AGENTS.md) is the index plus
+the conventions that apply everywhere.
 
 ## Plugins
 
@@ -185,7 +187,7 @@ what the timelines in front of you actually use.
 
 | Plugin | What it adds |
 | --- | --- |
-| [`product-roadmap`](src/plugins/product-roadmap/) | A pricing matrix and pricing cards, plus Version, Tier and Features fields derived from the pricing model. See [`docs/pricing.md`](docs/pricing.md). |
+| [`product-roadmap`](src/plugins/product-roadmap/) | A pricing matrix and pricing cards, plus Version, Tier and Features fields derived from the pricing model. See its [`README.md`](src/plugins/product-roadmap/README.md). |
 
 Building one: [`docs/plugin-playbook.md`](docs/plugin-playbook.md), starting from
 [`src/plugins/_template/`](src/plugins/_template/).
@@ -233,14 +235,14 @@ are read from `process.env`, then `.env.local`, then any file named by
 
 Config-as-code lives in [`netlify.toml`](netlify.toml); instance-specific values
 and secrets go in the Netlify dashboard. `netlify build` produces the static site
-plus the edge functions (auth gate, timelines API, pricing API). See
+plus the edge functions (auth gate, timelines API, public API). See
 [`AGENTS.md`](AGENTS.md) for the auth gate, Supabase/Postgres setup, and the MCP
 server.
 
 ## Contributing
 
 Issues and pull requests are welcome at
-<https://github.com/zeitlines/zeitlines/issues>. See
+<https://github.com/dermellor/zeitlines/issues>. See
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, the checks CI runs, and the
 conventions worth knowing. Contributing needs **no database**: local sources run
 on a plain `npm install && npm run dev`. Requires Node 22 or newer.

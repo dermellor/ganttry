@@ -8,16 +8,19 @@
 // of the same column from colliding.
 
 import { Button, el, Field, FormActions, TextArea, TextInput } from '../../pluginHost/api';
-import type { PricingTier } from '../../types';
+import type { PricingTier } from './types';
 import { state, els, setStatus, clearFormSlots } from '../../state';
-import { apiAddTier, apiUpdateTier, apiDeleteTier, ConflictError } from '../../editor';
+import { apiAddTier, apiUpdateTier, apiDeleteTier, ConflictError } from './api';
+import { applyRow, dropRow, dropRowsWhere } from './store';
+import { PRICING_COLLECTIONS } from './manifest';
 import { hideDetail, setDetailTitle } from '../../detailPanel';
 import { repaintPricingView } from './pricingMatrix';
 import { slugId } from './pricing';
 import { renderTimeline } from '../../render';
+import { currentPricing } from './compose';
 
 function findTier(tierId: string): PricingTier | undefined {
-  return state.activeSourceFile?.pricing?.tiers.find((t) => t.id === tierId);
+  return currentPricing(state.activeSourceFile)?.tiers.find((t) => t.id === tierId);
 }
 
 export function showTierForm(tierId: string): void {
@@ -126,13 +129,12 @@ async function saveTierFromForm(tierId: string, form: HTMLFormElement): Promise<
 
   try {
     const saved = await apiUpdateTier(sourceId, tierId, patch, tier.rowVersion);
-    // Adopt the authoritative row, resetting the clearable optionals first so a
-    // cleared field doesn't linger. The response re-reads the cell rows too
-    // (updateTier in timeline-repo.ts), so `values`/`valueVersions` come back
-    // whole and need no preserving.
-    Object.assign(tier, { tagline: undefined, useCase: undefined, targetGroup: undefined }, saved);
+    // Replace the stored ROW rather than merging into the composed model, which
+    // is recomposed on every read (see ./store.ts). The cells are untouched by
+    // design — they are their own rows, so a rename cannot disturb a column.
+    applyRow(state.activeSourceFile, PRICING_COLLECTIONS.tiers, saved);
     repaintPricingView();
-    setStatus(`Tarif „${tier.name}" aktualisiert`);
+    setStatus(`Tarif „${patch.name ?? tier.name}" aktualisiert`);
     showTierForm(tierId);
   } catch (err) {
     if (err instanceof ConflictError) {
@@ -145,7 +147,7 @@ async function saveTierFromForm(tierId: string, form: HTMLFormElement): Promise<
 }
 
 async function deleteTier(tierId: string): Promise<void> {
-  const pricing = state.activeSourceFile?.pricing;
+  const pricing = currentPricing(state.activeSourceFile);
   const sourceId = state.activeSourceId;
   const tier = pricing && findTier(tierId);
   if (!pricing || !tier || !sourceId) return;
@@ -161,9 +163,10 @@ async function deleteTier(tierId: string): Promise<void> {
     return;
   }
 
-  // Server-side the cell rows cascade away; mirror that in memory for an
-  // immediate repaint.
-  pricing.tiers = pricing.tiers.filter((t) => t.id !== tierId);
+  // The host applied the declared cascade and took the column's cells with the
+  // tier; mirror both so the matrix repaints without a reload.
+  dropRow(state.activeSourceFile, PRICING_COLLECTIONS.tiers, tierId);
+  dropRowsWhere(state.activeSourceFile, PRICING_COLLECTIONS.tierValues, (d) => d.tierId === tierId);
   state.activeFormTierId = null;
   repaintPricingView();
   hideDetail();
@@ -176,7 +179,7 @@ async function deleteTier(tierId: string): Promise<void> {
  * starts filling cells — the same "create then edit" flow items use.
  */
 export async function addTier(): Promise<void> {
-  const pricing = state.activeSourceFile?.pricing;
+  const pricing = currentPricing(state.activeSourceFile);
   const sourceId = state.activeSourceId;
   if (!pricing || !sourceId) return;
 
@@ -192,9 +195,9 @@ export async function addTier(): Promise<void> {
     // A new column starts empty: no price, no cells. Both are filled from the UI
     // afterwards — the form for the price, the matrix cells one click each.
     const saved = await apiAddTier(sourceId, { id, name, price: '', values: {} });
-    pricing.tiers.push(saved);
+    applyRow(state.activeSourceFile, PRICING_COLLECTIONS.tiers, saved);
     repaintPricingView();
-    showTierForm(saved.id ?? id);
+    showTierForm(saved.id);
     setStatus(`Tarif „${name}" angelegt`);
   } catch (err) {
     setStatus(`Tarif anlegen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);

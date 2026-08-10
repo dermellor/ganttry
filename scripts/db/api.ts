@@ -6,10 +6,6 @@
 import type { Sql } from 'postgres';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  Pricing,
-  PricingFeature,
-  PricingHighlight,
-  PricingTier,
   SourceCapabilities,
   SourceLive,
   TimelineFile,
@@ -41,6 +37,8 @@ import {
 import { nextItemId } from '../../src/itemId.ts';
 import { makePostgresRepo } from './timeline-repo.ts';
 import { makeSupabaseRepo } from './timeline-repo-supabase.ts';
+import { handlePluginApi, handlePluginLifecycle, type PluginPath } from './plugin-api.ts';
+import { makeManifestSource, type ManifestSource } from './plugin-manifests.ts';
 
 /** Sub-resource kinds addressable under /api/source/<id>/. */
 /**
@@ -54,13 +52,7 @@ export const SUB_KINDS = [
   'group',
   'phases',
   'watermark',
-  'pricing',
-  'feature',
-  'feature-move',
-  'tier',
-  'tier-value',
-  'highlight',
-  'pversion',
+  'plugin',
 ] as const;
 
 export type SubKind = (typeof SUB_KINDS)[number];
@@ -69,13 +61,20 @@ export type ApiRequest = {
   method: string;
   /** timeline id, e.g. "acme/foo"; empty string means the collection (/api/sources) */
   id: string;
-  /** sub-resource: item / group / phases / pricing entities, with optional child id */
-  sub?: { kind: SubKind; childId?: string };
+  /** sub-resource: item / group / phases / watermark / a plugin's rows, with optional child id */
+  sub?: { kind: SubKind; childId?: string; plugin?: PluginPath };
   body?: unknown;
   /** optimistic-lock version (from If-Match header or body.version) */
   ifMatch?: number;
   /** attribution for updated_by */
   updatedBy?: string;
+  /**
+   * What a plugin declared, so the dispatcher can enforce it without executing
+   * the plugin. Injected rather than imported: today it reads the manifests this
+   * build shipped with, and #13 points it at the instance's install registry.
+   * Defaults to the built-in set, so every existing caller keeps working.
+   */
+  manifests?: ManifestSource;
 };
 
 export type ApiResult = { status: number; json: unknown };
@@ -388,120 +387,26 @@ export async function handleTimelineApi(repo: TimelineRepo, req: ApiRequest): Pr
       return err(405, 'method not allowed');
     }
 
-    // ---- pricing: whole model (bulk seed / rewrite) ----------------------
-    if (sub.kind === 'pricing') {
-      if (method === 'PUT') {
-        // Accept either the bare Pricing object or { pricing: … }.
-        const raw = (req.body ?? {}) as Record<string, unknown>;
-        const pricing = ('features' in raw ? raw : (raw.pricing as unknown)) as Pricing | undefined;
-        if (!pricing || !Array.isArray(pricing.tiers) || !Array.isArray(pricing.features)) {
-          return err(400, 'pricing needs features[] and tiers[]');
-        }
-        await repo.replacePricing(id, pricing);
-        return ok({ ok: true });
-      }
-      return err(405, 'method not allowed');
-    }
-
-    // ---- pricing: features -----------------------------------------------
-    // NOTE: the optimistic-lock version for pricing entities comes ONLY from the
-    // If-Match header, never body.version — for features `version` is the domain
-    // "available from" label, not the lock counter. So the patch body is passed
-    // through untouched.
-    if (sub.kind === 'feature') {
-      if (method === 'POST') {
-        const f = req.body as PricingFeature;
-        if (!f || !f.id) return err(400, 'feature needs id');
-        return ok(await repo.addFeature(id, f, req.updatedBy), 201);
-      }
-      if (!sub.childId) return err(400, 'feature id required');
-      if (method === 'PATCH') {
-        return ok(await repo.updateFeature(id, sub.childId, (req.body ?? {}) as Partial<PricingFeature>, req.ifMatch, req.updatedBy));
-      }
-      if (method === 'DELETE') {
-        await repo.deleteFeature(id, sub.childId);
-        return ok({ ok: true });
-      }
-      return err(405, 'method not allowed');
-    }
-
-    // ---- pricing: reorder a feature (relative to another) -----------------
-    // POST { featureId, after? | before? }. Exactly one anchor; `after` wins if
-    // both are sent. Renumbers the matrix row order server-side.
-    if (sub.kind === 'feature-move') {
-      if (method === 'POST' || method === 'PUT') {
-        const b = (req.body ?? {}) as { featureId?: string; after?: string; before?: string };
-        if (!b.featureId) return err(400, 'feature-move needs featureId');
-        if (!b.after && !b.before) return err(400, 'feature-move needs after or before');
-        const order = await repo.moveFeature(id, b.featureId, { after: b.after, before: b.before }, req.updatedBy);
-        return ok({ ok: true, order });
-      }
-      return err(405, 'method not allowed');
-    }
-
-    // ---- pricing: tiers ---------------------------------------------------
-    if (sub.kind === 'tier') {
-      if (method === 'POST') {
-        const t = req.body as PricingTier;
-        if (!t || !t.id) return err(400, 'tier needs id');
-        return ok(await repo.addTier(id, t, req.updatedBy), 201);
-      }
-      if (!sub.childId) return err(400, 'tier id required');
-      if (method === 'PATCH') {
-        return ok(await repo.updateTier(id, sub.childId, (req.body ?? {}) as Partial<PricingTier>, req.ifMatch, req.updatedBy));
-      }
-      if (method === 'DELETE') {
-        await repo.deleteTier(id, sub.childId);
-        return ok({ ok: true });
-      }
-      return err(405, 'method not allowed');
-    }
-
-    // ---- pricing: a single matrix cell (tier × feature) -------------------
-    // PUT the value; a false/null/empty value clears the cell. Body carries the
-    // coordinates so no dotted ids ever land in the path.
-    if (sub.kind === 'tier-value') {
-      if (method === 'PUT' || method === 'POST') {
-        const b = (req.body ?? {}) as {
-          tierId?: string;
-          featureId?: string;
-          value?: string | boolean | null;
-          availableFrom?: string | null;
-        };
-        if (!b.tierId || !b.featureId) return err(400, 'tier-value needs tierId and featureId');
-        await repo.setTierValue(id, b.tierId, b.featureId, b.value ?? null, req.updatedBy, b.availableFrom ?? null);
-        return ok({ ok: true });
-      }
-      return err(405, 'method not allowed');
-    }
-
-    // ---- pricing: highlights ----------------------------------------------
-    if (sub.kind === 'highlight') {
-      if (method === 'POST') {
-        const h = req.body as PricingHighlight;
-        if (!h || !h.id) return err(400, 'highlight needs id');
-        return ok(await repo.addHighlight(id, h, req.updatedBy), 201);
-      }
-      if (!sub.childId) return err(400, 'highlight id required');
-      if (method === 'PATCH') {
-        return ok(await repo.updateHighlight(id, sub.childId, (req.body ?? {}) as Partial<PricingHighlight>, req.ifMatch, req.updatedBy));
-      }
-      if (method === 'DELETE') {
-        await repo.deleteHighlight(id, sub.childId);
-        return ok({ ok: true });
-      }
-      return err(405, 'method not allowed');
-    }
-
-    // ---- pricing: versions (ordered label list, replaced as a unit) -------
-    if (sub.kind === 'pversion') {
-      if (method === 'PUT') {
-        const body = req.body as { versions?: string[] } | string[];
-        const versions = Array.isArray(body) ? body : (body?.versions ?? []);
-        await repo.updateVersions(id, versions);
-        return ok({ ok: true });
-      }
-      return err(405, 'method not allowed');
+    // ---- plugin-owned rows (the generic store) ----------------------------
+    // Everything under here is namespaced by plugin id, so no plugin's names can
+    // collide with a sub-resource above — which is also why the parser stops
+    // interpreting segments once it has seen `plugin`.
+    if (sub.kind === 'plugin') {
+      if (!sub.plugin) return err(400, 'plugin id required');
+      const pluginReq = {
+        method,
+        timelineId: id,
+        path: sub.plugin,
+        body: req.body,
+        ifMatch: req.ifMatch,
+        updatedBy: req.updatedBy,
+      };
+      const manifests = req.manifests ?? makeManifestSource(repo);
+      // With no collection the request is about the plugin ITSELF on this timeline
+      // (enable / reconfigure / disable); with one it is about the rows it owns.
+      return sub.plugin.collection
+        ? handlePluginApi(repo, manifests, pluginReq)
+        : handlePluginLifecycle(repo, manifests, pluginReq);
     }
 
     return err(404, 'unknown sub-resource');
@@ -689,10 +594,66 @@ export function resolveAdapter(conns: DbConnections, id: string, live?: SourceLi
   return dbAdapter(repo, live ?? defaultLive(conns));
 }
 
+/** Decode one path part, leaving a malformed escape as the literal it was. */
+function decodePart(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    // A lone `%` is not a valid escape. Failing the whole request over it would
+    // turn a typo into a 400 with no useful message; the lookup that follows
+    // rejects the unknown name anyway, and says which one.
+    return part;
+  }
+}
+
+/**
+ * Parse `/api/public/plugin/<pluginId>/<timelineId…>`.
+ *
+ * The timeline id is the whole tail and may contain slashes; the collection, when
+ * one is wanted, is the `collection` query parameter. A trailing path segment
+ * would be ambiguous against a namespaced id — see `handlePublicPluginApi`.
+ */
+export function parsePublicPluginPath(pathname: string): { pluginId: string; timelineId: string } | null {
+  const rest = pathname.replace(/^\/api\/public\/plugin\/?/, '').replace(/^\/+|\/+$/g, '');
+  if (!rest) return null;
+  const [rawPlugin, ...tail] = rest.split('/');
+  if (!rawPlugin || !tail.length) return null;
+  return { pluginId: decodePart(rawPlugin), timelineId: tail.join('/') };
+}
+
 /** Parse a `/api/source/<id>[/<subkind>[/<childId>]]` path into id + sub. */
 export function parseSourcePath(path: string): { id: string; sub?: ApiRequest['sub'] } | null {
   const clean = path.replace(/^\/+|\/+$/g, '');
   const segs = clean.split('/').filter(Boolean);
+
+  // `plugin` opens a namespace: everything after it is named by the plugin, so
+  // it must NOT be matched against the sub-resource list. A collection called
+  // `item` would otherwise be read as the core sub-resource and the timeline id
+  // would swallow `…/plugin/<pluginId>`. The rightmost occurrence wins, for
+  // the same reason the loop below scans from the right — a timeline id may
+  // itself contain a segment that looks like a marker.
+  const pluginAt = segs.lastIndexOf('plugin');
+  if (pluginAt > 0 && pluginAt < segs.length - 1) {
+    // Each part is decoded exactly once, which is what lets a scoped plugin id
+    // (`@acme/sprints`) and a composite row id (`pro:calls`) survive a path: the
+    // client sends `encodeURIComponent(part)`, and a value that itself contains a
+    // separator arrives double-encoded and comes back out intact. The timeline id
+    // above is deliberately NOT decoded — it keeps the literal-segment rule it has
+    // always had, because that one does reach the filesystem.
+    const [pluginId, collection, ...rest] = segs.slice(pluginAt + 1).map(decodePart);
+    const plugin: PluginPath = { pluginId };
+    if (collection) plugin.collection = collection;
+    // At most one segment may follow the collection. Joining several would accept
+    // a path no client can produce, and would make `a/b` and `a%2Fb` two spellings
+    // of one row id.
+    if (rest.length === 1) plugin.rowId = rest[0];
+    else if (rest.length > 1) return null;
+    return {
+      id: segs.slice(0, pluginAt).join('/'),
+      sub: { kind: 'plugin', childId: segs.slice(pluginAt + 1).join('/'), plugin },
+    };
+  }
+
   // find a trailing sub-resource marker
   for (let i = segs.length - 1; i >= 0; i--) {
     if ((SUB_KINDS as readonly string[]).includes(segs[i])) {

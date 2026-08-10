@@ -7,12 +7,14 @@
 import { statusOrDefault, type StatusKey } from '../../status';
 import { PRICING_FEATURE_META_KEY, PRICING_ITEM_VERSION_META_KEY } from './plugin';
 import {
+  type TimelineFileItem,
+} from '../../types';
+import {
   type Pricing,
   type PricingFeature,
   type PricingHighlight,
   type PricingTier,
-  type TimelineFileItem,
-} from '../../types';
+} from './types';
 
 export type PricingDoc = {
   timelineId: string;

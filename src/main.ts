@@ -41,6 +41,8 @@ import {
   displayIdsFor,
 } from './render';
 import { GROUP_DIM } from './listGrouping';
+import { loadPluginStatuses, renderPluginList } from './pluginPanel';
+import { browserDeps, loadInstalledPlugins } from './pluginHost/loader';
 import { commitItemForm } from './persistence';
 import type { PresenceUser } from './presence';
 import { loadUserDirectory } from './users';
@@ -64,10 +66,13 @@ import {
   pluginViewButton,
   pluginViewButtons,
   pluginViewSection,
+  renderPluginViewInto,
   showOnlyPluginSection,
 } from './pluginHost/views';
 import { dataUrl } from './data-base';
 import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
+import { hostApiFor } from './pluginHost/hostBackend';
+import { setTimelineRefresh } from './pluginHost/refresh';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -204,7 +209,9 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
     // mode by the time it resolves (the user may have switched away).
     const container = pluginViewSection(els.contentArea, parsed.pluginId, target.view);
     void ensurePluginLoaded(target.plugin).then((m) => {
-      if (state.viewMode === mode) m.renderView(container, target.view.id);
+      if (state.viewMode === mode) {
+        renderPluginViewInto(container, parsed.pluginId, target.view.id, m, hostApiFor(target.plugin.manifest));
+      }
     });
   } else {
     // The timeline was display:none while the list showed, so vis-timeline
@@ -259,6 +266,27 @@ async function bootstrap() {
   ]);
   state.config = cfg;
   state.currentUser = currentUser;
+
+  // Load the plugins the instance installed, BEFORE the first view is applied:
+  // their contributed fields and view buttons have to exist by the time a view is
+  // built, or the first paint is missing them and only a switch away and back
+  // brings them in. Awaited for the same reason, and it is a small set.
+  //
+  // Failures are collected rather than thrown. A plugin that cannot load must
+  // cost the user that plugin and nothing else; the reasons are what the footer's
+  // plugin list shows.
+  // A plugin's write goes through the host, so the host is what reloads after it.
+  // Registered rather than imported: hostBackend.ts calling render.ts would close
+  // a cycle (render → views → hostBackend → render). See pluginHost/refresh.ts.
+  setTimelineRefresh(() => {
+    if (state.activeView) void renderTimeline(state.activeView);
+  });
+
+  state.pluginLoad = await loadInstalledPlugins(
+    await loadPluginStatuses(cfg.plugins),
+    browserDeps(),
+    (pluginId, error) => console.error(`[plugin ${pluginId}]`, error),
+  );
 
   els.viewSelect.innerHTML = cfg.views
     .map((v) => `<option value="${v.id}">${escapeHtml(v.name)}</option>`)
@@ -363,6 +391,33 @@ async function bootstrap() {
   });
   els.addBtn.addEventListener('click', () => addNewItem());
   els.exportBtn.addEventListener('click', handleExport);
+
+  // The plugin list answers „why is that view not there?", so it is built fresh
+  // on open: the registry can change under a long-lived tab (an operator installs
+  // something), and the timeline it reports on changes with every view switch.
+  els.pluginsBtn.addEventListener('click', async () => {
+    const open = !els.pluginsPanel.hidden;
+    if (open) {
+      els.pluginsPanel.hidden = true;
+      els.pluginsBtn.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    els.pluginsPanel.hidden = false;
+    els.pluginsBtn.setAttribute('aria-expanded', 'true');
+    renderPluginList(
+      els.pluginsPanel,
+      await loadPluginStatuses(state.config?.plugins),
+      state.activeSourceFile,
+      state.pluginLoad,
+    );
+  });
+  document.addEventListener('click', (e) => {
+    if (els.pluginsPanel.hidden) return;
+    const target = e.target as Node;
+    if (els.pluginsPanel.contains(target) || els.pluginsBtn.contains(target)) return;
+    els.pluginsPanel.hidden = true;
+    els.pluginsBtn.setAttribute('aria-expanded', 'false');
+  });
 
   // Delete key (and Mac's ⌫) removes the item whose edit form is open — as long
   // as focus is not inside a form field. deleteItem() shows its own confirm.

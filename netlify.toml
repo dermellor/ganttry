@@ -32,6 +32,18 @@
   function = "timelines-api"
   path = "/api/users"
 
+# The instance's plugin install registry. Instance-level rather than per timeline,
+# so it is a sibling of /api/sources. Declared here as well as in the function's
+# own `config.path`, because every other route in this deploy is declared here and
+# a route that only exists in one of the two places is the one that goes missing.
+[[edge_functions]]
+  function = "timelines-api"
+  path = "/api/plugins"
+
+[[edge_functions]]
+  function = "timelines-api"
+  path = "/api/plugins/*"
+
 # Membership administration. Same function again: same drivers, same gate, and
 # it needs `manage` where the directory above needs a plain read.
 [[edge_functions]]
@@ -47,9 +59,18 @@
 
 # PUBLIC pricing model for external marketing pages (Astro). No auth (see
 # auth.ts excludedPath); serves only the pricing model, never roadmap items.
+# Kept as-is while product-roadmap's data still lives in the pricing_* tables;
+# see docs/plugin-public-read.md → „What happens to /api/pricing".
 [[edge_functions]]
   function = "pricing-api"
   path = "/api/pricing/*"
+
+# The GENERIC public read, for any plugin that declares publicRead and any
+# timeline that consented. Served by timelines-api because it needs exactly the
+# same driver setup — a second function would be the duplication this replaces.
+[[edge_functions]]
+  function = "timelines-api"
+  path = "/api/public/plugin/*"
 
 # Current-user probe for the header presence badge. Runs after auth, so it only
 # sees a session when the gate is active.

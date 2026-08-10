@@ -29,6 +29,7 @@ import {
   type ScanOptions,
 } from './scan.ts';
 import { patchFrontmatter, setBody, type Patch } from './frontmatter.ts';
+import { scanVendoredPlugins } from '../plugins/vendored.ts';
 import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
 import { describeReversedExtent, findReversedExtent, hasReversedExtent } from '../../src/itemExtent.ts';
 import {
@@ -36,7 +37,6 @@ import {
   NotFoundError,
   NotSupportedError,
   ValidationError,
-  type PublicPricing,
   type TimelineGroupDecl,
   type TimelineMeta,
   type TimelineRepo,
@@ -44,7 +44,11 @@ import {
 import type {
   CustomFieldDef,
   DirectoryUser,
+  InstalledPlugin,
   Member,
+  PluginData,
+  PluginDataRow,
+  PluginRef,
   TimelineContainer,
   TimelineFile,
   TimelineFileItem,
@@ -59,7 +63,18 @@ import type {
  * exactly when TIMELINES_SOURCES_SUBDIR is set; `build-data.ts` derives its two
  * paths the same way and for the same reason.
  */
-export type FileRepoDirs = { root: string; scope?: string; scanOptions?: ScanOptions };
+export type FileRepoDirs = {
+  root: string;
+  scope?: string;
+  scanOptions?: ScanOptions;
+  /**
+   * Where vendored plugin artifacts live. Supplied, not defaulted: this repo is
+   * constructed from several places and a silent default would make one of them
+   * answer from a directory nobody meant. Absent means „no registry", which is
+   * the truthful answer for an instance that carries no plugins.
+   */
+  pluginsDir?: string;
+};
 
 type Loaded = { file: TimelineFile; version: number; path: string; isDir?: boolean };
 
@@ -198,11 +213,34 @@ function withoutEmpty<T extends Record<string, unknown>>(obj: T): T {
   return out as T;
 }
 
+/**
+ * Drop the version stamps `withVersions` put on the plugin rows.
+ *
+ * They are the FILE's version, handed out so a client can send `If-Match`.
+ * Writing them back would freeze one moment's mtime into the document, where it
+ * would then be read as a row version and make the next conditional write fail
+ * against a number that has nothing to do with the file's state.
+ */
+function withoutRowVersions(pluginData: PluginData | undefined): PluginData | undefined {
+  if (!pluginData) return undefined;
+  const out: PluginData = {};
+  for (const [pluginId, collections] of Object.entries(pluginData)) {
+    const byCollection: Record<string, PluginDataRow[]> = {};
+    for (const [collection, rows] of Object.entries(collections ?? {})) {
+      byCollection[collection] = (rows ?? []).map(({ version: _v, ...rest }) => rest);
+    }
+    out[pluginId] = byCollection;
+  }
+  return out;
+}
+
 async function save(loaded: Loaded, file: TimelineFile): Promise<number> {
   const clean: TimelineFile = {
     ...file,
     items: file.items.map(({ version, ...rest }) => withoutEmpty(rest)),
   };
+  const pluginData = withoutRowVersions(file.pluginData);
+  if (pluginData) clean.pluginData = pluginData;
   const tmp = `${loaded.path}.${process.pid}.tmp`;
   await mkdir(dirname(loaded.path), { recursive: true });
   await writeFile(tmp, `${JSON.stringify(clean, null, 2)}\n`, 'utf8');
@@ -229,7 +267,81 @@ function assertVersion(loaded: Loaded, expected: number | undefined, what: strin
 
 /** Stamp the file's version onto every item, the way the DB stamps a row version. */
 function withVersions(file: TimelineFile, version: number): TimelineFile {
-  return { ...file, items: file.items.map((it) => ({ ...it, version })) };
+  const out: TimelineFile = { ...file, items: file.items.map((it) => ({ ...it, version })) };
+  if (out.pluginData) out.pluginData = stampedPluginData(file, version);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// plugin-owned rows, stored in the document the user owns
+//
+// The section is `pluginData` on the file (or on a directory's container), typed
+// on `TimelineFile` and therefore covered by the generated JSON Schema — an
+// editor validates it and an unknown key is an error, rather than the section
+// being an untyped bag smuggled into a file people hand-edit.
+
+/** One collection's rows, optionally stamped with the file's version. */
+function rowsOfCollection(
+  file: TimelineFile,
+  pluginId: string,
+  collection: string,
+  version?: number,
+): PluginDataRow[] {
+  const rows = file.pluginData?.[pluginId]?.[collection] ?? [];
+  return version == null ? rows : rows.map((row) => ({ ...row, version }));
+}
+
+/**
+ * The whole section with the file's version stamped on every row.
+ *
+ * Every row reports the SAME number, and that is accurate rather than sloppy:
+ * the document is the unit that changes, so „the state you read" is one value
+ * for all of it. It is also what makes `If-Match` mean the right thing here.
+ */
+function stampedPluginData(file: TimelineFile, version: number, pluginIds?: string[]): PluginData {
+  const out: PluginData = {};
+  for (const [pluginId, collections] of Object.entries(file.pluginData ?? {})) {
+    if (pluginIds != null && !pluginIds.includes(pluginId)) continue;
+    const byCollection: Record<string, PluginDataRow[]> = {};
+    for (const [collection, rows] of Object.entries(collections ?? {})) {
+      byCollection[collection] = (rows ?? []).map((row) => ({ ...row, version }));
+    }
+    out[pluginId] = byCollection;
+  }
+  return out;
+}
+
+/** A row as it is written: host-managed fields set, no version (the file has it). */
+function storedRow(id: string, data: Record<string, unknown>, updatedBy?: string): PluginDataRow {
+  const row: PluginDataRow = { id, data, updatedAt: new Date().toISOString() };
+  if (updatedBy) row.updatedBy = updatedBy;
+  return row;
+}
+
+/**
+ * The file with one collection replaced. Empty collections and empty plugins are
+ * dropped rather than left as `{}`: this is a file somebody reads and edits by
+ * hand, and a husk of empty objects is the kind of residue that makes a
+ * generated section look broken.
+ */
+function withPluginRows(
+  file: TimelineFile,
+  pluginId: string,
+  collection: string,
+  rows: PluginDataRow[],
+): TimelineFile {
+  const all: PluginData = { ...(file.pluginData ?? {}) };
+  const byCollection: Record<string, PluginDataRow[]> = { ...(all[pluginId] ?? {}) };
+  // Strip the version before storing: it is the file's, not the row's, so
+  // writing it back would freeze a stale number into the document.
+  if (rows.length) byCollection[collection] = rows.map(({ version: _v, ...rest }) => rest);
+  else delete byCollection[collection];
+  if (Object.keys(byCollection).length) all[pluginId] = byCollection;
+  else delete all[pluginId];
+  const next = { ...file };
+  if (Object.keys(all).length) next.pluginData = all;
+  else delete next.pluginData;
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -390,6 +502,8 @@ async function writeContainer(dir: string, container: TimelineContainer): Promis
 /** The container half of a scanned file: everything except the items. */
 function containerOf(file: TimelineFile): TimelineContainer {
   const { items: _items, ...rest } = file;
+  const pluginData = withoutRowVersions(rest.pluginData);
+  if (pluginData) rest.pluginData = pluginData;
   return rest;
 }
 
@@ -412,10 +526,16 @@ async function persist(loaded: Loaded, file: TimelineFile): Promise<number> {
 /**
  * A `TimelineRepo` backed by `<root>/<id>.json`.
  *
- * The plugin sub-resources (pricing features, tiers, cells, highlights,
- * versions) throw `NotSupportedError` → `501`. They are deliberately out of
- * scope for the first cut, and answering 501 says so; returning a silent success
- * would let the interface report „Gespeichert" for a write that never happened.
+ * Plugin-owned rows are stored here like everything else, in the document the user
+ * owns — see „plugin-owned rows" below and
+ * [`docs/plugin-storage.md`](../../docs/plugin-storage.md).
+ *
+ * There used to be sixteen `NotSupportedError` → `501` answers here, one per
+ * `product-roadmap` sub-resource: a pricing model in a JSON file was readable and
+ * not editable, because those methods needed four tables. They are gone with the
+ * methods (#17). A plugin's rows now go through the generic store above, which
+ * this repo implements like everything else — so the matrix is editable on a file
+ * the user owns, with no database involved.
  */
 export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
   const unsupported = (what: string) => {
@@ -465,12 +585,6 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
     async getWatermark(id: string): Promise<Watermark> {
       const loaded = await load(dirs, id);
       return { v: loaded.version, n: loaded.file.items.length, t: new Date(loaded.version).toISOString() };
-    },
-
-    async getPublicPricing(id: string): Promise<PublicPricing | null> {
-      const file = await this.getTimeline(id);
-      if (!file?.pricing) return null;
-      return { id, name: file.name, pricing: file.pricing };
     },
 
     // The user directory is a DB concept (`app_users`). A local file carries no
@@ -662,49 +776,264 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       await persist(loaded, next);
     },
 
-    // ---- pricing (plugin surface, first cut: 501) --------------------------
-    async addFeature() {
-      return unsupported('adding pricing features');
+    // ---- the instance's install registry -----------------------------------
+    //
+    // Not implemented here, and that is a statement rather than a gap. „Installed"
+    // is instance state about CODE: which artifact was fetched, what hash pins it,
+    // which capabilities an operator granted. A bare data directory has nowhere to
+    // record that and no loader to act on it, so a filesystem-only instance can
+    // genuinely only run the plugins its build shipped with — the server reads
+    // those from the build (scripts/db/plugin-manifests.ts).
+    //
+    // Answering `501` for the writes says so. Returning success would report a
+    // plugin as installed that nothing could ever load. The vendored / offline
+    // install path is <https://github.com/dermellor/zeitlines/issues/14>, which is
+    // also where the loader that would use this arrives.
+    //
+    // Enablement PER TIMELINE is a different matter and is implemented below: it
+    // is data on the timeline, so it must work on every source kind, exactly as
+    // the generic store does.
+    /**
+     * The `plugins/` directory IS the registry here.
+     *
+     * Answering `[]` was the bug: `GET /api/plugins` then shadowed what the build
+     * had registered, because the client prefers the live answer and an empty
+     * live answer is indistinguishable from „nothing installed". A vendored
+     * plugin was copied into the deploy, listed in the built config, and never
+     * loaded — with nothing anywhere saying why.
+     */
+    async listInstalledPlugins(): Promise<InstalledPlugin[]> {
+      if (!dirs.pluginsDir) return [];
+      const { plugins, skipped } = await scanVendoredPlugins(dirs.pluginsDir);
+      for (const problem of skipped) {
+        console.warn(`[plugins] ${problem.plugin}: ${problem.problem} — not registered`);
+      }
+      return plugins;
     },
-    async updateFeature() {
-      return unsupported('editing pricing features');
+    async installPlugin(): Promise<InstalledPlugin> {
+      // Installing here means putting a directory under `plugins/` and rebuilding.
+      // A write path would have to invent somewhere to put the artifact and then
+      // disagree with the directory scan above about which is authoritative.
+      return unsupported(
+        'installing plugins over the API on a file-backed instance; put the artifact in the plugins directory instead',
+      );
     },
-    async deleteFeature() {
-      return unsupported('deleting pricing features');
+    async setPluginInstalledEnabled(): Promise<void> {
+      return unsupported('enabling a plugin instance-wide on a file-backed instance');
     },
-    async moveFeature() {
-      return unsupported('reordering pricing features');
+    async removeInstalledPlugin(): Promise<void> {
+      return unsupported('uninstalling plugins on a file-backed instance');
     },
-    async addTier() {
-      return unsupported('adding pricing tiers');
+
+    // ---- a plugin's enablement on one timeline -----------------------------
+
+    async setTimelinePlugin(
+      id: string,
+      pluginId: string,
+      config: Record<string, unknown>,
+      options: { public?: boolean } = {},
+    ): Promise<void> {
+      const loaded = await loadForWrite(dirs, id);
+      const plugins = [...(loaded.file.plugins ?? [])];
+      const at = plugins.findIndex((p) => p.id === pluginId);
+      // Saying nothing about `public` keeps whatever the file already said:
+      // reconfiguring a plugin is not consent to change who may read it.
+      const isPublic = options.public ?? (at >= 0 ? plugins[at].public === true : false);
+      const ref: PluginRef = { id: pluginId };
+      if (Object.keys(config ?? {}).length) ref.config = config;
+      if (isPublic) ref.public = true;
+      if (at >= 0) plugins[at] = ref;
+      else plugins.push(ref);
+      await persist(loaded, { ...loaded.file, plugins });
     },
-    async updateTier() {
-      return unsupported('editing pricing tiers');
+
+    async getTimelinePlugin(
+      id: string,
+      pluginId: string,
+    ): Promise<{ timelineName?: string; config: Record<string, unknown>; public: boolean } | null> {
+      let loaded: Loaded;
+      try {
+        loaded = await load(dirs, id);
+      } catch {
+        return null;
+      }
+      const ref = (loaded.file.plugins ?? []).find((p) => p.id === pluginId);
+      if (!ref) return null;
+      return {
+        ...(loaded.file.name ? { timelineName: loaded.file.name } : {}),
+        config: ref.config ?? {},
+        public: ref.public === true,
+      };
     },
-    async deleteTier() {
-      return unsupported('deleting pricing tiers');
+
+    async removeTimelinePlugin(id: string, pluginId: string): Promise<void> {
+      const loaded = await loadForWrite(dirs, id);
+      const plugins = (loaded.file.plugins ?? []).filter((p) => p.id !== pluginId);
+      const next = { ...loaded.file };
+      // An empty array is dropped rather than left behind: this is a file people
+      // read, and `"plugins": []` reads as „something was here and broke".
+      if (plugins.length) next.plugins = plugins;
+      else delete next.plugins;
+      // The plugin's rows stay. Disabling is reversible by design; the destructive
+      // operation is the instance-level uninstall, and that one asks.
+      await persist(loaded, next);
     },
-    async setTierValue() {
-      return unsupported('editing pricing cells');
+
+    // ---- plugin-owned rows (the generic store) -----------------------------
+    //
+    // The rows go into the very document the user owns: the JSON file, or the
+    // directory's container. That is the point rather than a compromise — it
+    // keeps a local timeline self-contained, so copying the file copies the
+    // plugin's data with it, no database and no export step.
+    //
+    // Two differences to the DB store, both real and neither papered over:
+    //
+    //   - **Locking is per file, not per row.** The version is the file's mtime,
+    //     so `If-Match` here means „the file has not changed since you read it".
+    //     Items already work this way; the same header simply means something
+    //     coarser. Two people editing two rows of one collection at once is a
+    //     conflict here and is not on a DB source.
+    //   - **Everything in the file is public once a static deploy is.** A build
+    //     materializes the file under `public/`, so `publicRead` (#20) is a
+    //     stripping rule here rather than a serving rule. Forgetting it leaks.
+    //
+    // See docs/plugin-storage.md → „The local implementation".
+
+    async listPluginRows(id: string, pluginId: string, collection: string): Promise<PluginDataRow[]> {
+      const loaded = await load(dirs, id);
+      return rowsOfCollection(loaded.file, pluginId, collection, loaded.version);
     },
-    async clearTierValue() {
-      return unsupported('clearing pricing cells');
+
+    async listPluginData(id: string, pluginIds?: string[]): Promise<PluginData> {
+      const loaded = await load(dirs, id);
+      return stampedPluginData(loaded.file, loaded.version, pluginIds);
     },
-    async addHighlight() {
-      return unsupported('adding pricing highlights');
+
+    async putPluginRow(
+      id: string,
+      pluginId: string,
+      collection: string,
+      row: PluginDataRow,
+      expectedVersion?: number,
+      updatedBy?: string,
+    ): Promise<PluginDataRow> {
+      const loaded = await loadForWrite(dirs, id);
+      assertVersion(loaded, expectedVersion, `„${id}"`);
+      const rows = [...rowsOfCollection(loaded.file, pluginId, collection)];
+      const at = rows.findIndex((r) => r.id === row.id);
+      const stored = storedRow(row.id, row.data ?? {}, updatedBy);
+      // An existing row keeps its position: a rewrite is not a reorder, and
+      // moving a row to the end on every save would make an ordered collection
+      // shuffle itself as it is edited.
+      if (at >= 0) rows[at] = stored;
+      else rows.push(stored);
+      const version = await persist(loaded, withPluginRows(loaded.file, pluginId, collection, rows));
+      return { ...stored, version };
     },
-    async updateHighlight() {
-      return unsupported('editing pricing highlights');
+
+    async patchPluginRow(
+      id: string,
+      pluginId: string,
+      collection: string,
+      rowId: string,
+      patch: Record<string, unknown>,
+      expectedVersion?: number,
+      updatedBy?: string,
+    ): Promise<PluginDataRow> {
+      const loaded = await loadForWrite(dirs, id);
+      assertVersion(loaded, expectedVersion, `„${id}"`);
+      const rows = [...rowsOfCollection(loaded.file, pluginId, collection)];
+      const at = rows.findIndex((r) => r.id === rowId);
+      if (at < 0) throw new NotFoundError(`${collection}/${rowId} not found`);
+      // A null clears its key, matching the DB store and the item patch: a merge
+      // write has no other way to remove one.
+      const merged: Record<string, unknown> = { ...rows[at].data };
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) delete merged[key];
+        else merged[key] = value;
+      }
+      const stored = storedRow(rowId, merged, updatedBy);
+      rows[at] = stored;
+      const version = await persist(loaded, withPluginRows(loaded.file, pluginId, collection, rows));
+      return { ...stored, version };
     },
-    async deleteHighlight() {
-      return unsupported('deleting pricing highlights');
+
+    async deletePluginRow(id: string, pluginId: string, collection: string, rowId: string): Promise<void> {
+      const loaded = await loadForWrite(dirs, id);
+      const rows = rowsOfCollection(loaded.file, pluginId, collection).filter((r) => r.id !== rowId);
+      await persist(loaded, withPluginRows(loaded.file, pluginId, collection, rows));
     },
-    async updateVersions() {
-      return unsupported('editing pricing versions');
+
+    async orderPluginRows(
+      id: string,
+      pluginId: string,
+      collection: string,
+      orderedIds: string[],
+      _updatedBy?: string,
+    ): Promise<void> {
+      const loaded = await loadForWrite(dirs, id);
+      const rows = rowsOfCollection(loaded.file, pluginId, collection);
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      // Ids the caller did not mention keep their relative order at the end,
+      // rather than disappearing: an order list built from a stale read must not
+      // be able to delete rows.
+      const next = [
+        ...orderedIds.map((rowId) => byId.get(rowId)).filter((r): r is PluginDataRow => r != null),
+        ...rows.filter((r) => !orderedIds.includes(r.id)),
+      ];
+      await persist(loaded, withPluginRows(loaded.file, pluginId, collection, next));
     },
-    async replacePricing() {
-      return unsupported('replacing the pricing model');
+
+    async purgePluginData(pluginId: string, id?: string | null): Promise<void> {
+      // Instance-wide means every local timeline this repo can see. There is no
+      // one document to edit, so the ids come from the same listing the API
+      // serves — anything it cannot list, it also cannot have stored rows in.
+      const ids = id != null ? [id] : (await this.listTimelines()).map((t) => t.id);
+      for (const each of ids) {
+        const loaded = await loadForWrite(dirs, each);
+        if (!loaded.file.pluginData?.[pluginId]) continue;
+        const { [pluginId]: _gone, ...rest } = loaded.file.pluginData;
+        const next = { ...loaded.file };
+        if (Object.keys(rest).length) next.pluginData = rest;
+        else delete next.pluginData;
+        await persist(loaded, next);
+      }
     },
+
+    async purgeItemMetadata(keys: string[], id?: string | null): Promise<number> {
+      if (!keys.length) return 0;
+      const ids = id != null ? [id] : (await this.listTimelines()).map((t) => t.id);
+      let changed = 0;
+      for (const each of ids) {
+        const loaded = await loadForWrite(dirs, each);
+        if (loaded.isDir) {
+          // Each item is its own note, so a purge is a frontmatter patch per
+          // affected file — the same surgical write an item edit makes.
+          for (const item of loaded.file.items) {
+            const rel = notePathOf(item);
+            if (!rel || !keys.some((k) => k in (item.metadata ?? {}))) continue;
+            const patch: Patch = {};
+            for (const key of keys) if (key in (item.metadata ?? {})) patch[key] = null;
+            const notePath = join(loaded.path, rel);
+            await writeFile(notePath, patchFrontmatter(await readFile(notePath, 'utf8'), patch), 'utf8');
+            changed++;
+          }
+          continue;
+        }
+        const items = loaded.file.items.map((item) => {
+          if (!keys.some((k) => k in (item.metadata ?? {}))) return item;
+          const metadata = { ...(item.metadata ?? {}) };
+          for (const key of keys) delete metadata[key];
+          changed++;
+          return { ...item, metadata };
+        });
+        if (items.some((it, i) => it !== loaded.file.items[i])) {
+          await persist(loaded, { ...loaded.file, items });
+        }
+      }
+      return changed;
+    },
+
   } as TimelineRepo;
 }
 

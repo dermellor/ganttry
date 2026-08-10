@@ -760,7 +760,9 @@ visibly wrong without it:
 A single toolbar (`#view-toolbar`, styled `.view-toolbar` in
 [`src/styles/base.css`](../src/styles/base.css)) sits above **both** the timeline
 and the list (in the shared `.content-area` column, left of the detail panel)
-and is identical in either mode — hidden only in the pricing view. It holds two
+and is identical in either mode — hidden when a plugin view is active, since
+grouping and filtering apply to items and a plugin view renders something else.
+It holds two
 controls that drive both views from one shared state; the app-state-aware glue
 lives in [`src/grouping.ts`](../src/grouping.ts), the pure sectioning stays in
 [`src/listGrouping.ts`](../src/listGrouping.ts) (`computeSections`, unit-tested in

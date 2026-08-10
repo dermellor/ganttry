@@ -21,9 +21,13 @@ import {
   type Child,
 } from '../../pluginHost/api';
 import { state, setStatus } from '../../state';
-import { apiSetTierValue } from '../../editor';
-import { ensureLayer, positionLayer } from './popover';
-import type { PricingTier } from '../../types';
+import { apiSetTierValue } from './api';
+import { applyRow, dropRow } from './store';
+import { PRICING_COLLECTIONS } from './manifest';
+import { cellId } from './compose';
+import { anchorRect, layerFor } from './popover';
+import type { PricingTier } from './types';
+import { currentPricing } from './compose';
 
 const LAYER_ID = 'pm-cell-editor';
 
@@ -37,8 +41,9 @@ function modeOf(value: string | boolean | undefined): Mode {
   return 'off';
 }
 
-// Open editors are torn down through this, so only one is ever live and the
-// document-level listeners never accumulate across cells.
+// Open editors are torn down through this, so only one is ever live. The
+// listeners it used to accumulate are gone: dismissal belongs to the host's
+// overlay now, which registers them once for the layer rather than once per cell.
 let closeActive: (() => void) | null = null;
 
 /** Close the cell editor if one is open. Safe to call unconditionally. */
@@ -47,7 +52,7 @@ export function closeCellEditor(): void {
 }
 
 export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: string): void {
-  const pricing = state.activeSourceFile?.pricing;
+  const pricing = currentPricing(state.activeSourceFile);
   const sourceId = state.activeSourceId;
   const tier = pricing?.tiers.find((t) => t.id === tierId);
   const feature = pricing?.features.find((f) => f.id === featureId);
@@ -61,7 +66,8 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
   const valueText = typeof current === 'string' ? current : '';
   const availableFrom = tier.valueVersions?.[featureId] ?? '';
 
-  const layer = ensureLayer(LAYER_ID, 'pm-cell-editor', 'dialog');
+  const overlay = layerFor(LAYER_ID, 'pm-cell-editor', 'dialog');
+  const layer = overlay.element;
   const radio = (m: Mode, label: Child) =>
     el('label', { class: 'pm-ce-choice' }, [
       el('input', { type: 'radio', name: 'pm-ce-mode', value: m, checked: m === mode }),
@@ -104,8 +110,7 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
       }),
     ]),
   );
-  layer.hidden = false;
-  positionLayer(layer, anchor);
+  overlay.showAt(anchorRect(anchor));
 
   const form = layer.querySelector('form') as HTMLFormElement;
   const valueInput = layer.querySelector<HTMLInputElement>('.pm-ce-value')!;
@@ -126,31 +131,27 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
     i.addEventListener('change', () => {
       syncMode();
       if (selectedMode() === 'value') valueInput.focus();
-      positionLayer(layer, anchor);
+      // Switching mode changes the layer's height, so it may no longer fit where
+      // it was placed: ask for the placement again rather than leaving it half
+      // off-screen.
+      overlay.showAt(anchorRect(anchor));
     }),
   );
 
   const close = () => {
-    layer.hidden = true;
+    overlay.hide();
+    overlay.onDismiss = null;
     layer.innerHTML = '';
-    document.removeEventListener('keydown', onKey, true);
-    document.removeEventListener('pointerdown', onOutside, true);
     closeActive = null;
   };
-  function onKey(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      close();
-      anchor.focus();
-    }
-  }
-  // Capture phase: the matrix's own cell listener would otherwise reopen the
-  // editor for the cell being clicked through to.
-  function onOutside(e: Event) {
-    if (!layer.contains(e.target as Node)) close();
-  }
-  document.addEventListener('keydown', onKey, true);
-  document.addEventListener('pointerdown', onOutside, true);
+  // Escape and a click outside are the host's business: it owns the layer, and
+  // owning dismissal with it is what took the two capture listeners on `document`
+  // out of this plugin. Reassigned per open, because where the focus goes back to
+  // is this cell, not whichever cell was edited first.
+  overlay.onDismiss = () => {
+    close();
+    anchor.focus();
+  };
   closeActive = close;
 
   form.querySelector<HTMLButtonElement>('[data-action="cancel"]')!.addEventListener('click', () => {
@@ -184,29 +185,21 @@ async function saveCell(
   // Imported lazily to keep the module graph acyclic: pricingMatrix.ts owns the
   // cell click that opens this editor.
   const { repaintPricingView } = await import('./pricingMatrix');
+  let saved;
   try {
-    await apiSetTierValue(sourceId, tier.id, featureId, value, availableFrom);
+    saved = await apiSetTierValue(sourceId, tier.id, featureId, value, availableFrom);
   } catch (err) {
     setStatus(`Zelle speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
 
-  // Mirror the authoritative write into the in-memory model. Clearing drops the
-  // version gate with the value — server-side the whole cell row is deleted, so
-  // leaving a stale gate behind would resurrect it on the next write.
-  tier.values = tier.values ?? {};
-  if (value === null) {
-    delete tier.values[featureId];
-    if (tier.valueVersions) delete tier.valueVersions[featureId];
-  } else {
-    tier.values[featureId] = value;
-    if (availableFrom) {
-      tier.valueVersions = tier.valueVersions ?? {};
-      tier.valueVersions[featureId] = availableFrom;
-    } else if (tier.valueVersions) {
-      delete tier.valueVersions[featureId];
-    }
-  }
+  // Mirror the write onto the stored ROWS, not onto `tier`: `tier` came out of
+  // `currentPricing`, which composes a fresh model on every call, so mutating it
+  // updates a copy nothing reads (see ./store.ts). A cleared cell has no row at
+  // all — which is also what drops its version gate, since the gate was a field
+  // of the row rather than a thing of its own.
+  if (saved) applyRow(state.activeSourceFile, PRICING_COLLECTIONS.tierValues, saved);
+  else dropRow(state.activeSourceFile, PRICING_COLLECTIONS.tierValues, cellId(tier.id, featureId));
 
   repaintPricingView();
   setStatus(value === null ? 'Zelle geleert' : 'Zelle gespeichert');

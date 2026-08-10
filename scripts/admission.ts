@@ -41,12 +41,24 @@ export type AccessDecision =
 /**
  * Is this path readable without an identity?
  *
- * Only the public pricing endpoint, which is public by contract (`security: []`
- * in openapi.yaml) and consumed by external pages that have no session. Gating
- * it would break the one integration the API explicitly promises.
+ * Two routes, both public by contract (`security: []` in openapi.yaml) and
+ * consumed by external pages that have no session. Gating them would break the
+ * one integration the API explicitly promises.
+ *
+ * - `/api/public/plugin/…` — a plugin's published rows. Public here means
+ *   „reachable without a session"; whether anything is actually served is
+ *   decided by three gates further in, and every failure is a 404 so the route
+ *   cannot be used to probe which timelines exist.
+ * - `/api/pricing/…` — retired, and admitted precisely so it can answer 410
+ *   rather than falling through to the SPA and returning HTML with a 200.
  */
 export function isPublicPath(pathname: string): boolean {
-  return pathname === '/api/pricing' || pathname.startsWith('/api/pricing/');
+  return (
+    pathname === '/api/pricing' ||
+    pathname.startsWith('/api/pricing/') ||
+    pathname === '/api/public/plugin' ||
+    pathname.startsWith('/api/public/plugin/')
+  );
 }
 
 /** Parse a comma-separated domain list; empty entries are dropped. */

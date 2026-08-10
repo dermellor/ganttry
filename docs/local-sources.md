@@ -147,11 +147,16 @@ The sub-resources in `SUB_KINDS` split cleanly:
   entry in the single-file case.
 - **`group`, `phases`** map to `timeline.json` in the directory case, and to the
   same document in the single-file case.
-- **`pricing`, `feature`, `tier`, `tier-value`, `highlight`, `pversion`** are the
-  `product-roadmap` plugin's. For a single-file source they are ordinary mutations
-  of one JSON document and cost nothing extra. For a directory source they belong
-  in `timeline.json` and can be deferred; until then the adapter answers `501` for
-  them, which is a truthful answer rather than a silent no-op.
+- **`plugin/<pluginId>/<collection>`** is the generic store for a plugin's own
+  rows, and it works on both shapes: the rows go into the JSON document, or into
+  the directory's `timeline.json`. See
+  [`plugin-storage.md`](plugin-storage.md) — including the one real difference,
+  that the lock there is the file rather than the row.
+  There used to be six more sub-resources here — one plugin's entities, each
+  answering `501`, which is what made a pricing model in a JSON file readable and
+  not editable. They went with the repo methods behind them
+  (<https://github.com/dermellor/zeitlines/issues/17>), so a local source is now
+  writable for a plugin without a line of plugin-specific code.
 
 ### Optimistic locking without a version column
 
@@ -292,10 +297,12 @@ Three stages, each shippable on its own, in increasing order of risk:
      failed. `save()` now bumps the mtime explicitly whenever the new value
      would not exceed the old one, which keeps the numeric contract intact and
      made the widening to a content hash unnecessary.
-   - **The pricing sub-resources needed a status code of their own.** They
-     answer `501` via a new `NotSupportedError`, because a 500 reads as „we are
+   - **A route this repo cannot serve needed a status code of its own.** It
+     answers `501` via `NotSupportedError`, because a 500 reads as „we are
      broken" and a silent success would report „Gespeichert" for a write that
-     never happened.
+     never happened. One plugin's sub-resources were the first users of it and
+     are gone; the install registry and a wholesale replace of a Markdown
+     directory still use it.
 2. ~~**Directory sources on the read path.**~~ **Done.**
    [`scripts/local/scan.ts`](../scripts/local/scan.ts) turns a directory into a
    `TimelineFile`; the local adapter serves it live and `build-data.ts`

@@ -32,13 +32,9 @@ live site and therefore not manipulable here.
 | `update_group`      | Patches a group                                               |
 | `delete_group`      | Removes a group                                               |
 | `replace_timeline`  | Replaces a whole timeline (bulk)                              |
-| `set_pricing`       | Replaces the pricing model wholesale (bulk seed; automatically enables the `product-roadmap` plugin) |
-| `add_/update_/delete_feature` | A single pricing feature (granular)                  |
-| `move_feature`      | Reorders a feature (after/before another one)                 |
-| `add_/update_/delete_tier`    | A single tier (granular)                            |
-| `set_tier_value`    | One matrix cell (tier × feature); `false`/`null` deletes it; optional `availableFrom` (cell availability from a version) |
-| `add_/update_/delete_highlight` | One card tile (granular)                          |
-| `set_versions`      | Replaces the ordered version list                             |
+| `read_plugin_data`  | The rows one plugin owns on a timeline; one collection or all of them |
+| `write_plugin_data` | One row of one collection: `put`, `patch`, `delete` or `move`  |
+| `configure_plugin`  | Enables a plugin on a timeline, sets its config, or turns it off |
 
 The granular item and group tools run read-modify-write: the local server fetches
 the timeline, mutates it in memory and writes it back with a PUT (bulk replace);
@@ -61,9 +57,18 @@ free-text name is stored but renders as unlinked. `parent` is the id of the item
 this one is part of, at most one — a self-link, an unknown id or one that would
 close a cycle is dropped when the timeline is built, so a tool call that writes
 one succeeds and the link simply is not there (see „Parent and children"
-(docs/items.md)). The granular **pricing** tools instead hit their row's
-endpoint directly, with no read-modify-write and no full dump — details under
-„Pricing" (docs/pricing.md).
+(docs/items.md)).
+
+**The three plugin tools name no plugin.** There used to be thirteen tools for
+one plugin's entities — `set_pricing`, `add_feature`, `set_tier_value` and the
+rest — and that was the clearest form the old privilege took: authoring a
+third-party plugin's data would have required editing this server first. What a
+collection is called and what a row may contain now comes from the plugin's
+manifest and is checked server-side, so the tools carry no schema of their own
+(see „The generic store" (docs/plugin-storage.md)). They write one row per call,
+straight to its endpoint, with no read-modify-write and no full dump; `ifMatch`
+carries the row's lock counter so a concurrent edit answers 409 instead of being
+overwritten. Bulk seeding is `replace_timeline` with `pluginData`.
 
 ### Auth: service-token bypass
 

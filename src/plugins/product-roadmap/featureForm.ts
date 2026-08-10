@@ -7,16 +7,19 @@
 
 import { Button, el, Field, FormActions, IconButton, Select, TextArea, TextInput } from '../../pluginHost/api';
 import { createMarkdownEditor } from '../../wysiwyg';
-import type { PricingFeature } from '../../types';
+import type { PricingFeature } from './types';
 import { state, els, setStatus, clearFormSlots } from '../../state';
-import { apiAddFeature, apiUpdateFeature, apiDeleteFeature, apiMoveFeature, ConflictError } from '../../editor';
+import { apiAddFeature, apiUpdateFeature, apiDeleteFeature, apiMoveFeature, ConflictError } from './api';
+import { applyRow, dropRow, dropRowsWhere, orderRows, patchRows } from './store';
+import { PRICING_COLLECTIONS } from './manifest';
 import { slugId } from './pricing';
 import { hideDetail, setDetailTitle } from '../../detailPanel';
 import { repaintPricingView } from './pricingMatrix';
 import { renderTimeline } from '../../render';
+import { currentPricing } from './compose';
 
 function findFeature(featureId: string): PricingFeature | undefined {
-  return state.activeSourceFile?.pricing?.features.find((f) => f.id === featureId);
+  return currentPricing(state.activeSourceFile)?.features.find((f) => f.id === featureId);
 }
 
 // One row of the version-description editor: a version <select>, the note text,
@@ -65,7 +68,7 @@ function wireVdescRow(row: HTMLElement): void {
 // datalist so a typo doesn't silently create a second matrix section.
 function existingGroups(): string[] {
   const out = new Set<string>();
-  for (const f of state.activeSourceFile?.pricing?.features ?? []) {
+  for (const f of currentPricing(state.activeSourceFile)?.features ?? []) {
     const g = f.group?.trim();
     if (g) out.add(g);
   }
@@ -82,7 +85,7 @@ export function showFeatureForm(featureId: string): void {
   setDetailTitle(feature.name || '(unbenanntes Feature)');
   els.detailMeta.replaceChildren();
 
-  const versions = state.activeSourceFile?.pricing?.versions ?? [];
+  const versions = currentPricing(state.activeSourceFile).versions ?? [];
 
   // Additive, per-version description notes as a dynamic list: add a row via the
   // "+" button, link it to a version, type the note. Existing notes are seeded as
@@ -252,15 +255,13 @@ async function saveFeatureFromForm(featureId: string, form: HTMLFormElement): Pr
 
   try {
     const saved = await apiUpdateFeature(sourceId, featureId, patch, feature.rowVersion);
-    // Adopt the authoritative row back into the in-memory model (reset the
-    // clearable optionals first so a cleared field doesn't linger).
-    Object.assign(
-      feature,
-      { group: undefined, version: undefined, description: undefined, descriptionByVersion: undefined },
-      saved,
-    );
+    // Adopt the stored ROW, not a merge into the composed model: the model is
+    // recomposed on every read, so merging into it updates a copy that is thrown
+    // away (see ./store.ts). Replacing the row also clears an emptied field
+    // without a reset dance — the server already dropped the key.
+    applyRow(state.activeSourceFile, PRICING_COLLECTIONS.features, saved);
     repaintPricingView();
-    setStatus(`Feature „${feature.name}" aktualisiert`);
+    setStatus(`Feature „${patch.name ?? feature.name}" aktualisiert`);
     showFeatureForm(featureId);
   } catch (err) {
     if (err instanceof ConflictError) {
@@ -273,7 +274,7 @@ async function saveFeatureFromForm(featureId: string, form: HTMLFormElement): Pr
 }
 
 async function deleteFeature(featureId: string): Promise<void> {
-  const pricing = state.activeSourceFile?.pricing;
+  const pricing = currentPricing(state.activeSourceFile);
   const sourceId = state.activeSourceId;
   const feature = pricing && findFeature(featureId);
   if (!pricing || !feature || !sourceId) return;
@@ -286,15 +287,15 @@ async function deleteFeature(featureId: string): Promise<void> {
     return;
   }
 
-  // Server-side the value rows cascade away and the id is stripped from
-  // highlights; mirror that in memory for an immediate repaint.
-  pricing.features = pricing.features.filter((f) => f.id !== featureId);
-  for (const tier of pricing.tiers) {
-    if (tier.values && featureId in tier.values) delete tier.values[featureId];
-  }
-  for (const highlight of pricing.highlights ?? []) {
-    highlight.featureIds = highlight.featureIds.filter((id) => id !== featureId);
-  }
+  // The host applied the manifest's declared cascade: the cells go with the
+  // feature, and the id is unlinked from every highlight that listed it. Mirror
+  // the same three effects on the rows so the matrix repaints without a reload.
+  dropRow(state.activeSourceFile, PRICING_COLLECTIONS.features, featureId);
+  dropRowsWhere(state.activeSourceFile, PRICING_COLLECTIONS.tierValues, (d) => d.featureId === featureId);
+  patchRows(state.activeSourceFile, PRICING_COLLECTIONS.highlights, (d) => ({
+    ...d,
+    featureIds: ((d.featureIds as string[] | undefined) ?? []).filter((id) => id !== featureId),
+  }));
 
   state.activeFormFeatureId = null;
   repaintPricingView();
@@ -314,7 +315,7 @@ async function deleteFeature(featureId: string): Promise<void> {
  * the matrix re-groups by label — is exactly the end of its own section.
  */
 export async function addFeature(group?: string): Promise<void> {
-  const pricing = state.activeSourceFile?.pricing;
+  const pricing = currentPricing(state.activeSourceFile);
   const sourceId = state.activeSourceId;
   if (!pricing || !sourceId) return;
 
@@ -328,9 +329,9 @@ export async function addFeature(group?: string): Promise<void> {
   );
   try {
     const saved = await apiAddFeature(sourceId, { id, name, ...(group ? { group } : {}) });
-    pricing.features.push(saved);
+    applyRow(state.activeSourceFile, PRICING_COLLECTIONS.features, saved);
     repaintPricingView();
-    showFeatureForm(saved.id ?? id);
+    showFeatureForm(saved.id);
     setStatus(`Feature „${name}" angelegt`);
   } catch (err) {
     setStatus(`Feature anlegen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
@@ -344,20 +345,15 @@ export async function addFeature(group?: string): Promise<void> {
  * regardless of how the global sort order interleaves groups.
  */
 export async function moveFeature(featureId: string, anchor: { after?: string; before?: string }): Promise<void> {
-  const pricing = state.activeSourceFile?.pricing;
+  const pricing = currentPricing(state.activeSourceFile);
   const sourceId = state.activeSourceId;
   if (!pricing || !sourceId) return;
 
   try {
     const order = await apiMoveFeature(sourceId, featureId, anchor);
-    // Adopt the server's resulting order rather than replaying the move locally —
-    // it owns the `sort` column and renumbers. Anything it didn't mention (it
-    // returns the full list, so nothing should be) keeps its relative place at the
-    // end instead of silently vanishing from the matrix.
-    const byId = new Map(pricing.features.map((f) => [f.id, f]));
-    const ranked = order.map((fid) => byId.get(fid)).filter((f): f is PricingFeature => !!f);
-    const seen = new Set(order);
-    pricing.features = [...ranked, ...pricing.features.filter((f) => !seen.has(f.id))];
+    // Adopt the host's resulting order rather than replaying the move locally —
+    // it owns the position and renumbers.
+    orderRows(state.activeSourceFile, PRICING_COLLECTIONS.features, order);
     repaintPricingView();
   } catch (err) {
     setStatus(`Umsortieren fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);

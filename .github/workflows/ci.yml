@@ -78,15 +78,22 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Generic bundle carries no pricing view code
+      - name: Generic bundle carries no plugin view code
         run: bash scripts/ci/check-bundle-split.sh
 
-      # Non-blocking for now: the repo carries 3 pre-existing type errors (missing
-      # @types/ws, two library signature mismatches). It was 7 until the notes
-      # pipeline went, taking the four Dirent ones in its directory walk with it.
-      # Fixing the rest is its own change; until then this step reports the count
-      # without gating a PR. Make it blocking — drop the continue-on-error — as
-      # soon as `npm run typecheck` is clean.
+      # No plugin is special: no core import from a plugin folder, no plugin id
+      # as a literal outside it, no plugin-specific method on TimelineRepo, no
+      # plugin markup in the shell. Runs without a build, so it fails fast.
+      - name: No plugin has a privilege a third party lacks
+        run: node scripts/ci/check-plugin-isolation.mjs
+
+      # Non-blocking for now: the repo carries 2 pre-existing type errors (missing
+      # @types/ws, one library signature mismatch). It was 7 until the notes
+      # pipeline went, taking the four Dirent ones in its directory walk with it,
+      # and one more went with the plugin-specific repo methods. Fixing the rest is
+      # its own change; until then this step reports the count without gating a
+      # PR. Make it blocking — drop the continue-on-error — as soon as
+      # `npm run typecheck` is clean.
       - name: Typecheck (non-blocking)
         run: npm run typecheck
         continue-on-error: true

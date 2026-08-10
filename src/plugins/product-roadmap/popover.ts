@@ -1,44 +1,31 @@
-// Shared placement for the pricing view's floating layers: the feature-description
-// tooltip (pricingMatrix.ts) and the matrix cell editor (cellEditor.ts).
+// The pricing view's floating layers: the feature-description tooltip
+// (pricingMatrix.ts) and the matrix cell editor (cellEditor.ts).
 //
-// Both live on <body> and are position:fixed rather than being nested in the
-// table. The table wrap carries `overflow-x` for horizontal scrolling, and
-// overflow-x also clips overflow-y — so a layer positioned inside it would be cut
-// off at the row's top/bottom edge. Fixed-on-body escapes that clip and still
-// lets the layer sit right next to its anchor.
+// Both used to be built here, on `document.body`, with their own capture
+// listeners on `document` for dismissal. They now come from the HOST
+// (`src/pluginHost/overlay.ts`), which owns the layer, its placement and its
+// dismissal. The reasoning is over there; the short version is that reaching for
+// the global document is a plugin assuming it shares a realm with the app, and
+// this plugin is the yardstick the contract is measured against.
+//
+// What is left here is the plugin's own vocabulary: which layers exist, and the
+// one line that turns an element into the rectangle the host wants.
 
-/** Create (once) and return a fixed layer on <body>, identified by `id`. */
-export function ensureLayer(id: string, className: string, role: string): HTMLElement {
-  let el = document.getElementById(id);
-  if (!el) {
-    el = document.createElement('div');
-    el.id = id;
-    el.className = className;
-    el.setAttribute('role', role);
-    el.hidden = true;
-    document.body.appendChild(el);
-  }
-  return el;
+import { overlays, type Overlay, type OverlayRect } from '../../pluginHost/overlay.ts';
+
+/** A layer, created once per id and reused across repaints. */
+export function layerFor(id: string, className: string, role: string): Overlay {
+  return overlays().open(id, { className, role });
 }
 
 /**
- * Place `layer` just below `anchor`, flipping above it when it would overflow the
- * bottom and clamping the left edge into the viewport. Guarding each adjustment on
- * a known viewport metric avoids a spurious flip/clamp when they are unavailable
- * (e.g. a not-yet-painted tab reports 0).
+ * An element as an anchor.
+ *
+ * `DOMRect` already satisfies `OverlayRect`, so this is a cast with a name. It
+ * exists to mark the boundary: everything the host is told about an anchor is
+ * plain numbers, which is what would let this call survive a plugin moving out
+ * of the app's realm.
  */
-export function positionLayer(layer: HTMLElement, anchor: HTMLElement): void {
-  const r = anchor.getBoundingClientRect();
-  const gap = 8;
-  const lw = layer.offsetWidth;
-  const lh = layer.offsetHeight;
-  const vw = window.innerWidth || document.documentElement.clientWidth || 0;
-  const vh = window.innerHeight || document.documentElement.clientHeight || 0;
-  let left = r.left;
-  let top = r.bottom + gap;
-  if (vh > 0 && top + lh > vh - gap) top = r.top - gap - lh;
-  if (vw > 0) left = Math.max(gap, Math.min(left, vw - gap - lw));
-  top = Math.max(gap, top);
-  layer.style.left = `${left}px`;
-  layer.style.top = `${top}px`;
+export function anchorRect(el: HTMLElement): OverlayRect {
+  return el.getBoundingClientRect();
 }

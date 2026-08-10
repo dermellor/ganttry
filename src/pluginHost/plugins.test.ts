@@ -1,11 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { hasPlugin, pluginConfig } from './plugins';
+import { hasPlugin, pluginConfig, pluginsForWrite } from './plugins';
 import {
   PRODUCT_ROADMAP_PLUGIN,
   productRoadmapRef,
-  resolveWritePlugins,
   versionsFromConfig,
 } from '../plugins/product-roadmap/plugin';
 import type { TimelineFile } from '../types';
@@ -28,38 +27,32 @@ test('versionsFromConfig tolerates missing / malformed lists', () => {
   assert.deepEqual(versionsFromConfig({ versions: 'nope' as unknown as string[] }), []);
 });
 
-test('resolveWritePlugins: a populated pricing model enables product-roadmap with its versions', () => {
-  const file = base({ pricing: { versions: ['v1', 'v2'], features: [], tiers: [] } });
-  const rows = resolveWritePlugins(file);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].id, PRODUCT_ROADMAP_PLUGIN);
-  assert.deepEqual(rows[0].config, { versions: ['v1', 'v2'] });
+test('pluginsForWrite: a plugin with rows in the payload is enabled', () => {
+  // Otherwise a bulk write stores rows nothing reads, and the timeline looks
+  // empty while the data sits there.
+  const file = base({ pluginData: { 'com.example.sprints': { entries: [{ id: 'e1', data: {} }] } } });
+  const rows = pluginsForWrite(file);
+  assert.deepEqual(rows, [{ id: 'com.example.sprints', config: {} }]);
 });
 
-test('resolveWritePlugins: pricing.versions is authoritative over an incoming plugin config', () => {
+test('pluginsForWrite: an already-listed plugin keeps its config and consent', () => {
   const file = base({
-    plugins: [{ id: PRODUCT_ROADMAP_PLUGIN, config: { versions: ['stale'], keep: 1 } }],
-    pricing: { versions: ['fresh'], features: [], tiers: [] },
+    plugins: [{ id: 'com.example.sprints', config: { keep: 1 }, public: true }],
+    pluginData: { 'com.example.sprints': { entries: [] } },
   });
-  const rows = resolveWritePlugins(file);
-  assert.equal(rows.length, 1);
-  // pricing.versions wins, but other config keys are preserved.
-  assert.deepEqual(rows[0].config, { keep: 1, versions: ['fresh'] });
+  const rows = pluginsForWrite(file);
+  assert.equal(rows.length, 1, 'not added a second time');
+  assert.deepEqual(rows[0].config, { keep: 1 });
+  assert.equal(rows[0].public, true, 'publishing consent survives a bulk write');
 });
 
-test('resolveWritePlugins: pricing without versions falls back to existing plugin config versions', () => {
-  const file = base({
-    plugins: [{ id: PRODUCT_ROADMAP_PLUGIN, config: { versions: ['keep-me'] } }],
-    pricing: { features: [], tiers: [] },
-  });
-  const rows = resolveWritePlugins(file);
-  assert.deepEqual(rows[0].config, { versions: ['keep-me'] });
+test('pluginsForWrite: a plugin enabled without data stays enabled', () => {
+  const file = base({ plugins: [{ id: 'com.example.sprints' }] });
+  assert.deepEqual(pluginsForWrite(file), [{ id: 'com.example.sprints', config: {} }]);
 });
 
-test('resolveWritePlugins: no pricing keeps the plugin set as-is (does not invent one)', () => {
-  assert.deepEqual(resolveWritePlugins(base()), []);
-  const file = base({ plugins: [{ id: 'some-other', config: { a: 1 } }] });
-  assert.deepEqual(resolveWritePlugins(file), [{ id: 'some-other', config: { a: 1 } }]);
+test('pluginsForWrite: no plugins and no data is an empty list, not a guess', () => {
+  assert.deepEqual(pluginsForWrite(base()), []);
 });
 
 test('productRoadmapRef builds a canonical ref', () => {

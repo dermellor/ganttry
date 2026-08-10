@@ -20,7 +20,7 @@ What does not belong here:
   is also the public page.
 - Anything about the generic core. If a rule here describes the core, it is in the
   wrong file, and probably a finding for
-  [#11](https://github.com/zeitlines/zeitlines/issues/11).
+  [#11](https://github.com/dermellor/zeitlines/issues/11).
 
 ## Invariants
 

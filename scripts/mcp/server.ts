@@ -111,16 +111,24 @@ async function patchMeta(id: string, meta: Record<string, unknown>): Promise<voi
   });
 }
 
-/** Call a sub-resource endpoint (item/feature/tier/…) on a timeline. */
+/**
+ * Call a sub-resource endpoint (item, or a plugin's rows) on a timeline.
+ *
+ * `ifMatch` is a header rather than part of the body because that is where the
+ * write path reads it: a lock counter inside the payload would be stored as data
+ * on the next plugin that happens to declare a field of that name.
+ */
 async function apiSub(
   id: string,
   subPath: string,
   method: string,
   body?: unknown,
+  ifMatch?: number,
 ): Promise<unknown> {
   return api(`/api/source/${encodeId(id)}/${subPath}`, {
     method,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    ...(ifMatch != null ? { headers: { 'If-Match': String(ifMatch) } } : {}),
   });
 }
 
@@ -189,8 +197,8 @@ const itemFields = {
         'is still stored but shows as unlinked. Custom-field ' +
         'values also live here under the field key (string for text/select, string[] for ' +
         'multi-select), e.g. { "risk": ["Technisch"] } — see the timeline\'s customFields. ' +
-        'Plugin-contributed fields store ids, not labels: { "tier": ["scale"] } ' +
-        '(pricing tier ids), { "featureIds": ["skill-pbx"] }, { "featureVersion": "2.0" }.',
+        'Plugin-contributed fields store ids, not labels — the ids of the plugin\'s own rows rather ' +
+        'than the labels shown for them.',
     ),
 } as const;
 
@@ -201,7 +209,7 @@ const customFieldOption = z.object({
 });
 
 const pluginRef = z.object({
-  id: z.string().describe('Plugin id, e.g. "product-roadmap" (unlocks the pricing matrix).'),
+  id: z.string().describe('Plugin id, as listed by the instance\'s installed plugins.'),
   config: z.record(z.any()).optional().describe('Plugin-owned config bag, e.g. { versions: [...] }.'),
 });
 
@@ -222,74 +230,19 @@ const customFieldDef = z.object({
     ),
 });
 
-const pricingFeature = z.object({
-  id: z.string().describe('Stable feature id, referenced by tiers and item metadata.'),
-  name: z.string().describe('Feature display name.'),
-  group: z.string().optional().describe('Grouping label for the matrix rows, e.g. "Funktionen".'),
-  description: z.string().optional(),
-  version: z
-    .string()
-    .optional()
-    .describe('Version this feature is available from (one of pricing.versions). Absent = from the start.'),
-  nameByVersion: z
-    .record(z.string())
-    .optional()
-    .describe(
-      'Version-scoped display-name overrides, keyed by a pricing.versions entry. Resolved cumulatively ' +
-        '(latest override at or before the selected version wins, falling back to name) — lets a feature ' +
-        'rename itself across versions, e.g. {"3.0": "Termine vereinbaren und ändern"}.',
-    ),
-  descriptionByVersion: z
-    .record(z.string())
-    .optional()
-    .describe(
-      'Additive, version-scoped description notes on top of `description`, keyed by a pricing.versions ' +
-        'entry. Unlike nameByVersion these are NOT cumulative overrides — the base description stays and ' +
-        'each note shows as its own "ab <version>: …" line, e.g. {"2.0": "Jetzt mit Slot-Filling"}.',
-    ),
+// The rows a plugin owns, exactly as the host stores them. There is deliberately
+// no per-plugin shape here: what a row may contain is declared in the plugin's
+// manifest and checked server-side, and a second copy in zod would give two
+// answers to one question — the copy in this file being the one nobody updates.
+const pluginDataRow = z.object({
+  id: z.string().describe('Row id. For a collection with declared key fields the host derives it.'),
+  data: z.record(z.unknown()).describe("The row payload, shaped by the plugin's declaration."),
+  version: z.number().optional().describe('The host\'s lock counter. Read-only; send it as ifMatch on a patch.'),
 });
 
-const pricingHighlight = z.object({
-  id: z.string().describe('Stable highlight id.'),
-  label: z.string().describe('Curated label shown on the pricing card.'),
-  section: z.string().optional().describe('Card section this bullet belongs to, e.g. "Inkludiert".'),
-  icon: z.string().optional().describe('Optional semantic icon key (brand-resolved).'),
-  featureIds: z.array(z.string()).describe('Raw feature ids this tile summarizes.'),
-  description: z.string().optional(),
-  labelByVersion: z
-    .record(z.string())
-    .optional()
-    .describe('Version-scoped label overrides, same semantics as pricingFeature.nameByVersion.'),
-});
-
-const pricingTier = z.object({
-  id: z.string().describe('Stable tier id.'),
-  name: z.string().describe('Tier name, e.g. "Medium".'),
-  tagline: z.string().optional().describe('Short segment line, e.g. "Micro · 1–5 Anrufe/Tag".'),
-  useCase: z.string().optional().describe('One-line positioning / primary use case (card sub-headline).'),
-  targetGroup: z.string().optional().describe('Target-group description, shown as a "Zielgruppe" block.'),
-  price: z.string().describe('Free-form price string, e.g. "74,95 €/Monat" or "ab 449,95 €".'),
-  values: z
-    .record(z.union([z.string(), z.boolean()]))
-    .describe(
-      'Per-tier feature values keyed by feature id: true = included (✓), false/omitted = not ' +
-        'included (–), string = shown verbatim ("3.000", "unbegrenzt (RAG)"). Lets one feature ' +
-        'differ per tier instead of a boolean row per value.',
-    ),
-});
-
-const pricing = z.object({
-  features: z.array(pricingFeature),
-  tiers: z.array(pricingTier),
-  highlights: z
-    .array(pricingHighlight)
-    .optional()
-    .describe('Curated card-view tiles bundling one or more features under a simplified label.'),
-  versions: z
-    .array(z.string())
-    .optional()
-    .describe('Ordered version labels (e.g. ["1.0","2.0","3.0"]); defines feature-version ordering + the matrix switcher.'),
-});
+const pluginData = z
+  .record(z.record(z.array(pluginDataRow)))
+  .describe('pluginId → collection id → rows.');
 
 const groupFields = {
   id: z.string().describe('Group id.'),
@@ -352,11 +305,22 @@ server.registerTool(
       plugins: z
         .array(pluginRef)
         .optional()
-        .describe('Plugins enabled on the timeline (replaces the old `type`). A populated `pricing` auto-enables "product-roadmap", so this is only needed to enable a plugin without pricing.'),
+        .describe(
+          'Plugins enabled on the timeline, each with its config. A plugin that has rows in ' +
+            '`pluginData` is enabled by that alone, so this is only needed to enable one without data ' +
+            'or to set its config.',
+        ),
       items: z.array(z.object(itemFields)),
       groups: z.array(z.object(groupFields)).optional(),
       customFields: z.array(customFieldDef).optional().describe('Per-timeline custom-field definitions.'),
-      pricing: pricing.optional().describe('Pricing model (features + tiers) for product timelines.'),
+      pluginData: pluginData
+        .optional()
+        .describe(
+          'Every enabled plugin\'s rows, keyed by plugin id then collection id. This is the bulk way to ' +
+            'seed a plugin\'s data — it replaces the rows wholesale, so read them first if you mean to ' +
+            'add to them. For single edits prefer write_plugin_data, which touches one row and will not ' +
+            'clobber a concurrent browser edit.',
+        ),
     },
   },
   async ({ id, ...file }) => {
@@ -365,197 +329,125 @@ server.registerTool(
   },
 );
 
+// ---------- plugin data (generic, no plugin named here) ----------
+//
+// These three replace thirteen hand-written tools for one plugin's entities. That
+// is the point of #17: a tool per plugin entity means this file has to be edited
+// before anybody can author a third-party plugin's data, which was a privilege
+// exactly one plugin had and nobody else could get.
+//
+// What a collection is called and what a row may contain comes from the plugin's
+// manifest, so the schema here is deliberately `record(unknown)` — validation
+// happens server-side against the declaration, and duplicating it in zod would
+// give two answers to one question.
+
 server.registerTool(
-  'set_pricing',
+  'read_plugin_data',
   {
-    title: 'Set pricing model (bulk)',
+    title: 'Read a plugin\'s rows',
     description:
-      "BULK replace of a timeline's whole pricing model (features + tiers + highlights + versions) in " +
-      'one call. Seeding pricing automatically enables the "product-roadmap" plugin (which surfaces the ' +
-      'matrix) — no separate type/plugin call needed. Prefer the granular tools (add_/update_/delete_feature, ' +
-      '…_tier, set_tier_value, …_highlight, set_versions) for single edits — each touches one row and ' +
-      "won't clobber concurrent browser/MCP edits. Use this only to seed a new model or fully rewrite " +
-      'one. Item→feature links live per item in metadata.featureIds (set via add_item / update_item).',
+      'Read the rows one plugin owns on a timeline. Omit `collection` for every collection at once. ' +
+      'Which collections exist is declared by the plugin\'s manifest. Each row is ' +
+      '{ id, data, version, updatedAt, updatedBy } — `version` is the lock counter to send back as ' +
+      '`ifMatch` on a patch, not anything the plugin stored.',
     inputSchema: {
       id: z.string().describe('Timeline id.'),
-      pricing: pricing.describe('The full new pricing model.'),
+      pluginId: z.string().describe('Plugin id.'),
+      collection: z.string().optional().describe('One declared collection; omit for all of them.'),
     },
   },
-  async ({ id, pricing: pricingModel }) => {
-    await apiSub(id, 'pricing', 'PUT', { pricing: pricingModel });
-    return ok({
-      ok: true,
-      id,
-      features: pricingModel.features.length,
-      tiers: pricingModel.tiers.length,
-      highlights: pricingModel.highlights?.length ?? 0,
-    });
+  async ({ id, pluginId, collection }) => {
+    if (collection) {
+      return ok(await apiSub(id, `plugin/${encodeId(pluginId)}/${encodeId(collection)}`, 'GET'));
+    }
+    // Every collection at once comes off the timeline payload, which already
+    // carries `pluginData` for exactly this reason. `…/plugin/<id>` without a
+    // collection is a different question — whether the plugin is on here — and
+    // answering rows there would make one path mean two things.
+    const file = await getTimeline(id);
+    return ok({ rows: file.pluginData?.[pluginId] ?? {} });
   },
 );
 
-// ---------- granular pricing tools (one row per call) ----------
-
 server.registerTool(
-  'add_feature',
+  'write_plugin_data',
   {
-    title: 'Add pricing feature',
+    title: 'Write a plugin\'s rows',
     description:
-      'Add a single pricing feature. `version` = the version label the feature is available from ' +
-      '(omit for pre-existing features that predate versioning).',
-    inputSchema: { id: z.string().describe('Timeline id.'), feature: pricingFeature },
-  },
-  async ({ id, feature }) => ok(await apiSub(id, 'feature', 'POST', feature)),
-);
-
-server.registerTool(
-  'update_feature',
-  {
-    title: 'Update pricing feature',
-    description:
-      'Patch a feature by id (only provided fields change). Send an explicit null to clear an optional ' +
-      'field (group / version / description).',
+      'Create, patch, delete or reorder ONE row of one plugin collection. Four operations because they ' +
+      'are four HTTP verbs on the same resource, not four resources:\n' +
+      '- `put`: create or replace the row `rowId` with `data`.\n' +
+      '- `patch`: merge `data` into the stored row; a key sent as null is removed. Send `ifMatch` (the ' +
+      'row\'s `version` from read_plugin_data) to fail loudly instead of overwriting a concurrent edit.\n' +
+      '- `delete`: remove the row. Rows referencing it follow the manifest\'s declared cascade — they are ' +
+      'deleted, unlinked, or the delete is refused with 409, whichever the plugin declared.\n' +
+      '- `move`: reposition it after OR before `anchor` (ordered collections only); returns the new id order.\n' +
+      'The row shape is checked against the collection\'s declaration server-side, so an unknown collection ' +
+      'or a dangling reference is refused rather than stored.',
     inputSchema: {
       id: z.string().describe('Timeline id.'),
-      featureId: z.string().describe('Id of the feature to patch.'),
-      patch: pricingFeature.partial(),
+      pluginId: z.string().describe('Plugin id.'),
+      collection: z.string().describe('A collection the plugin\'s manifest declares.'),
+      op: z.enum(['put', 'patch', 'delete', 'move']).describe('What to do with the row.'),
+      rowId: z
+        .string()
+        .optional()
+        .describe(
+          'The row id. Required for patch / delete / move. For `put` it may be omitted when the ' +
+            'collection declares key fields — the host derives the id from them.',
+        ),
+      data: z.record(z.unknown()).optional().describe('The row payload for put / patch.'),
+      ifMatch: z.number().optional().describe('The row version a patch expects; a mismatch answers 409.'),
+      after: z.string().optional().describe('move: place the row immediately AFTER this row id.'),
+      before: z.string().optional().describe('move: place the row immediately BEFORE this row id.'),
     },
   },
-  async ({ id, featureId, patch }) => ok(await apiSub(id, `feature/${encodeId(featureId)}`, 'PATCH', patch)),
-);
-
-server.registerTool(
-  'delete_feature',
-  {
-    title: 'Delete pricing feature',
-    description: 'Delete a feature by id. Its matrix cells cascade away and it is stripped from highlights.',
-    inputSchema: { id: z.string().describe('Timeline id.'), featureId: z.string() },
+  async ({ id, pluginId, collection, op, rowId, data, ifMatch, after, before }) => {
+    const base = `plugin/${encodeId(pluginId)}/${encodeId(collection)}`;
+    if (op === 'move') {
+      if (!rowId) throw new Error('move needs rowId');
+      return ok(await apiSub(id, `${base}/move`, 'POST', { id: rowId, after, before }));
+    }
+    if (op === 'delete') {
+      if (!rowId) throw new Error('delete needs rowId');
+      return ok(await apiSub(id, `${base}/${encodeId(rowId)}`, 'DELETE'));
+    }
+    if (op === 'patch') {
+      if (!rowId) throw new Error('patch needs rowId');
+      return ok(await apiSub(id, `${base}/${encodeId(rowId)}`, 'PATCH', { data: data ?? {} }, ifMatch));
+    }
+    return ok(await apiSub(id, base, 'POST', { ...(rowId ? { id: rowId } : {}), data: data ?? {} }));
   },
-  async ({ id, featureId }) => ok(await apiSub(id, `feature/${encodeId(featureId)}`, 'DELETE')),
 );
 
 server.registerTool(
-  'move_feature',
+  'configure_plugin',
   {
-    title: 'Reorder a pricing feature',
+    title: 'Enable, configure or disable a plugin on a timeline',
     description:
-      'Reposition a feature in the matrix row order by placing it immediately after OR before another ' +
-      'feature. Provide exactly one anchor (after / before); `after` wins if both are sent. The server ' +
-      'renumbers the sort order and returns the new ordered id list. (add_feature always appends to the ' +
-      'group end — use this to place it precisely afterwards.) A feature keeps its `group`; to change the ' +
-      'group, patch it via update_feature.',
+      'Turn a plugin on for one timeline and set its config, or turn it off. `config` is validated ' +
+      "against the plugin's declared configSchema. `public` opts the timeline's rows " +
+      'into the public read route and is only accepted from a plugin that declares publicRead ' +
+      'collections. `enabled: false` removes the registration; the rows stay until the plugin is ' +
+      'uninstalled instance-wide.',
     inputSchema: {
       id: z.string().describe('Timeline id.'),
-      featureId: z.string().describe('Id of the feature to move.'),
-      after: z.string().optional().describe('Place featureId immediately AFTER this feature id.'),
-      before: z.string().optional().describe('Place featureId immediately BEFORE this feature id.'),
+      pluginId: z.string().describe('Plugin id.'),
+      enabled: z.boolean().optional().describe('false turns the plugin off for this timeline. Default: on.'),
+      config: z.record(z.unknown()).optional().describe("The plugin's config bag."),
+      public: z.boolean().optional().describe('Publish this timeline\'s rows of that plugin.'),
     },
   },
-  async ({ id, featureId, after, before }) =>
-    ok(await apiSub(id, 'feature-move', 'POST', { featureId, after, before })),
-);
-
-server.registerTool(
-  'add_tier',
-  {
-    title: 'Add pricing tier',
-    description: 'Add a single pricing tier. `values` maps featureId → true | "verbatim string".',
-    inputSchema: { id: z.string().describe('Timeline id.'), tier: pricingTier },
+  async ({ id, pluginId, enabled, config, public: isPublic }) => {
+    const sub = `plugin/${encodeId(pluginId)}`;
+    if (enabled === false) return ok(await apiSub(id, sub, 'DELETE'));
+    return ok(
+      await apiSub(id, sub, 'PUT', {
+        config: config ?? {},
+        ...(isPublic === undefined ? {} : { public: isPublic }),
+      }),
+    );
   },
-  async ({ id, tier }) => ok(await apiSub(id, 'tier', 'POST', tier)),
-);
-
-server.registerTool(
-  'update_tier',
-  {
-    title: 'Update pricing tier',
-    description:
-      'Patch a tier by id (name / price / tagline / useCase / targetGroup). To set a single matrix ' +
-      'cell prefer set_tier_value; `values` passed here are applied cell-by-cell.',
-    inputSchema: {
-      id: z.string().describe('Timeline id.'),
-      tierId: z.string().describe('Id of the tier to patch.'),
-      patch: pricingTier.partial(),
-    },
-  },
-  async ({ id, tierId, patch }) => ok(await apiSub(id, `tier/${encodeId(tierId)}`, 'PATCH', patch)),
-);
-
-server.registerTool(
-  'delete_tier',
-  {
-    title: 'Delete pricing tier',
-    description: 'Delete a tier by id (its matrix cells cascade away).',
-    inputSchema: { id: z.string().describe('Timeline id.'), tierId: z.string() },
-  },
-  async ({ id, tierId }) => ok(await apiSub(id, `tier/${encodeId(tierId)}`, 'DELETE')),
-);
-
-server.registerTool(
-  'set_tier_value',
-  {
-    title: 'Set matrix cell',
-    description:
-      'Set ONE matrix cell (tier × feature). value = true (✓) or a verbatim string ("3.000"); ' +
-      'value = false / null clears the cell (–). The collision-free way to edit the matrix. ' +
-      'availableFrom (optional) = a version label (one of the timeline\'s pricing versions) from ' +
-      'which this cell counts as included; before it the cell renders as "–" even when value is set. ' +
-      'Omit / null = available from the start. Use it to model "included in tier X now, in tier Y only from v4".',
-    inputSchema: {
-      id: z.string().describe('Timeline id.'),
-      tierId: z.string(),
-      featureId: z.string(),
-      value: z.union([z.string(), z.boolean(), z.null()]),
-      availableFrom: z.string().nullish().describe('Version label the cell is available from (e.g. "4.0"); omit = from the start.'),
-    },
-  },
-  async ({ id, tierId, featureId, value, availableFrom }) =>
-    ok(await apiSub(id, 'tier-value', 'PUT', { tierId, featureId, value, availableFrom })),
-);
-
-server.registerTool(
-  'add_highlight',
-  {
-    title: 'Add card highlight',
-    description: 'Add a curated card highlight bundling one or more feature ids.',
-    inputSchema: { id: z.string().describe('Timeline id.'), highlight: pricingHighlight },
-  },
-  async ({ id, highlight }) => ok(await apiSub(id, 'highlight', 'POST', highlight)),
-);
-
-server.registerTool(
-  'update_highlight',
-  {
-    title: 'Update card highlight',
-    description: 'Patch a highlight by id (label / section / icon / featureIds / description / labelByVersion).',
-    inputSchema: {
-      id: z.string().describe('Timeline id.'),
-      highlightId: z.string(),
-      patch: pricingHighlight.partial(),
-    },
-  },
-  async ({ id, highlightId, patch }) => ok(await apiSub(id, `highlight/${encodeId(highlightId)}`, 'PATCH', patch)),
-);
-
-server.registerTool(
-  'delete_highlight',
-  {
-    title: 'Delete card highlight',
-    description: 'Delete a highlight by id.',
-    inputSchema: { id: z.string().describe('Timeline id.'), highlightId: z.string() },
-  },
-  async ({ id, highlightId }) => ok(await apiSub(id, `highlight/${encodeId(highlightId)}`, 'DELETE')),
-);
-
-server.registerTool(
-  'set_versions',
-  {
-    title: 'Set pricing versions',
-    description:
-      'Replace the ordered list of pricing version labels (e.g. ["1.0","2.0","3.0"]) — drives the ' +
-      "matrix version switcher and features' available-from ordering.",
-    inputSchema: { id: z.string().describe('Timeline id.'), versions: z.array(z.string()) },
-  },
-  async ({ id, versions }) => ok(await apiSub(id, 'pversion', 'PUT', { versions })),
 );
 
 server.registerTool(

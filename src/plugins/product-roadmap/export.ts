@@ -1,4 +1,9 @@
-// Pricing export: Timeline (DB, source of truth) → Markdown in the vault.
+// Pricing export: Timeline (source of truth) → Markdown.
+//
+// It lives in the plugin folder rather than in `scripts/` because it is this
+// plugin's tool: it reads the plugin's model and renders the plugin's Markdown.
+// A script in core space that knows one plugin is the coupling #17 removes, and
+// a CI check now asserts core files do not import from a plugin folder.
 //
 // Pulls a product timeline's pricing model via the live API (same X-MCP-Token
 // path as scripts/mcp/server.ts), renders it with pricingToMarkdown, and writes
@@ -18,14 +23,15 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { TimelineFile } from '../src/types.ts';
-import { PRODUCT_ROADMAP_PLUGIN } from '../src/plugins/product-roadmap/plugin.ts';
-import { hasPlugin } from '../src/pluginHost/plugins.ts';
-import { pricingToMarkdown } from '../src/plugins/product-roadmap/pricing.ts';
-import { envSourcesHint, envValue } from './db/env.ts';
+import type { TimelineFile } from '../../types.ts';
+import { PRODUCT_ROADMAP_PLUGIN } from './plugin.ts';
+import { hasPlugin } from '../../pluginHost/plugins.ts';
+import { pricingToMarkdown } from './pricing.ts';
+import { currentPricing } from './compose.ts';
+import { envSourcesHint, envValue } from '../../../scripts/db/env.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '..');
+const REPO_ROOT = resolve(__dirname, '..', '..', '..');
 
 const DEFAULT_OUT = resolve(REPO_ROOT, 'export', 'pricing.md');
 
@@ -72,20 +78,21 @@ async function main(): Promise<void> {
     console.error(`[pricing-export] "${timelineId}" is not a product-roadmap timeline — nothing to export.`);
     process.exit(1);
   }
-  if (!file.pricing || (!file.pricing.tiers?.length && !file.pricing.features?.length)) {
+  // Composed from the stored rows. `file.pricing` is gone: the core file format
+  // stopped carrying one plugin's data by name (#17), and this script lives in
+  // the plugin now for the same reason.
+  const pricing = currentPricing(file);
+  if (!pricing.tiers.length && !pricing.features.length) {
     console.error(`[pricing-export] "${timelineId}" has no pricing model — nothing to export.`);
     process.exit(1);
   }
 
-  const md = pricingToMarkdown(
-    { timelineId, name: file.name, pricing: file.pricing },
-    { updated: todayIso() },
-  );
+  const md = pricingToMarkdown({ timelineId, name: file.name, pricing }, { updated: todayIso() });
 
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, md, 'utf8');
   console.error(
-    `[pricing-export] wrote ${file.pricing.tiers.length} tiers × ${file.pricing.features.length} features → ${outPath}`,
+    `[pricing-export] wrote ${pricing.tiers.length} tiers × ${pricing.features.length} features → ${outPath}`,
   );
 }
 

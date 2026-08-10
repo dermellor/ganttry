@@ -23,12 +23,16 @@ import {
   handleMembersApi,
   handleUsersApi,
   liveOverride,
+  parsePublicPluginPath,
   parseSourcePath,
   resolveAdapter,
   resolveRepo,
   type ApiRequest,
   type DbConnections,
 } from './api.ts';
+import { handlePluginsApi, handlePublicPluginApi } from './plugin-api.ts';
+import { makeManifestSource } from './plugin-manifests.ts';
+import { retiredPricingResponse } from './retired-pricing-route.ts';
 import type { SourceLive } from '../../src/types';
 import { isPublicPath } from '../admission.ts';
 import {
@@ -69,6 +73,29 @@ export type ApiContext = {
    * not come through here.
    */
   serviceRole?: MemberRole;
+  /**
+   * `PLUGIN_OPERATOR_EMAILS`, already read from the runtime's own env.
+   *
+   * Who may install or uninstall a plugin instance-wide is a property of the
+   * deployment rather than of a timeline, so it cannot come from the member
+   * list. Empty means nobody, which is the right default: a fresh instance has
+   * no plugin operator until somebody is named.
+   */
+  operators?: string[];
+  /**
+   * `PLUGIN_ALLOWED_ORIGINS`, already read from the runtime's own env — the
+   * origins this instance's CSP lets a plugin artifact be fetched from. Passing
+   * it is what lets an install from an unreachable origin be refused here rather
+   * than discovered as a CSP violation in somebody's console.
+   */
+  pluginOrigins?: string[];
+  /**
+   * Did the caller present the service token rather than a session?
+   *
+   * It counts as operator access on purpose (see `isOperator`): the token is a
+   * server-side secret only whoever configured the deployment holds.
+   */
+  serviceToken?: boolean;
   /**
    * `TIMELINES_DB_LIVE`, already read from the runtime's own env (`process.env`
    * / `Deno.env`) — pass it through `liveOverride`. Undefined leaves the mode to
@@ -159,6 +186,8 @@ export const OWNED_API_PATHS = [
  */
 function isOurs(path: string): boolean {
   return (
+    path === '/api/plugins' ||
+    path.startsWith('/api/plugins/') ||
     path === '/api/members' ||
     path === '/api/settings' ||
     path === '/api/users' ||
@@ -290,31 +319,41 @@ async function authorize(path: string, method: string, ctx: ApiContext): Promise
 }
 
 /**
- * `GET /api/pricing/<id>` — the public pricing model.
+ * `GET /api/public/plugin/<pluginId>/<timelineId>` — a plugin's published rows.
  *
- * Public and cacheable on purpose: it carries only the pricing model, never
- * roadmap items or status, and external pages fetch it at build time. It is the
- * one route with `security: []` in `openapi.yaml`, so a runtime that gates the
- * rest has to let this one through.
+ * The generic replacement for a per-plugin public endpoint: any installed plugin
+ * can publish, and none of them needs a route of its own. The three gates and
+ * the projection live in `handlePublicPluginApi`, above the repo, so every
+ * runtime enforces them identically.
+ *
+ * Every answer carries the public headers, errors included. A consumer is a page
+ * on another origin, and a CORS-less 404 reaches it as an opaque network failure
+ * rather than as „nothing published under that id".
  */
-async function handlePricing(pathname: string, ctx: ApiContext): Promise<Response> {
-  // Every answer carries the public headers, errors included. A consumer is a
-  // page on another origin, and a CORS-less 404 reaches it as an opaque network
-  // failure rather than as "no pricing model for this id".
+async function handlePublicPlugin(pathname: string, search: URLSearchParams, ctx: ApiContext): Promise<Response> {
   const pub = (data: unknown, status: number, cache: string) =>
     json(data, status, { 'Cache-Control': cache, 'Access-Control-Allow-Origin': '*' });
 
-  const repo = resolveRepo(ctx.conns);
+  const parsed = parsePublicPluginPath(pathname);
+  if (!parsed) return pub({ error: 'not found' }, 404, 'no-store');
+  // A local-file instance publishes too, so the file repo counts as a backend
+  // here — `resolveRepo` alone would answer 503 on a checkout without a database.
+  const repo = resolveRepo(ctx.conns) ?? ctx.conns.local?.repo;
   if (!repo) return pub({ error: 'db_not_configured' }, 503, 'no-store');
-  const id = pathname.replace(/^\/api\/pricing\/?/, '').replace(/\/+$/, '');
-  if (!id) return pub({ error: 'id required' }, 400, 'no-store');
   try {
-    const pricing = await repo.getPublicPricing(decodeURIComponent(id));
-    if (!pricing) return pub({ error: 'not found' }, 404, 'no-store');
-    // Cacheable only on a hit: it is fine to serve a pricing model briefly stale
-    // (consumers fetch at build time), but caching a miss would outlive the
-    // moment the timeline gains its pricing model.
-    return pub(pricing, 200, 'public, max-age=300, s-maxage=300');
+    const result = await handlePublicPluginApi(repo, makeManifestSource(repo), {
+      method: 'GET',
+      pluginId: parsed.pluginId,
+      timelineId: parsed.timelineId,
+      collection: search.get('collection') ?? undefined,
+    });
+    // Cacheable only on a hit: consumers fetch at build time, so briefly stale is
+    // fine, but caching a miss would outlive the moment a timeline is published.
+    return pub(
+      result.json,
+      result.status,
+      result.status === 200 ? 'public, max-age=300, s-maxage=300' : 'no-store',
+    );
   } catch (err) {
     return pub({ error: 'server_error', message: String(err) }, 500, 'no-store');
   }
@@ -335,11 +374,12 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
   const method = req.method || 'GET';
 
   // Answered before any authorization, and `isPublicPath` is the same predicate
-  // the self-hosted gate admits it by (scripts/admission.ts). Two spellings of
+  // the self-hosted gate admits them by (scripts/admission.ts). Two spellings of
   // „this route is public" is how one of them later stops being true.
   if (isPublicPath(path)) {
     if (method !== 'GET') return json({ error: 'method not allowed' }, 405);
-    return handlePricing(path, ctx);
+    if (path.startsWith('/api/pricing')) return retiredPricingResponse(path);
+    return handlePublicPlugin(path, url.searchParams, ctx);
   }
 
   // Ours, and only now: everything below may refuse, and a refusal must never
@@ -387,6 +427,31 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
     return json(result.json, result.status);
   }
 
+  // The instance's install registry — a sibling of /api/sources rather than
+  // something under a timeline: which plugins this deployment has is not a
+  // property of any one of them.
+  if (path === '/api/plugins' || path.startsWith('/api/plugins/')) {
+    const repo = resolveRepo(ctx.conns) ?? ctx.conns.local?.repo;
+    // No backend, no registry. An empty list rather than an error: that is the
+    // truth for a checkout without credentials, and the panel then says „nothing
+    // installed" instead of showing a failure the reader cannot act on.
+    if (!repo) {
+      if (method === 'GET') return json({ plugins: [] });
+      return json({ error: 'db_not_configured', message: 'The install registry needs a backend.' }, 503);
+    }
+    const pluginId = path.slice('/api/plugins'.length).replace(/^\/+|\/+$/g, '');
+    const result = await handlePluginsApi(repo, {
+      method,
+      pluginId: pluginId ? decodeURIComponent(pluginId) : undefined,
+      body: await readBody(req, method),
+      params: Object.fromEntries(url.searchParams),
+      caller: { email: ctx.caller?.email ?? null, mcp: ctx.serviceToken },
+      operators: ctx.operators ?? [],
+      allowedOrigins: ctx.pluginOrigins,
+    });
+    return json(result.json, result.status);
+  }
+
   if (path === '/api/sources') {
     if (method !== 'GET') return json({ error: 'method not allowed' }, 405);
     // Answerable from the filesystem even with no DB: the local timelines ARE
@@ -408,7 +473,16 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
   const parsed = parseSourcePath(path.replace(/^\/api\/source/, ''));
   if (!parsed) return json({ error: 'invalid path' }, 400);
 
-  const segs = [...parsed.id.split('/'), parsed.sub?.childId].filter(Boolean) as string[];
+  // The `/plugin/…` parts are deliberately exempt, and the exemption is not a
+  // hole: none of them ever becomes a path, and each is checked against something
+  // stricter than a charset — the plugin id and the collection against the
+  // installed manifest (an allowlist), the row id by the store that holds it. A
+  // charset rule would meanwhile reject legitimate values: a scoped plugin id
+  // carries `@` and `/`, and a composite row id carries `:` and percent escapes.
+  const segs = [
+    ...parsed.id.split('/'),
+    ...(parsed.sub?.plugin ? [] : [parsed.sub?.childId]),
+  ].filter(Boolean) as string[];
   if (!segs.every(isIdSegment)) return json({ error: `invalid id "${parsed.id}"` }, 400);
 
   // A local file answers for its own id whether or not a DB exists, so the

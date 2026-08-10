@@ -18,7 +18,8 @@
       "group": "Phase 1 — Discovery",
       "icon": "research",
       "body": "5 Interviews mit Bestandskund:innen, 3 mit Prospects.",
-      "id": "i1"
+      "id": "i1",
+      "status": "Open"
     },
     {
       "start": "2026-03-01",

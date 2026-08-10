@@ -1,5 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
-import { resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { envSourcesHint, envValue, hydrateProcessEnv } from './scripts/db/env';
 import { basicAuthHeader, buildPickerUrl, parsePickerResponse } from './scripts/jira/picker';
@@ -10,6 +10,8 @@ import { accessControlEnabled, handleApiRequest, liveOverride } from './scripts/
 import { resolveRepo } from './scripts/db/api';
 import { toRequest, writeResponse } from './scripts/node-http';
 import { hasLocalTimeline, isLocalWritable, makeFileRepo } from './scripts/local/file-repo';
+import { parseOperators } from './scripts/db/operator';
+import { buildCsp, parseOrigins } from './src/pluginHost/csp';
 
 // Runs while Vite loads this config, before it resolves `import.meta.env`.
 // Vite reads VITE_* from repo-local .env files and from process.env only, so
@@ -39,6 +41,10 @@ const PORT = Number(envValue('TIMELINES_PORT')) || 3120;
 const localDirs = {
   root: resolve(__dirname, 'data'),
   scope: resolve(__dirname, 'data', (process.env.TIMELINES_SOURCES_SUBDIR ?? '').replace(/^\/+|\/+$/g, '')),
+  // The same directory the raw-artifact middleware serves from and the build
+  // registers from. Without it `GET /api/plugins` answers `[]` and shadows what
+  // the build registered, because the client prefers the live answer.
+  pluginsDir: resolve(envValue('TIMELINES_PLUGINS_DIR') || resolve(__dirname, 'plugins')),
 };
 const localSource = { has: (id: string) => hasLocalTimeline(localDirs, id), repo: makeFileRepo(localDirs) };
 
@@ -195,12 +201,44 @@ function timelinesApi(): Plugin {
         }
       });
 
+      // /plugins/<id>/<file> — vendored plugin artifacts, served RAW.
+      //
+      // Its own middleware rather than letting the static handler do it, because
+      // Vite appends an inline source map to any `.js` it serves. That makes the
+      // dev server's bytes differ from the deploy's, and a pinned artifact then
+      // fails its integrity check locally while being fine in production — a
+      // dev/prod divergence that pinning is what surfaced. Serving from the SOURCE
+      // directory also means editing a plugin and reloading is enough, with no
+      // build step in between.
+      server.middlewares.use('/plugins', async (req, res, next) => {
+        if (req.method !== 'GET') return next();
+        const rel = decodeURIComponent((req.url ?? '').replace(/\?.*$/, '')).replace(/^\/+/, '');
+        if (!rel) return next();
+        const base = resolve(envValue('TIMELINES_PLUGINS_DIR') || resolve(__dirname, 'plugins'));
+        const file = resolve(base, rel);
+        // Containment on the RESOLVED path: the URL is attacker-controlled, and a
+        // `..` segment would otherwise serve any file this process can read.
+        if (file !== base && !file.startsWith(base + sep)) {
+          res.statusCode = 403;
+          return res.end('forbidden');
+        }
+        try {
+          const bytes = await readFile(file);
+          res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : 'application/octet-stream');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end(bytes);
+        } catch {
+          next(); // not a vendored artifact — let the static handler try
+        }
+      });
+
       // Everything else under /api/ is the shared HTTP layer: /api/sources,
-      // /api/users, /api/pricing/<id> and the /api/source CRUD tree. Routing,
-      // optimistic locking, the X-Source-Live header and the error mapping used
-      // to be written out here AND in the timelines-api edge function, two
-      // copies that had already drifted; they now live once in scripts/db/http.ts
-      // and this middleware is the Node adapter in front of it.
+      // /api/users, /api/plugins, the public plugin read and the /api/source
+      // CRUD tree. Routing, optimistic locking, the X-Source-Live header and the
+      // error mapping used to be written out here AND in the timelines-api edge
+      // function, two copies that had already drifted; they now live once in
+      // scripts/db/http.ts and this middleware is the Node adapter in front of
+      // it.
       //
       // Mounted globally rather than on '/api': connect strips the mount path
       // from `req.url`, so a prefixed mount would hand the handler '/sources'
@@ -224,6 +262,14 @@ function timelinesApi(): Plugin {
           // model out locally must exercise the real path, not a dev-only
           // shortcut that lets every check pass.
           accessControl: accessControlEnabled(process.env.TIMELINES_ACCESS_CONTROL),
+          // A checkout on somebody's laptop IS its own plugin operator: demanding
+          // a configured allowlist here would make installing a plugin
+          // untestable without one, and there is nobody else on this port.
+          operators: parseOperators(envValue('PLUGIN_OPERATOR_EMAILS')),
+          // The same list the CSP below is built from, so „installed" and
+          // „fetchable" cannot disagree.
+          pluginOrigins: parseOrigins(envValue('PLUGIN_ALLOWED_ORIGINS')),
+          serviceToken: true,
           live: liveOverride(process.env.TIMELINES_DB_LIVE),
           // `hydrateProcessEnv()` has already folded .env.local, the instance
           // profile and TIMELINES_ENV_FILE into process.env by the time the dev
@@ -237,6 +283,16 @@ function timelinesApi(): Plugin {
     },
   };
 }
+
+// The same policy the deploy ships (scripts/build-data.ts writes it to
+// `public/_headers`). Set here too, because a CSP that only exists in production
+// is a CSP nobody finds out they broke until after a deploy — and the thing it
+// most often breaks is a plugin, which is exactly what this repo is now building.
+const CSP = buildCsp({
+  supabaseUrl: envValue('VITE_SUPABASE_URL') || undefined,
+  jiraUrl: envValue('VITE_JIRA_BASE_URL') || undefined,
+  pluginOrigins: parseOrigins(envValue('PLUGIN_ALLOWED_ORIGINS')),
+});
 
 export default defineConfig({
   build: {
@@ -254,6 +310,7 @@ export default defineConfig({
   server: {
     port: PORT,
     strictPort: true,
+    headers: { 'Content-Security-Policy': CSP },
     watch: {
       // Worktrees live inside the checkout (`.claude/worktrees/<name>`), so the
       // dev server's watcher reaches into them and reloads the page whenever

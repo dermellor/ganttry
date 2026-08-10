@@ -12,7 +12,8 @@
 // `references`, which the host enforces on the write path. Those two are declared
 // here and enforced in #12; everything else in this module is live now.
 
-import { satisfiesApiVersion, type ApiVersion } from './apiVersion';
+import { satisfiesApiVersion, type ApiVersion } from './apiVersion.ts';
+import { unsupportedKeywords } from './dataSchema.ts';
 
 /**
  * What a plugin is allowed to do. Coarse on purpose: this list is shown to the
@@ -42,9 +43,11 @@ export type ManifestView = {
 export type CollectionDecl = {
   id: string;
   /**
-   * JSON Schema for one row. Kept opaque here (the validator only checks that it
-   * is an object) so this module stays dependency-free; the host compiles it on
-   * the write path.
+   * JSON Schema for one row, applied by the host on every write.
+   *
+   * Only the subset in `./dataSchema` is allowed, and a schema using anything
+   * else makes the manifest invalid rather than being partly applied — see the
+   * note there for why an unenforced keyword is worse than a rejected one.
    */
   schema?: Record<string, unknown>;
   /**
@@ -64,8 +67,26 @@ export type ReferenceDecl = {
   field: string;
   /** Collection being referenced. */
   to: string;
-  /** What happens to `from` rows when the target disappears. Default 'cascade'. */
-  onDelete?: 'cascade' | 'restrict';
+  /**
+   * Does `field` hold an ARRAY of target ids rather than one?
+   *
+   * Declared because a many-to-many link is not a rarity to be special-cased:
+   * product-roadmap's highlights each bundle a list of feature ids, and without
+   * this the host cannot see the relation at all. It could then neither refuse a
+   * list naming a feature that does not exist, nor clean the id out when one is
+   * deleted — which is precisely the loop `deleteFeature` writes by hand today.
+   */
+  array?: boolean;
+  /**
+   * What happens to `from` rows when the target disappears:
+   *
+   *   - `cascade` (the default) — the referencing row goes too.
+   *   - `restrict` — the delete is refused while any row still points here.
+   *   - `unlink` — the reference is cleared and the row stays. For an `array`
+   *     field that means dropping the one id, which is the only correct answer
+   *     for a bundle: deleting one of five features must not delete the tile.
+   */
+  onDelete?: 'cascade' | 'restrict' | 'unlink';
 };
 
 /** Collections (and fields) the host may serve unauthenticated (#20). */
@@ -103,11 +124,31 @@ export type ValidationResult =
   | { ok: true; manifest: PluginManifest }
   | { ok: false; problems: ManifestProblem[] };
 
-// Reverse-DNS or npm-style. Ids are global — they key `timeline_plugins` rows and
-// the plugin's own data — so a collision is a data collision, not a naming
-// annoyance. Restricting the shape is what keeps two plugins from claiming one id
-// by accident.
-const ID_RE = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+/**
+ * **Reverse-DNS, and nothing else.**
+ *
+ * An id is global — it keys `timeline_plugins`, the plugin's own rows in
+ * `plugin_data` and the metadata on items — so a collision is a data collision
+ * rather than a naming annoyance. With no central registry to hand out names,
+ * the only thing that makes a name safe to claim is that it derives from
+ * something the author already owns: a domain.
+ *
+ * An npm scope (`@acme/sprints`) expresses the same idea and was rejected,
+ * because this id is three things at once and that form breaks two of them:
+ *
+ *   - a **path segment** (`/api/source/<id>/plugin/<pluginId>/…`), where `@` and
+ *     `/` have to be percent-encoded at every call site and in every hand-written
+ *     request;
+ *   - a **directory name** (`plugins/<id>/manifest.json`), where a slash makes it
+ *     a nested directory and the flat scan stops finding it;
+ *   - a database key, which is the only one it survives.
+ *
+ * `com.acme.sprints` is a plain segment in all three.
+ *
+ * Two labels minimum, so a bare word cannot be claimed: `sprints` is the name a
+ * hundred people would pick, `com.acme.sprints` is one nobody else will.
+ */
+const ID_RE = /^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+$/;
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -131,7 +172,10 @@ export function validateManifest(input: unknown, host?: ApiVersion): ValidationR
   const m = input as Partial<PluginManifest>;
 
   if (typeof m.id !== 'string' || !ID_RE.test(m.id)) {
-    problems.push('id must be npm-style or scoped, lowercase (e.g. "sprints" or "@acme/sprints")');
+    problems.push(
+      'id must be reverse-DNS: at least two lowercase labels separated by dots, derived from a domain ' +
+        'you own (e.g. "com.acme.sprints"). A bare name is not global enough to key data with.',
+    );
   }
   if (typeof m.name !== 'string' || !m.name.trim()) problems.push('name is required');
   if (typeof m.version !== 'string' || !SEMVER_RE.test(m.version)) {
@@ -176,6 +220,13 @@ export function validateManifest(input: unknown, host?: ApiVersion): ValidationR
     if (collectionIds.has(c.id)) problems.push(`duplicate collection "${c.id}"`);
     collectionIds.add(c.id);
     if (c.schema != null && !isPlainObject(c.schema)) problems.push(`collection "${c.id}": schema must be an object`);
+    // A declared schema has to be one the host can actually apply. Accepting a
+    // keyword it then skips is the failure this refusal prevents: the author
+    // reads their constraint in the manifest and believes every write is checked
+    // against it. See SUPPORTED_KEYWORDS in ./dataSchema.
+    else if (c.schema != null) {
+      for (const problem of unsupportedKeywords(c.schema)) problems.push(`collection "${c.id}" schema ${problem}`);
+    }
     if (c.keyFields != null && (!Array.isArray(c.keyFields) || !c.keyFields.length)) {
       problems.push(`collection "${c.id}": keyFields must be a non-empty array when present`);
     }
@@ -191,8 +242,11 @@ export function validateManifest(input: unknown, host?: ApiVersion): ValidationR
     }
     if (!collectionIds.has(r.from)) problems.push(`reference from unknown collection "${r.from}"`);
     if (!collectionIds.has(r.to)) problems.push(`reference to unknown collection "${r.to}"`);
-    if (r.onDelete != null && r.onDelete !== 'cascade' && r.onDelete !== 'restrict') {
-      problems.push(`reference ${r.from}.${r.field}: onDelete must be "cascade" or "restrict"`);
+    if (r.onDelete != null && !['cascade', 'restrict', 'unlink'].includes(r.onDelete)) {
+      problems.push(`reference ${r.from}.${r.field}: onDelete must be "cascade", "restrict" or "unlink"`);
+    }
+    if (r.array != null && typeof r.array !== 'boolean') {
+      problems.push(`reference ${r.from}.${r.field}: array must be a boolean when present`);
     }
   }
 

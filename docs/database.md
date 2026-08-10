@@ -91,19 +91,17 @@ runner works against any Postgres).
 
 - `timelines` — id, name, description, group_by, `phases` (jsonb),
   `custom_fields` (jsonb). **No plugin-specific columns any more:** the former
-  `type` column (gating on `'product'`) and `pricing_versions` (ordered version
-  labels) moved into the generic `timeline_plugins` registry in migrations
-  `0012`/`0013` (see below and „Plugin registry"). The pricing model itself has
-  been normalised into its own tables since migration `0009`.
+  `type` column (a discriminator gating on one plugin) and `pricing_versions`
+  (one plugin's ordered version labels) moved into the generic
+  `timeline_plugins` registry in migrations `0012`/`0013` (see below and „Plugin
+  registry").
 - `timeline_plugins` — the **generic plugin registry** (migration `0012`): one
   row per (timeline_id, plugin_id) plus a `config` (jsonb). A plugin (a.k.a. a
-  timeline kind, e.g. `'product-roadmap'`) is **enabled on a timeline as soon as
-  a row exists here** — pure data, no `ALTER TABLE`, no core column. For
-  `product-roadmap` the `config` carries the version list
-  (`{ versions: [...] }`, formerly the `pricing_versions` column). FK cascade on
-  `timelines`, anon SELECT plus realtime like the `pricing_*` tables. A new
-  plugin needs (at most) its own data and tables, never a column on the core.
-  See „Plugin registry".
+  timeline kind) is **enabled on a timeline as soon as a row exists here** — pure
+  data, no `ALTER TABLE`, no core column. What the `config` means is the plugin's
+  business and is validated against the `configSchema` its manifest declares. FK
+  cascade on `timelines`, anon SELECT plus realtime. A new plugin needs its own
+  rows in `plugin_data` and nothing else. See „Plugin registry".
 - `timeline_items` — columns for start/end/duration/content/group/type/title/
   body/icon/status/class_name (`status` is `NOT NULL DEFAULT 'Open'` with a CHECK
   for `Open|Doing|Done`, see „Item status" (docs/items.md)), `metadata` (jsonb: `dependsOn`,
@@ -155,6 +153,15 @@ runner works against any Postgres).
   renders „–" before it, while `value` stays the end state. That is what lets you
   express „in Enterprise now, in Scale only from v4" (see „Pricing → Cell
   versioning").
+- **The pricing tables** (`pricing_features`, `pricing_tiers`,
+  `pricing_tier_values`, `pricing_highlights`, migration `0009`) are **still
+  present and no longer read**. They were one plugin's schema in the core
+  database, served by fifteen methods on `TimelineRepo`; issue #17 moved their
+  contents into `plugin_data` and removed every reader.
+  [`scripts/db/legacy-pricing.ts`](../scripts/db/legacy-pricing.ts) is the only
+  file that still names them, for `npm run migrate:pricing`, and both go with the
+  migration that drops the tables. Dropping them is deliberately a **separate,
+  later** migration: a drop in the same one as the copy removes the way back.
 
 RLS is on; server access uses the service key, which bypasses it. The anon SELECT
 policies exist only for the realtime subscription (see below).
@@ -285,9 +292,10 @@ supabase db query --linked -f supabase/migrations/<file>.sql
 
 A **plugin** (a.k.a. a timeline kind) is enabled on a timeline as soon as a
 `(timeline_id, plugin_id, config)` row exists in `timeline_plugins` — pure data,
-no `ALTER TABLE`. The only place that knows plugin ids is
-[`src/pluginHost/plugins.ts`](../src/pluginHost/plugins.ts) (`PRODUCT_ROADMAP_PLUGIN`, `hasPlugin`,
-`pluginConfig`, `versionsFromConfig`, `resolveWritePlugins`).
+no `ALTER TABLE`. Reading enablement off a file is
+[`src/pluginHost/plugins.ts`](../src/pluginHost/plugins.ts) (`hasPlugin`,
+`pluginConfig`, `pluginsForWrite`), which knows no plugin ids — a plugin's own id
+lives with the plugin, and a CI check keeps it there.
 
 **What is generic today:**
 
@@ -298,18 +306,25 @@ no `ALTER TABLE`. The only place that knows plugin ids is
   `plugins: [{ id, config }]`, or direct SQL/PATCH. Identical locally and in
   production (same `api.ts` dispatcher, same DB).
 
-**What is NOT generic (yet):**
+- **Enabling (granular).** `PUT` / `DELETE /api/source/<id>/plugin/<pluginId>`,
+  plus the MCP `enable_plugin` / `disable_plugin`. Turning one plugin on or off no
+  longer means rewriting the whole timeline — which was the path that lost a
+  concurrent edit. The config is validated against the plugin's declared
+  `configSchema` on write. See [`plugin-lifecycle.md`](plugin-lifecycle.md).
+- **Installed (instance level).** `installed_plugins` (migration 0020) plus
+  `/api/plugins`, which is what makes „install a plugin" a row rather than a new
+  build.
 
-- **No granular enable path.** The API sub-kinds carry no `plugin`, and the MCP
-  has no `enable_plugin`. Turning a single plugin on or off without the rest of
-  the timeline only works via SQL or a bulk `replace_timeline`. (Open follow-up:
-  `PUT/DELETE /api/source/<id>/plugin/<pluginId>` plus MCP
-  `enable_/disable_plugin`.)
-- **Behaviour is code-coupled.** `resolveWritePlugins` / `updateVersions` /
-  `getPublicPricing` are hard-wired to `product-roadmap`, and client-side
-  the plugin registry ([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)) lists only
-  `product-roadmap`. A row with an unknown `plugin_id` is stored and served, but
-  **nothing consumes it** until code interprets it.
+**What is NOT generic:**
+
+- **A view still needs code.** A row with an unknown `plugin_id` is stored and
+  served, and its rows in `plugin_data` are stored, validated against the
+  manifest and published according to it — but nothing *renders* it until a
+  module is registered or installed. That is the remaining asymmetry, and it is
+  the one the runtime loader addresses (see „Where plugin code runs"
+  (docs/plugin-isolation.md)). Storage, lifecycle, publishing and the API are
+  generic: no method on `TimelineRepo` names a plugin, and a CI check asserts
+  it.
 
 **Adding a new plugin:**
 
@@ -321,10 +336,10 @@ no `ALTER TABLE`. The only place that knows plugin ids is
    seam pulls the view chunk into the generic build). They appear automatically as
    a section under the plugin's `label`, and as a grouping/filter dimension — see
    „Custom fields → Plugin-contributed fields" (docs/items.md). No core file changes.
-4. **Its own persisted data?** → its own tables plus a write path (model:
-   `pricing_*` and `assemblePricing`). Never a column on the core.
-5. Reads through `file.plugins` already work. The product-specific auto-enable
-   behaviour (`resolveWritePlugins`) is a model to copy, not an obligation.
+4. **Its own persisted data?** → declare collections in the manifest and write
+   through the generic routes. No tables, no repo methods, no core column — see
+   „The generic store" (docs/plugin-storage.md).
+5. Reads through `file.plugins` already work.
 
 ### Setup (one-time)
 
@@ -506,8 +521,9 @@ by the source through `capabilities.live` (`SourceLive` in
   anon key (`VITE_SUPABASE_*`); without it nothing happens and updates are
   reload-only.
 - **`poll`** — the client polls a cheap **watermark endpoint**
-  (`GET /api/source/<id>/watermark` → `{ v, n, t }`: max item `version`, item
-  count, and max `updated_at` across items plus the `timelines` row) on an
+  (`GET /api/source/<id>/watermark` → `{ v, n, t, pv?, pn? }`: max item `version`,
+  item count, max `updated_at` across items plus the `timelines` row, and the same
+  version/count pair over the plugin-owned rows) on an
   interval (`src/poll.ts`: ~8 s while visible, ~60 s while hidden, backing off on
   `visibilitychange`). When the watermark changes it triggers a **full reload**
   through the existing `loadSource` path; timelines are small, and a delta fetch is
@@ -544,11 +560,13 @@ value defers to the default instead of being coerced into a mode.
 > [`src/realtime.ts`](../src/realtime.ts)), so both halves of that mismatch are
 > covered.
 
-> **Scope:** the watermark covers items plus timeline metadata (including
-> phases), but **not** the pricing tables. No poll source is a product timeline
-> today, and realtime still covers pricing; folding pricing into the watermark is a
-> follow-up (`getWatermark` in
-> [`scripts/db/timeline-repo.ts`](../scripts/db/timeline-repo.ts)).
+> **Scope:** the watermark covers items, timeline metadata (including phases) and
+> the plugin-owned rows in `plugin_data` (`pv`/`pn`) — every plugin, through the
+> one pair, because every plugin's rows are in the one table. The retired
+> `pricing_*` tables are deliberately not covered: they are no longer read, and a
+> third pair for tables with a scheduled removal date would be work with a shelf
+> life. `pv`/`pn` are kept apart from `v`/`n` because `v` is the item row version
+> and doubles as the own-echo hint; see [`plugin-storage.md`](plugin-storage.md).
 
 #### Presence under polling
 

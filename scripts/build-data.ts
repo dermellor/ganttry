@@ -6,6 +6,8 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { envValue } from './db/env.ts';
 import { scanDirectory, timelineDirectories } from './local/scan.ts';
+import { buildCsp, parseOrigins } from '../src/pluginHost/csp.ts';
+import { stripFileForPublication } from '../src/pluginHost/publicRead.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CONFIG_PATH = join(ROOT, 'timelines.config.json');
@@ -119,6 +121,144 @@ async function collectDbSources(): Promise<unknown[]> {
   return views;
 }
 
+/**
+ * The instance's install registry, baked into the built config.
+ *
+ * It has to travel this way because a static deploy has no API to ask: the same
+ * reason a plugin's rows are folded into the timeline file rather than fetched
+ * (docs/plugin-storage.md). A served instance re-reads it live from
+ * `GET /api/plugins`; this copy is what a build-only deploy has, and it is
+ * metadata about which plugins exist — never a snapshot of anybody's content, so
+ * it does not touch „No fallback data, ever".
+ *
+ * A failing read is NOT fatal here, unlike the timeline list: a deploy with no
+ * registry still runs the plugins its build shipped with, which is what the
+ * fallback in `installedPluginStatuses` returns.
+ *
+ * **Without a database the registry is the `plugins/` directory itself.** That is
+ * not a convenience: the epic's constraint is that a self-hosted instance can
+ * install a plugin with no central service involved, and until this existed a
+ * file-backed instance could not install one at all — the artifact was copied
+ * into the build and then registered nowhere, so nothing ever loaded it. Dropping
+ * a directory in and rebuilding is the whole install flow for that shape.
+ */
+async function collectPlugins(): Promise<unknown[]> {
+  try {
+    const { resolveRepoFromEnv } = (await import('./db/repo-node.ts')) as any;
+    const { installedPluginStatuses } = (await import('./db/plugin-manifests.ts')) as any;
+    const repo = resolveRepoFromEnv();
+    if (repo) return await installedPluginStatuses(repo);
+  } catch (err) {
+    console.warn('[build-data] plugin registry skipped:', err instanceof Error ? err.message : err);
+  }
+  return vendoredPluginStatuses();
+}
+
+/**
+ * The `plugins/` directory as an install registry, for an instance with no
+ * database. One scan, shared with the file repo, so the build and the API cannot
+ * answer differently (`scripts/plugins/vendored.ts`).
+ */
+async function vendoredPluginStatuses(): Promise<unknown[]> {
+  const { scanVendoredPlugins } = await import('./plugins/vendored.ts');
+  const { pluginStatus } = await import('../src/pluginHost/installed.ts');
+  const dir = envValue('TIMELINES_PLUGINS_DIR') || join(ROOT, 'plugins');
+  const { plugins, skipped } = await scanVendoredPlugins(dir);
+  for (const problem of skipped) {
+    console.warn(`[build-data] plugin ${problem.plugin}: ${problem.problem} — skipped`);
+  }
+  for (const plugin of plugins) {
+    console.log(`[build-data] registered vendored plugin ${plugin.id} ${plugin.version} (pinned)`);
+  }
+  return plugins.map((plugin) => pluginStatus(plugin));
+}
+
+/**
+ * Write the Content-Security-Policy into the build output.
+ *
+ * A `_headers` file rather than an edge function, so a static asset is still
+ * served by the host's CDN instead of routed through Deno for one header. The
+ * consequence is that changing the policy needs a redeploy — which for a security
+ * policy is arguably the right cost: you want that change reviewed and shipped,
+ * not flipped live.
+ *
+ * Two of the values come from the build's own environment because they already
+ * do: `VITE_SUPABASE_URL` is what the client opens its realtime socket to, and a
+ * `connect-src` that omitted it would break live updates in a way that looks like
+ * a broken database.
+ */
+async function writeHeaders(): Promise<void> {
+  const policy = buildCsp({
+    supabaseUrl: envValue('VITE_SUPABASE_URL') || undefined,
+    jiraUrl: envValue('VITE_JIRA_BASE_URL') || undefined,
+    pluginOrigins: parseOrigins(envValue('PLUGIN_ALLOWED_ORIGINS')),
+  });
+  const body = ['/*', `  Content-Security-Policy: ${policy}`, '  X-Content-Type-Options: nosniff', '  Referrer-Policy: same-origin', ''].join('\n');
+  await writeIfChanged(join(ROOT, 'public', '_headers'), body);
+}
+
+/**
+ * Copy vendored plugin artifacts into the build output.
+ *
+ * This is the air-gapped install path, and it is a requirement rather than a
+ * nicety: an instance with no outbound network has to be able to run a plugin. An
+ * artifact under `plugins/<id>/` is served from the deploy's own origin, which
+ * means no request leaves the machine at boot and the default `script-src 'self'`
+ * already covers it — an operator installing this way needs no CSP change.
+ *
+ * The sha384 of each file is logged, because that is the value an operator pastes
+ * into the install call to pin it. Computing it by hand is the step people skip.
+ */
+async function collectVendoredPlugins(): Promise<void> {
+  const from = envValue('TIMELINES_PLUGINS_DIR') || join(ROOT, 'plugins');
+  if (!existsSync(from)) return;
+  const to = join(ROOT, 'public', 'plugins');
+  let copied = 0;
+  for (const entry of await readdir(from, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = join(from, entry.name);
+    for (const file of await readdir(dir, { withFileTypes: true })) {
+      if (!file.isFile()) continue;
+      const bytes = await readFile(join(dir, file.name));
+      const outPath = join(to, entry.name, file.name);
+      await mkdir(dirname(outPath), { recursive: true });
+      await writeIfChanged(outPath, bytes);
+      copied++;
+      if (file.name.endsWith('.js')) {
+        const hash = createHash('sha384').update(bytes).digest('base64');
+        console.log(`[build-data] vendored /plugins/${entry.name}/${file.name}  sha384-${hash}`);
+      }
+    }
+  }
+  if (copied) console.log(`[build-data] copied ${copied} vendored plugin file(s)`);
+}
+
+/**
+ * The manifests this build can evaluate a `publicRead` declaration against.
+ *
+ * Registry first, the shipped ones as the fallback — the same order the server
+ * uses, so what the build strips and what the API would serve agree. Resolved
+ * once per build rather than per file, and lazily, because a file-only deploy has
+ * no database to ask.
+ */
+async function manifestLookup(): Promise<(pluginId: string) => any> {
+  const byId = new Map<string, any>();
+  try {
+    const { builtInManifests, installedPluginStatuses } = (await import('./db/plugin-manifests.ts')) as any;
+    for (const m of builtInManifests()) byId.set(m.id, m);
+    const { resolveRepoFromEnv } = (await import('./db/repo-node.ts')) as any;
+    const repo = resolveRepoFromEnv();
+    if (repo) {
+      for (const status of await installedPluginStatuses(repo)) {
+        if (status?.manifest?.id) byId.set(status.manifest.id, status.manifest);
+      }
+    }
+  } catch (err) {
+    console.warn('[build-data] manifest lookup limited to the build:', err instanceof Error ? err.message : err);
+  }
+  return (pluginId: string) => byId.get(pluginId) ?? null;
+}
+
 async function buildOnce(): Promise<void> {
   const config = await loadConfig();
   await mkdir(OUT_DIR, { recursive: true });
@@ -126,7 +266,8 @@ async function buildOnce(): Promise<void> {
   // File sources (committed data/*.json) plus DB timelines discovered live from
   // the DB. On an id collision the DB timeline wins (it is the live source of
   // truth); file sources are listed first for a stable dropdown order.
-  const fileViews = await collectStandaloneSources(config);
+  const manifestFor = await manifestLookup();
+  const fileViews = await collectStandaloneSources(config, manifestFor);
   const dbViews = await collectDbSources();
   const dbIds = new Set(dbViews.map((v: any) => v.id));
   const views = [...fileViews.filter((v: any) => !dbIds.has(v.id)), ...dbViews];
@@ -138,25 +279,36 @@ async function buildOnce(): Promise<void> {
   const defaultView = views.some((v: any) => v.id === declared)
     ? declared
     : ((views[0] as any)?.id ?? declared);
-  const mergedConfig = { ...config, defaultView, views };
+  await writeHeaders();
+  await collectVendoredPlugins();
+  const plugins = await collectPlugins();
+  const mergedConfig = { ...config, defaultView, views, plugins };
   const configOut = join(OUT_DIR, 'config.json');
   const configChanged = await writeIfChanged(configOut, JSON.stringify(mergedConfig, null, 2));
 
   if (configChanged) {
-    console.log(`[build-data] wrote ${views.length} source(s)`);
+    console.log(`[build-data] wrote ${views.length} source(s), ${plugins.length} plugin(s)`);
   }
 }
 
-async function writeIfChanged(path: string, content: string): Promise<boolean> {
-  const newHash = createHash('sha1').update(content).digest('hex');
+/**
+ * Write only when the bytes differ, so the dev server's watcher does not fire on
+ * a rebuild that produced the same output.
+ *
+ * Compared as BYTES rather than as a utf8 string: a vendored plugin directory may
+ * hold a source map, a wasm module or an image, and reading one of those as utf8
+ * would both mis-compare it and rewrite it corrupted.
+ */
+async function writeIfChanged(path: string, content: string | Uint8Array): Promise<boolean> {
+  const bytes = typeof content === 'string' ? Buffer.from(content, 'utf8') : Buffer.from(content);
+  const newHash = createHash('sha1').update(bytes).digest('hex');
   try {
-    const existing = await readFile(path, 'utf8');
-    const existingHash = createHash('sha1').update(existing).digest('hex');
-    if (existingHash === newHash) return false;
+    const existing = await readFile(path);
+    if (createHash('sha1').update(existing).digest('hex') === newHash) return false;
   } catch {
     // file does not exist
   }
-  await writeFile(path, content);
+  await writeFile(path, bytes);
   return true;
 }
 
@@ -178,7 +330,7 @@ async function* walkJsonFiles(dir: string): AsyncGenerator<string> {
   }
 }
 
-async function collectStandaloneSources(config: Config): Promise<unknown[]> {
+async function collectStandaloneSources(config: Config, manifestFor: (pluginId: string) => any): Promise<unknown[]> {
   if (!existsSync(SOURCES_DIR_IN)) return [];
   await mkdir(SOURCES_DIR_OUT, { recursive: true });
   const views: unknown[] = [];
@@ -203,7 +355,9 @@ async function collectStandaloneSources(config: Config): Promise<unknown[]> {
     });
     const outPath = join(SOURCES_DIR_OUT, `${id}.json`);
     await mkdir(dirname(outPath), { recursive: true });
-    await writeIfChanged(outPath, `${JSON.stringify(file, null, 2)}\n`);
+    // A static deploy hands this file to anyone who asks, so a plugin's rows in it
+    // are published unless the timeline said so. See stripFileForPublication.
+    await writeIfChanged(outPath, `${JSON.stringify(stripFileForPublication(file, manifestFor), null, 2)}\n`);
     views.push({
       id: `src:${id}`,
       name: file.name || basename(id),
@@ -249,7 +403,11 @@ async function collectStandaloneSources(config: Config): Promise<unknown[]> {
     }
     const outPath = join(SOURCES_DIR_OUT, `${id}.json`);
     await mkdir(dirname(outPath), { recursive: true });
-    await writeIfChanged(outPath, raw);
+    // Re-serialized rather than copied verbatim, which is the change that closes
+    // the leak: a byte-for-byte copy publishes every plugin row in the file
+    // regardless of whether the timeline consented.
+    const published = stripFileForPublication(parsed as any, manifestFor);
+    await writeIfChanged(outPath, `${JSON.stringify(published, null, 2)}\n`);
     views.push({
       id: `src:${id}`,
       name: parsed.name || basename(id),

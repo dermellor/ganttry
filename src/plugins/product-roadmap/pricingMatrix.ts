@@ -29,12 +29,18 @@ import { showDetailForId } from '../../detailPanel';
 import { showFeatureForm, addFeature, moveFeature } from './featureForm';
 import { showTierForm, addTier } from './tierForm';
 import { openCellEditor, closeCellEditor } from './cellEditor';
-import { ensureLayer, positionLayer } from './popover';
+import { anchorRect, layerFor } from './popover';
 import { renderCardsHtml } from './pricingCards';
 import { workDotHtml } from './pricingWork';
-import { type TimelineFile, type PricingFeature } from '../../types';
+import {
+  type TimelineFile,
+} from '../../types';
+import {
+  type PricingFeature,
+} from './types';
 import { hasPlugin } from '../../pluginHost/plugins';
 import { PRODUCT_ROADMAP_PLUGIN } from './plugin';
+import { currentPricing, hasPricingModel } from './compose';
 
 const PRICING_VERSION_KEY = 'timelines.pricingVersion';
 const PRICING_SUBVIEW_KEY = 'timelines.pricingSubview';
@@ -60,16 +66,15 @@ function scrollBody(host: HTMLElement): HTMLElement | null {
 
 /** True when the active timeline is a product timeline with a populated pricing model. */
 export function hasPricing(file: TimelineFile | null | undefined): file is TimelineFile {
-  return (
-    hasPlugin(file, PRODUCT_ROADMAP_PLUGIN) &&
-    !!file!.pricing &&
-    (file!.pricing.tiers.length > 0 || file!.pricing.features.length > 0)
-  );
+  // Both halves still matter: enablement decides whether the plugin belongs here
+  // at all, a populated model decides whether a view is worth offering. The second
+  // one now asks the generic store rather than a field on the core file type.
+  return hasPlugin(file, PRODUCT_ROADMAP_PLUGIN) && hasPricingModel(file);
 }
 
 // Build the full matrix table HTML (tiers × features + work column).
 function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): string {
-  const { tiers, features } = file.pricing!;
+  const { tiers, features } = currentPricing(file);
   const items = file.items ?? [];
   // Show the work column when any item is linked to any feature at all (regardless
   // of the current version filter — otherwise the column would flicker in/out), or
@@ -299,12 +304,12 @@ function wireEditing(host: HTMLElement): void {
 }
 
 // ---- feature description tooltip -------------------------------------------
-// A single styled tooltip, reused across all feature rows and re-renders. Creation
-// and placement come from popover.ts, shared with the cell editor (see the note
-// there on why these layers are fixed-on-body rather than nested in the table).
+// A single styled tooltip, reused across all feature rows and re-renders. The
+// layer itself comes from the host (see popover.ts for why the plugin no longer
+// builds it), which is also what places it clear of the table's own clipping.
 
-function ensureTip(): HTMLElement {
-  return ensureLayer('pm-tip', 'pm-tip', 'tooltip');
+function ensureTip() {
+  return layerFor('pm-tip', 'pm-tip', 'tooltip');
 }
 
 // Structured description → styled tooltip HTML: availability line, base
@@ -334,20 +339,17 @@ function featureTipHtml(f: PricingFeature, versions: string[]): string {
 
 function wireFeatureTooltips(host: HTMLElement): void {
   const tip = ensureTip();
-  tip.hidden = true; // reset across re-renders
-  const hide = () => {
-    tip.hidden = true;
-  };
+  tip.hide(); // reset across re-renders
+  const hide = () => tip.hide();
   const show = (icon: HTMLElement) => {
     const featureId = icon.closest<HTMLElement>('[data-feature-id]')?.dataset.featureId;
-    const pricing = state.activeSourceFile?.pricing;
+    const pricing = currentPricing(state.activeSourceFile);
     const f = pricing?.features.find((x) => x.id === featureId);
     if (!f) return;
     const html = featureTipHtml(f, pricing?.versions ?? []);
     if (!html) return;
-    tip.innerHTML = html;
-    tip.hidden = false;
-    positionLayer(tip, icon);
+    tip.element.innerHTML = html;
+    tip.showAt(anchorRect(icon));
   };
   host.querySelectorAll<HTMLElement>('.pm-info').forEach((icon) => {
     icon.addEventListener('mouseenter', () => show(icon));
@@ -357,8 +359,8 @@ function wireFeatureTooltips(host: HTMLElement): void {
     // Tap/click the icon: toggle the tip and don't let it open the edit form.
     icon.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (tip.hidden) show(icon);
-      else hide();
+      if (tip.visible) hide();
+      else show(icon);
     });
   });
   // A stale tooltip after scrolling would float over the wrong icon — hide it.
@@ -432,9 +434,10 @@ export function renderPricingView(host: HTMLElement): void {
     return;
   }
 
-  const versions = file.pricing!.versions ?? [];
+  const model = currentPricing(file);
+  const versions = model.versions ?? [];
   if (selectedVersion && !versions.includes(selectedVersion)) selectedVersion = null;
-  const hasHighlights = (file.pricing!.highlights?.length ?? 0) > 0;
+  const hasHighlights = (model.highlights?.length ?? 0) > 0;
   // Cards need highlights; fall back to matrix when none are defined.
   if (subView === 'cards' && !hasHighlights) subView = 'matrix';
 

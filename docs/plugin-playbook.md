@@ -58,7 +58,7 @@ Answer four questions before writing anything:
    plugin: it flows into the item form, grouping, filtering and the context menu with
    no further work.
 2. **Does it need data of its own?** Item-level values live in `metadata[key]` and
-   need nothing. Rows of its own need storage, which is [#12](https://github.com/zeitlines/zeitlines/issues/12).
+   need nothing. Rows of its own need storage, which is [#12](https://github.com/dermellor/zeitlines/issues/12).
 3. **Does it need a view of its own?** A view is a lazily loaded chunk and roughly
    ten times the work of a field. Grouping by a contributed field often gives the
    useful rendering already, so a first cut without a view is usually right.
@@ -70,8 +70,8 @@ Answer four questions before writing anything:
 
 **The budget:** one folder, one registration line, and **no core file touched**. If
 the design needs a change in the generic core, that is not permission to make one.
-It is a finding: comment on [#10](https://github.com/zeitlines/zeitlines/issues/10) or
-[#11](https://github.com/zeitlines/zeitlines/issues/11) with what was missing. Every
+It is a finding: comment on [#10](https://github.com/dermellor/zeitlines/issues/10) or
+[#11](https://github.com/dermellor/zeitlines/issues/11) with what was missing. Every
 plugin built this way measures the contract, which is the point.
 
 **Exit condition:** you can name which of the four shapes the plugin has, and no
@@ -226,7 +226,8 @@ Files, all inside the plugin's own folder:
 | `index.ts` | the lazily loaded view module, if there is a view |
 | `README.md` | what it does, the field and tool reference, the domain confidence, the GEO material from phase 1 |
 | `preview.png` | generated in phase 4, used by the catalogue |
-| `AGENTS.md` | conventions for changing **this** plugin |
+| `AGENTS.md` | conventions for changing **this** plugin: its invariants with the failure each prevents, where its data lives, what must not be renamed, and how to verify it |
+| `docs/` | anything longer than the README carries: the model reference, the migrations, the endpoints |
 
 Registration is one `register()` call in the registry
 ([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)), passing the
@@ -242,8 +243,12 @@ point of pulling them out of prompts: a rule in a prompt cannot be tested and ca
 be reused, and it is wrong in a way nobody notices until a date is wrong.
 
 **The documentation lives with the plugin from the first commit.** Do not write a
-chapter in `docs/`. See [#18](https://github.com/zeitlines/zeitlines/issues/18) for
-why the existing plugin is the counter-example.
+chapter in the core `docs/`. `product-roadmap` was the counter-example for a
+while — a 200-line chapter in `docs/pricing.md` plus a field table in
+`docs/items.md`, so uninstalling it would have left the core documentation wrong
+rather than merely shorter. Both moved into its folder
+([#18](https://github.com/dermellor/zeitlines/issues/18)), and writing it there
+in the first place costs nothing.
 
 **Exit condition:** `npm run typecheck` shows no new errors, and no file outside the
 plugin folder changed except the one registry line.
@@ -318,6 +323,19 @@ Before committing, read every sentence you wrote outside the plugin folder and a
 orphaned, it is plugin documentation and belongs in the plugin folder. If it stays
 true because it describes a mechanism and merely cites an example, it is core
 documentation and may stay.
+
+Zero mentions in the core docs is the wrong target, and aiming for it makes the
+seam chapters unreadable: „Plugins" (docs/architecture.md) is good precisely
+because it names a real case. The rule is narrower — **no core chapter is the
+home of a plugin fact.** Applied to `product-roadmap`, it left
+`docs/architecture.md` almost untouched while the field table in `docs/items.md`
+moved out entirely.
+
+The same question has a code half, and that one is checked mechanically:
+`node scripts/ci/check-plugin-isolation.mjs` refuses a core file that imports
+from a plugin folder, names a plugin id as a literal, adds a plugin-specific
+method to `TimelineRepo`, or links a plugin's markup from `index.html`. Run it
+before committing; the prose half is still yours to read.
 
 ### 5.3 The catalogue
 
@@ -402,7 +420,7 @@ single `register()` line, so parallel subagents collide on exactly one file:
 [`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts). Two ways out, in
 order of preference:
 
-1. **Land [#14](https://github.com/zeitlines/zeitlines/issues/14) first.** With the
+1. **Land [#14](https://github.com/dermellor/zeitlines/issues/14) first.** With the
    loader reading manifests out of the plugin folders, a plugin has *no* shared file
    and parallelism is free. This is the cheapest work with the largest effect on a
    batch and should be done before one, not after.
@@ -420,14 +438,14 @@ wrong date.
 
 ## What changes once the plugin platform lands
 
-The epic ([#9](https://github.com/zeitlines/zeitlines/issues/9)) makes plugins
+The epic ([#9](https://github.com/dermellor/zeitlines/issues/9)) makes plugins
 installable at runtime. Exactly two paragraphs of this playbook change:
 
 - **Registration** loses its `register()` call: the manifest already in the plugin
   folder is read by the loader instead
-  ([#14](https://github.com/zeitlines/zeitlines/issues/14)).
+  ([#14](https://github.com/dermellor/zeitlines/issues/14)).
 - **The path** becomes `src/plugins/<id>/`, with the host under `src/pluginHost/`
-  ([#19](https://github.com/zeitlines/zeitlines/issues/19)).
+  ([#19](https://github.com/dermellor/zeitlines/issues/19)).
 
 Everything else, the gate, the research, the spec, the verification and the
 publication, is written to survive that change unaltered.
@@ -446,6 +464,7 @@ publication, is written to survive that change unaltered.
 [ ] 4  Tests incl. domain rules, schema check, build, bundle split,
        preview.png, click path
 [ ] 5  Plugin README incl. tools, confidence and contribution call;
-       uninstall test; plugins:catalogue:check green
+       uninstall test on every sentence outside the plugin folder;
+       check-plugin-isolation green; plugins:catalogue:check green
 [ ] 6  Measurement scheduled; committed, pushed, deploy green
 ```
