@@ -703,6 +703,48 @@ fresh reservation reaches the track one redraw late, because vis measures the la
 the measurement. `repackLanes` schedules a redraw on the next frame for it; two calls
 in one tick collapse into one and do not help.
 
+### What is left over jumps, and is eased rather than removed
+
+Everything above shrinks the number of moves. The ones that remain are real —
+a re-centre reassigns lanes, a lane count change moves whole tracks — and they
+land inside a single frame, on top of a horizontal movement the user is driving
+themselves. [`src/laneTransition.ts`](../src/laneTransition.ts) plays that step
+out over 260ms instead, and `repackLanes` is the only caller: a rebuild, a filter
+or a drag moves items for a reason the user just caused directly, and easing
+those in would read as lag.
+
+**It is FLIP rather than a CSS transition, because there is no one property to
+transition.** A point item carries both axes in a single `transform`
+(`Item.repositionXY`), so easing that property would smear the pan itself; a
+range item writes `top`. What covers both is a Web Animations effect with
+`composite: 'add'` — vis keeps writing the inline value as the base, and this
+adds a decaying offset on top. Two shifts overlapping in time stack the same way,
+each carrying its own distance.
+
+**The before/after measurement must not use `getBoundingClientRect`.** A rect
+includes the offset this module is itself animating, so a re-pack landing while
+an earlier shift is still easing reads the eased position as the "before" and
+invents a delta for an item that never moved — every animating item then spawns a
+fresh animation every frame. Measured on a continuous zoom over a 752-item
+timeline: **8817** animations where **761** items had moved. vis's own `item.top`
+and `Group.top` are plain layout numbers that no transform touches, so they give
+the position an item would sit at with nothing animating, which is the only
+stable thing to difference against. After the switch the same zoom starts 546,
+and 200 frames of panning start 35.
+
+**The dependency arrows have to be driven per frame while it runs** (`refresh()`
+on [`src/arrows.ts`](../src/arrows.ts)): they measure item DOM, and vis emits no
+`changed` event during the easing, so an arrow would otherwise hang in mid-air
+for its duration. The hierarchy folders deliberately are not driven — they derive
+their top from `item.top`, which is already final the moment the DataSet updates,
+so an outline snaps while its children ease.
+
+**On a roadmap shorter than the reservation floor this never fires from panning
+at all.** The neighbourhood then covers the whole timeline (see above), so no
+amount of horizontal travel re-centres it and the only trigger left is zoom. All
+three committed examples are under a year, which is why judging it needs a
+multi-year timeline.
+
 ## View modes: Timeline / Liste
 
 The header **Ansicht** icon toggle (a segmented two-button control, styled in

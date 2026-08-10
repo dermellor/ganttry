@@ -188,6 +188,16 @@ export class DependencyArrows {
     this.settleTimers = [];
   }
 
+  /**
+   * Redraw now, synchronously. For the lane-shift animation, which runs between
+   * vis's own 'changed' events: the arrows have to follow the eased position
+   * every frame, and going through `scheduleRedraw` would put them a frame
+   * behind the items they connect.
+   */
+  refresh(): void {
+    this.redraw();
+  }
+
   dispose(): void {
     if (this.rafToken) cancelAnimationFrame(this.rafToken);
     this.clearSettleTimers();

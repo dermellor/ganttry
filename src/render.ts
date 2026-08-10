@@ -34,6 +34,7 @@ import { HierarchyFolders } from './hierarchyFolders';
 import { PhaseBand } from './phaseBand';
 import { MilestoneRail, railMarks } from './milestoneRail';
 import { scrollItemIntoView } from './visGeometry';
+import { withLaneShift } from './laneTransition';
 import { iconSpanHtml } from './icons';
 import { DEFAULT_STATUS } from './status';
 import {
@@ -933,6 +934,19 @@ function currentPxPerDay(): number | null {
   return days > 0 ? width / days : Infinity;
 }
 
+// The arrow overlay measures the item DOM, and vis emits no event while a lane
+// shift is easing out — so it has to be driven per frame or an arrow hangs in
+// mid-air for the duration of the animation.
+//
+// The hierarchy folders deliberately are *not* driven here: they derive their
+// top from vis's own `item.top`, which is already the final value the moment the
+// DataSet updates, so redrawing them per frame would paint the same rectangle
+// fifteen times. An outline that snaps while its children ease is the known cost
+// of this experiment.
+function refreshItemOverlays(): void {
+  arrows?.refresh();
+}
+
 // Coalesce re-packs to one per animation frame: `rangechange` fires many times
 // during a single zoom/pan gesture, but the lanes only need recomputing once
 // per painted frame.
@@ -987,7 +1001,12 @@ export function repackLanes(): void {
   const changed = displayItems
     .filter((it) => present.has(String(it.id)) && it.subgroup !== before.get(it.id))
     .map((it) => ({ id: it.id, subgroup: it.subgroup }));
-  if (changed.length) itemsDs.update(changed);
+  // The lane change is the vertical jump the user sees while panning
+  // horizontally, so it is the one place the viewer animates a layout change
+  // (`laneTransition.ts` carries the why). Scoped to the repack on purpose: a
+  // rebuild, a filter or a drag moves items for reasons the user just caused
+  // directly, and easing those in would read as lag.
+  if (changed.length) withLaneShift(els.timeline, () => itemsDs!.update(changed), refreshItemOverlays);
 
   // The reservation has to reach the label too, or the track keeps yesterday's
   // height. It matters that the reservation always covers the lanes the packing just
@@ -1007,7 +1026,13 @@ export function repackLanes(): void {
       // two `redraw()` calls in the same tick collapse into one, which is why this
       // waits for the next frame. Without it the track keeps the height of the
       // previous lane count and its label overflows the row.
-      requestAnimationFrame(() => timeline?.redraw());
+      //
+      // A second lane-shift pass, because this redraw is the one that moves
+      // whole tracks: a track that gained or lost a lane pushes everything below
+      // it, an amount the first pass could not have measured yet.
+      requestAnimationFrame(() =>
+        withLaneShift(els.timeline, () => timeline?.redraw(), refreshItemOverlays),
+      );
     }
   }
 }
