@@ -59,14 +59,35 @@ function canonical(value: unknown): string {
 }
 
 /**
- * The old model, in the shape the new one can be compared against.
+ * A model in the shape the two sides can be compared in.
  *
- * `rowVersion` is server-managed bookkeeping that the generic store keeps in its
- * own column, so it is not part of what moved and comparing it would report a
- * difference that is not one.
+ * `rowVersion` is server-managed bookkeeping the store keeps in the row
+ * envelope, so it is not part of what moved and comparing it reports a
+ * difference that is not one. Stripping it has to happen on **both** sides:
+ * the legacy side loses it by round-tripping through `collectionsFromPricing`,
+ * but the stored side picks it up again, because composing a model now carries
+ * the envelope's counter out as `rowVersion` — that is what lets a form send
+ * `If-Match` on the first edit after a load.
+ *
+ * Found on the production run: every feature, tier and highlight differed by
+ * exactly that one key, and the migration reported a loss that had not happened.
  */
+function withoutRowVersions(pricing: Pricing): Pricing {
+  const strip = <T extends { rowVersion?: number }>(entity: T): T => {
+    const { rowVersion: _rv, ...rest } = entity;
+    return rest as T;
+  };
+  const out: Pricing = {
+    features: (pricing.features ?? []).map(strip),
+    tiers: (pricing.tiers ?? []).map(strip),
+  };
+  if (pricing.highlights?.length) out.highlights = pricing.highlights.map(strip);
+  if (pricing.versions?.length) out.versions = pricing.versions;
+  return out;
+}
+
 function comparable(pricing: Pricing): Pricing {
-  return pricingFromCollections(collectionsFromPricing(pricing), pricing.versions ?? []);
+  return withoutRowVersions(pricingFromCollections(collectionsFromPricing(pricing), pricing.versions ?? []));
 }
 
 type Report = { id: string; rows: number; ok: boolean; detail?: string };
@@ -94,7 +115,7 @@ async function migrateOne(repo: TimelineRepo, legacyOf: LegacyReader, id: string
   // The composition is checked against THIS timeline's real model before anything
   // is written, so a dry run is a genuine test rather than a row count.
   const before = canonical(comparable(pricing));
-  const roundTrip = canonical(pricingFromCollections(collections, pricing.versions ?? []));
+  const roundTrip = canonical(withoutRowVersions(pricingFromCollections(collections, pricing.versions ?? [])));
   if (before !== roundTrip) {
     return { id, rows: rowCount, ok: false, detail: 'the model does not survive the round trip in memory' };
   }
@@ -115,7 +136,9 @@ async function migrateOne(repo: TimelineRepo, legacyOf: LegacyReader, id: string
   // the real id derivation rather than the in-memory objects above.
   const stored = await repo.listPluginData(id, [PRODUCT_ROADMAP_PLUGIN]);
   const entry = await repo.getTimelinePlugin(id, PRODUCT_ROADMAP_PLUGIN);
-  const after = canonical(pricingFromCollections(stored[PRODUCT_ROADMAP_PLUGIN], versionsFromConfig(entry?.config)));
+  const after = canonical(
+    withoutRowVersions(pricingFromCollections(stored[PRODUCT_ROADMAP_PLUGIN], versionsFromConfig(entry?.config))),
+  );
   if (before !== after) {
     return { id, rows: rowCount, ok: false, detail: 'stored rows do not compose back to the original model' };
   }
