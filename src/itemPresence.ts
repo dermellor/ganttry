@@ -22,6 +22,7 @@ import {
 } from './presenceModel';
 import { Avatar } from './design-system';
 import { realIdOf } from './grouping';
+import { itemPresenceTreatment } from './itemPresenceTreatment';
 import { state } from './state';
 
 // Real item id → the other users currently on it (never ourselves).
@@ -101,7 +102,17 @@ function paint(): void {
     if (!box) continue;
     const users = marks.get(realIdOf(displayId));
     if (users?.length) {
-      applyMark(box, users);
+      // A stored background has two display objects for one real item: the
+      // full-height tint and its foreground title. Painting presence on both
+      // produced a huge pulsing frame plus a second frame around the title.
+      // The tint is only the phase's visual fill; presence belongs once, next
+      // to the title users identify as the editable entry.
+      const treatment = itemPresenceTreatment(box.classList);
+      if (treatment === 'none') {
+        if (painted.has(displayId)) removeMark(box);
+        continue;
+      }
+      applyMark(box, users, treatment === 'ring');
       stillPainted.add(displayId);
     } else if (painted.has(displayId)) {
       removeMark(box);
@@ -110,12 +121,16 @@ function paint(): void {
   painted = stillPainted;
 }
 
-function applyMark(box: HTMLElement, users: PresenceEntry[]): void {
+function applyMark(box: HTMLElement, users: PresenceEntry[], showRing: boolean): void {
   const editing = users.some((u) => u.editing);
-  box.classList.add('has-remote-presence');
-  box.classList.toggle('is-remote-editing', editing);
-  // The ring picks up the colour of the first (topmost) user's avatar.
-  box.style.setProperty('--presence-hue', String(hueFor(users[0].email)));
+  box.classList.toggle('has-remote-presence', showRing);
+  box.classList.toggle('is-remote-editing', showRing && editing);
+  if (showRing) {
+    // The ring picks up the colour of the first (topmost) user's avatar.
+    box.style.setProperty('--presence-hue', String(hueFor(users[0].email)));
+  } else {
+    box.style.removeProperty('--presence-hue');
+  }
 
   const signature = `${users.map((u) => `${u.email}:${u.editing ? 1 : 0}`).join(',')}`;
   let mark = box.querySelector<HTMLElement>(`:scope > .${MARK_CLASS}`);

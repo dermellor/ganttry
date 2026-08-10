@@ -6,6 +6,7 @@ import type { StatusKey } from './status';
 import { durationToMs } from './date';
 import { childrenByParent, readParentId, resolveParents } from './itemHierarchy';
 import { CLONE_SEP } from './cloneId';
+import { BACKGROUND_LABEL_CLASS } from './backgroundItemDisplay';
 
 export const UNGROUPED = '_ungrouped';
 
@@ -69,7 +70,6 @@ export type TimelineGroup = {
 // viewport, and `timeline.css` turns this number into its `min-height`. Same
 // mechanism the phase-band spacer already uses (`withBandSpacer` in render.ts).
 const LANE_COUNT_PROPERTY = '--lanes';
-export const BACKGROUND_LABEL_CLASS = 'background-item-label';
 const BACKGROUND_STACK_PROPERTY = '--background-stack';
 const BACKGROUND_TINT_PROPERTY = '--background-tint';
 
