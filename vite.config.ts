@@ -28,6 +28,15 @@ process.env.VITE_DATA_BASE ??= `/${DATA_DIR}`;
 // it comes from the cascade and an instance profile can carry its own.
 const PORT = Number(envValue('TIMELINES_PORT')) || 3120;
 
+// Vite's default node_modules/.vite cache is shared by every process in a
+// checkout. Two instances optimising dependencies there at once replace each
+// other's chunks, and the browser then gets 504 "Outdated Optimize Dep" for
+// imports such as marked.js. The port is already unique per instance; WT_PORT
+// carries the equivalent identity for worktree previews whose CLI flag
+// overrides `server.port` below.
+const CACHE_PORT = Number(process.env.WT_PORT) || PORT;
+const VITE_CACHE_DIR = resolve(__dirname, 'node_modules', '.vite', String(CACHE_PORT));
+
 // Additive dual-adapter: prefer native postgres.js (TIMELINES_DATABASE_URL),
 // else supabase-js (TIMELINES_SUPABASE_URL + SERVICE_KEY). Both factories cache,
 // so calling them per request is cheap. Neither configured → the "no DB" path.
@@ -295,6 +304,7 @@ const CSP = buildCsp({
 });
 
 export default defineConfig({
+  cacheDir: VITE_CACHE_DIR,
   build: {
     rollupOptions: {
       // Two entries. The design-system playground is a page of its own rather
