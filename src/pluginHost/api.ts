@@ -14,8 +14,8 @@
 // into the app's internals — see docs/design-system.md.
 //
 // Packaging it as `@zeitlines/plugin-api` belongs with distribution
-// (<https://github.com/dermellor/zeitlines/issues/15>); until a plugin is built
-// outside this repository (<https://github.com/dermellor/zeitlines/issues/16>) the
+// (<https://github.com/zeitlines/zeitlines/issues/15>); until a plugin is built
+// outside this repository (<https://github.com/zeitlines/zeitlines/issues/16>) the
 // path is the package.
 
 export {
