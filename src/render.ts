@@ -41,7 +41,7 @@ import {
 import type { TimelineFile, TimelineFileItem, View } from './types';
 import { durationToMs, parseLocalDay } from './date';
 import { firstAssignableGroup, resolveAssignableGroup } from './groupHierarchy';
-import { hiddenByCollapse } from './itemHierarchy';
+import { hiddenByCollapse, regroupSubtree } from './itemHierarchy';
 import {
   state,
   els,
@@ -901,7 +901,10 @@ function handleMove(item: TimelineItem, callback: (item: TimelineItem | null) =>
     // parent lane snaps into its first leaf child instead of the parent itself.
     const groups = state.activeSourceFile.groups ?? state.activeBuild?.groups ?? [];
     const resolved = resolveAssignableGroup(item.group, groups) ?? String(item.group);
-    src.group = resolved;
+    // A summary bar drags its subtree along: what the band shows as one unit
+    // moves as one (regroupSubtree owns which descendants qualify). It writes
+    // `src.group` too, the head being the first item it moves.
+    regroupSubtree(state.activeSourceFile.items, realId, resolved);
     item.group = resolved;
   }
 

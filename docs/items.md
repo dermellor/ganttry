@@ -215,6 +215,20 @@ no row in this track, so banding under it would pull the child out of its own
 track — the same rule the dependency edges follow. The link still shows in the
 item form and still folds.
 
+**Changing an item's track moves its subtree with it.** Dragging a summary bar
+onto another track, or picking a track in the item form, carries every descendant
+along, grandchildren included (`regroupSubtree`). Leaving them behind is what the
+containment link exists to prevent: what reads as one unit would come apart, and
+the user would re-assign every child by hand. Both write paths call the same
+function, so the drag and the form cannot come to mean two different things.
+
+What travels is the *contiguous* subtree. A descendant that sits on a **third**
+track keeps it, and so does everything below that descendant: per the rule above
+it is not drawn under this bar at all, so nothing on screen suggests it would
+come along, and its placement was a decision. Moving a child alone is therefore
+still possible — it takes its own children and leaves its parent where it is.
+The `metadata.parent` links themselves are never touched by a track change.
+
 **The parent's own dates stay authoritative.** They are maintained by hand, and a
 rollup that overwrote them would replace a decision with a calculation. Where the
 children run outside them, the item form says so under „Untereinträge" („…

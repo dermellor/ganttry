@@ -7,7 +7,9 @@ import {
   extentOverflow,
   hiddenByCollapse,
   hierarchyDepth,
+  parentsOfItems,
   readParentId,
+  regroupSubtree,
   resolveParents,
   treeOrder,
   wouldCreateCycle,
@@ -148,4 +150,85 @@ test('treeOrder treats a child with an absent parent as a root', () => {
     out.map((e) => [e.item.id, e.depth]),
     [['D-2', 0]],
   );
+});
+
+// The stored shape: `metadata.parent` on the child, a `group` per item.
+const kid = (id: string, group: string | undefined, parent?: string) => ({
+  id,
+  ...(group === undefined ? {} : { group }),
+  ...(parent ? { metadata: { parent } } : {}),
+});
+
+test('parentsOfItems reads the links off stored items and sanitizes them', () => {
+  const out = parentsOfItems([
+    kid('a', 'T'),
+    kid('b', 'T', 'a'),
+    kid('c', 'T', 'ghost'), // unknown target
+    kid('d', 'T', 'd'), // self-link
+    { group: 'T', metadata: { parent: 'a' } }, // no id: cannot be either end
+  ]);
+  assert.deepEqual([...out], [['b', 'a']]);
+});
+
+test('regroupSubtree carries the whole same-track subtree along', () => {
+  const items = [
+    kid('a', 'T1'),
+    kid('b', 'T1', 'a'),
+    kid('c', 'T1', 'b'), // grandchild
+    kid('x', 'T1'), // same track, unrelated
+  ];
+  assert.deepEqual(regroupSubtree(items, 'a', 'T2'), ['a', 'b', 'c']);
+  assert.deepEqual(
+    items.map((i) => i.group),
+    ['T2', 'T2', 'T2', 'T1'],
+  );
+});
+
+// A descendant parked on a third track is not drawn under this bar (the bands
+// are per-track), so dragging the bar must not silently relocate it — and its
+// own children stay with it rather than being pulled out from under it.
+test('regroupSubtree stops at a descendant on another track', () => {
+  const items = [kid('a', 'T1'), kid('b', 'T3', 'a'), kid('c', 'T3', 'b'), kid('d', 'T1', 'b')];
+  assert.deepEqual(regroupSubtree(items, 'a', 'T2'), ['a']);
+  assert.deepEqual(
+    items.map((i) => i.group),
+    ['T2', 'T3', 'T3', 'T1'],
+  );
+});
+
+test('regroupSubtree moves a child alone without touching its parent', () => {
+  const items = [kid('a', 'T1'), kid('b', 'T1', 'a'), kid('c', 'T1', 'b')];
+  assert.deepEqual(regroupSubtree(items, 'b', 'T2'), ['b', 'c']);
+  assert.deepEqual(
+    items.map((i) => i.group),
+    ['T1', 'T2', 'T2'],
+  );
+});
+
+// Items without a group share the ungrouped track, so they travel together too.
+test('regroupSubtree treats "no group" as a track of its own', () => {
+  const items = [kid('a', undefined), kid('b', undefined, 'a'), kid('c', 'T1', 'a')];
+  assert.deepEqual(regroupSubtree(items, 'a', 'T2'), ['a', 'b']);
+  assert.deepEqual(
+    items.map((i) => i.group),
+    ['T2', 'T2', 'T1'],
+  );
+});
+
+test('regroupSubtree writes nothing when the item is already on that track', () => {
+  const items = [kid('a', 'T1'), kid('b', 'T1', 'a')];
+  assert.deepEqual(regroupSubtree(items, 'a', 'T1'), []);
+  assert.deepEqual(regroupSubtree(items, 'ghost', 'T2'), []);
+  assert.deepEqual(
+    items.map((i) => i.group),
+    ['T1', 'T1'],
+  );
+});
+
+// Hand-edited JSON produces cycles, and the walk would never terminate on one.
+test('regroupSubtree terminates on a cyclic link', () => {
+  const items = [kid('a', 'T1'), kid('b', 'T1', 'a'), kid('c', 'T1', 'b')];
+  (items[0] as { metadata?: unknown }).metadata = { parent: 'c' };
+  const moved = regroupSubtree(items, 'a', 'T2');
+  assert.deepEqual(new Set(moved), new Set(['a', 'b', 'c']));
 });

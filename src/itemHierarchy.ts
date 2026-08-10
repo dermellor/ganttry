@@ -71,6 +71,76 @@ export function childrenByParent(parents: Map<string, string>): Map<string, stri
   return out;
 }
 
+/** Enough of a stored item to read its links and its track off. */
+export type LinkedItem = { id?: string; group?: string; metadata?: unknown };
+
+/**
+ * The sanitized child→parent map of a list of *stored* items.
+ *
+ * The write paths need the tree as it stands in the source file, not as the last
+ * build saw it: one form pass can re-parent and re-group in the same keystroke,
+ * and the build's copy still describes the state before it. An item without an
+ * id is skipped — nothing can reference it, so it can be neither end of a link.
+ */
+export function parentsOfItems(items: readonly LinkedItem[]): Map<string, string> {
+  const raw = new Map<string, string>();
+  const known = new Set<string>();
+  for (const it of items) {
+    if (!it.id) continue;
+    known.add(it.id);
+    const parent = readParentId(it.metadata);
+    if (parent) raw.set(it.id, parent);
+  }
+  return resolveParents(raw, known);
+}
+
+/**
+ * Move the subtree headed by `id` onto `toGroup`, in place, and return every id
+ * that changed track — the head first. Already there: nothing is written and the
+ * result is empty.
+ *
+ * What follows is the *contiguous* subtree: a descendant comes along only if it
+ * sat on the same track as the head, and the walk stops descending at one that
+ * did not. A track is banded by hierarchy inside that track only (see
+ * `assignLaneSubgroups`), so a child parked on a third track is not drawn under
+ * this bar at all — nothing on screen suggests it would travel with it, and that
+ * placement was a decision. What the band *does* show moves as one unit, because
+ * re-assigning ten children by hand is exactly the work a containment link
+ * exists to remove.
+ *
+ * The links come from the items themselves and go through `resolveParents`, so a
+ * cycle in hand-edited JSON costs one edge instead of recursing forever.
+ */
+export function regroupSubtree<T extends LinkedItem>(
+  items: T[],
+  id: string,
+  toGroup: string,
+): string[] {
+  const byId = new Map<string, T>();
+  for (const it of items) if (it.id) byId.set(it.id, it);
+  const head = byId.get(id);
+  if (!head || head.group === toGroup) return [];
+
+  const fromGroup = head.group;
+  head.group = toGroup;
+  const moved = [id];
+
+  const children = childrenByParent(parentsOfItems(items));
+  const queue = [id];
+  while (queue.length) {
+    for (const childId of children.get(queue.shift() as string) ?? []) {
+      const child = byId.get(childId);
+      // Compared against the *old* track, so a descendant that already lives
+      // elsewhere keeps its own — and its own children with it.
+      if (!child || child.group !== fromGroup) continue;
+      child.group = toGroup;
+      moved.push(childId);
+      queue.push(childId);
+    }
+  }
+  return moved;
+}
+
 /**
  * How deep each item sits: 0 for an item with no parent, 1 for its children, and
  * so on. An item nobody links to and that links to nobody never gets an entry at
