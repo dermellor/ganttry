@@ -24,9 +24,8 @@ import {
   setStatus,
   syncUrl,
   isEditableView,
-  MILESTONES_ONLY_KEY,
-  VIEW_MODE_KEY,
-  GROUP_BY_KEY,
+  loadViewPrefs,
+  saveViewPrefs,
   type ViewMode,
 } from './state';
 import {
@@ -119,7 +118,27 @@ async function applyView(viewId: string) {
   localStorage.setItem('timelines.view', viewId);
   els.viewSelect.value = viewId;
   hideDetail();
+  // Before the render that reads them: presentation, grouping, filter and the
+  // milestones narrowing belong to the timeline being opened, and a link may
+  // override them (state.pendingPrefs). Both halves have to be in place first, or
+  // the first paint shows the previous timeline's filter.
+  loadViewPrefs(viewId);
+  const wanted = state.pendingPrefs;
+  state.pendingPrefs = null;
+  if (wanted) {
+    if (wanted.milestonesOnly != null) state.milestonesOnly = wanted.milestonesOnly;
+    if (wanted.mode) state.viewMode = wanted.mode;
+    // A followed link becomes this timeline's stored state, exactly as the
+    // instance-wide key used to be written when a link carried a mode.
+    saveViewPrefs(viewId);
+  }
+  els.milestonesOnly.checked = state.milestonesOnly;
+  setModeButtons(state.viewMode);
   await renderTimeline(view);
+  // The mode is per timeline now, so a switch can change it: the sections have to
+  // follow, not just the buttons. Persisting here would write the stored value
+  // straight back, so it stays off.
+  applyViewMode(state.viewMode, { persist: false });
   updatePluginViews();
   syncUrl();
 }
@@ -220,7 +239,7 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
     repackLanes();
   }
   if (persist) {
-    localStorage.setItem(VIEW_MODE_KEY, mode);
+    saveViewPrefs();
     syncUrl();
   }
 }
@@ -301,18 +320,18 @@ async function bootstrap() {
       ? savedView
       : cfg.defaultView;
 
-  if (urlState.milestones != null) {
-    state.milestonesOnly = !!urlState.milestones;
-    localStorage.setItem(MILESTONES_ONLY_KEY, String(state.milestonesOnly));
+  // What the link asks for, held until applyView has loaded the opened timeline's
+  // own state and can let the link win over it. Only keys the link actually
+  // carries: an absent one means „whatever this timeline remembers", which is why
+  // this is not simply read as false / 'timeline'.
+  if (urlState.milestones != null || urlState.mode) {
+    state.pendingPrefs = {
+      ...(urlState.milestones != null && { milestonesOnly: !!urlState.milestones }),
+      // A shared link may carry a pre-plugin mode id (`mode=pricing`), so it goes
+      // through the same legacy lookup as the stored value.
+      ...(urlState.mode && { mode: readViewMode(urlState.mode, legacyViewMode) }),
+    };
   }
-
-  if (urlState.mode) {
-    // A shared link may carry a pre-plugin mode id (`mode=pricing`), so it goes
-    // through the same legacy lookup as the stored value.
-    state.viewMode = readViewMode(urlState.mode, legacyViewMode);
-    localStorage.setItem(VIEW_MODE_KEY, state.viewMode);
-  }
-  setModeButtons(state.viewMode);
   setupListView();
   setupFilterControl();
 
@@ -326,8 +345,8 @@ async function bootstrap() {
   state.settingsSection = urlState.settings != null ? settingsSection(urlState.settings) : null;
 
   state.suppressUrlSync = true;
+  // applyView loads that timeline's display state and applies the mode itself.
   await applyView(initialView);
-  applyViewMode(state.viewMode, { persist: false });
   state.suppressUrlSync = false;
   syncUrl();
 
@@ -352,7 +371,7 @@ async function bootstrap() {
   els.milestonesOnly.checked = state.milestonesOnly;
   els.milestonesOnly.addEventListener('change', () => {
     state.milestonesOnly = els.milestonesOnly.checked;
-    localStorage.setItem(MILESTONES_ONLY_KEY, String(state.milestonesOnly));
+    saveViewPrefs();
     if (state.activeView && state.activeBuild) {
       applyBuildToDataSets();
       repackLanes();
@@ -377,7 +396,7 @@ async function bootstrap() {
   // sections. Persist the choice, then repaint whichever view is active.
   els.groupBy.addEventListener('change', () => {
     state.groupBy = els.groupBy.value || GROUP_DIM;
-    localStorage.setItem(GROUP_BY_KEY, state.groupBy);
+    saveViewPrefs();
     if (state.viewMode === 'list') renderListView();
     else applyGrouping();
   });
@@ -445,11 +464,24 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
       await showSettings(wantSettings);
     }
 
+    // An incoming hash is authoritative about the whole display state, absences
+    // included: no `m` means milestones off, no `mode` means the timeline. That is
+    // what makes back/forward reverse a narrowing rather than leave it standing.
     const wantMilestones = !!incoming.milestones;
-    if (wantMilestones !== state.milestonesOnly) {
+    const wantMode: ViewMode = readViewMode(incoming.mode, legacyViewMode);
+
+    const targetViewId = incoming.view ?? state.config.defaultView;
+    const targetWindow = parseUrlWindow(incoming);
+    const switching = state.activeView?.id !== targetViewId;
+
+    // On a switch these go through pendingPrefs, or applyView's load would
+    // overwrite them with the target timeline's stored state.
+    if (switching) {
+      state.pendingPrefs = { milestonesOnly: wantMilestones, mode: wantMode };
+    } else if (wantMilestones !== state.milestonesOnly) {
       state.milestonesOnly = wantMilestones;
       els.milestonesOnly.checked = wantMilestones;
-      localStorage.setItem(MILESTONES_ONLY_KEY, String(wantMilestones));
+      saveViewPrefs();
       if (state.activeView && state.activeBuild) {
         applyBuildToDataSets();
         setStatus(statusFor(state.activeView, state.activeBuild));
@@ -457,12 +489,7 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
       }
     }
 
-    const wantMode: ViewMode = readViewMode(incoming.mode, legacyViewMode);
-
-    const targetViewId = incoming.view ?? state.config.defaultView;
-    const targetWindow = parseUrlWindow(incoming);
-
-    if (state.activeView?.id !== targetViewId) {
+    if (switching) {
       state.pendingItem = incoming.item ?? null;
       state.pendingWindow = targetWindow;
       await applyView(targetViewId);
@@ -486,8 +513,15 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
       }
     }
 
-    if (wantMode !== state.viewMode) localStorage.setItem(VIEW_MODE_KEY, wantMode);
-    applyViewMode(wantMode, { persist: false });
+    // applyView already applied the mode from pendingPrefs on the switching path;
+    // on the same-view path this is where the incoming mode lands.
+    if (!switching) {
+      if (wantMode !== state.viewMode) {
+        state.viewMode = wantMode;
+        saveViewPrefs();
+      }
+      applyViewMode(wantMode, { persist: false });
+    }
   } finally {
     state.suppressUrlSync = false;
   }

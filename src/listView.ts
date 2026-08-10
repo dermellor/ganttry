@@ -127,8 +127,13 @@ export function renderListView(): void {
       return a.start.localeCompare(b.start);
     });
 
+  // The resolved dimension is deliberately NOT written back to state.groupBy:
+  // that field is the user's choice, and it is now stored per timeline. A
+  // dimension that is momentarily unavailable (the active filter left no tagged
+  // item) would otherwise be flattened to 'group' and saved, so clearing the
+  // filter would not bring the grouping back. resolveGrouping derives the
+  // fallback on every render, which is where it belongs.
   const { dim, options } = resolveGrouping(entries);
-  state.groupBy = dim;
   syncGroupByControl(options, dim);
   syncFilterControl();
 

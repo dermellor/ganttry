@@ -27,6 +27,16 @@ import { writeUrlState, type UrlState } from './urlState';
 import { legacyViewMode } from './pluginHost/registry';
 import type { LoadOutcome } from './pluginHost/loader';
 import { readViewMode, type ViewMode } from './pluginHost/viewMode';
+import {
+  DEFAULT_VIEW_PREFS,
+  LEGACY_PREF_KEYS,
+  legacyViewPrefs,
+  parseViewPrefsStore,
+  VIEW_PREFS_KEY,
+  viewPrefsFor,
+  withViewPrefs,
+  type ViewPrefsStore,
+} from './viewPrefs';
 
 // The frame is built rather than looked up: `index.html` carries no markup any
 // more, because `src/export.ts` needs the same frame and two hand-kept copies of
@@ -39,18 +49,6 @@ import { readViewMode, type ViewMode } from './pluginHost/viewMode';
 // plugin it may not have.
 export const els = mountAppShell();
 
-export const MILESTONES_ONLY_KEY = 'timelines.milestonesOnly';
-export const VIEW_MODE_KEY = 'timelines.viewMode';
-// Which dimension both the timeline and list views group by. 'group' (default),
-// 'tag', or a custom field key (e.g. 'cf:tier'). Persisted; validated against the
-// active build on render, falling back to 'group' when the chosen dimension isn't
-// available. The localStorage key keeps its historical name for back-compat.
-export const GROUP_BY_KEY = 'timelines.listGroupBy';
-// The filter dimension ('' = off) and the selected values within it. Independent
-// of the grouping dimension: you can group by one dimension and filter by
-// another. Both shared across the timeline and list views. Persisted.
-export const FILTER_DIM_KEY = 'timelines.filterDim';
-export const FILTER_VALUES_KEY = 'timelines.filterValues';
 // Which parent items have their subtree folded away, per source: item ids are
 // only unique within one timeline, so a flat list would fold an unrelated item
 // in the next source that happens to share an id. Persisted because a fold is a
@@ -162,14 +160,25 @@ export interface AppState {
   pendingItem: string | null;
   pendingWindow: { start: Date; end: Date } | null;
   suppressUrlSync: boolean;
+  // The five values below describe how ONE timeline is being looked at, and they
+  // are stored per timeline (see viewPrefs.ts). `loadViewPrefs` swaps them on
+  // every view change, `saveViewPrefs` writes them back.
   milestonesOnly: boolean;
   viewMode: ViewMode;
-  // Shared grouping dimension for the timeline and list views (see GROUP_BY_KEY).
+  // Shared grouping dimension for the timeline and list views. 'group'
+  // (default), 'tag', or a custom field key (e.g. 'cf:tier'); validated against
+  // the active build on render, falling back to 'group' when the stored
+  // dimension is not available on this timeline.
   groupBy: string;
-  // Shared value filter (see FILTER_DIM_KEY): the dimension to filter on ('' =
-  // off) and the selected bucket values within it.
+  // Shared value filter: the dimension to filter on ('' = off) and the selected
+  // bucket values within it. Independent of the grouping dimension.
   filterDim: string;
   filterValues: string[];
+  // Display state a link asked for, applied on top of what the timeline being
+  // opened remembers. Same pattern as pendingItem / pendingWindow above: the URL
+  // is read before the view exists, so it waits here until applyView has loaded
+  // that timeline's own state and can let the link win over it.
+  pendingPrefs: { mode?: ViewMode; milestonesOnly?: boolean } | null;
   // Parent items whose children are folded away in the ACTIVE source (see
   // COLLAPSED_ITEMS_KEY). Swapped wholesale by loadCollapsedItems on every view
   // change, so nothing here ever refers to another timeline's ids.
@@ -217,27 +226,87 @@ export const state: AppState = {
   pendingItem: null,
   pendingWindow: null,
   suppressUrlSync: false,
-  milestonesOnly: localStorage.getItem(MILESTONES_ONLY_KEY) === 'true',
-  // A stored mode may predate addressable plugin views (`pricing`), so it goes
-  // through the legacy lookup rather than a bare comparison: renaming the encoding
-  // without it would silently reset every user's saved view.
-  viewMode: readViewMode(localStorage.getItem(VIEW_MODE_KEY), legacyViewMode),
-  groupBy: localStorage.getItem(GROUP_BY_KEY) || 'group',
-  filterDim: localStorage.getItem(FILTER_DIM_KEY) || '',
-  filterValues: (() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(FILTER_VALUES_KEY) || '[]');
-      return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : [];
-    } catch {
-      return [];
-    }
-  })(),
+  // Defaults only: which timeline is being opened is not known at module load, and
+  // these five belong to it. `loadViewPrefs` fills them in from that timeline's
+  // stored state before the first render reads them.
+  milestonesOnly: DEFAULT_VIEW_PREFS.milestonesOnly,
+  viewMode: 'timeline',
+  groupBy: DEFAULT_VIEW_PREFS.groupBy,
+  filterDim: DEFAULT_VIEW_PREFS.filterDim,
+  filterValues: [],
+  pendingPrefs: null,
   collapsedItems: new Set(),
   persisting: false,
   persistAgain: false,
   lastFormPersistAt: 0,
   throttlePersistTimer: null,
 };
+
+function readViewPrefsStore(): ViewPrefsStore {
+  return parseViewPrefsStore(localStorage.getItem(VIEW_PREFS_KEY));
+}
+
+function writeViewPrefsStore(store: ViewPrefsStore): void {
+  try {
+    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(store));
+  } catch {
+    // A full or disabled localStorage must not break switching views. Same rule
+    // as the fold store below: a display preference is never load-bearing.
+  }
+}
+
+/**
+ * Carry the instance-wide keys over to the first timeline opened after the
+ * update, then drop them. Skipped once that timeline has state of its own, so a
+ * left-over key cannot overwrite a real preference later.
+ */
+function adoptLegacyViewPrefs(store: ViewPrefsStore, viewId: string): ViewPrefsStore {
+  const legacy = legacyViewPrefs((key) => localStorage.getItem(key));
+  if (!legacy) return store;
+  const next = store[viewId]
+    ? store
+    : withViewPrefs(store, viewId, {
+        ...DEFAULT_VIEW_PREFS,
+        ...legacy,
+        filterValues: legacy.filterValues ?? [],
+      });
+  for (const key of Object.values(LEGACY_PREF_KEYS)) localStorage.removeItem(key);
+  if (next !== store) writeViewPrefsStore(next);
+  return next;
+}
+
+/**
+ * Swap the display state to what `viewId` remembers. Called before the render
+ * that reads it, for the same reason `loadCollapsedItems` is: the previous
+ * timeline's filter would otherwise narrow this one.
+ */
+export function loadViewPrefs(viewId: string | null): void {
+  let store = readViewPrefsStore();
+  if (viewId) store = adoptLegacyViewPrefs(store, viewId);
+  const prefs = viewPrefsFor(store, viewId);
+  // A stored mode may predate addressable plugin views (`pricing`), so it goes
+  // through the legacy lookup rather than a bare comparison: reading it without
+  // that would silently reset every user's saved view.
+  state.viewMode = readViewMode(prefs.mode, legacyViewMode);
+  state.groupBy = prefs.groupBy;
+  state.filterDim = prefs.filterDim;
+  state.filterValues = prefs.filterValues;
+  state.milestonesOnly = prefs.milestonesOnly;
+}
+
+/** Write the current display state back to the timeline it belongs to. */
+export function saveViewPrefs(viewId: string | null = state.activeView?.id ?? null): void {
+  if (!viewId) return;
+  writeViewPrefsStore(
+    withViewPrefs(readViewPrefsStore(), viewId, {
+      mode: state.viewMode,
+      groupBy: state.groupBy,
+      filterDim: state.filterDim,
+      filterValues: state.filterValues,
+      milestonesOnly: state.milestonesOnly,
+    }),
+  );
+}
 
 // The whole per-source fold store, `{ [sourceId]: itemId[] }`. A malformed or
 // absent entry reads as „nothing folded" rather than throwing: a fold is a view

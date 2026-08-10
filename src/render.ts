@@ -258,8 +258,9 @@ function computeDisplay(): { items: TimelineItem[]; groups: TimelineGroup[] } {
   }
   const filtered = filterBuildForDisplay(build);
   const entries = filtered.items.filter((it) => it.type !== 'background');
+  // Not written back to state.groupBy: see the same spot in listView.ts. The
+  // choice belongs to the timeline and is stored; the fallback is derived here.
   const { dim, options } = resolveGrouping(entries);
-  state.groupBy = dim;
   syncGroupByControl(options, dim);
   syncFilterControl();
   regroupedMode = dim !== GROUP_DIM;
