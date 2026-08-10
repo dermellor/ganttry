@@ -35,7 +35,12 @@ import { HierarchyFolders } from './hierarchyFolders';
 import { PhaseBand } from './phaseBand';
 import { MilestoneRail, railMarks } from './milestoneRail';
 import { scrollItemIntoView } from './visGeometry';
-import { withLaneShift, type LaneCounts } from './laneTransition';
+import {
+  captureLanePositions,
+  playLaneShift,
+  withLaneShift,
+  type LaneCounts,
+} from './laneTransition';
 import { iconSpanHtml } from './icons';
 import { DEFAULT_STATUS } from './status';
 import {
@@ -857,6 +862,15 @@ export async function renderTimeline(view: View) {
   // one re-pack per frame — so this stays cheap during a drag/zoom.
   timeline.on('rangechange', () => {
     updateTagDensity();
+    // Capture *here*, synchronously, because this runs before vis's own
+    // rAF-throttled redraw — and that redraw is what performs the vertical move
+    // this animates. It is not the repack: under `stack: false` vis draws an
+    // item at the ordinal position of its subgroup among the subgroups that
+    // currently hold something, so panning the items in lanes 0-2 out of the
+    // window lifts an item that is still on lane 3 to the top row, with no lane
+    // change and no DataSet update. See laneTransition.ts.
+    const before = captureLanePositions(els.timeline, laneCountsByGroup());
+    requestAnimationFrame(() => playLaneShift(before, refreshItemOverlays));
     scheduleRepack();
   });
 

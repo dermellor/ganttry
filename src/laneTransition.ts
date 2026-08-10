@@ -20,6 +20,20 @@
  *   only contributes a decaying offset. Two shifts that overlap in time stack
  *   the same way, each carrying its own true distance.
  *
+ * **The repack is not the only thing that moves an item vertically, and it is
+ * not even the common one.** Under `stack: false` vis derives an item's row from
+ * the *ordinal position* of its subgroup among the subgroups that currently hold
+ * a drawn item, not from the subgroup number itself. Pan far enough that the
+ * items in lanes 0 to 2 leave the window and vis compacts the track: an item
+ * still on lane 3 is now the topmost one and is drawn at row 0. Measured on a
+ * live roadmap, panning two days at a time: `item.top` went 132 → 90 → 48 with
+ * `subgroup` fixed at 3, no DataSet update and no repack anywhere in sight.
+ *
+ * That is why the shift is captured on `rangechange` — before vis's own
+ * throttled redraw — rather than only around the DataSet update in
+ * `repackLanes`. The two passes stack: `composite: 'add'` makes each carry its
+ * own distance, so a frame where both happen eases once by the sum.
+ *
  * **The measurement deliberately avoids `getBoundingClientRect`.** A rect
  * includes the offset this module is itself animating, so a re-pack that lands
  * while an earlier shift is still easing reads the eased position as the "before"
@@ -105,6 +119,14 @@ function trackIsFollowable(el: HTMLElement, lanes: LaneCounts): boolean {
 
 function prefersReducedMotion(): boolean {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+}
+
+export function captureLanePositions(host: HTMLElement, lanes: LaneCounts): Positions | null {
+  return prefersReducedMotion() ? null : capture(host, lanes);
+}
+
+export function playLaneShift(before: Positions | null, onFrame?: () => void): void {
+  if (before) playShift(before, onFrame);
 }
 
 function capture(host: HTMLElement, lanes: LaneCounts): Positions {

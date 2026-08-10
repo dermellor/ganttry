@@ -705,13 +705,24 @@ in one tick collapse into one and do not help.
 
 ### What is left over jumps, and is eased rather than removed
 
-Everything above shrinks the number of moves. The ones that remain are real —
-a re-centre reassigns lanes, a lane count change moves whole tracks — and they
-land inside a single frame, on top of a horizontal movement the user is driving
-themselves. [`src/laneTransition.ts`](../src/laneTransition.ts) plays that step
-out over 260ms instead, and `repackLanes` is the only caller: a rebuild, a filter
-or a drag moves items for a reason the user just caused directly, and easing
-those in would read as lag.
+Everything above shrinks the number of moves. The ones that remain are real and
+they land inside a single frame, on top of a horizontal movement the user is
+driving themselves. [`src/laneTransition.ts`](../src/laneTransition.ts) plays
+that step out over 260ms instead. It hangs off `rangechange` and off
+`repackLanes`, and off nothing else: a rebuild, a filter or a drag moves items
+for a reason the user just caused directly, and easing those in would read as lag.
+
+**The repack is not the common cause of the jump — vis is.** Under `stack: false`
+vis draws an item at the *ordinal position* of its subgroup among the subgroups
+that currently hold a drawn item, not at the subgroup number itself. So panning
+the items in lanes 0 to 2 out of the window lifts an item that is still on lane 3
+to the top row of its track. Reproduced on a live roadmap, panning two days at a
+time: `item.top` went 132 → 90 → 48 with `subgroup` fixed at 3, no DataSet update
+and no repack involved. A first version hooked only `repackLanes` and animated
+none of it, which is what sent this looking in the wrong place. The capture
+therefore happens in the `rangechange` handler, synchronously, before vis's own
+throttled redraw; the repack keeps its own pass, and `composite: 'add'` lets the
+two stack when a frame does both.
 
 **It is FLIP rather than a CSS transition, because there is no one property to
 transition.** A point item carries both axes in a single `transform`
