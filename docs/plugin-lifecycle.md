@@ -89,6 +89,39 @@ data on the timeline — the same argument that put the generic store on the rep
 seam rather than in Postgres. On a local source the refs go into the file, or
 into a directory's `timeline.json`.
 
+## Decisions already settled for the catalogue
+
+There is no catalogue yet — it is
+[#15](https://github.com/zeitlines/zeitlines/issues/15), and it was deliberately
+blocked until a real second plugin existed to design against. Three questions are
+answered, and they are written down here rather than rediscovered later.
+
+**Ids are reverse-DNS** (`com.acme.sprints`), enforced by the manifest validator.
+The reasoning is with the rule, in
+[`src/pluginHost/manifest.ts`](../src/pluginHost/manifest.ts).
+
+**The instance fetches a catalogue server-side, not from the browser.** A
+catalogue is a JSON index somewhere on the internet, and somebody has to download
+it. If the page did, the Content-Security-Policy would apply: reading an index
+from `plugins.example.com` would mean adding that origin to
+`PLUGIN_ALLOWED_ORIGINS` and redeploying **before** an operator can see what is
+in it — granting network access to a source they have not looked at. Fetching it
+server-side removes that ordering, and it keeps the origin allowlist governing
+only where **code** may come from, which is the security-relevant question,
+instead of also governing where a list of names may be read from. A purely static
+deploy has no server and therefore no catalogue browsing; it loses nothing,
+because dropping a directory into `plugins/` is already its install path.
+
+**A yanked version keeps running, and warns.** A plugin can be pulled from a
+catalogue after people have installed it — a security bug, a mistake, an
+abandoned project. Stopping it on those instances would let a catalogue somebody
+else controls switch off a working part of an instance remotely, which is exactly
+the central authority this design avoids. Saying nothing would leave an operator
+running something withdrawn for a reason. So: it keeps running, the plugin panel
+carries the warning next to the other refusal reasons, and a **new** install of a
+yanked version is refused — the difference between protecting those who do not
+have it and punishing those who do.
+
 ## Where an artifact may come from
 
 An artifact that is fetched has to be **pinned** — a `url` install without an
