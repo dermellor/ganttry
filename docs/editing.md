@@ -703,6 +703,79 @@ fresh reservation reaches the track one redraw late, because vis measures the la
 the measurement. `repackLanes` schedules a redraw on the next frame for it; two calls
 in one tick collapse into one and do not help.
 
+### What is left over jumps, and is eased rather than removed
+
+Everything above shrinks the number of moves. The ones that remain are real and
+they land inside a single frame, on top of a horizontal movement the user is
+driving themselves. [`src/laneTransition.ts`](../src/laneTransition.ts) plays
+that step out over 170ms instead. It hangs off `rangechange` and off
+`repackLanes`, and off nothing else: a rebuild, a filter or a drag moves items
+for a reason the user just caused directly, and easing those in would read as lag.
+
+**The repack is not the common cause of the jump — vis is.** Under `stack: false`
+vis draws an item at the *ordinal position* of its subgroup among the subgroups
+that currently hold a drawn item, not at the subgroup number itself. So panning
+the items in lanes 0 to 2 out of the window lifts an item that is still on lane 3
+to the top row of its track. Reproduced on a live roadmap, panning two days at a
+time: `item.top` went 132 → 90 → 48 with `subgroup` fixed at 3, no DataSet update
+and no repack involved. A first version hooked only `repackLanes` and animated
+none of it, which is what sent this looking in the wrong place. The capture
+therefore happens in the `rangechange` handler, synchronously, before vis's own
+throttled redraw; the repack keeps its own pass, and `composite: 'add'` lets the
+two stack when a frame does both.
+
+**It is FLIP rather than a CSS transition, because there is no one property to
+transition.** A point item carries both axes in a single `transform`
+(`Item.repositionXY`), so easing that property would smear the pan itself; a
+range item writes `top`. What covers both is a Web Animations effect with
+`composite: 'add'` — vis keeps writing the inline value as the base, and this
+adds a decaying offset on top. Two shifts overlapping in time stack the same way,
+each carrying its own distance.
+
+**The before/after measurement must not use `getBoundingClientRect`.** A rect
+includes the offset this module is itself animating, so a re-pack landing while
+an earlier shift is still easing reads the eased position as the "before" and
+invents a delta for an item that never moved — every animating item then spawns a
+fresh animation every frame. Measured on a continuous zoom over a 752-item
+timeline: **8817** animations where **761** items had moved. vis's own `item.top`
+and `Group.top` are plain layout numbers that no transform touches, so they give
+the position an item would sit at with nothing animating, which is the only
+stable thing to difference against. After the switch the same zoom starts 546,
+and 200 frames of panning start 35.
+
+**Past a certain density a track stops animating.** The animation buys exactly
+one thing: you can follow an individual item to its new row. In a track that is
+a wall of bars that stops being true, and easing a hundred of them at once is
+motion without information. The signal is the lane count, not the number of
+items on screen: vis unmounts items outside the *vertical* viewport too, so
+widening the window from two to four years took the mounted count **down** from
+292 to 191 while the densest track went from 10 lanes to 16. Lanes climb
+monotonically across the whole zoom range (5, 5, 6, 6, 7, 10, 16, 26 from one
+month to eight years), which is what makes them usable as a threshold.
+`DENSE_LANE_LIMIT` is that knob; measured at 12, panning starts animations up to
+10 lanes and none from 15 up.
+
+**It is decided per track, and that correction came from real data.** Taking the
+maximum over the whole timeline looked equivalent on an evenly generated fixture
+and fell over on the first live one: fifteen tracks at
+`[1, 1, 9, 7, 4, 3, 2, 1, 6, 26, 3, 1, 6, 10, 1]` lanes, so a single outlier
+track would have switched the animation off on the fourteen readable ones. Under
+`stack: false` with fixed lanes nothing crosses between tracks, so a track is its
+own visual field and can opt out on its own.
+
+**The dependency arrows have to be driven per frame while it runs** (`refresh()`
+on [`src/arrows.ts`](../src/arrows.ts)): they measure item DOM, and vis emits no
+`changed` event during the easing, so an arrow would otherwise hang in mid-air
+for its duration. The hierarchy folders deliberately are not driven — they derive
+their top from `item.top`, which is already final the moment the DataSet updates,
+so an outline snaps while its children ease.
+
+**On a roadmap shorter than the reservation floor this never fires from panning
+at all.** The neighbourhood then covers the whole timeline (see above), so no
+amount of horizontal travel re-centres it and the only trigger left is zoom. All
+three committed examples are under a year, which is why judging it needs a
+multi-year timeline.
+
 ## View modes: Timeline / Liste
 
 The header **Ansicht** icon toggle (a segmented two-button control, styled in

@@ -11,6 +11,7 @@ import {
   withBackgroundLabelItems,
   buildFromJson,
   decodeEntities,
+  laneCountOf,
   tagPillsHtml,
   withHierarchyMarks,
   withStatusMarks,
@@ -34,6 +35,12 @@ import { HierarchyFolders } from './hierarchyFolders';
 import { PhaseBand } from './phaseBand';
 import { MilestoneRail, railMarks } from './milestoneRail';
 import { scrollItemIntoView } from './visGeometry';
+import {
+  captureLanePositions,
+  playLaneShift,
+  withLaneShift,
+  type LaneCounts,
+} from './laneTransition';
 import { iconSpanHtml } from './icons';
 import { DEFAULT_STATUS } from './status';
 import {
@@ -856,6 +863,15 @@ export async function renderTimeline(view: View) {
   // one re-pack per frame — so this stays cheap during a drag/zoom.
   timeline.on('rangechange', () => {
     updateTagDensity();
+    // Capture *here*, synchronously, because this runs before vis's own
+    // rAF-throttled redraw — and that redraw is what performs the vertical move
+    // this animates. It is not the repack: under `stack: false` vis draws an
+    // item at the ordinal position of its subgroup among the subgroups that
+    // currently hold something, so panning the items in lanes 0-2 out of the
+    // window lifts an item that is still on lane 3 to the top row, with no lane
+    // change and no DataSet update. See laneTransition.ts.
+    const before = captureLanePositions(els.timeline, laneCountsByGroup());
+    requestAnimationFrame(() => playLaneShift(before, refreshItemOverlays));
     scheduleRepack();
   });
 
@@ -934,6 +950,27 @@ function currentPxPerDay(): number | null {
   return days > 0 ? width / days : Infinity;
 }
 
+// The arrow overlay measures the item DOM, and vis emits no event while a lane
+// shift is easing out — so it has to be driven per frame or an arrow hangs in
+// mid-air for the duration of the animation.
+//
+// The hierarchy folders deliberately are *not* driven here: they derive their
+// top from vis's own `item.top`, which is already the final value the moment the
+// DataSet updates, so redrawing them per frame would paint the same rectangle
+// fifteen times. An outline that snaps while its children ease is the known cost
+// of this experiment.
+function refreshItemOverlays(): void {
+  arrows?.refresh();
+}
+
+// Lanes per track, which is what decides whether that track's lane shift is
+// worth animating (see DENSE_LANE_LIMIT in laneTransition.ts). Read back out of
+// the group styles the packing just wrote, so it is the count vis is about to
+// lay out rather than the one on screen.
+function laneCountsByGroup(): LaneCounts {
+  return new Map(displayGroups.map((g) => [String(g.id), laneCountOf(g.style)]));
+}
+
 // Coalesce re-packs to one per animation frame: `rangechange` fires many times
 // during a single zoom/pan gesture, but the lanes only need recomputing once
 // per painted frame.
@@ -988,7 +1025,17 @@ export function repackLanes(): void {
   const changed = displayItems
     .filter((it) => present.has(String(it.id)) && it.subgroup !== before.get(it.id))
     .map((it) => ({ id: it.id, subgroup: it.subgroup }));
-  if (changed.length) itemsDs.update(changed);
+  // The lane change is the vertical jump the user sees while panning
+  // horizontally, so it is the one place the viewer animates a layout change
+  // (`laneTransition.ts` carries the why). Scoped to the repack on purpose: a
+  // rebuild, a filter or a drag moves items for reasons the user just caused
+  // directly, and easing those in would read as lag.
+  if (changed.length) {
+    withLaneShift(els.timeline, () => itemsDs!.update(changed), {
+      lanes: laneCountsByGroup(),
+      onFrame: refreshItemOverlays,
+    });
+  }
 
   // The reservation has to reach the label too, or the track keeps yesterday's
   // height. It matters that the reservation always covers the lanes the packing just
@@ -1008,7 +1055,16 @@ export function repackLanes(): void {
       // two `redraw()` calls in the same tick collapse into one, which is why this
       // waits for the next frame. Without it the track keeps the height of the
       // previous lane count and its label overflows the row.
-      requestAnimationFrame(() => timeline?.redraw());
+      //
+      // A second lane-shift pass, because this redraw is the one that moves
+      // whole tracks: a track that gained or lost a lane pushes everything below
+      // it, an amount the first pass could not have measured yet.
+      requestAnimationFrame(() =>
+        withLaneShift(els.timeline, () => timeline?.redraw(), {
+          lanes: laneCountsByGroup(),
+          onFrame: refreshItemOverlays,
+        }),
+      );
     }
   }
 }
