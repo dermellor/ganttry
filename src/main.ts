@@ -64,6 +64,7 @@ import {
 import { dataUrl } from './data-base';
 import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 import { hostApiFor } from './pluginHost/hostBackend';
+import { setTimelineRefresh } from './pluginHost/refresh';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -262,6 +263,13 @@ async function bootstrap() {
   // Failures are collected rather than thrown. A plugin that cannot load must
   // cost the user that plugin and nothing else; the reasons are what the footer's
   // plugin list shows.
+  // A plugin's write goes through the host, so the host is what reloads after it.
+  // Registered rather than imported: hostBackend.ts calling render.ts would close
+  // a cycle (render → views → hostBackend → render). See pluginHost/refresh.ts.
+  setTimelineRefresh(() => {
+    if (state.activeView) void renderTimeline(state.activeView);
+  });
+
   state.pluginLoad = await loadInstalledPlugins(
     await loadPluginStatuses(cfg.plugins),
     browserDeps(),

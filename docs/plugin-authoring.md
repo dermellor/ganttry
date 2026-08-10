@@ -67,7 +67,7 @@ finds **no** item-write method rather than a method that refuses.
 | `config()` | — | this plugin's config bag on this timeline |
 | `subscribe(fn)` | — | fires after any change; returns an unsubscribe function |
 | `currentUser()` | — | who is looking, or null |
-| `items` | `items:write` | `add` / `update` / `remove` |
+| `items` | `items:write` | `add` / `update` / `remove`; the host reloads the view after each |
 | `data` | `data:own` | `list` / `put` / `remove` / `move` over this plugin's own collections |
 
 Everything is async and everything is JSON. That is insurance rather than
@@ -76,6 +76,29 @@ iframe or a worker afterwards without rewriting every plugin.
 
 `data` is scoped to the plugin at construction. There is no argument that could
 name another plugin's collections.
+
+**A write through the host refreshes the app; you do not.** `host.items.update(…)`
+resolves when the write is durable, and the reload runs on its own after that. A
+plugin that repainted itself as well would repaint twice.
+
+**There is no activate/deactivate hook yet, and it shows.** `subscribe` returns an
+unsubscribe function, but a view plugin has nowhere to call it: `renderView` is
+the only entry point, and it runs again on every repaint. Subscribe behind a
+module-level flag so a repaint cannot add a second listener — and know that this
+is the contract's gap rather than your mistake
+([#11](https://github.com/dermellor/zeitlines/issues/11)).
+
+```js
+let subscribed = false;
+function subscribeOnce(host) {
+  if (subscribed) return;
+  subscribed = true;
+  host.subscribe(() => { /* invalidate whatever you cache */ });
+}
+```
+
+Most views need no subscription at all: the host already calls `renderView` again
+when the timeline changes. It is for state a plugin keeps *outside* the render.
 
 ## Declaring data
 
@@ -156,5 +179,20 @@ worth stating because each looked fine from the inside:
   interleaving is the host's; the host now renders into a detached element and
   swaps it in.
 
+A second plugin — Baseline, which remembers each item's planned dates and can put
+an item back — was written for exactly what the first one left untouched, and
+found two more:
+
+- **An item write left the app showing stale data.** `HostApi.items` had been
+  implemented and never called. The first plugin to call it moved an item
+  correctly, on disk, and the interface kept showing the old dates until a
+  reload — no error, no signal. The interface's own edits repaint because every
+  call site does it by hand, and the host API has no call sites; a host write is
+  now refreshed by the host ([`refresh.ts`](../src/pluginHost/refresh.ts)).
+- **`subscribe` had never fired**, for the same root cause: the signal is sent at
+  the end of a render, and nothing re-rendered.
+
 That list is the argument for the exercise: none of it would have been found by
-reading the contract, and all of it was found in an afternoon of using it.
+reading the contract, and all of it was found in an afternoon of using it. The
+pattern is worth naming, because it will recur — every one of these was code that
+existed, was documented, and had never been executed.

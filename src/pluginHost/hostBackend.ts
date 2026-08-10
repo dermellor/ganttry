@@ -27,6 +27,7 @@
 import { apiAddItem, apiDeleteItem, apiJson, apiUpdateItem } from '../editor';
 import { state } from '../state';
 import { onTimelineChanged } from './changes';
+import { refreshAfterHostWrite } from './refresh';
 import { createDataApi } from './dataApi';
 import { createHostApi, type HostApi, type HostApiBackend, type ItemsApi } from './hostApi';
 import { HOST_API_VERSION } from './apiVersion';
@@ -51,12 +52,31 @@ function snapshot<T>(value: T): T {
   return value == null ? value : (JSON.parse(JSON.stringify(value)) as T);
 }
 
-/** The item writes, over the same endpoints the interface uses. */
+/**
+ * The item writes, over the same endpoints the interface uses.
+ *
+ * Each one asks the host to reload afterwards, and that is not a nicety: the
+ * interface's own edits repaint because every call site does it by hand, and the
+ * host API has no call sites. Without it the first plugin to move an item moved
+ * it — correctly, on disk — while the app kept showing the old dates until a
+ * reload, with nothing anywhere saying so.
+ *
+ * The reload is fired, not awaited: the returned promise resolves when the WRITE
+ * is durable, which is what the API promises. Waiting for the repaint too would
+ * make a plugin's write appear to take as long as a source reload, and a repaint
+ * failure would surface to the plugin as a failed write.
+ */
 function itemsApi(): ItemsApi {
+  const andRefresh = async <T>(result: Promise<T>): Promise<T> => {
+    const out = await result;
+    refreshAfterHostWrite();
+    return out;
+  };
   return {
-    add: (item: TimelineFileItem) => apiAddItem(sourceId(), item),
-    update: (id, patch, version) => apiUpdateItem(sourceId(), id, patch as Record<string, unknown>, version),
-    remove: (id) => apiDeleteItem(sourceId(), id),
+    add: (item: TimelineFileItem) => andRefresh(apiAddItem(sourceId(), item)),
+    update: (id, patch, version) =>
+      andRefresh(apiUpdateItem(sourceId(), id, patch as Record<string, unknown>, version)),
+    remove: (id) => andRefresh(apiDeleteItem(sourceId(), id)),
   };
 }
 
