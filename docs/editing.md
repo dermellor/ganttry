@@ -665,33 +665,26 @@ busy, the lane count is the widest overlap no matter which free lane is picked.
 *down* so the reserved width errs generous and the snapping can never let two labels
 overlap.
 
-**The reservation covers a neighbourhood, not the whole timeline.** Reserving for
-every lane a track needs anywhere makes it as tall as its densest stretch for good,
-and on a real roadmap that turned a screen holding fourteen tracks into one holding
-two. Reserving for the visible window instead puts the jumping back, since the
-reservation then moves with every pan. So `repackLanes` packs the items reaching into
-`[window − one width, window + one width]` and leaves that stretch alone until the
-window travels within half a margin of its edge (`reservationFor`). Panning and
-scrolling then happen inside a reservation that does not move; travelling far costs
-one re-pack. Measured on the same roadmap and window: 2796px reserved for the whole
-year, 1248px in a dense two-month window, 756px in a sparse one, against 2108px for
-the old content-driven height.
+**Reserving for a neighbourhood of the window was tried and reverted.** Reserving
+only for the items reaching into `[window − one width, window + one width]` keeps the
+tracks far more compact (measured on a 131-item roadmap: 756px in a sparse window and
+1248px in a dense one, against 2694px for the whole timeline and 2108px for the old
+content-driven height). It reintroduces the jumping, though, and not through a fixable
+bug: as soon as the reservation depends on the window it changes while you travel, and
+every change moves the tracks below it. Eight seven-day pan steps moved thirteen items
+and changed the layout once, where reserving over the whole timeline moves nothing at
+all. Compactness and a layout that holds still are in direct conflict here, and this
+picks holding still. Lowering the reserved height has to come from needing fewer lanes,
+not from knowing the window.
 
-Two things are known to still move.
-
-**A long journey reflows.** Re-centring the neighbourhood changes which items are
-packed, and a newcomer with an earlier start is placed before the incumbent that
-remembers the lane, so it can take it. Eight seven-day pan steps moved thirteen items
-and changed the layout once. Placing all remembered lanes first and only then filling
-the rest would fix it, at the risk of costing a lane where a rearrangement would have
-fit — not attempted yet. `RESERVE_MARGIN_WINDOWS` trades the frequency against the
-reserved height: a wider margin travels further before re-centring and reserves more.
-
-**Zoom reflows.** The lane count legitimately follows the reserved label width, and a
-fresh reservation reaches the track one redraw late, because vis measures the label in
-`_didResize`, which its redraw queue runs *after* the `_calculateHeight` that consumes
-the measurement. `repackLanes` schedules a redraw on the next frame for it; two calls
-in one tick collapse into one and do not help.
+What is verified: across six pan steps at fixed zoom, no item changes row and no
+track changes height (it was 560 ↔ 1050 before), and a track with none of its items
+in the window keeps its full height instead of 28px. **Zoom still reflows**: the lane
+count legitimately changes with the reserved label width, and the new reservation
+reaches the track one redraw late, because vis measures the label in `_didResize`,
+which its redraw queue runs *after* the `_calculateHeight` that consumes the
+measurement. `repackLanes` schedules a redraw on the next frame for it; two calls in
+one tick collapse into one and do not help.
 
 ## View modes: Timeline / Liste
 
