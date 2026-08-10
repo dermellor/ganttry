@@ -225,6 +225,11 @@ function timelinesApi(): Plugin {
           // shortcut that lets every check pass.
           accessControl: accessControlEnabled(process.env.TIMELINES_ACCESS_CONTROL),
           live: liveOverride(process.env.TIMELINES_DB_LIVE),
+          // `hydrateProcessEnv()` has already folded .env.local, the instance
+          // profile and TIMELINES_ENV_FILE into process.env by the time the dev
+          // server starts, so this sees the same values the rest of the config
+          // does — the dev page then shows the instance being developed against.
+          env: (key) => process.env[key],
         });
         if (!out) return next(); // not one of its routes (e.g. /api/me, /api/jira)
         await writeResponse(res, out);

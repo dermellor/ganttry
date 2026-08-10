@@ -160,6 +160,11 @@ const server = createServer((req, res) => {
           // which is the honest outcome of asking for roles without a caller.
           accessControl: accessControlEnabled(envValue('TIMELINES_ACCESS_CONTROL')),
           live: liveOverride(envValue('TIMELINES_DB_LIVE')),
+          // The whole cascade, not `process.env`: a self-hosted instance keeps
+          // its values in an instance profile or a credential file, and reading
+          // only the process environment would report „not set" for settings the
+          // very same server is using.
+          env: envValue,
         };
         const out = await handleApiRequest(await toRequest(req), ctx);
         if (out) return void (await writeResponse(res, out));

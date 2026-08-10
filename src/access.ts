@@ -116,6 +116,22 @@ export function normalizeMemberStatus(value: unknown): MemberStatus | undefined 
 }
 
 /**
+ * The role a NON-human caller acts with, from `MCP_TOKEN_ROLE`.
+ *
+ * Defaulting to `editor` keeps every existing automation working unchanged the
+ * day the switch is turned on. An operator who wants a read-only agent says so.
+ *
+ * It lives here rather than in the HTTP layer because two callers need the same
+ * answer and neither may import the other's dependencies: the dispatcher (which
+ * pulls in both database drivers) and the settings registry (which is read in
+ * the browser). „Editor unless stated" is a rule, and a rule lives in one place —
+ * a second reading is how the page ends up claiming a role the API does not use.
+ */
+export function serviceRoleFrom(raw: string | undefined | null): MemberRole {
+  return normalizeMemberRole(raw) ?? 'editor';
+}
+
+/**
  * `TIMELINES_ACCESS_CONTROL`, parsed once so no runtime invents its own reading.
  *
  * Only the exact string `true` enables it. Anything else — unset, `false`, `1`,

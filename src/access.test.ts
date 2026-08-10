@@ -10,6 +10,7 @@ import {
   maySignIn,
   memberCan,
   needsBootstrapPromotion,
+  serviceRoleFrom,
   normalizeMemberRole,
   normalizeMemberStatus,
   roleAllows,
@@ -238,4 +239,24 @@ test('no bootstrap address configured promotes nobody', () => {
 
 test('the bootstrap comparison ignores case and surrounding space', () => {
   assert.equal(needsBootstrapPromotion(null, 'Owner@Example.test', '  owner@example.test '), true);
+});
+
+test('a service token acts as editor unless the instance says otherwise', () => {
+  // Two callers depend on this answer and neither may import the other: the
+  // dispatcher, which authorizes the request, and the settings registry, which
+  // tells an operator what their automations act as. If the two read the
+  // variable differently, the page describes an instance that does not exist.
+  //
+  // Defaulting to `editor` is what keeps every existing automation working on
+  // the day TIMELINES_ACCESS_CONTROL is turned on.
+  for (const unset of [undefined, null, '', '   ']) {
+    assert.equal(serviceRoleFrom(unset), 'editor', String(unset));
+  }
+  assert.equal(serviceRoleFrom('viewer'), 'viewer');
+  assert.equal(serviceRoleFrom('admin'), 'admin');
+  assert.equal(serviceRoleFrom(' Viewer '), 'viewer');
+  // A value nobody recognises is not a role, and refusing to guess means the
+  // token keeps the documented default rather than silently gaining or losing
+  // rights on a typo.
+  assert.equal(serviceRoleFrom('superuser'), 'editor');
 });

@@ -10,18 +10,37 @@ import { classes, data, el, on, type Attrs, type Child, type Listeners } from '.
  * would drop edits the moment you looked at another tab.
  */
 
+export type TabsOrientation = 'horizontal' | 'vertical';
+
 export type TabsOptions = {
   children?: Child;
   ariaLabel?: string;
+  /**
+   * `vertical` turns the strip into a column beside its panel, which is what a
+   * settings area's section list is.
+   *
+   * A variant rather than layout at the call site: the tabs would otherwise be a
+   * row of buttons with a hand-written selected state, which is the second
+   * tabstrip this codebase would have. `aria-orientation` travels with it, so
+   * the arrow keys a screen reader announces match the direction they run in.
+   */
+  orientation?: TabsOrientation;
   className?: string;
   attrs?: Attrs;
 };
 
 export function Tabs(options: TabsOptions = {}): HTMLDivElement {
-  const { children, ariaLabel, className, attrs } = options;
+  const { children, ariaLabel, orientation = 'horizontal', className, attrs } = options;
   return el(
     'div',
-    { class: classes('ds-Tabs', className), role: 'tablist', 'aria-label': ariaLabel, ...attrs },
+    {
+      class: classes('ds-Tabs', className),
+      role: 'tablist',
+      'aria-label': ariaLabel,
+      'aria-orientation': orientation,
+      ...data({ orientation }),
+      ...attrs,
+    },
     children,
   );
 }
