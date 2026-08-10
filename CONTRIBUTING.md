@@ -108,4 +108,4 @@ capture.
 By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md), which
 fits on one screen.
 
-Issues and questions: <https://github.com/dermellor/zeitlines/issues>.
+Issues and questions: <https://github.com/zeitlines/zeitlines/issues>.

@@ -58,7 +58,7 @@ Answer four questions before writing anything:
    plugin: it flows into the item form, grouping, filtering and the context menu with
    no further work.
 2. **Does it need data of its own?** Item-level values live in `metadata[key]` and
-   need nothing. Rows of its own need storage, which is [#12](https://github.com/dermellor/zeitlines/issues/12).
+   need nothing. Rows of its own need storage, which is [#12](https://github.com/zeitlines/zeitlines/issues/12).
 3. **Does it need a view of its own?** A view is a lazily loaded chunk and roughly
    ten times the work of a field. Grouping by a contributed field often gives the
    useful rendering already, so a first cut without a view is usually right.
@@ -70,8 +70,8 @@ Answer four questions before writing anything:
 
 **The budget:** one folder, one registration line, and **no core file touched**. If
 the design needs a change in the generic core, that is not permission to make one.
-It is a finding: comment on [#10](https://github.com/dermellor/zeitlines/issues/10) or
-[#11](https://github.com/dermellor/zeitlines/issues/11) with what was missing. Every
+It is a finding: comment on [#10](https://github.com/zeitlines/zeitlines/issues/10) or
+[#11](https://github.com/zeitlines/zeitlines/issues/11) with what was missing. Every
 plugin built this way measures the contract, which is the point.
 
 **Exit condition:** you can name which of the four shapes the plugin has, and no
@@ -242,7 +242,7 @@ point of pulling them out of prompts: a rule in a prompt cannot be tested and ca
 be reused, and it is wrong in a way nobody notices until a date is wrong.
 
 **The documentation lives with the plugin from the first commit.** Do not write a
-chapter in `docs/`. See [#18](https://github.com/dermellor/zeitlines/issues/18) for
+chapter in `docs/`. See [#18](https://github.com/zeitlines/zeitlines/issues/18) for
 why the existing plugin is the counter-example.
 
 **Exit condition:** `npm run typecheck` shows no new errors, and no file outside the
@@ -402,7 +402,7 @@ single `register()` line, so parallel subagents collide on exactly one file:
 [`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts). Two ways out, in
 order of preference:
 
-1. **Land [#14](https://github.com/dermellor/zeitlines/issues/14) first.** With the
+1. **Land [#14](https://github.com/zeitlines/zeitlines/issues/14) first.** With the
    loader reading manifests out of the plugin folders, a plugin has *no* shared file
    and parallelism is free. This is the cheapest work with the largest effect on a
    batch and should be done before one, not after.
@@ -420,14 +420,14 @@ wrong date.
 
 ## What changes once the plugin platform lands
 
-The epic ([#9](https://github.com/dermellor/zeitlines/issues/9)) makes plugins
+The epic ([#9](https://github.com/zeitlines/zeitlines/issues/9)) makes plugins
 installable at runtime. Exactly two paragraphs of this playbook change:
 
 - **Registration** loses its `register()` call: the manifest already in the plugin
   folder is read by the loader instead
-  ([#14](https://github.com/dermellor/zeitlines/issues/14)).
+  ([#14](https://github.com/zeitlines/zeitlines/issues/14)).
 - **The path** becomes `src/plugins/<id>/`, with the host under `src/pluginHost/`
-  ([#19](https://github.com/dermellor/zeitlines/issues/19)).
+  ([#19](https://github.com/zeitlines/zeitlines/issues/19)).
 
 Everything else, the gate, the research, the spec, the verification and the
 publication, is written to survive that change unaltered.
