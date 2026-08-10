@@ -97,5 +97,9 @@ export default async function handler(req: Request, _ctx: Context): Promise<Resp
 }
 
 export const config: Config = {
-  path: ['/api/source/*', '/api/sources', '/api/users'],
+  // Every path the shared HTTP layer owns has to be listed twice: here, and in
+  // netlify.toml. A route added to scripts/db/http.ts alone reaches the Vite dev
+  // middleware (which matches all of /api/) and 404s in production, where an
+  // edge function only sees the paths it declares.
+  path: ['/api/source/*', '/api/sources', '/api/users', '/api/members'],
 };

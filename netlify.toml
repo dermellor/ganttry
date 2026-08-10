@@ -32,6 +32,12 @@
   function = "timelines-api"
   path = "/api/users"
 
+# Membership administration. Same function again: same drivers, same gate, and
+# it needs `manage` where the directory above needs a plain read.
+[[edge_functions]]
+  function = "timelines-api"
+  path = "/api/members"
+
 # PUBLIC pricing model for external marketing pages (Astro). No auth (see
 # auth.ts excludedPath); serves only the pricing model, never roadmap items.
 [[edge_functions]]
