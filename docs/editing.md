@@ -665,26 +665,43 @@ busy, the lane count is the widest overlap no matter which free lane is picked.
 *down* so the reserved width errs generous and the snapping can never let two labels
 overlap.
 
-**Reserving for a neighbourhood of the window was tried and reverted.** Reserving
-only for the items reaching into `[window − one width, window + one width]` keeps the
-tracks far more compact (measured on a 131-item roadmap: 756px in a sparse window and
-1248px in a dense one, against 2694px for the whole timeline and 2108px for the old
-content-driven height). It reintroduces the jumping, though, and not through a fixable
-bug: as soon as the reservation depends on the window it changes while you travel, and
-every change moves the tracks below it. Eight seven-day pan steps moved thirteen items
-and changed the layout once, where reserving over the whole timeline moves nothing at
-all. Compactness and a layout that holds still are in direct conflict here, and this
-picks holding still. Lowering the reserved height has to come from needing fewer lanes,
-not from knowing the window.
+**The reservation covers a neighbourhood, and how it is measured is the whole
+point.** Reserving for every lane a track needs anywhere makes it as tall as its
+densest stretch for good, and on a 131-item roadmap that turned a screen holding
+fourteen tracks into one holding two. Reserving for the visible window instead puts
+the jumping back, since the reservation then moves with every pan. So `repackLanes`
+packs the items reaching into a neighbourhood around the window and leaves that
+stretch alone until the window travels within half a margin of its edge
+(`reservationFor`).
 
-What is verified: across six pan steps at fixed zoom, no item changes row and no
-track changes height (it was 560 ↔ 1050 before), and a track with none of its items
-in the window keeps its full height instead of 28px. **Zoom still reflows**: the lane
-count legitimately changes with the reserved label width, and the new reservation
-reaches the track one redraw late, because vis measures the label in `_didResize`,
-which its redraw queue runs *after* the `_calculateHeight` that consumes the
-measurement. `repackLanes` schedules a redraw on the next frame for it; two calls in
-one tick collapse into one and do not help.
+The margin is `max(2 × window width, one year)`, and the second term is what a first
+version lacked. With the margin in window widths alone, a two-month zoom re-centres
+after a month of travel, which in use is constantly — that version was built,
+measured, reverted, and only then reinstated with the floor. Expressing the margin as
+a *duration* keeps the re-centre rare at every zoom level, and it degrades the right
+way: on a roadmap shorter than the neighbourhood it collapses to reserving for the
+whole timeline, which is the behaviour that never moves at all.
+
+Measured at a two-month window. On a one-year roadmap: identical to reserving
+globally, 2796px, and 0 items moved across 32 pan steps in three step sizes. On a
+four-year one: 1260px against 2394px reserving globally, three months of travel in
+weekly steps moves nothing, and travelling all four years in 60-day steps re-centres
+nine times over 24 steps, each time by one or two lanes. Occasionally, in other words,
+and in proportion to how far you went.
+
+`RESERVE_MARGIN_WINDOWS` and `RESERVE_MARGIN_MIN_MS` are the two halves of that knob.
+
+**A re-centre still moves items it could leave alone.** It changes which items are
+packed, and a newcomer with an earlier start is placed before the incumbent that
+remembers the lane, so it can take it. Placing all remembered lanes first and only
+then filling the rest would fix it, at the risk of costing a lane where a
+rearrangement would have fit — not attempted yet.
+
+**Zoom reflows.** The lane count legitimately follows the reserved label width, and a
+fresh reservation reaches the track one redraw late, because vis measures the label in
+`_didResize`, which its redraw queue runs *after* the `_calculateHeight` that consumes
+the measurement. `repackLanes` schedules a redraw on the next frame for it; two calls
+in one tick collapse into one and do not help.
 
 ## View modes: Timeline / Liste
 
