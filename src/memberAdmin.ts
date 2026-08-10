@@ -48,6 +48,7 @@ const ERROR_TEXT: Record<string, string> = {
   nothing_to_resend: 'Diese Mitgliedschaft wartet auf keine Einladung.',
   db_not_configured: 'Für Mitgliedschaften braucht diese Instanz eine Datenbank.',
   access_control_disabled: 'Die Benutzerverwaltung ist auf dieser Instanz nicht eingeschaltet.',
+  membership_unavailable: 'Die Mitgliederliste ist nicht lesbar. Vermutlich fehlt die Migration.',
   forbidden: 'Dafür fehlen dir die Rechte.',
   invalid_request: 'Diese Eingabe ist nicht gültig.',
   'not found': 'Diese Adresse ist kein Mitglied.',
