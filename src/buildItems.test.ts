@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assignLaneSubgroups,
+  laneCountStyle,
   withHierarchyMarks,
   type LanePackOptions,
   type TimelineGroup,
@@ -156,4 +157,83 @@ test('a clone is marked through its real id', () => {
 test('no hierarchy at all leaves the list untouched', () => {
   const items = [range('a', '2026-02-01', '2026-02-05')];
   assert.equal(withHierarchyMarks(items, new Map(), new Set(), identity), items);
+});
+
+// A track's height must not depend on which items the current time window shows.
+// vis-timeline derives it from the drawn items and only guarantees the group's
+// label height as a floor, so the lane count travels to CSS as `--lanes` on the
+// group and the label reserves `--lanes × lane pitch`. See LANE_COUNT_PROPERTY.
+test('a track publishes the number of lanes it needs', () => {
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  // Three bars all overlapping Feb 3 → three lanes.
+  const items = [
+    range('a', '2026-02-01', '2026-02-10'),
+    range('b', '2026-02-02', '2026-02-11'),
+    range('c', '2026-02-03', '2026-02-12'),
+  ];
+  assignLaneSubgroups(items, groups, new Map(), new Map());
+  assert.equal(groups[0].style, laneCountStyle(3));
+});
+
+test('a track with no items reserves no room', () => {
+  const groups: TimelineGroup[] = [
+    { id: 'g', content: 'g' },
+    { id: 'empty', content: 'empty' },
+  ];
+  assignLaneSubgroups([range('a', '2026-02-01', '2026-02-05')], groups, new Map(), new Map());
+  assert.equal(groups[0].style, laneCountStyle(1));
+  assert.equal(groups[1].style, undefined);
+});
+
+test('a stale reservation is dropped when the track loses its last item', () => {
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  assignLaneSubgroups([range('a', '2026-02-01', '2026-02-05')], groups, new Map(), new Map());
+  assert.equal(groups[0].style, laneCountStyle(1));
+  // The same call with the item filtered away (milestones-only, a value filter).
+  assignLaneSubgroups([], groups, new Map(), new Map());
+  assert.equal(groups[0].style, undefined);
+});
+
+// Zooming changes the reserved label width of a few milestones, which re-packs the
+// track. Every item that could stay where it was has to stay there, or the whole
+// track reshuffles vertically over a change that concerned one label.
+test('a re-pack leaves an item in its lane when the lane is still free', () => {
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const items = [
+    range('a', '2026-02-01', '2026-02-10'),
+    range('b', '2026-02-02', '2026-02-04'),
+    range('c', '2026-02-06', '2026-02-20'),
+  ];
+  assignLaneSubgroups(items, groups, new Map(), new Map());
+  assert.deepEqual([laneOf(items, 'a'), laneOf(items, 'b'), laneOf(items, 'c')], [0, 1, 1]);
+
+  // `a` gets shorter, which frees lane 0 where `c` starts. Best-fit alone would
+  // pull `c` up into it; the remembered lane keeps it where the user sees it.
+  items[0].end = '2026-02-05';
+  assignLaneSubgroups(items, groups, new Map(), new Map());
+  assert.equal(laneOf(items, 'c'), 1);
+
+  // The contrast, packed from scratch: with no lane to remember, `c` lands in 0.
+  const fresh = [
+    range('a', '2026-02-01', '2026-02-05'),
+    range('b', '2026-02-02', '2026-02-04'),
+    range('c', '2026-02-06', '2026-02-20'),
+  ];
+  assignLaneSubgroups(fresh, groups, new Map(), new Map());
+  assert.equal(laneOf(fresh, 'c'), 0);
+});
+
+test('remembering a lane never costs the track an extra lane', () => {
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const items = [
+    range('a', '2026-02-01', '2026-02-20'),
+    range('b', '2026-02-02', '2026-02-04'),
+    range('c', '2026-02-06', '2026-02-08'),
+  ];
+  assignLaneSubgroups(items, groups, new Map(), new Map());
+  // b and c never overlap, so two lanes are enough, before and after a re-pack.
+  assert.equal(groups[0].style, laneCountStyle(2));
+  assignLaneSubgroups(items, groups, new Map(), new Map());
+  assert.equal(groups[0].style, laneCountStyle(2));
+  assert.equal(Math.max(...items.map((i) => i.subgroup ?? 0)) + 1, 2);
 });

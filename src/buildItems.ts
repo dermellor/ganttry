@@ -52,7 +52,26 @@ export type TimelineGroup = {
   showNested?: boolean;
   subgroupOrder?: string;
   subgroupStack?: boolean;
+  // Inline CSS text vis-timeline puts on the group's label element (`DataGroup.style`).
+  // We use it for exactly one thing: `--lanes`, the lane count the track needs, which
+  // the stylesheet turns into a `min-height` on the label — see LANE_COUNT_PROPERTY.
+  style?: string;
 };
+
+// The lane count is published as a custom property on the group label because
+// vis-timeline derives a track's height from what is *currently drawn*
+// (`Group._calculateHeight` runs over `visibleItems`) and ends in
+// `Math.max(height, props.label.height)`. Without a floor, a track whose items are
+// all outside the current time window collapses to label height and every track
+// below it jumps up; scrolling and zooming then shuffle the whole layout
+// vertically. The label is the one height vis takes from us rather than from the
+// viewport, and `timeline.css` turns this number into its `min-height`. Same
+// mechanism the phase-band spacer already uses (`withBandSpacer` in render.ts).
+const LANE_COUNT_PROPERTY = '--lanes';
+
+export function laneCountStyle(lanes: number): string {
+  return `${LANE_COUNT_PROPERTY}: ${Math.max(1, lanes)};`;
+}
 
 const LANE_COUNT = 6;
 
@@ -344,17 +363,31 @@ function packBand(
   laneOf: Map<string, number>,
   startMs: (it: TimelineItem) => number,
   endMs: (it: TimelineItem) => number,
+  prevLane?: (it: TimelineItem) => number | undefined,
 ): number {
   const laneEnds: number[] = [];
   const ordered = [...band].sort((a, b) => startMs(a) - startMs(b) || endMs(a) - endMs(b));
   for (const it of ordered) {
     const s = startMs(it);
-    let chosen = -1;
-    let chosenEnd = -Infinity;
-    for (let li = 0; li < laneEnds.length; li++) {
-      if (laneEnds[li] <= s && laneEnds[li] > chosenEnd) {
-        chosen = li;
-        chosenEnd = laneEnds[li];
+    // Where the item sat before this pass. Keeping it there whenever the lane is
+    // still free is what stops a re-pack from shuffling items that had no reason to
+    // move: a zoom step changes the *reserved label width* of a few milestones, and
+    // without this every item behind them slid to a different lane. The lane count
+    // is unaffected, so the track does not get taller for it: processing in start
+    // order and opening a new lane only when every existing one is busy uses
+    // exactly as many lanes as the widest overlap, whichever free lane is picked.
+    const remembered = prevLane?.(it);
+    const preferred = remembered === undefined ? -1 : remembered - base;
+    let chosen = preferred >= 0 && preferred < laneEnds.length && laneEnds[preferred] <= s ? preferred : -1;
+    // Otherwise best-fit: the free lane that ends latest, which keeps the used
+    // lanes tight instead of spreading items over fresh ones.
+    if (chosen === -1) {
+      let chosenEnd = -Infinity;
+      for (let li = 0; li < laneEnds.length; li++) {
+        if (laneEnds[li] <= s && laneEnds[li] > chosenEnd) {
+          chosen = li;
+          chosenEnd = laneEnds[li];
+        }
       }
     }
     if (chosen === -1) {
@@ -436,6 +469,11 @@ export function assignLaneSubgroups(
     return isOverdue(it, packedAt) ? Math.max(own, packedAt) : own;
   };
 
+  // Cleared up front rather than only rewritten below: a track that lost its last
+  // item (milestones-only, a value filter) would otherwise keep reserving room for
+  // lanes that no longer have anything in them.
+  for (const g of groups) g.style = undefined;
+
   const byGroup = new Map<string, TimelineItem[]>();
   for (const it of items) {
     // Background items (phase tints) span the full group height and are not
@@ -462,11 +500,16 @@ export function assignLaneSubgroups(
     const depth = hierarchyDepth(localParents);
     const maxDepth = groupItems.reduce((m, it) => Math.max(m, depth.get(it.id) ?? 0), 0);
 
+    // The lane each item sat in before this pass, read off the items themselves
+    // (`subgroup` is only overwritten further down, after packing). Feeding it back
+    // in is what keeps a re-pack from moving items that did not have to move.
+    const prevLane = (it: TimelineItem) => it.subgroup;
+
     const laneOf = new Map<string, number>();
     let base = 0;
     for (let d = 0; d <= maxDepth; d++) {
       const band = maxDepth === 0 ? groupItems : groupItems.filter((it) => (depth.get(it.id) ?? 0) === d);
-      if (band.length) base += packTrackBand(band, dependencies, base, laneOf, startMs, endMs);
+      if (band.length) base += packTrackBand(band, dependencies, base, laneOf, startMs, endMs, prevLane);
     }
 
     // Numeric lane ids so vis-timeline's `subgroupOrder` (numeric `a - b` sort)
@@ -475,7 +518,13 @@ export function assignLaneSubgroups(
       it.subgroup = laneOf.get(it.id) ?? 0;
     }
     const g = groups.find((x) => x.id === groupId);
-    if (g) g.subgroupOrder = 'subgroup';
+    if (g) {
+      g.subgroupOrder = 'subgroup';
+      // `base` is the number of lanes the track ended up using. Publishing it lets
+      // the label reserve the room, which is what keeps the track's height
+      // independent of the current time window (see LANE_COUNT_PROPERTY).
+      g.style = laneCountStyle(base);
+    }
   }
 }
 
@@ -491,6 +540,7 @@ function packTrackBand(
   laneOf: Map<string, number>,
   startMs: (it: TimelineItem) => number,
   endMs: (it: TimelineItem) => number,
+  prevLane?: (it: TimelineItem) => number | undefined,
 ): number {
   const ids = new Set(band.map((i) => i.id));
   const preds = new Map<string, string[]>();
@@ -506,7 +556,7 @@ function packTrackBand(
 
   if (connected.size === 0) {
     // No internal dependencies: plain compact packing.
-    return packBand(band, base, laneOf, startMs, endMs);
+    return packBand(band, base, laneOf, startMs, endMs, prevLane);
   }
 
   // Longest-path layer per connected item (with a cycle guard so a malformed
@@ -533,10 +583,10 @@ function packTrackBand(
   let used = 0;
   for (let L = 0; L <= maxLayer; L++) {
     const layerBand = band.filter((it) => connected.has(it.id) && layer.get(it.id) === L);
-    if (layerBand.length) used += packBand(layerBand, base + used, laneOf, startMs, endMs);
+    if (layerBand.length) used += packBand(layerBand, base + used, laneOf, startMs, endMs, prevLane);
   }
   const free = band.filter((it) => !connected.has(it.id));
-  if (free.length) used += packBand(free, base + used, laneOf, startMs, endMs);
+  if (free.length) used += packBand(free, base + used, laneOf, startMs, endMs, prevLane);
   return used;
 }
 
