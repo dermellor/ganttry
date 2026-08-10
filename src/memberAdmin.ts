@@ -15,7 +15,21 @@
 // browser knows the origin the user actually reached the instance under, and a
 // server that guessed it would hand out links to the wrong host behind a proxy.
 
-import { escapeHtml } from './buildItems';
+import {
+  Badge,
+  Button,
+  Callout,
+  Dialog,
+  el,
+  Select,
+  Table,
+  TableCell,
+  TableHead,
+  TableRow,
+  Text,
+  TextInput,
+} from './design-system';
+import './styles/members.css';
 import { MEMBER_ROLES, type MemberRole, type MemberStatus } from './access';
 import type { Member } from './types';
 
@@ -72,50 +86,87 @@ function inviteUrl(token: string): string {
 }
 
 /** One row. `removed` members stay listed: an item's owner may still point at them. */
-function rowHtml(m: Member): string {
-  const label = m.name ? `${m.name} <span class="member-mail">${escapeHtml(m.email)}</span>` : escapeHtml(m.email);
-  const roleOptions = MEMBER_ROLES.map(
-    (r) => `<option value="${r}"${r === m.role ? ' selected' : ''}>${ROLE_LABEL[r]}</option>`,
-  ).join('');
-  const seen = m.lastSeenAt ? new Date(m.lastSeenAt).toLocaleDateString('de-DE') : '—';
+function row(m: Member): HTMLElement {
+  const action = (act: string, label: string, danger = false) =>
+    Button({ label, variant: danger ? 'danger' : 'outline', size: 'sm', attrs: { 'data-act': act } });
 
-  const actions: string[] = [];
-  if (m.status === 'invited') {
-    actions.push('<button type="button" data-act="resend">Einladung erneut</button>');
-  }
-  if (m.status === 'active') {
-    actions.push('<button type="button" data-act="suspend">Sperren</button>');
-  }
-  if (m.status === 'suspended' || m.status === 'removed') {
-    actions.push('<button type="button" data-act="restore">Entsperren</button>');
-  }
-  if (m.status !== 'removed') {
-    actions.push('<button type="button" data-act="remove" class="is-destructive">Entfernen</button>');
-  }
+  const actions: HTMLElement[] = [];
+  if (m.status === 'invited') actions.push(action('resend', 'Einladung erneut'));
+  if (m.status === 'active') actions.push(action('suspend', 'Sperren'));
+  if (m.status === 'suspended' || m.status === 'removed') actions.push(action('restore', 'Entsperren'));
+  if (m.status !== 'removed') actions.push(action('remove', 'Entfernen', true));
 
-  return `<tr data-email="${escapeHtml(m.email)}" class="member-row is-${m.status}">
-    <td class="member-who">${label}</td>
-    <td><select data-act="role" aria-label="Rolle">${roleOptions}</select></td>
-    <td><span class="member-status is-${m.status}">${STATUS_LABEL[m.status]}</span></td>
-    <td class="member-seen">${seen}</td>
-    <td><div class="member-actions">${actions.join('')}</div></td>
-  </tr>`;
+  return TableRow({
+    className: `member-row is-${m.status}`,
+    attrs: { 'data-email': m.email },
+    children: [
+      TableCell({
+        primary: true,
+        children: m.name
+          ? [m.name, Text({ text: m.email, tone: 'muted', className: 'member-mail' })]
+          : m.email,
+      }),
+      TableCell({
+        children: Select({
+          block: false,
+          attrs: { 'data-act': 'role', 'aria-label': 'Rolle' },
+          options: MEMBER_ROLES.map((r) => ({ value: r, label: ROLE_LABEL[r], selected: r === m.role })),
+        }),
+      }),
+      TableCell({
+        children: Badge({
+          label: STATUS_LABEL[m.status],
+          tone: m.status === 'active' ? 'accent' : m.status === 'invited' ? 'neutral' : 'muted',
+        }),
+      }),
+      TableCell({
+        nowrap: true,
+        muted: true,
+        children: m.lastSeenAt ? new Date(m.lastSeenAt).toLocaleDateString('de-DE') : '—',
+      }),
+      // On a div inside the cell, never on the `<td>`: a flex table cell stops
+      // participating in the table's column sizing, which makes every row a
+      // different height and pushes the buttons past the dialog's edge.
+      TableCell({ children: el('div', { class: 'member-actions' }, actions) }),
+    ],
+  });
 }
 
 function render(): void {
   const body = dialog?.querySelector('#member-rows');
   if (!body) return;
-  body.innerHTML = members.length
-    ? members.map(rowHtml).join('')
-    : '<tr><td colspan="5" class="list-empty">Noch niemand eingeladen.</td></tr>';
+  body.replaceChildren(
+    ...(members.length
+      ? members.map(row)
+      : [
+          TableRow({
+            children: TableCell({
+              colspan: 5,
+              muted: true,
+              children: Text({ text: 'Noch niemand eingeladen.', placeholder: true }),
+            }),
+          }),
+        ]),
+  );
 }
 
 function say(message: string, kind: 'ok' | 'error' = 'ok'): void {
-  const note = dialog?.querySelector('#member-note') as HTMLElement | null;
-  if (!note) return;
-  note.textContent = message;
-  note.className = `member-note is-${kind}`;
-  note.hidden = !message;
+  const slot = dialog?.querySelector('#member-note') as HTMLElement | null;
+  if (!slot) return;
+  slot.replaceChildren(
+    ...(message
+      ? [
+          Callout({
+            text: message,
+            tone: kind === 'error' ? 'danger' : 'info',
+            // `alert` rather than `status`: every one of these is the result of
+            // something the admin just did, so interrupting is right.
+            role: 'alert',
+            className: 'member-note',
+          }),
+        ]
+      : []),
+  );
 }
 
 /**
@@ -221,16 +272,82 @@ function wire(): void {
     }
   });
 
-  dialog.querySelector('#member-close')!.addEventListener('click', () => dialog!.close());
+  // The close button comes with the Dialog component and closes it itself
+  // (see `onClose` in build), so there is nothing to wire here.
+}
+
+/**
+ * The dialog's markup, built here rather than carried in index.html.
+ *
+ * Nothing in this module runs until an admin opens the screen, so building it on
+ * first open keeps the whole surface — and its stylesheet — off the path every
+ * other visitor takes. It also means the shell has no markup for a feature most
+ * instances never switch on.
+ */
+function build(): HTMLDialogElement {
+  const node = Dialog({
+    title: 'Benutzer',
+    className: 'member-dialog',
+    onClose: () => node.close(),
+    children: [
+      el('form', { id: 'member-invite-form', class: 'member-invite-form' }, [
+        TextInput({
+          type: 'email',
+          name: 'email',
+          placeholder: 'adresse@example.com',
+          required: true,
+          attrs: { 'aria-label': 'E-Mail-Adresse einladen' },
+        }),
+        Select({
+          name: 'role',
+          block: false,
+          attrs: { 'aria-label': 'Rolle' },
+          options: MEMBER_ROLES.map((r) => ({ value: r, label: ROLE_LABEL[r], selected: r === 'editor' })),
+        }),
+        Button({ label: 'Einladen', type: 'submit' }),
+      ]),
+
+      el('div', { id: 'member-note' }),
+
+      el('div', { id: 'member-invite', class: 'member-invite', hidden: true }, [
+        Text({
+          as: 'p',
+          children: [
+            'Einladungslink für ',
+            el('strong', { class: 'member-invite-for' }),
+            '. Er wird nur dieses eine Mal angezeigt. Die Person kann sich auch einfach unter der normalen Adresse anmelden: die Einladung hängt an ihrer E-Mail-Adresse, nicht am Link.',
+          ],
+        }),
+        el('div', { class: 'member-invite-row' }, [
+          TextInput({
+            id: 'member-invite-url',
+            readonly: true,
+            attrs: { 'aria-label': 'Einladungslink' },
+          }),
+          Button({ label: 'Kopieren', variant: 'outline', attrs: { id: 'member-invite-copy' } }),
+        ]),
+      ]),
+
+      el('div', { class: 'member-table-wrap' }, [
+        Table({
+          className: 'member-table',
+          children: [
+            TableHead({ columns: ['Person', 'Rolle', 'Status', 'Zuletzt', ''] }),
+            el('tbody', { id: 'member-rows' }),
+          ],
+        }),
+      ]),
+    ],
+  });
+  return node;
 }
 
 /** Open the screen, loading the list fresh — roles change while it is closed. */
 export async function openMemberAdmin(): Promise<void> {
-  dialog ??= document.getElementById('member-dialog') as HTMLDialogElement;
-  if (!dialog) return;
-  if (!dialog.dataset.wired) {
+  if (!dialog) {
+    dialog = build();
+    document.body.appendChild(dialog);
     wire();
-    dialog.dataset.wired = 'true';
   }
   say('');
   (dialog.querySelector('#member-invite') as HTMLElement).hidden = true;

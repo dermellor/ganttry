@@ -7,6 +7,8 @@
 // production. Both proxy JIRA Cloud's issue picker; the browser never sees
 // the JIRA credentials.
 
+import { Link } from './design-system';
+
 export type JiraIssue = {
   key: string;
   summary: string;
@@ -86,20 +88,20 @@ export async function searchJira(query: string): Promise<JiraIssue[]> {
   }
 }
 
-// Build the inline HTML used for the detail-panel "JIRA" meta row.
-export function jiraLinksHtml(
-  issues: JiraIssue[],
-  escape: (s: string) => string,
-): string {
-  if (!issues.length) return '';
-  return issues
-    .map((iss) => {
-      const url = jiraBrowseUrl(iss.key);
-      const label = iss.summary
-        ? `${iss.key} – ${iss.summary}`
-        : iss.key;
-      if (!url) return `<span class="jira-ref">${escape(label)}</span>`;
-      return `<a class="jira-ref" href="${escape(url)}" target="_blank" rel="noopener noreferrer">${escape(label)}</a>`;
-    })
-    .join('');
+/**
+ * The linked issues for the detail panel's „JIRA" row.
+ *
+ * An issue with no configured base URL renders as plain text rather than as a
+ * dead link: an anchor that goes nowhere is worse than a label, and a deploy
+ * without `JIRA_BASE_URL` is a supported configuration.
+ */
+export function jiraLinks(issues: JiraIssue[]): HTMLElement[] {
+  return issues.map((iss) =>
+    Link({
+      text: iss.summary ? `${iss.key} – ${iss.summary}` : iss.key,
+      href: jiraBrowseUrl(iss.key) || undefined,
+      external: true,
+      tabular: true,
+    }),
+  );
 }

@@ -16,7 +16,7 @@
 // Display initials/hue come from presenceModel.ts, so the same person looks the
 // same as an owner and as a presence avatar.
 
-import { escapeHtml } from './buildItems';
+import { Avatar, el, html, Text } from './design-system';
 import { hueFor, initials, type PresenceUser } from './presenceModel';
 import { indexUsers, matchUsers, resolveOwnerIn, type ResolvedOwner } from './ownerModel';
 import type { DirectoryUser } from './types';
@@ -83,26 +83,16 @@ export function searchUsers(query: string, limit = 8): DirectoryUser[] {
 }
 
 /**
- * An initials avatar for a user. The look is the shared `.user-avatar`
- * (base.css) that the presence badge also builds on, so one person keeps one
- * colour and one monogram wherever they appear.
+ * A user's initials avatar. The colour comes from `hueFor(email)` and the
+ * component owns the look, so one person keeps one monogram in one colour
+ * wherever they appear: the presence stack, the per-item presence marks, the
+ * owner chip and the list's Owner column.
  *
- * Two forms, one markup definition: the string form serves the html-building
- * renderers (the list's Owner column), the element form the ones that assemble
- * nodes (the form's owner chip). Writing the markup twice is how the two drift.
+ * `md` stands alone in the header; `sm` sits on a text line inside a chip, a
+ * suggestion row or a table cell.
  */
-function userAvatarHtml(u: PresenceUser | DirectoryUser, extraClass?: string): string {
-  const cls = extraClass ? `user-avatar ${extraClass}` : 'user-avatar';
-  return (
-    `<span class="${cls}" style="--presence-hue:${hueFor(u.email)}" aria-hidden="true">` +
-    `${escapeHtml(initials(u))}</span>`
-  );
-}
-
-export function userAvatar(u: PresenceUser | DirectoryUser, extraClass?: string): HTMLElement {
-  const t = document.createElement('template');
-  t.innerHTML = userAvatarHtml(u, extraClass);
-  return t.content.firstElementChild as HTMLElement;
+export function userAvatar(u: PresenceUser | DirectoryUser, size: 'sm' | 'md' = 'md'): HTMLElement {
+  return Avatar({ initials: initials(u), hue: hueFor(u.email), size });
 }
 
 /**
@@ -110,18 +100,23 @@ export function userAvatar(u: PresenceUser | DirectoryUser, extraClass?: string)
  * a marked plain label for a legacy free-text value, an em-dash for none. Shared
  * so every read-only surface renders an owner the same way.
  */
-export function ownerCellHtml(raw: string): string {
+export function ownerCell(raw: string): HTMLElement {
   const owner = resolveOwner(raw);
-  if (!owner) return '<span class="list-empty">—</span>';
+  if (!owner) return Text({ text: '—', tone: 'muted' });
   if (!owner.known) {
-    return (
-      `<span class="owner-cell is-unlinked" title="${escapeHtml(owner.raw)} — nicht mit einem Benutzer verknüpft">` +
-      `${escapeHtml(owner.label)}</span>`
-    );
+    return Text({
+      text: owner.label,
+      placeholder: true,
+      attrs: { title: `${owner.raw} — nicht mit einem Benutzer verknüpft` },
+    });
   }
-  return (
-    `<span class="owner-cell" title="${escapeHtml(owner.raw)}">` +
-    `${userAvatarHtml(owner.user!, 'owner-cell-avatar')}` +
-    `<span class="owner-cell-label">${escapeHtml(owner.label)}</span></span>`
-  );
+  return el('span', { class: 'owner-cell', title: owner.raw }, [
+    userAvatar(owner.user!, 'sm'),
+    Text({ text: owner.label, truncate: true }),
+  ]);
+}
+
+/** The same cell as markup, for the renderers that assemble strings. */
+export function ownerCellHtml(raw: string): string {
+  return html(ownerCell(raw));
 }

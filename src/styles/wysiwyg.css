@@ -1,70 +1,19 @@
-/* Markdown WYSIWYG editor mounted over the form's hidden Body textarea
-   (see src/wysiwyg.ts). */
+/* The frame around the Markdown editor's surface (src/wysiwyg.ts).
+ *
+ * Only the frame: what the text inside it looks like is the `Prose` component,
+ * which the reading view uses too — those were two stylesheets describing the
+ * same six elements, and they had already drifted (code radius 3px here, 4px
+ * there), so a note visibly moved when you closed the form. */
 
 .wysiwyg {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   overflow: hidden;
 }
 
-/* Border tint instead of a ring — see the focus note in forms.css. */
+/* Border tint instead of a ring, like every other editing surface — see the
+   note in the Input component. */
 .wysiwyg:focus-within {
   border-color: var(--accent);
-}
-
-/* Grows with its content between these bounds. The floor is deliberately low:
-   the body is the single biggest consumer of panel height, and an empty or
-   two-line note has no business reserving a screenful. */
-.wysiwyg-surface {
-  padding: 8px 10px;
-  min-height: 72px;
-  max-height: 340px;
-  overflow-y: auto;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--fg);
-}
-
-.wysiwyg-surface:focus {
-  outline: none;
-}
-
-.wysiwyg-surface > :first-child { margin-top: 0; }
-.wysiwyg-surface > :last-child { margin-bottom: 0; }
-
-.wysiwyg-surface h1 { font-size: 1.5em; font-weight: 700; margin: 0.6em 0 0.3em; line-height: 1.2; }
-.wysiwyg-surface h2 { font-size: 1.3em; font-weight: 700; margin: 0.6em 0 0.3em; line-height: 1.2; }
-.wysiwyg-surface h3 { font-size: 1.12em; font-weight: 600; margin: 0.6em 0 0.3em; line-height: 1.25; }
-.wysiwyg-surface p { margin: 0.5em 0; }
-.wysiwyg-surface ul,
-.wysiwyg-surface ol { margin: 0.5em 0; padding-left: 1.4em; }
-.wysiwyg-surface li { margin: 0.15em 0; }
-
-.wysiwyg-surface blockquote {
-  margin: 0.5em 0;
-  padding-left: 0.8em;
-  border-left: 3px solid var(--border);
-  color: var(--fg-muted);
-}
-
-.wysiwyg-surface a { color: var(--accent); }
-
-.wysiwyg-surface code {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.9em;
-  background: var(--hover, rgba(0, 0, 0, 0.06));
-  padding: 0.1em 0.3em;
-  border-radius: 3px;
-}
-
-.wysiwyg-surface pre {
-  margin: 0.5em 0;
-  padding: 8px 10px;
-  background: var(--hover, rgba(0, 0, 0, 0.06));
-  border-radius: 4px;
-  overflow-x: auto;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.9em;
-  white-space: pre-wrap;
 }

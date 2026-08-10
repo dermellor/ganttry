@@ -23,6 +23,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server and its tools. |
 | [`docs/deploy.md`](docs/deploy.md) | The Netlify deploy, the auth gate, JIRA linking. |
 | [`docs/pricing.md`](docs/pricing.md) | The pricing model of a product-roadmap timeline. |
+| [`docs/design-system.md`](docs/design-system.md) | Tokens, components, the playground, and the contract for using them. Read before changing anything the viewer draws. |
 | [`docs/plugin-playbook.md`](docs/plugin-playbook.md) | How a new plugin gets built: the gate, the reach research, implementation, verification, publication. |
 | [`openapi.yaml`](openapi.yaml) | The HTTP API, generated. Read this before writing a client. |
 | [`schema/`](schema/) | JSON Schemas for the data files, generated from `src/types.ts`. |
@@ -316,6 +317,8 @@ npm run db:check     # migrations pending? (runs before `dev`; no-op without a D
 npm run db:local:up  # throwaway Postgres in Docker (port 55432)
 npm run db:reset     # drop schema → migrate → seed; refuses non-local databases
 npm run dev:local    # dev server against that local database, not a hosted one
+npm run tokens       # regenerate tokens.css + tokens/index.ts from tokens.json
+npm run tokens:check # verify the committed copies match the source (CI)
 npm run schema       # regenerate the JSON Schemas from src/types.ts
 npm run schema:check # verify they match the types + the examples validate (CI)
 npm run openapi      # regenerate openapi.yaml
@@ -436,15 +439,47 @@ present in some lazy chunk** — the second half is what keeps it honest, since
 testing only absence turns the check into a silent pass the day those CSS class
 names are renamed. Runnable locally after `npm run build`.
 
-## Theming
+## The design system
 
-The viewer ships a single neutral theme defined as CSS custom properties in the
-`:root` block of [`src/styles/theme.css`](src/styles/theme.css):
+All interface comes from one layer, `src/design-system/`: tokens, components, and
+the playground that shows them. Four rules apply to every change that draws
+something; the full contract and the reasoning are in
+[`docs/design-system.md`](docs/design-system.md).
+
+- **Colours, spacing, radii and type sizes come from the tokens, by name.** A
+  colour literal is allowed in a `--custom-property:` declaration and nowhere
+  else, so every colour in the product has a name a theme can override.
+- **Interface is built from the components**, including a plugin's views, which
+  reach them through [`src/pluginHost/api.ts`](src/pluginHost/api.ts).
+- **A missing variant is added to the component**, not worked around at the call
+  site. That is how the viewer ended up with seven button treatments in five
+  stylesheets before this layer existed.
+- **A new component appears in the playground** (`playground.html`). A component
+  whose states you can only reach by driving the app through six clicks is a
+  component nobody looks at, and the empty and error states are the ones that
+  rot.
+
+[`scripts/ci/check-design-system.sh`](scripts/ci/check-design-system.sh) enforces
+what can be checked mechanically and fails CI; its three exemptions are named in
+the script with their reasons. Prose alone does not survive contact with the next
+contributor, which is the same reason the OpenAPI spec has a drift test.
+
+### Theming
+
+The viewer ships a single neutral theme, as CSS custom properties generated from
+[`src/design-system/tokens/tokens.json`](src/design-system/tokens/tokens.json)
+into `tokens.css`, plus the glyph sets in `icons.css` beside it. Those two files
+are the styling seam:
 
 - colour tokens (bg, fg, accent, item-bg, item-border, lane colours, …)
-- typography (`--font-body` / `--font-headline` / `--font-mono`)
-- mark radius (`--mark-radius`)
+- typography (`--font-body` / `--font-headline` / `--font-mono`, the size scale)
+- spacing, radii, control sizes, shadows, the stacking order
+- the icon set (`--icon-<key>`) and the chrome glyphs (`--ui-icon-<name>`)
 
-To recolour or re-type the viewer, override any of these variables in your own
-stylesheet loaded after `theme.css`. There is no runtime brand selector and no
-build flag: the tokens in `theme.css` are the single styling seam.
+To recolour or re-type the viewer, override any of them in your own stylesheet
+loaded after `tokens.css`. There is no runtime brand selector and no build flag.
+
+The colour names carry no prefix (`--accent`, not `--color-accent`) because they
+predate the token layer and are the documented seam: renaming them would break
+every override in the wild. Edit `tokens.json` and run `npm run tokens`; the two
+generated files are committed, and CI compares them against the source.

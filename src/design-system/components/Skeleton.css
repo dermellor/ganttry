@@ -1,0 +1,166 @@
+/* TimelineSkeleton — the loading placeholder for the chart area. */
+
+.ds-Skeleton {
+  /* One row height for both columns: a label stub and its bar are only level
+     while they read the same value. */
+  --ds-skeleton-row: 34px;
+  position: absolute;
+  /* Inset by the chart's own padding, which the host names for exactly this. */
+  inset: var(--timeline-pad-y, var(--space-lg)) var(--timeline-pad-x, var(--space-2xl));
+  display: grid;
+  /* Matches the cap on the real label column, so the placeholder's labels sit
+     where the chart's will and the layout does not shift on replacement. */
+  grid-template-columns: 160px 1fr;
+  grid-template-rows: 34px 1fr;
+  grid-template-areas:
+    'corner axis'
+    'labels track';
+  /* Lighter than the chart's own border, like everything else in here: this
+     should read as the shape of a chart, not as a chart. */
+  border: 1px solid var(--grid-line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+  /* Above everything the outgoing timeline paints. `.vis-timeline` is positioned
+     but carries no z-index, so it opens no stacking context and its descendants
+     compete directly with this overlay — the dependency arrows and vis's own
+     layers otherwise draw straight through an opaque placeholder, which looked
+     like the previous view's arrows had survived into the new one. */
+  z-index: var(--z-skeleton);
+  /* Delayed fade-in: a local JSON source resolves in a few milliseconds, and a
+     placeholder that flashes for one frame is worse than none at all. */
+  opacity: 0;
+  animation: ds-skeleton-in var(--motion-slow) 0.15s forwards;
+}
+
+.ds-Skeleton-axis {
+  grid-area: axis;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  border-bottom: 1px solid var(--grid-line);
+  border-left: 1px solid var(--grid-line);
+}
+
+.ds-Skeleton-axis span {
+  width: 44px;
+  height: 7px;
+  border-radius: var(--radius-xs);
+  background: var(--grid-line);
+}
+
+/* A grid rather than stacked blocks with margins: adjacent margins collapse, so
+   a stub row ends up shorter than the track row it belongs to and the two
+   columns drift further apart with every row. */
+.ds-Skeleton-labels {
+  grid-area: labels;
+  display: grid;
+  grid-auto-rows: var(--ds-skeleton-row);
+  align-content: start;
+}
+
+.ds-Skeleton-labels span {
+  align-self: center;
+  height: 10px;
+  margin: 0 14px;
+  border-radius: 5px;
+  background: var(--hover);
+}
+
+.ds-Skeleton-labels span:nth-child(6n + 1) { width: 62%; }
+.ds-Skeleton-labels span:nth-child(6n + 2) { width: 78%; }
+.ds-Skeleton-labels span:nth-child(6n + 3) { width: 46%; }
+.ds-Skeleton-labels span:nth-child(6n + 4) { width: 70%; }
+.ds-Skeleton-labels span:nth-child(6n + 5) { width: 54%; }
+.ds-Skeleton-labels span:nth-child(6n + 6) { width: 66%; }
+
+.ds-Skeleton-track {
+  grid-area: track;
+  border-left: 1px solid var(--grid-line);
+  /* The vertical rules under the axis ticks. */
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--grid-line) 0 1px,
+    transparent 1px 12.5%
+  );
+}
+
+.ds-Skeleton-row {
+  position: relative;
+  height: var(--ds-skeleton-row);
+}
+
+/* Deliberately unlike a real item: no border, a pill radius instead of the bar's
+   2px, and a heavily diluted lane tint. Drawn at item fidelity the placeholder
+   read as content that had finished loading, and the eye starts reading labels
+   that are not there. It only has to carry rhythm and lane colour. */
+.ds-Skeleton-bar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 14px;
+  border-radius: 7px;
+  /* Plain tint first, for anything without color-mix: too saturated, but a
+     visible bar beats an invisible one. */
+  background: var(--ds-skeleton-lane);
+  background: color-mix(in srgb, var(--ds-skeleton-lane) 38%, var(--surface));
+}
+
+.ds-Skeleton-point {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: var(--mark-radius);
+  background: var(--ds-skeleton-dot);
+  background: color-mix(in srgb, var(--ds-skeleton-dot) 26%, var(--surface));
+}
+
+/* One pair of tints per row, so the whole placeholder gets lighter or heavier
+   from the two numbers above rather than from twelve. */
+.ds-Skeleton-row:nth-child(6n + 1) { --ds-skeleton-lane: var(--lane-0-bg); --ds-skeleton-dot: var(--lane-0-border); }
+.ds-Skeleton-row:nth-child(6n + 2) { --ds-skeleton-lane: var(--lane-1-bg); --ds-skeleton-dot: var(--lane-1-border); }
+.ds-Skeleton-row:nth-child(6n + 3) { --ds-skeleton-lane: var(--lane-2-bg); --ds-skeleton-dot: var(--lane-2-border); }
+.ds-Skeleton-row:nth-child(6n + 4) { --ds-skeleton-lane: var(--lane-3-bg); --ds-skeleton-dot: var(--lane-3-border); }
+.ds-Skeleton-row:nth-child(6n + 5) { --ds-skeleton-lane: var(--lane-4-bg); --ds-skeleton-dot: var(--lane-4-border); }
+.ds-Skeleton-row:nth-child(6n + 6) { --ds-skeleton-lane: var(--lane-5-bg); --ds-skeleton-dot: var(--lane-5-border); }
+
+/* One sweep over the assembled placeholder rather than an animation per element:
+   six pulsing bars read as content arriving one row at a time. */
+.ds-Skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* A faint accent wash rather than the usual white highlight: the placeholder is
+     nearly white itself, so a lighter sweep would have nothing left to brighten. */
+  background: linear-gradient(
+    100deg,
+    transparent 35%,
+    color-mix(in srgb, var(--accent) 5%, transparent) 50%,
+    transparent 65%
+  );
+  transform: translateX(-100%);
+  animation: ds-skeleton-sweep 1.9s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes ds-skeleton-in {
+  to { opacity: 1; }
+}
+
+@keyframes ds-skeleton-sweep {
+  to { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-Skeleton {
+    opacity: 1;
+    animation: none;
+  }
+
+  .ds-Skeleton::after {
+    animation: none;
+    background: none;
+  }
+}

@@ -1,3 +1,13 @@
+/* The glyph sets. They live beside tokens.css rather than inside tokens.json
+ * because a data URL is an asset, not a value on a scale, and twenty of them in
+ * the JSON would bury every other token. The two files together are the theming
+ * seam described in AGENTS.md → „Theming", and both are overridden the same way.
+ *
+ * Sizes are not in here: those are the `--icon-size-*` tokens, deliberately
+ * named apart from `--icon-<key>` because a size token that collides with a mask
+ * URL fails silently.
+ */
+
 /* ========================================================
  * Item icon set (semantic keys → glyphs)
  *
@@ -55,66 +65,3 @@
   --ui-icon-caret: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6 9.5l6 6 6-6' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
-/* ========================================================
- * Theme tokens (neutral)
- *
- * The viewer's single built-in theme. Recolour or re-type the viewer by
- * overriding any of these custom properties in your own stylesheet.
- * ======================================================== */
-
-:root {
-  --bg: #fbfbfb;
-  --surface: #ffffff;
-  --fg: #2c3333;
-  --fg-muted: #2f0d5b99;
-  --border: rgba(47, 13, 91, 0.15);
-  --hover: rgba(47, 13, 91, 0.06);
-  --accent: #2f0d5b;
-  --accent-soft: #c1b6ce;
-  --accent-strong: #2f0d5b;
-  --warning: #ffa800;
-  --danger: #d3333a;
-  --highlight: #f5e3cf;
-  --success: #94d825;
-  --magenta: #f32ed4;
-
-  /* Item status (Open/Doing/Done, see src/status.ts). Used by the status dots
-     in the item form's segmented control. */
-  --status-open: #94a3b8;
-  --status-doing: #315dff;
-  --status-done: #1d9e75;
-
-  /* „Laut Timeline fertig, Status sagt nein" — the overdue mark and its overrun
-     line (see „Item rail" in AGENTS.md). Deliberately *not* `--warning`: the theme
-     spends that same amber on `--lane-1-border`, so an amber mark sat at ~1.4
-     contrast on that lane's bars and the line vanished wherever it crossed one.
-     No lane uses red. */
-  --overdue: var(--danger);
-
-  --font-body: system-ui, -apple-system, sans-serif;
-  --font-headline: Georgia, serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --headline-weight: 500;
-  --mark-radius: 50%;
-
-  --item-bg: #ffffff;
-  --item-fg: #2f0d5b;
-  --item-border: #2f0d5b;
-  --item-bg-active: #f5e3cf;
-  --grid-line: rgba(47, 13, 91, 0.08);
-  --grid-line-major: rgba(47, 13, 91, 0.18);
-  --axis-text: #2f0d5b;
-
-  --lane-0-border: #2f0d5b;
-  --lane-0-bg: #e5dcef;
-  --lane-1-border: #ffa800;
-  --lane-1-bg: #ffe7be;
-  --lane-2-border: #f32ed4;
-  --lane-2-bg: #fcc8f4;
-  --lane-3-border: #94d825;
-  --lane-3-bg: #e1f0bd;
-  --lane-4-border: #e8ac68;
-  --lane-4-bg: #f5e3cf;
-  --lane-5-border: #c1b6ce;
-  --lane-5-bg: #efeaf3;
-}

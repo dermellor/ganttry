@@ -1,5 +1,5 @@
 /* Read-only pricing matrix (product timelines). Themed via the shared CSS
-   variables defined in theme.css. */
+   variables defined in the design system's tokens.css. */
 
 .pricing-view {
   flex: 1;
@@ -15,10 +15,19 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  /* Status traffic-light: Open = red, Doing = yellow, Done = green. */
+  /* Status traffic-light: Open = red, Doing = yellow, Done = green. Named here
+     rather than taken from `--status-*`: those three are the *item* status the
+     whole product uses, and this is a work-rollup badge in one plugin's view.
+     Borrowing them would tie a change to one to the other.
+
+     The two foregrounds are named for the same reason the backgrounds are: this
+     is a plugin defining its own three-colour palette, which the contract allows
+     as long as it is defined once and used by name (docs/design-system.md). */
   --pm-open: #E5484D;
   --pm-doing: #E2B203;
   --pm-done: #30A46C;
+  --pm-on-dark: #ffffff;
+  --pm-on-light: #1a1a1a;
 }
 
 /* The [hidden] attribute must still win: the author `display:flex` above overrides
@@ -73,28 +82,8 @@
   flex-wrap: wrap;
 }
 
-/* Matrix / Kacheln segmented toggle. */
-.pm-subview {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.pm-subview-btn {
-  font-family: var(--font-body);
-  font-size: 0.85rem;
-  padding: 6px 12px;
-  border: 0;
-  background: var(--surface);
-  color: var(--fg-muted);
-  cursor: pointer;
-}
-.pm-subview-btn + .pm-subview-btn { border-left: 1px solid var(--border); }
-.pm-subview-btn[aria-pressed='true'] {
-  background: var(--accent);
-  color: var(--bg);
-  font-weight: 600;
-}
+/* The Matrix / Kacheln toggle is a `SegmentedControl`; `.pm-subview` is only the
+   hook the click wiring matches on, and carries no styling of its own. */
 
 /* ---- Tier cards (highlight tiles) -------------------------------------- */
 
@@ -170,11 +159,9 @@
   line-height: 1.4;
 }
 
+/* A `Separator`; only the card's own vertical rhythm is added here. */
 .pc-divider {
-  border: none;
-  border-top: 1px solid var(--border);
   margin: 1.25rem 0;
-  width: 100%;
 }
 .pc-body { flex: 1; }
 
@@ -207,7 +194,7 @@
   color: var(--fg);
 }
 .pc-icon { flex-shrink: 0; margin-top: 2px; }
-.pc-yes .pc-icon { color: var(--success, #00a06a); }
+.pc-yes .pc-icon { color: var(--success); }
 .pc-arrow .pc-icon { color: var(--fg-muted); }
 .pc-feat .pc-label { color: var(--fg-muted); }
 .pc-feat .pc-value { font-weight: 700; }
@@ -233,27 +220,8 @@
   margin: 0 0 0.25rem;
 }
 
-.pm-version-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.82rem;
-  color: var(--fg-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.pm-version-select {
-  font-family: var(--font-body);
-  font-size: 0.9rem;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--fg);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 10px;
-}
+/* The version switcher is a `ToolbarControl` with a `Select`; both class names
+   are hooks the wiring matches on and carry no styling of their own. */
 
 .pricing-empty {
   color: var(--fg-muted);
@@ -451,14 +419,15 @@
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 700;
-  color: #fff;
+  /* Overridden per state below; this is the value two of the three share. */
+  color: var(--pm-on-dark);
   user-select: none;
 }
 .pm-work-dot::-webkit-details-marker { display: none; }
 
-.pm-work-open  { background: var(--pm-open); color: #fff; }
-.pm-work-doing { background: var(--pm-doing); color: #1a1a1a; }
-.pm-work-done  { background: var(--pm-done); color: #fff; }
+.pm-work-open  { background: var(--pm-open); color: var(--pm-on-dark); }
+.pm-work-doing { background: var(--pm-doing); color: var(--pm-on-light); }
+.pm-work-done  { background: var(--pm-done); color: var(--pm-on-dark); }
 
 /* Warning: a "Neu" feature at the pinned version with no roadmap work linked
    yet — shown in place of the (empty) work dot so the gap is visible right
@@ -488,7 +457,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-popover);
   text-align: left;
 }
 
@@ -573,7 +542,7 @@
   color: var(--fg);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-popover);
   font-size: 0.82rem;
   line-height: 1.45;
   text-align: left;
@@ -746,7 +715,7 @@
   color: var(--fg);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-popover);
   font-size: 0.85rem;
   text-align: left;
 }
@@ -779,68 +748,52 @@
   cursor: pointer;
 }
 
-.pm-ce-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
-  font-size: 0.72rem;
-  color: var(--fg-muted);
-}
-.pm-ce-field[hidden] {
-  display: none;
-}
-
-.pm-ce-field input,
-.pm-ce-field select {
-  font: inherit;
-  font-size: 0.85rem;
-  color: var(--fg);
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-}
-/* Focus tints the border rather than drawing a ring, matching the item form. */
-.pm-ce-field input:focus,
-.pm-ce-field select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-.pm-ce-field select:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+/* The fields inside the cell editor are `Field` components, so all this popover
+   adds is the vertical rhythm between them — one per row rather than the form
+   grid's two columns. Their labels, controls, focus treatment and disabled state
+   come from the components, which is what keeps this popover looking like the
+   item form instead of merely resembling it. The buttons are `Button`s for the
+   same reason: this used to carry its own `.btn-primary` / `.btn-secondary`
+   because the form's were scoped to `.item-form`. */
+.pm-cell-editor .ds-Field {
+  margin-bottom: var(--space-sm);
 }
 
 .pm-ce-actions {
-  display: flex;
-  gap: 8px;
+  margin-top: 0;
 }
 
-/* The form-button styles in forms.css are scoped to .item-form, so this popover
-   carries its own — same shapes, so the two read as one system. */
-.pm-cell-editor .btn-primary,
-.pm-cell-editor .btn-secondary {
-  font: inherit;
-  font-size: 13px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 7px 12px;
-  cursor: pointer;
+/* ---- per-version description rows (feature form) ------------------------- */
+
+/* A dynamic list of rows, each linking a version to a note. The row is the only
+   layout this needs: the select, the editor and the remove button are all
+   components. Lives here rather than with the item form because versions are a
+   pricing concept — the generic form has nothing like it. */
+.version-desc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
 }
-.pm-cell-editor .btn-primary {
-  background: var(--accent);
-  color: var(--surface, #fff);
+
+.version-desc-list:empty {
+  display: none;
 }
-.pm-cell-editor .btn-primary:hover {
-  background: var(--accent-strong, var(--accent));
+
+.version-desc-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--space-sm);
+  align-items: start;
 }
-.pm-cell-editor .btn-secondary {
-  background: transparent;
-  border-color: var(--border);
-  color: var(--fg-muted);
+
+/* Both flank a growing editor, so they pin to its first line rather than
+   stretching with it. */
+.version-desc-row > .ds-Select,
+.version-desc-row > .ds-IconButton {
+  align-self: start;
 }
-.pm-cell-editor .btn-secondary:hover {
-  border-color: var(--accent);
-  color: var(--fg);
+
+.vdesc-add {
+  align-self: start;
+  margin-top: var(--space-sm);
 }

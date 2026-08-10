@@ -1,0 +1,18 @@
+/* App composition that is not a component.
+ *
+ * The bar is deliberately high: a rule only belongs here when the thing it
+ * styles appears exactly once and would be a component with a single call site.
+ * Everything with two call sites goes into src/design-system/components instead —
+ * that is what the contract in docs/design-system.md asks for, and this file is
+ * the pressure valve, not the exception.
+ */
+
+/* A stored owner rendered read-only: avatar beside the name, on one line, in a
+   table cell that may be narrower than the name. Not a Chip — a chip's border
+   and remove affordance both promise an edit this cell does not offer. */
+.owner-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}

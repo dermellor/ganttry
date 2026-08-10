@@ -191,12 +191,18 @@ Building one: [`docs/plugin-playbook.md`](docs/plugin-playbook.md), starting fro
 
 ## Theming
 
-The viewer ships a single neutral theme defined as CSS custom properties in the
-`:root` block of [`src/styles/theme.css`](src/styles/theme.css): colour tokens,
-typography (`--font-body` / `--font-headline`), lane colours and mark radius. To
-recolour or re-type the viewer, override any of these variables in your own
-stylesheet loaded after `theme.css`. There is no runtime brand selector: the
-tokens in `theme.css` are the single styling seam.
+The viewer ships a single neutral theme, as CSS custom properties in
+[`src/design-system/tokens/tokens.css`](src/design-system/tokens/tokens.css):
+colour tokens, typography, spacing and radii, lane colours, mark radius, plus the
+glyph sets in `icons.css` beside it. To recolour or re-type the viewer, override
+any of them in your own stylesheet loaded after `tokens.css`. There is no runtime
+brand selector: those two files are the single styling seam.
+
+The tokens are generated from
+[`tokens.json`](src/design-system/tokens/tokens.json) (`npm run tokens`), and
+everything the viewer draws is built from the components above them — see
+[`docs/design-system.md`](docs/design-system.md), and `/playground.html` for all
+of them on one page.
 
 ## Configuration
 

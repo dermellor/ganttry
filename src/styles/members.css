@@ -1,167 +1,85 @@
-/* The „Benutzer" screen. Built on the same tokens as everything else
-   (theme.css), so an instance that recolours the viewer recolours this too. */
+/* The „Benutzer" screen's own composition (src/memberAdmin.ts).
+ *
+ * What is *not* here, because it comes from the design system: the modal and its
+ * backdrop (`Dialog`), the table (`Table`), the status pill (`Badge`), the
+ * controls (`TextInput`, `Select`, `Button`), and the message above the list
+ * (`Callout`). What is left is how this one screen arranges them — which is the
+ * bar the contract sets for a stylesheet outside the layer
+ * (docs/design-system.md → „What is not in the design system").
+ *
+ * Imported by memberAdmin.ts rather than by the app, so an instance where nobody
+ * ever opens the screen never downloads it.
+ */
 
+/* Wider than the design system's default: five columns of member data do not fit
+   a dialog sized for a form. */
 .member-dialog {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--fg);
-  padding: 0;
-  width: min(56rem, calc(100vw - 2rem));
-  max-height: min(42rem, calc(100vh - 4rem));
-  overflow: auto;
-  font: inherit;
+  width: min(860px, calc(100vw - 2 * var(--space-3xl)));
 }
 
-.member-dialog::backdrop {
-  background: rgb(0 0 0 / 0.35);
-}
-
-.member-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.9rem 1.1rem;
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  background: var(--surface);
-  z-index: 1;
-}
-
-.member-head h2 {
-  margin: 0;
-  font: 600 1.05rem/1.2 var(--font-headline);
-}
-
+/* Invite in one line: address, role, submit. It is the screen's primary action
+   and sits above the list it adds to. */
 .member-invite-form {
   display: flex;
-  gap: 0.5rem;
-  padding: 0.9rem 1.1rem;
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-sm);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-md);
 }
 
-.member-invite-form input[type='email'] {
-  flex: 1 1 auto;
-  min-width: 0;
+.member-invite-form .ds-Input[type='email'] {
+  flex: 1 1 16rem;
 }
 
-.member-note {
-  margin: 0;
-  padding: 0.6rem 1.1rem;
-  font-size: 0.9rem;
-}
-
-.member-note.is-error {
-  color: var(--danger);
-}
-
+/* The generated link, shown once. A block rather than a line, because the whole
+   point is that it can be read and copied before it is gone. */
 .member-invite {
-  padding: 0.6rem 1.1rem 0.9rem;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.9rem;
+  margin-bottom: var(--space-md);
+  padding: var(--space-md);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
 }
 
 .member-invite-row {
   display: flex;
-  gap: 0.5rem;
-  margin-top: 0.4rem;
+  gap: var(--space-sm);
+  align-items: center;
+  margin-top: var(--space-sm);
 }
 
-.member-invite-row input {
-  flex: 1 1 auto;
-  min-width: 0;
+.member-invite-row .ds-Input {
+  flex: 1;
   font-family: var(--font-mono);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
-.member-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.92rem;
+/* The Callout above the list is a message about one action, not a page-wide
+   statement, so it drops the component's centred column and generous margins. */
+.member-note {
+  margin: 0 0 var(--space-md);
+  max-width: none;
 }
 
-.member-table th {
-  text-align: left;
-  font-weight: 600;
-  padding: 0.55rem 1.1rem;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-
-/* Wide content scrolls in its own container rather than pushing the dialog
-   sideways: on a narrow window the table needs more width than the dialog has,
-   and without this the last column is simply cut off. */
 .member-table-wrap {
   overflow-x: auto;
 }
 
-.member-table td {
-  padding: 0.45rem 1.1rem;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-}
-
-/* Only the narrow columns refuse to wrap. The person column is the one that can
-   give, so it is what lets the table fit a small window at all. */
-.member-status,
-.member-seen,
-.member-actions {
-  white-space: nowrap;
-}
-
-/* A removed member stays listed, because an item's owner may still point at
-   them — but it must not read as an equal participant. */
+/* A removed member stays listed — an item's owner may still point at them — but
+   reads as past tense. */
 .member-row.is-removed {
-  opacity: 0.55;
+  opacity: 0.6;
 }
 
 .member-mail {
-  color: var(--fg-muted);
   font-size: 0.85em;
   margin-left: 0.4em;
 }
 
-.member-status {
-  display: inline-block;
-  padding: 0.1rem 0.5rem;
-  /* Not --mark-radius: that token is 50%, meant for round item marks, and it
-     turns a text pill into an ellipse. */
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  font-size: 0.82rem;
-  white-space: nowrap;
-}
-
-.member-status.is-active {
-  border-color: var(--accent);
-}
-
-.member-status.is-suspended,
-.member-status.is-removed {
-  color: var(--fg-muted);
-}
-
-.member-seen {
-  white-space: nowrap;
-  color: var(--fg-muted);
-}
-
-/* On a <div> inside the cell, never on the <td> itself: a flex table cell stops
+/* On a div inside the cell, never on the `<td>` itself: a flex table cell stops
    participating in the table's column sizing, which makes every row a different
    height and pushes the buttons past the dialog's edge. */
 .member-actions {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--space-xs);
   justify-content: flex-end;
-}
-
-.member-actions button {
-  font-size: 0.85rem;
-  padding: 0.2rem 0.55rem;
-}
-
-.member-actions .is-destructive {
-  color: var(--danger);
 }

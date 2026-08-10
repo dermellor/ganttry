@@ -4,6 +4,7 @@
 // and runs through itemForm's deleteItem, the same path the form's button takes.
 
 import { Timeline, DataSet } from 'vis-timeline/standalone';
+import { Callout } from './design-system';
 import {
   assignLaneSubgroups,
   assignLanes,
@@ -393,11 +394,7 @@ export function statusFor(view: View, build: BuildResult): string {
  */
 function showLoadFailure(message: string): void {
   clearLoadFailure();
-  const box = document.createElement('div');
-  box.className = 'load-failure';
-  box.setAttribute('role', 'status');
-  box.textContent = message;
-  els.timeline.appendChild(box);
+  els.timeline.appendChild(Callout({ text: message, tone: 'danger', className: 'load-failure' }));
 }
 
 function clearLoadFailure(): void {

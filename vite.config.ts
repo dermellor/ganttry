@@ -234,6 +234,18 @@ function timelinesApi(): Plugin {
 }
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      // Two entries. The design-system playground is a page of its own rather
+      // than a route in the app: the app has no router, and a separate entry is
+      // what keeps the playground's specimen code out of the app's bundle —
+      // asserted by scripts/ci/check-bundle-split.sh rather than assumed.
+      input: {
+        index: resolve(__dirname, 'index.html'),
+        playground: resolve(__dirname, 'playground.html'),
+      },
+    },
+  },
   server: {
     port: PORT,
     strictPort: true,

@@ -18,42 +18,22 @@ import type { JiraIssue } from './jira';
 import type { PresenceUser } from './presence';
 import type { MemberRole } from './access';
 import type { PresenceHandle } from './realtime';
+import { mountAppShell } from './appShell';
 import { isoDateOnly } from './editor';
 import { writeUrlState, type UrlState } from './urlState';
 import { legacyViewMode } from './pluginHost/registry';
 import { readViewMode, type ViewMode } from './pluginHost/viewMode';
 
-export const els = {
-  timeline: document.getElementById('timeline') as HTMLDivElement,
-  list: document.getElementById('list') as HTMLElement,
-  listBody: document.getElementById('list-body') as HTMLElement,
-  // Where plugin views mount: the host creates one section per declared view
-  // (see main.ts), instead of index.html carrying a container per plugin.
-  contentArea: document.getElementById('content-area') as HTMLElement,
-  modeToggle: document.getElementById('mode-toggle') as HTMLElement,
-  viewToolbar: document.getElementById('view-toolbar') as HTMLDivElement,
-  groupBy: document.getElementById('groupby') as HTMLSelectElement,
-  filterControl: document.getElementById('filter-control') as HTMLDivElement,
-  filterDim: document.getElementById('filter-dim') as HTMLSelectElement,
-  filterToggle: document.getElementById('filter-toggle') as HTMLButtonElement,
-  filterMenu: document.getElementById('filter-menu') as HTMLDivElement,
-  viewSelect: document.getElementById('view-select') as HTMLSelectElement,
-  modeTimelineBtn: document.getElementById('mode-timeline') as HTMLButtonElement,
-  modeListBtn: document.getElementById('mode-list') as HTMLButtonElement,
-  milestonesOnly: document.getElementById('milestones-only') as HTMLInputElement,
-  presence: document.getElementById('presence') as HTMLDivElement,
-  addBtn: document.getElementById('add-btn') as HTMLButtonElement,
-  membersBtn: document.getElementById('members-btn') as HTMLButtonElement,
-  exportBtn: document.getElementById('export-btn') as HTMLButtonElement,
-  status: document.getElementById('status') as HTMLSpanElement,
-  detail: document.getElementById('detail') as HTMLElement,
-  detailTitle: document.getElementById('detail-title') as HTMLHeadingElement,
-  // Header row above the headline (item form: the icon/type/status pickers).
-  detailTools: document.getElementById('detail-tools') as HTMLDivElement,
-  detailMeta: document.getElementById('detail-meta') as HTMLDListElement,
-  detailBody: document.getElementById('detail-body') as HTMLElement,
-  detailClose: document.getElementById('detail-close') as HTMLButtonElement,
-};
+// The frame is built rather than looked up: `index.html` carries no markup any
+// more, because `src/export.ts` needs the same frame and two hand-kept copies of
+// it had already drifted (see appShell.ts). Mounting here — at the top of the
+// module every feature module imports for its DOM references — is what
+// guarantees the shell exists before anything reaches for a node in it.
+//
+// `contentArea` is where plugin views mount: the host creates one section per
+// declared view (see main.ts), rather than the frame carrying a container per
+// plugin it may not have.
+export const els = mountAppShell();
 
 export const MILESTONES_ONLY_KEY = 'timelines.milestonesOnly';
 export const VIEW_MODE_KEY = 'timelines.viewMode';

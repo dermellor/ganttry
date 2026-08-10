@@ -1,0 +1,57 @@
+/* DescriptionList — read-only term/value pairs. */
+
+.ds-DescriptionList {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2xs) var(--space-lg);
+  margin: var(--space-lg) 0 var(--space-xl);
+  padding: 0;
+  font-size: var(--text-sm);
+}
+
+/* An empty list still keeps its vertical margins, which shows up as a mysterious
+   gap under the headline of every form that clears it. */
+.ds-DescriptionList:empty {
+  display: none;
+}
+
+.ds-DescriptionList dt {
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ds-DescriptionList dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.ds-DescriptionList dd[data-break-all] {
+  word-break: break-all;
+}
+
+/* Several values under one term — an item's JIRA references. */
+.ds-DescriptionList dd > .ds-DescriptionList-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+/* ---- compact (the audit footer) --------------------------------------------- */
+
+.ds-DescriptionList[data-compact] {
+  gap: 3px var(--space-md);
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.ds-DescriptionList[data-compact] dd strong {
+  font-weight: var(--weight-semibold);
+  color: var(--fg);
+}
+
+.ds-DescriptionList[data-compact] dd code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}

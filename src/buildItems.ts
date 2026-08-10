@@ -1,4 +1,5 @@
 import type { TimelineFile, TimelineFileItem, View } from './types';
+import { htmlAll, Tag } from './design-system';
 import { normalizeIcon } from './icons';
 import { isOverdue, normalizeStatus } from './status';
 import type { StatusKey } from './status';
@@ -18,7 +19,15 @@ export type TimelineItem = {
   // filters them out (vis-timeline requires a start to position an item).
   start?: string;
   end?: string;
+  // The item's name as **markup**: vis-timeline renders its items from HTML
+  // strings, so this is escaped at build time and the escaping cannot move to
+  // the consumer.
   content: string;
+  // The same name as plain text. A consumer that builds DOM rather than markup
+  // needs this one: setting `content` as a text node shows the entities
+  // („Konzept &amp; Wireframes"), and unescaping it back would be a parser at
+  // the wrong end of the pipeline.
+  label: string;
   // Vis-timeline hover tooltip. Only the notes path derives one (title + date);
   // JSON/DB items carry none, so the tooltip is absent for them.
   title?: string;
@@ -286,14 +295,10 @@ export function readTags(meta: unknown): string[] {
 
 export function tagPillsHtml(tags?: string[]): string {
   if (!tags || tags.length === 0) return '';
-  return tags
-    .map(
-      (tag) =>
-        // `title` keeps the tag name reachable on hover even when the pill
-        // collapses to a bare dot in the dense (zoomed-out) view.
-        `<span class="item-tag" style="background-color:${tagColor(tag)}" title="${escapeHtml(tag)}">${escapeHtml(tag)}</span>`,
-    )
-    .join('');
+  // The `Tag` component sets `title` from the label, which is what keeps the tag
+  // name reachable on hover once the pill collapses to a bare dot in the dense
+  // (zoomed-out) view.
+  return htmlAll(tags.map((tag) => Tag({ label: tag, color: tagColor(tag) })));
 }
 
 // Faint full-height tint per phase, rendered behind the items so you can read
@@ -306,6 +311,7 @@ function phaseBackgroundItems(phases: ResolvedPhase[]): TimelineItem[] {
     start: p.start,
     end: p.end,
     content: '',
+    label: '',
     title: '',
     type: 'background' as const,
     className: `phase-bg phase-bg-${phaseCssId(p.id)}`,
@@ -574,6 +580,7 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
       start: raw.start,
       end: endIso,
       content: escapeHtml(raw.content),
+      label: raw.content ?? '',
       type: raw.type ?? (endIso ? 'range' : 'point'),
       icon: normalizeIcon(raw.icon),
       status: normalizeStatus(raw.status),

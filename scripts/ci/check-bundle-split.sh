@@ -69,4 +69,23 @@ if [ "$failed" -ne 0 ]; then
   exit 1
 fi
 
+# The design-system playground is its own Vite entry for the same reason: the app
+# must not ship a page of specimens. It is a separate input, so Rollup splits it
+# without being asked — which is exactly why this needs asserting rather than
+# assuming. A future `manualChunks` or a stray import from the app would merge
+# them back silently.
+pg_marker='pg-Specimen'
+pg_in_entry=$({ grep -o "$pg_marker" "dist/$entry" "dist/$entry_css" 2>/dev/null || true; } | wc -l | tr -d ' ')
+pg_anywhere=$({ grep -l "$pg_marker" dist/assets/*.js dist/assets/*.css 2>/dev/null || true; } | grep -v "$entry\|$entry_css" | wc -l | tr -d ' ')
+
+if [ "$pg_in_entry" -gt 0 ]; then
+  echo "FAIL  $pg_marker: the playground is in the app's entry chunk." >&2
+  echo "      It is a second Vite input (playground.html) and must stay one." >&2
+  exit 1
+elif [ "$pg_anywhere" -eq 0 ]; then
+  echo "FAIL  $pg_marker: not found in any chunk — the marker is stale, so this check proves nothing." >&2
+  exit 1
+fi
+echo "ok    $pg_marker: absent from entry, present in $pg_anywhere playground chunk(s)"
+
 echo "check-bundle-split: ok"

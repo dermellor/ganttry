@@ -26,7 +26,7 @@ and a copy of it for the other. Clicking it runs `deleteItem`
 takes, so there is one delete flow, not two.
 
 Geometry and states are **CSS**, in [`src/styles/timeline.css`](../src/styles/timeline.css)
-(rail block), with the glyph in [`src/styles/theme.css`](../src/styles/theme.css)
+(rail block), with the glyph in [`src/design-system/tokens/tokens.css`](../src/design-system/tokens/tokens.css)
 (`--ui-icon-delete`, kept apart from the `--icon-<key>` item set because chrome
 glyphs have no key). Slots are counted right-to-left from the bar's inner edge,
 so a mark's position is arithmetic on `--rail-slot` and marks line up without
