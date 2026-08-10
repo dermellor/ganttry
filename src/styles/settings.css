@@ -76,7 +76,9 @@ body.settings-open .ds-Toolbar[data-tone='footer'] {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
-  padding: var(--space-sm) var(--space-lg);
+  /* The inline value matches the body's below, so the section's title sits over
+     the first column of whatever the section renders. */
+  padding: var(--space-sm) var(--space-md);
   border-bottom: 1px solid var(--border);
 }
 
@@ -84,14 +86,29 @@ body.settings-open .ds-Toolbar[data-tone='footer'] {
   margin: 0;
 }
 
+/* One inset for every section, so a section's own markup needs none of its own.
+   Without it the members section's invite form ran edge to edge and its submit
+   button was clipped by the panel. */
 .settings #settings-body {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 0 0 var(--space-xl);
+  padding: var(--space-md) var(--space-md) var(--space-xl);
 }
 
-.settings .setting-group {
-  padding-top: var(--space-lg);
+/* Tables bleed back out over that inset: their row rules should span the whole
+   panel, while the first column's text still lines up with the headings and the
+   form above it — a cell's own inline padding is exactly the inset it cancels.
+   Indenting the table instead would read as a nested list. */
+.settings .setting-table,
+.settings .member-table {
+  width: calc(100% + 2 * var(--space-md));
+  margin-inline: calc(-1 * var(--space-md));
+}
+
+/* Air between groups, none above the first: the panel's own inset already
+   provides that, and doubling it makes the first group look dropped. */
+.settings .setting-group + .setting-group {
+  margin-top: var(--space-xl);
 }
 
 /* Only placement. The size, weight and colour are the `Heading` component's —
@@ -99,7 +116,6 @@ body.settings-open .ds-Toolbar[data-tone='footer'] {
    stylesheet, which is what the design system replaced. */
 .settings .setting-group-title {
   margin: 0 0 var(--space-xs);
-  padding: 0 var(--space-lg);
 }
 
 /* The column headers repeat „Einstellung / Wert / Herkunft" above every group
