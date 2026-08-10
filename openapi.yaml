@@ -1728,6 +1728,57 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
+  "/api/settings":
+    get:
+      operationId: getSettings
+      summary: "What this instance is configured as"
+      description: "Every instance-wide setting, each declaring where its value lives (`env`, `build`, or `db`), whether this deployment can change it here, and why not when it cannot. Adding a setting is a declaration in `src/settings.ts` and needs no change to this route. The read gate is per setting and fails closed: `value` is present only for settings declared safe to serve, so a secret is reported as `set: true` and nothing more. Needs the `manage` capability, and answers `503` while `TIMELINES_ACCESS_CONTROL` is off, because there are no roles to satisfy it with."
+      responses:
+        "200":
+          description: "The declared settings."
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - settings
+                properties:
+                  settings:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/DeclaredSetting"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "503":
+          description: "Access control is off, or the runtime supplied no environment reader."
   "/api/me":
     get:
       operationId: getMe
@@ -1844,9 +1895,9 @@ components:
       additionalProperties:
         "$ref": "#/components/schemas/PluginCollectionData"
     PluginCollectionData:
-      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-12909-14085-src_types.ts-0-179761108268078"
+      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-14245-15421-src_types.ts-0-193121108268078"
       description: "A plugin's collections, keyed by the collection id its manifest declares."
-    Recordstringdef-alias-src_types.ts-12909-14085-src_types.ts-0-179761108268078:
+    Recordstringdef-alias-src_types.ts-14245-15421-src_types.ts-0-193121108268078:
       type: object
       additionalProperties:
         type: array
@@ -2137,6 +2188,51 @@ components:
           `Member extends DirectoryUser` is the type-level statement of migration 0016's decision — the directory and the member list are one table, because once an invitation is the only way in they are the same set of people. The rules that read `role` and `status` live in [`src/access.ts`](./access.ts), which is also where the two unions come from, so a role added there cannot be forgotten here.
 
           Timestamps are ISO strings rather than `Date`, like everything else that crosses the API boundary.
+    SettingHome:
+      type: string
+      enum:
+        - env
+        - db
+        - build
+      description: |-
+          Where an instance-wide setting's value comes from.
+
+          `env` is the host's environment or the instance profile, `build` is baked into the artefact, `db` is state the running app writes through its own API. No declaration is `db` yet — the plugin install registry is the first one, and it arrives without this union changing, which is the point of declaring the home rather than hardcoding one per setting.
+    DeclaredSetting:
+      type: object
+      properties:
+        key:
+          type: string
+        group:
+          type: string
+        label:
+          type: string
+        home:
+          "$ref": "#/components/schemas/SettingHome"
+        editable:
+          type: boolean
+          description: "Whether this deployment can change the value here, in the app."
+        why:
+          type: string
+          description: "Why it cannot, when it cannot."
+        set:
+          type: boolean
+          description: "Does this instance set it at all? Served for every setting."
+        value:
+          type: string
+          description: "The effective value — only for settings declared safe to serve."
+      required:
+        - key
+        - group
+        - label
+        - home
+        - editable
+        - set
+      additionalProperties: false
+      description: |-
+          One instance-wide setting as served to the operator interface.
+
+          The declaration it comes from lives in [`src/settings.ts`](./settings.ts), together with the reasoning for the two fields that are easy to misread: `value` is absent (rather than empty or masked) whenever the declaration does not allow the value to be served, and `set` is therefore the only thing that can be said about a secret.
     PluginArtifactKind:
       type: string
       enum:

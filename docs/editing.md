@@ -247,6 +247,122 @@ which is content-sized, so it cannot anchor to the bar's right edge. If it needs
 behaviour (a click), it needs a real element from JS — the pattern in
 [`src/itemPresence.ts`](../src/itemPresence.ts) / [`src/itemRail.ts`](../src/itemRail.ts).
 
+## Milestone rail (the head of the timeline)
+
+A row of diamonds sitting **on the axis line**, one per milestone
+(`type: "point"`), each centred on its own date
+([`src/milestoneRail.ts`](../src/milestoneRail.ts) + the milestone-rail block in
+`styles/timeline.css`).
+
+It answers a question the lanes cannot. A point item lives in its track's lane, so
+reading the whole set of milestones means scanning vertically across every track —
+and past a handful of tracks that means scrolling, at which point a milestone near
+the bottom is simply missed. The rail collects them onto one row without moving
+them off their dates.
+
+- **Colour is the item's lane colour**, taken from the `lane-N` class
+  `assignLanes` already stamps on the item, so a mark and the point it stands for
+  read as the same thing. `className` also carries status marks, hence the lane is
+  picked out of it rather than used whole. A build with no groups has no lane
+  classes and the marks fall back to `--accent`.
+- **Clicking a mark selects that item** — highlight, URL, presence, detail panel —
+  through `selectItemById` in [`src/render.ts`](../src/render.ts), the same
+  function the timeline's own `select` handler calls. The rail's whole point is to
+  behave like the item it stands for; a second copy of those steps is how the two
+  drift apart, and the ones that drift silently (a forgotten
+  `publishSelfPresence`) only surface on somebody else's screen.
+- **…and scrolls its row into view** (`scrollItemIntoView` in
+  [`src/visGeometry.ts`](../src/visGeometry.ts)). From the rail this is the other
+  half of the click: its marks stand for milestones the user cannot see, so
+  opening a form for a row still off screen answers only half of it. Vertically
+  only — the time window is left alone, because the mark was clicked at a position
+  it already occupies and re-centring would slide every other mark out from under
+  the pointer. That rules out vis's own `focus()`, which always calls
+  `range.setRange()`, `zoom: false` included (that option preserves the interval
+  *width*, not the position).
+
+  Two details make it work. The item's **group label** is measured rather than the
+  item itself: vis only mounts items whose row is on screen, so the one worth
+  scrolling to is exactly the one with no box to measure, while labels are always
+  mounted and the panels are in vertical lockstep. And the scroll is applied in up
+  to four corrective passes, because `_setScrollTop` clamps against vis's record of
+  the content height, which is refreshed in a *throttled* redraw — a single pass
+  issued right after a selection can be cut short by a stale limit and land
+  part-way.
+- **The title lives in the tooltip**, together with the date. Labelling every mark
+  inline was the alternative and costs a second row plus collision handling, for
+  information the rail is not trying to carry: it says *which* milestones exist and
+  *when*, and the item itself is one click away.
+- **Coincident marks are fanned apart** (`spreadCoincident`). Two milestones on the
+  same day land on the same x, and one diamond then hides the other completely — the
+  rail would claim a milestone does not exist, which is the one thing it exists to
+  prevent. Drawing at the exact x was tried first and rejected for that reason. A run
+  is spread symmetrically **around its own centre**, not by pushing each colliding
+  mark right: pushing right accumulates, so a dense cluster walks steadily off its
+  dates and the drift grows with every member. The exact date stays in the tooltip,
+  and zooming in separates the marks for real.
+- **It reads the display set**, the same post-filter, post-regroup item list the
+  timeline is fed, so it follows „Nur Meilensteine" and the value filter without a
+  second derivation of what is visible. When a tag/custom-field regroup clones a
+  multi-valued item across lanes, the clones collapse back to one mark.
+- **Positioning goes through vis's own conversion**
+  ([`src/visGeometry.ts`](../src/visGeometry.ts)), shared with the phase ribbon —
+  re-deriving the time→pixel mapping from `getWindow()` and a border-box width
+  drifts right of the items, further toward the right edge. It redraws on
+  `changed` / `rangechange` / `rangechanged` plus a `ResizeObserver`.
+- **A mark that would not fit whole is dropped**, rather than cut off at the
+  panel edge. Nothing clips the rail any more (see „Where the rail is mounted"),
+  so a half-drawn mark would hang over the group labels instead.
+- **It is created with the timeline, not with the data.** The ribbon is built only
+  when the source has phases; the rail cannot be, because its count changes with the
+  *filter* — a view showing no milestones now may show some a moment later. So the
+  rail always exists and hides itself while the count is 0, releasing the row
+  reserve with it.
+
+### Where the rail is mounted, and why it is not in the center panel
+
+The line the marks sit on is the **top border of `.vis-panel.vis-center`**, the
+rule under the date labels. A mark centred on it is half above and half below,
+which decides three things:
+
+- **The rail lives in `.vis-panel.vis-top`**, the axis panel, not in the center
+  panel it annotates. The center panel clips to its own box (`overflow: hidden`),
+  so a mark centred on its top edge would lose its upper half. The axis panel does
+  not clip, and vis renders it *after* the center panel, so the lower halves paint
+  over the content below the line. Both panels share a left edge and a width, so
+  the x from vis's conversion carries over with no adjustment.
+- **`top` is measured, not assumed.** The axis panel normally ends exactly where
+  the center panel starts, so anchoring the rail to `bottom: 0` would do — but vis
+  positions the center panel from its *own* measurement of the axis, and anything
+  that nudges that measurement parts the line from the panel edge with no visible
+  symptom except marks floating beside the line. `alignToLine()` therefore reads
+  the line's position on every redraw.
+- **The date labels are lifted 8px by a `transform`.** They ended flush against
+  the line, so the marks' upper halves ran straight through them. A transform is
+  the only shift vis cannot see: it derives the axis height, and from it the center
+  panel's offset, by measuring the label boxes, and `offsetHeight` ignores
+  transforms. `margin-top` was tried first and fed straight back into that
+  measurement (the center panel then sat 12px above where the axis panel ends);
+  `padding` fails the other way, since vis never re-measures it and the box simply
+  grows down through the line. The lift fits in the ~22px vis already leaves above
+  the major label, so nothing is pushed out of the axis.
+
+**Vertical room below the line.** Only the marks' lower halves reach into the
+content, so the rail's row reserve is 12px, against the ribbon's 30px. Both are
+padded onto the group set — `margin.axis` only offsets the first *item*, which
+leaves an empty parent/nested group header sitting behind the band — and the
+padding is the **sum** of the two (`--phase-band-h` + `--milestone-rail-h`), so
+they stack instead of one landing on the other. The ribbon's own `top` reads
+`--milestone-rail-h` for the same reason.
+
+That padding goes on `.vis-itemset > .vis-foreground`, never a bare
+`.vis-foreground`: the time axis carries that class too
+(`.vis-time-axis.vis-foreground`). The unscoped selector padded the axis panel by
+the same amount, leaving it reaching that far past the line — invisible on its own,
+since the panel is transparent and its labels hang from the top, but vis's axis
+measurement does not include the padding, so the line and the panel edge drifted
+apart by exactly the reserve.
+
 ## Item context menu (right-click quick actions)
 
 Right-clicking an item on the timeline opens a small menu of the actions worth
@@ -376,7 +492,7 @@ module. **Adding a value picker** needs no menu change at all — flag the field
 
 When the active view points to a **DB-backed** source (the timeline exists in Supabase, so `GET /api/source/<id>` returns it), the viewer is editable. A **local** source (a `data/*.json` file, or a directory of Markdown notes) is editable when a process with filesystem access serves it, which means the dev server; editing a directory patches the individual notes' frontmatter and moves a deleted one to `.trash/` rather than removing it; on a static deploy the same file loads read-only, because there is nothing there to write with. Whether the running build is one or the other was decided when it was built (see „Source kinds" (docs/architecture.md)).
 
-- **Drag** an item left/right to move start, drag either edge to resize, drag vertically to switch group. Persists on drop. Both handles sit on the bar's edge; the right one is the narrower of the two because it shares that edge with the rail's „×" (see „Item rail").
+- **Drag** an item left/right to move start, drag either edge to resize, drag vertically to switch group. Persists on drop. Both handles sit on the bar's edge; the right one is the narrower of the two because it shares that edge with the rail's „×" (see „Item rail"). Dragging an item that has children onto another track takes its subtree along, and so does the form's **Group** control — see „Parent and children" (docs/items.md) for what „its subtree" covers.
 - **Delete** an item via the „×" mark at the bar's right edge, which appears on hover and while the item is selected — inside the bar on a bar wide enough for it, just outside on a narrow one. Clicking it neither selects the item nor opens its form. See „Item rail".
 - **Right-click** an item for quick actions without opening the form: set the
   status, set any custom field that declared `contextMenu: true` (each a submenu of

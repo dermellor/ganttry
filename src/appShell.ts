@@ -24,14 +24,15 @@
 import {
   AppMain,
   AppMark,
-  el,
   AvatarStack,
   Button,
   Checkbox,
   ContentArea,
   DescriptionList,
+  el,
   fromHtml,
   Heading,
+  IconButton,
   html,
   Panel,
   PanelBody,
@@ -42,6 +43,7 @@ import {
   ScrollArea,
   SegmentedControl,
   Select,
+  Tabs,
   Text,
   Toolbar,
   ToolbarAnchor,
@@ -69,7 +71,12 @@ export type AppShellElements = {
   milestonesOnly: HTMLInputElement;
   milestonesControl: HTMLElement;
   presence: HTMLElement;
-  membersBtn: HTMLButtonElement;
+  settingsBtn: HTMLButtonElement;
+  settings: HTMLElement;
+  settingsNav: HTMLElement;
+  settingsHeading: HTMLHeadingElement;
+  settingsBody: HTMLElement;
+  settingsClose: HTMLButtonElement;
   addBtn: HTMLButtonElement;
   exportBtn: HTMLButtonElement;
   pluginsBtn: HTMLButtonElement;
@@ -168,14 +175,14 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   const milestonesOnly = milestonesControl.querySelector('input') as HTMLInputElement;
 
   const presence = AvatarStack({ ariaLabel: 'Online', hidden: true, attrs: { id: 'presence' } });
-  // Only an admin is offered the screen (main.ts unhides it). Hiding it is an
-  // affordance, never the permission: /api/members refuses anyone else whatever
-  // is on screen.
-  const membersBtn = Button({
-    label: 'Benutzer',
+  // Only an admin is offered the area (main.ts unhides it). Hiding it is an
+  // affordance, never the permission: /api/settings and /api/members refuse
+  // anyone else whatever is on screen.
+  const settingsBtn = Button({
+    label: 'Einstellungen',
     variant: 'outline',
-    ariaLabel: 'Benutzer dieser Instanz verwalten',
-    attrs: { id: 'members-btn', hidden: true },
+    ariaLabel: 'Einstellungen dieser Instanz',
+    attrs: { id: 'settings-btn', hidden: true },
   });
   const addBtn = Button({
     label: '+ Eintrag',
@@ -190,12 +197,17 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       ToolbarGroup({
         children: [
           AppMark(),
-          ToolbarControl({ label: 'View', children: viewSelect }),
-          modeToggle,
-          milestonesControl,
+          // Classed so the settings area can hide the controls that steer a
+          // timeline while it is open — see src/styles/settings.css. The mark
+          // stays, so the header does not collapse to an empty bar.
+          el('div', { class: 'app-timeline-controls' }, [
+            ToolbarControl({ label: 'View', children: viewSelect }),
+            modeToggle,
+            milestonesControl,
+          ]),
         ],
       }),
-      ToolbarGroup({ end: true, children: [presence, membersBtn, addBtn] }),
+      ToolbarGroup({ end: true, children: [presence, settingsBtn, addBtn] }),
     ],
   });
 
@@ -252,7 +264,46 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   });
 
   const panel = detailPanel(true);
-  const main = AppMain({ children: [contentArea, panel.detail] });
+
+  // The instance settings area, beside the content rather than inside it: it is
+  // not a view (a view names a timeline source) and not a dialog (the membership
+  // screen was one, and a dialog is the wrong size for a surface that grows a
+  // section per instance-wide concern). Only the frame is built here — each
+  // section mounts its own body when opened, so nothing a section needs is in
+  // the document for the visitors who never open it.
+  const settingsNav = Tabs({
+    orientation: 'vertical',
+    ariaLabel: 'Bereiche',
+    className: 'settings-nav',
+    attrs: { id: 'settings-nav' },
+  });
+  const settingsHeading = Heading({ level: 2, attrs: { id: 'settings-heading' } });
+  const settingsBody = ScrollArea({ attrs: { id: 'settings-body' } });
+  const settingsClose = IconButton({
+    icon: '×',
+    ariaLabel: 'Einstellungen schließen',
+    boxSize: 'lg',
+    attrs: { id: 'settings-close' },
+  });
+  // Deliberately not `Panel`: that one is the overlay drawer, positioned over the
+  // chart so opening an item does not resize vis-timeline. This area replaces the
+  // content instead of floating above it, so it is a view section with a heading
+  // row, and `settings.css` arranges the two columns.
+  const settings = ViewSection({
+    ariaLabel: 'Einstellungen',
+    hidden: true,
+    className: 'settings',
+    attrs: { id: 'settings' },
+    children: [
+      settingsNav,
+      el('div', { class: 'settings-panel' }, [
+        el('div', { class: 'settings-head' }, [settingsHeading, settingsClose]),
+        settingsBody,
+      ]),
+    ],
+  });
+
+  const main = AppMain({ children: [contentArea, settings, panel.detail] });
 
   const status = Text({ text: '…', tone: 'muted', attrs: { id: 'status' } });
   const exportBtn = Button({
@@ -307,7 +358,12 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       milestonesOnly,
       milestonesControl,
       presence,
-      membersBtn,
+      settingsBtn,
+      settings,
+      settingsNav,
+      settingsHeading,
+      settingsBody,
+      settingsClose,
       addBtn,
       exportBtn,
       pluginsBtn,

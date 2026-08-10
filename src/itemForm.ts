@@ -68,6 +68,7 @@ import {
   PARENT_META_KEY,
   extentOverflow,
   readParentId,
+  regroupSubtree,
   wouldCreateCycle,
 } from './itemHierarchy';
 import { state, els, setStatus, revealBesidePanel, clearFormSlots } from './state';
@@ -1812,8 +1813,11 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     item.duration = DEFAULT_EXTENT;
   }
 
+  // The Group control moves the item's whole subtree, exactly like a drag onto
+  // another track does — the same rule, from the same place, so picking a track
+  // in the form and dropping the bar on it cannot end up meaning two things.
   const grp = get('group');
-  if (grp) item.group = grp;
+  if (grp) regroupSubtree(state.activeSourceFile.items, id, grp);
 
   if (fd.has('icon')) {
     const iconVal = get('icon');

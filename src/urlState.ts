@@ -10,9 +10,16 @@ export type UrlState = {
   // and this module stays free of the registry that knows which of those exist.
   // The caller normalises (see readViewMode) and drops what does not resolve.
   mode?: string;
+  // Which section of the settings area is open; absent means the area is closed.
+  // Raw like `mode`, and for the same reason: the sections are a property of the
+  // area, not of the URL grammar. `settingsSection` normalises.
+  //
+  // The rest of the state stays in the hash while the area is open, so closing
+  // it returns to the timeline the operator left rather than to the default view.
+  settings?: string;
 };
 
-const ORDER = ['view', 'item', 'from', 'to', 'm', 'mode'] as const;
+const ORDER = ['view', 'item', 'from', 'to', 'm', 'mode', 'settings'] as const;
 
 function parseHash(hash: string): URLSearchParams {
   const h = hash.startsWith('#') ? hash.slice(1) : hash;
@@ -33,6 +40,11 @@ export function readUrlState(): UrlState {
   if (p.get('m') === '1') state.milestones = true;
   const mode = p.get('mode');
   if (mode) state.mode = mode;
+  const settings = p.get('settings');
+  // A bare `#settings` (no `=`) opens the area on its first section. URLSearchParams
+  // reads that as an empty string, which is a *present* key — distinguishing it
+  // from an absent one is what makes the short link work.
+  if (settings != null) state.settings = settings;
   return state;
 }
 
@@ -74,6 +86,7 @@ function buildHash(state: UrlState): string {
   // 'timeline' is the default and stays out of the hash, so a plain link keeps
   // looking plain. Everything else (list, or a plugin view) is written verbatim.
   if (state.mode && state.mode !== 'timeline') map.mode = state.mode;
+  if (state.settings) map.settings = state.settings;
   return ORDER.flatMap((k) =>
     map[k] != null ? [`${encodeURIComponent(k)}=${encodeURIComponent(map[k])}`] : [],
   ).join('&');

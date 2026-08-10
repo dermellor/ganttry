@@ -1,0 +1,395 @@
+{
+  "$schema": "../schema/timeline.schema.json",
+  "name": "Programm 2026 (8 Tracks, dicht belegt)",
+  "description": "Acht Tracks mit mehreren dauerhaft parallel laufenden Strängen. Gedacht als Beispiel für dichte Belegung: die Tracks brauchen mehrere Unterspuren, die Ansicht muss gescrollt werden, und die Meilensteine verteilen sich über die ganze Höhe.",
+  "phases": [
+    {
+      "id": "h1",
+      "label": "Halbjahr 1",
+      "start": "2026-01-01",
+      "end": "2026-06-30",
+      "color": "#2f0d5b"
+    },
+    {
+      "id": "h2",
+      "label": "Halbjahr 2",
+      "start": "2026-06-30",
+      "end": "2026-12-31",
+      "color": "#1D9E75"
+    }
+  ],
+  "groups": [
+    {
+      "id": "plattform",
+      "content": "Plattform"
+    },
+    {
+      "id": "daten",
+      "content": "Daten & Analytics"
+    },
+    {
+      "id": "mobile",
+      "content": "Mobile"
+    },
+    {
+      "id": "web",
+      "content": "Web"
+    },
+    {
+      "id": "infra",
+      "content": "Infrastruktur"
+    },
+    {
+      "id": "security",
+      "content": "Security & Compliance"
+    },
+    {
+      "id": "support",
+      "content": "Support & Enablement"
+    },
+    {
+      "id": "partner",
+      "content": "Partner-Integrationen"
+    }
+  ],
+  "items": [
+    {
+      "id": "W-1",
+      "start": "2026-01-05",
+      "duration": "10w",
+      "content": "API-Gateway",
+      "group": "plattform",
+      "status": "Open"
+    },
+    {
+      "id": "W-2",
+      "start": "2026-03-05",
+      "duration": "14w",
+      "content": "Event-Bus",
+      "group": "plattform",
+      "status": "Doing"
+    },
+    {
+      "id": "W-3",
+      "start": "2026-05-05",
+      "duration": "18w",
+      "content": "Mandantenfähigkeit",
+      "group": "plattform",
+      "status": "Done"
+    },
+    {
+      "id": "W-4",
+      "start": "2026-07-05",
+      "duration": "22w",
+      "content": "Rechtemodell",
+      "group": "plattform",
+      "status": "Open"
+    },
+    {
+      "id": "W-5",
+      "start": "2026-01-05",
+      "duration": "10w",
+      "content": "Feature-Flags",
+      "group": "plattform",
+      "status": "Doing"
+    },
+    {
+      "id": "W-6",
+      "start": "2026-02-05",
+      "duration": "10w",
+      "content": "Warehouse-Migration",
+      "group": "daten",
+      "status": "Doing"
+    },
+    {
+      "id": "W-7",
+      "start": "2026-04-05",
+      "duration": "14w",
+      "content": "Tracking-Plan",
+      "group": "daten",
+      "status": "Done"
+    },
+    {
+      "id": "W-8",
+      "start": "2026-06-05",
+      "duration": "18w",
+      "content": "Reporting-Schicht",
+      "group": "daten",
+      "status": "Open"
+    },
+    {
+      "id": "W-9",
+      "start": "2026-08-05",
+      "duration": "22w",
+      "content": "Datenqualität",
+      "group": "daten",
+      "status": "Doing"
+    },
+    {
+      "id": "W-10",
+      "start": "2026-03-05",
+      "duration": "10w",
+      "content": "iOS-Umbau",
+      "group": "mobile",
+      "status": "Done"
+    },
+    {
+      "id": "W-11",
+      "start": "2026-05-05",
+      "duration": "14w",
+      "content": "Android-Umbau",
+      "group": "mobile",
+      "status": "Open"
+    },
+    {
+      "id": "W-12",
+      "start": "2026-07-05",
+      "duration": "18w",
+      "content": "Offline-Modus",
+      "group": "mobile",
+      "status": "Doing"
+    },
+    {
+      "id": "W-13",
+      "start": "2026-01-05",
+      "duration": "22w",
+      "content": "Push-Kanäle",
+      "group": "mobile",
+      "status": "Done"
+    },
+    {
+      "id": "W-14",
+      "start": "2026-03-05",
+      "duration": "10w",
+      "content": "Store-Freigaben",
+      "group": "mobile",
+      "status": "Open"
+    },
+    {
+      "id": "W-15",
+      "start": "2026-04-05",
+      "duration": "10w",
+      "content": "Design-System",
+      "group": "web",
+      "status": "Open"
+    },
+    {
+      "id": "W-16",
+      "start": "2026-06-05",
+      "duration": "14w",
+      "content": "Checkout",
+      "group": "web",
+      "status": "Doing"
+    },
+    {
+      "id": "W-17",
+      "start": "2026-08-05",
+      "duration": "18w",
+      "content": "Redaktionssystem",
+      "group": "web",
+      "status": "Done"
+    },
+    {
+      "id": "W-18",
+      "start": "2026-02-05",
+      "duration": "22w",
+      "content": "Barrierefreiheit",
+      "group": "web",
+      "status": "Open"
+    },
+    {
+      "id": "W-19",
+      "start": "2026-04-05",
+      "duration": "10w",
+      "content": "Performance",
+      "group": "web",
+      "status": "Doing"
+    },
+    {
+      "id": "W-20",
+      "start": "2026-05-05",
+      "duration": "10w",
+      "content": "Cluster-Umzug",
+      "group": "infra",
+      "status": "Doing"
+    },
+    {
+      "id": "W-21",
+      "start": "2026-07-05",
+      "duration": "14w",
+      "content": "CI-Pipeline",
+      "group": "infra",
+      "status": "Done"
+    },
+    {
+      "id": "W-22",
+      "start": "2026-01-05",
+      "duration": "18w",
+      "content": "Monitoring",
+      "group": "infra",
+      "status": "Open"
+    },
+    {
+      "id": "W-23",
+      "start": "2026-03-05",
+      "duration": "22w",
+      "content": "Backups",
+      "group": "infra",
+      "status": "Doing"
+    },
+    {
+      "id": "W-24",
+      "start": "2026-05-05",
+      "duration": "10w",
+      "content": "Kostenkontrolle",
+      "group": "infra",
+      "status": "Done"
+    },
+    {
+      "id": "W-25",
+      "start": "2026-06-05",
+      "duration": "10w",
+      "content": "Pen-Test",
+      "group": "security",
+      "status": "Done"
+    },
+    {
+      "id": "W-26",
+      "start": "2026-08-05",
+      "duration": "14w",
+      "content": "SSO-Rollout",
+      "group": "security",
+      "status": "Open"
+    },
+    {
+      "id": "W-27",
+      "start": "2026-02-05",
+      "duration": "18w",
+      "content": "Audit-Log",
+      "group": "security",
+      "status": "Doing"
+    },
+    {
+      "id": "W-28",
+      "start": "2026-04-05",
+      "duration": "22w",
+      "content": "DSGVO-Review",
+      "group": "security",
+      "status": "Done"
+    },
+    {
+      "id": "W-29",
+      "start": "2026-07-05",
+      "duration": "10w",
+      "content": "Wissensdatenbank",
+      "group": "support",
+      "status": "Open"
+    },
+    {
+      "id": "W-30",
+      "start": "2026-01-05",
+      "duration": "14w",
+      "content": "Schulungen",
+      "group": "support",
+      "status": "Doing"
+    },
+    {
+      "id": "W-31",
+      "start": "2026-03-05",
+      "duration": "18w",
+      "content": "Eskalationspfade",
+      "group": "support",
+      "status": "Done"
+    },
+    {
+      "id": "W-32",
+      "start": "2026-08-05",
+      "duration": "10w",
+      "content": "ERP-Konnektor",
+      "group": "partner",
+      "status": "Doing"
+    },
+    {
+      "id": "W-33",
+      "start": "2026-02-05",
+      "duration": "14w",
+      "content": "CRM-Konnektor",
+      "group": "partner",
+      "status": "Done"
+    },
+    {
+      "id": "W-34",
+      "start": "2026-04-05",
+      "duration": "18w",
+      "content": "Zahlungsanbieter",
+      "group": "partner",
+      "status": "Open"
+    },
+    {
+      "id": "W-35",
+      "start": "2026-06-05",
+      "duration": "22w",
+      "content": "Versanddienstleister",
+      "group": "partner",
+      "status": "Doing"
+    },
+    {
+      "id": "M-1",
+      "start": "2026-03-31",
+      "content": "Q1-Review",
+      "group": "plattform",
+      "type": "point"
+    },
+    {
+      "id": "M-2",
+      "start": "2026-06-30",
+      "content": "Halbjahres-Review",
+      "group": "daten",
+      "type": "point"
+    },
+    {
+      "id": "M-3",
+      "start": "2026-06-30",
+      "content": "Store-Freigabe",
+      "group": "mobile",
+      "type": "point"
+    },
+    {
+      "id": "M-4",
+      "start": "2026-06-30",
+      "content": "Relaunch Web",
+      "group": "web",
+      "type": "point"
+    },
+    {
+      "id": "M-5",
+      "start": "2026-09-30",
+      "content": "Cluster live",
+      "group": "infra",
+      "type": "point"
+    },
+    {
+      "id": "M-6",
+      "start": "2026-09-30",
+      "content": "Audit bestanden",
+      "group": "security",
+      "type": "point",
+      "status": "Open"
+    },
+    {
+      "id": "M-7",
+      "start": "2026-11-16",
+      "content": "Schulung abgeschlossen",
+      "group": "support",
+      "type": "point",
+      "status": "Open"
+    },
+    {
+      "id": "M-8",
+      "start": "2026-12-01",
+      "content": "Partner-Go-live",
+      "group": "partner",
+      "type": "point"
+    }
+  ]
+}

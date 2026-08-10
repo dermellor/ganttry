@@ -154,6 +154,22 @@ export function escapeHtml(s: string): string {
   });
 }
 
+/**
+ * Inverse of `escapeHtml`, for the places that need an item's title as plain
+ * text rather than as markup: canvas text measurement, and any `title` /
+ * `aria-label` set as a DOM property (which renders entities verbatim, so a
+ * milestone called "R&D" would read "R&amp;D"). `&amp;` is decoded last, so a
+ * literal "&amp;lt;" in a title survives as "&lt;" instead of collapsing to "<".
+ */
+export function decodeEntities(s: string): string {
+  return s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
 // `durationToMs` now lives in ./date (pure date/duration maths, no client-graph
 // deps) so the Deno edge bundle can reach it via phaseOverlap without pulling in
 // filter/icons. Re-exported here to keep buildItems' public API stable.

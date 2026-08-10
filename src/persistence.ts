@@ -92,6 +92,30 @@ function adoptAudit(target: TimelineFileItem, saved: TimelineFileItem): void {
   if (target.id && target.id === state.activeFormItemId) refreshItemAudit(target);
 }
 
+/**
+ * A **local** source versions the whole document, not the row: the version is
+ * the file's (or the directory's) mtime, and any write bumps it for every item
+ * at once — see `assertVersion` in `scripts/local/file-repo.ts`, where that
+ * granularity is the deliberate choice, because a concurrent write rewrites the
+ * same file anyway.
+ *
+ * So our own write invalidates the `If-Match` every *other* item still holds.
+ * One write per pass never noticed; the second one 409'd, the conflict branch
+ * reloaded the file, and the rest of the pass was discarded — which is what
+ * moving a subtree between tracks (one write per item) hit every single time.
+ *
+ * Carrying the returned version to all of them is not a weakened guard: we are
+ * the ones who caused the bump and we know the state that came out of it. A DB
+ * source is untouched, where versions are per row and unrelated to each other.
+ */
+function adoptDocumentVersion(saved: TimelineFileItem): void {
+  if (state.activeView?.source.kind !== 'local' || saved.version == null) return;
+  for (const it of state.activeSourceFile?.items ?? []) {
+    if (it.version != null) it.version = saved.version;
+    if (it.id) state.savedItemVersions.set(it.id, saved.version);
+  }
+}
+
 // Rebuild the saved-state snapshot from the current in-memory file. Called
 // after a load and after every successful persist.
 export function snapshotSaved(): void {
@@ -148,6 +172,7 @@ export async function persist(): Promise<void> {
         adoptAudit(it, saved);
         state.savedItems.set(it.id, canonicalItem(it));
         if (saved.version != null) state.savedItemVersions.set(it.id, saved.version);
+        adoptDocumentVersion(saved);
       } else if (prev !== canon) {
         setStatus('Speichere…');
         const patch = buildItemPatch(it);
@@ -155,6 +180,7 @@ export async function persist(): Promise<void> {
         adoptAudit(it, saved);
         state.savedItems.set(it.id, canonicalItem(it));
         if (saved.version != null) state.savedItemVersions.set(it.id, saved.version);
+        adoptDocumentVersion(saved);
       }
     }
 

@@ -308,6 +308,34 @@ test('administering people needs manage, reading the directory does not', async 
   assert.notEqual((await call('/api/members', undefined, admin))!.status, 403);
 });
 
+test('reading what the instance is configured as needs manage', async () => {
+  // The settings payload names which domains may sign in and which credentials
+  // exist at all. That is administration, and an editor past the auth gate is
+  // not an administrator.
+  const env = (key: string) => ({ TIMELINES_ACCESS_CONTROL: 'true' })[key];
+
+  const denied = (await call('/api/settings', undefined, { ...asMember(MEMBERS, 'editor@example.test'), env }))!;
+  assert.equal(denied.status, 403);
+  assert.equal(((await denied.json()) as any).capability, 'manage');
+
+  const allowed = (await call('/api/settings', undefined, { ...asMember(MEMBERS, 'admin@example.test'), env }))!;
+  assert.equal(allowed.status, 200);
+  const { settings } = (await allowed.json()) as any;
+  assert.ok(Array.isArray(settings) && settings.length, 'the admin gets the declarations');
+});
+
+test('the settings route is read-only, and refuses rather than inventing an empty instance', async () => {
+  const admin = asMember(MEMBERS, 'admin@example.test');
+  assert.equal((await call('/api/settings', { method: 'POST' }, { ...admin, env: () => '' }))!.status, 405);
+
+  // No env reader means the runtime never wired one up. Answering `[]` would
+  // read on the page as „this instance configures nothing", which is the wrong
+  // place to send somebody debugging a lockout.
+  const blind = (await call('/api/settings', undefined, admin))!;
+  assert.equal(blind.status, 503);
+  assert.equal(((await blind.json()) as any).error, 'settings_unavailable');
+});
+
 test('paths we do not own are never refused, only passed through', async () => {
   // The check must sit behind „is this ours", or a 403 lands on /api/me and the
   // presence badge dies the moment the switch goes on.
@@ -321,10 +349,12 @@ test('administration is refused while access control is off, database or not', a
   // so a route needing `manage` cannot be satisfied. Letting it through because
   // „the checks are off" served the whole member roster to anyone past the auth
   // gate and let them invite an admin.
-  for (const ctx of [withLocal(), asMember(MEMBERS, 'admin@example.test')]) {
-    const res = (await call('/api/members', undefined, { ...ctx, accessControl: false }))!;
-    assert.equal(res.status, 503);
-    assert.equal(((await res.json()) as any).error, 'access_control_disabled');
+  for (const path of ['/api/members', '/api/settings']) {
+    for (const ctx of [withLocal(), asMember(MEMBERS, 'admin@example.test')]) {
+      const res = (await call(path, undefined, { ...ctx, accessControl: false }))!;
+      assert.equal(res.status, 503, path);
+      assert.equal(((await res.json()) as any).error, 'access_control_disabled');
+    }
   }
   const write = (await call('/api/members', { method: 'POST', body: '{}' }, {
     ...asMember(MEMBERS, 'admin@example.test'),

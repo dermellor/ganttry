@@ -24,6 +24,14 @@ touches it.
   `preview_start` startet im Launch-Verzeichnis der Session (also im
   Main-Checkout, ohne das zu sagen), und HMR lässt die laufende vis-Instanz
   stehen, was wie ein Daten- oder Filterproblem aussieht.
+  Dritte Falle: der In-App-Browser cacht pro Origin und ignoriert dabei
+  `Cache-Control: no-cache`. Nach einer CSS-/JS-Änderung liefert er das alte
+  Modul weiter, auch nach Hard-Reload und in einem frischen Tab — was wie ein
+  nicht angewendeter Fix aussieht, während `curl` auf dieselbe URL die neue
+  Datei zeigt. Was hilft, ist ein Neustart auf einem anderen `WT_PORT`. Und die
+  Prüfung „greift meine Regel?" gehört an den berechneten Stil
+  (`getComputedStyle`), nicht an das `hidden`-Property: das ist auch dann
+  gesetzt, wenn eine `display`-Regel es überstimmt.
 - **Lokales Setup:** falls `.claude/local-setup.md` existiert, sie lesen — dort
   stehen die host-spezifischen Details (Ports, Prozessmanager, Reverse Proxy) und
   der Verifikationsablauf für Worktree-Previews. Die Datei ist absichtlich nicht
