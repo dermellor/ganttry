@@ -13,6 +13,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | --- | --- |
 | [`docs/overview.md`](docs/overview.md) | The map between the subsystems: the request path through the layers, and how one timeline type is laid out across three stores. Start here. |
 | [`docs/architecture.md`](docs/architecture.md) | The two extension seams: source adapters (where data comes from) and plugins (what a timeline carries beyond items). |
+| [`docs/information-architecture.md`](docs/information-architecture.md) | The six levels the product has, which control belongs to which, and the rules that decide where a new one goes. Read before adding anything to the chrome. |
 | [`docs/data-model.md`](docs/data-model.md) | The timeline file format, date extraction, and `timelines.config.json`. |
 | [`docs/items.md`](docs/items.md) | What an item carries beyond dates: icons, status, owner, custom fields. |
 | [`docs/editing.md`](docs/editing.md) | Editing in the interface: the item rail, the milestone rail, the context menu, drag and form behaviour, the two view modes, URL state. |
