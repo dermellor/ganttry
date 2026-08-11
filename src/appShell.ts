@@ -59,7 +59,6 @@ export type AppShellElements = {
   listBody: HTMLElement;
   contentArea: HTMLElement;
   modeToggle: HTMLElement;
-  viewToolbar: HTMLElement;
   groupBy: HTMLSelectElement;
   groupByControl: HTMLElement;
   filterControl: HTMLElement;
@@ -164,9 +163,6 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   modeTimelineBtn.id = 'mode-timeline';
   modeListBtn.id = 'mode-list';
 
-  // „Nur Meilensteine" used to sit here, two rows above the filter it belonged
-  // with. It is a value of the type dimension now (see src/filterControl.ts), so
-  // the header no longer carries a narrowing at all.
   const presence = AvatarStack({ ariaLabel: 'Online', hidden: true, attrs: { id: 'presence' } });
   // Only an admin is offered the area (main.ts unhides it). Hiding it is an
   // affordance, never the permission: /api/settings and /api/members refuse
@@ -193,13 +189,17 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
           // Classed so the settings area can hide the controls that steer a
           // timeline while it is open — see src/styles/settings.css. The mark
           // stays, so the header does not collapse to an empty bar.
+          //
+          // What is left here identifies: the instance (mark, settings) and which
+          // timeline is open. Everything about *how* it is drawn moved into the
+          // bar below (see „Where every control belongs" in
+          // docs/information-architecture.md).
           el('div', { class: 'app-timeline-controls' }, [
             ToolbarControl({ label: 'View', children: viewSelect }),
-            modeToggle,
           ]),
         ],
       }),
-      ToolbarGroup({ end: true, children: [presence, settingsBtn, addBtn] }),
+      ToolbarGroup({ end: true, children: [presence, settingsBtn] }),
     ],
   });
 
@@ -236,10 +236,33 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     children: ToolbarAnchor({ children: [filterToggle, filterMenu] }),
   });
 
+  const exportBtn = Button({
+    label: 'Export HTML',
+    variant: 'outline',
+    ariaLabel: 'Aktuelle Darstellung als statische HTML-Datei herunterladen',
+    attrs: { id: 'export-btn' },
+  });
+
+  // The presentation level, in one bar and in the order the three actions happen:
+  // a presentation is *chosen*, a perspective is *set*, an extent is *narrowed* —
+  // then the things you *do* to what is on screen, pushed to the far end.
+  //
+  // Before this the switch and one narrowing sat in the header, the perspective and
+  // the other narrowing here, „+ Eintrag" among the instance controls and „Export
+  // HTML" in the status line. Four places for one level, so the row you were
+  // reading never said what a click would change.
+  //
+  // Which of the two middle controls a presentation gets is declared by that
+  // presentation (see „Accessories" in docs/architecture.md). The bar itself is
+  // never hidden any more: it carries the switch, so hiding it would strand
+  // whoever is in a plugin view with no way back.
   const viewToolbar = Toolbar({
     tone: 'view',
     attrs: { id: 'view-toolbar' },
-    children: [groupByControl, filterControl],
+    children: [
+      ToolbarGroup({ children: [modeToggle, groupByControl, filterControl] }),
+      ToolbarGroup({ end: true, children: [addBtn, exportBtn] }),
+    ],
   });
 
   const timeline = ViewSection({
@@ -308,12 +331,6 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   const main = AppMain({ children: [contentArea, settings, panel.detail] });
 
   const status = Text({ text: '…', tone: 'muted', attrs: { id: 'status' } });
-  const exportBtn = Button({
-    label: 'Export HTML',
-    variant: 'link',
-    ariaLabel: 'Aktuelle View als statische HTML-Datei herunterladen',
-    attrs: { id: 'export-btn' },
-  });
   // Which plugins this instance has, and why one of them is not running. It sits
   // in the footer rather than in a settings screen because the answer is usually
   // wanted while looking at a timeline that is missing something.
@@ -335,9 +352,12 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // wherever the footer's box happens to be rather than over the control that
   // opened it.
   const pluginsWrap = el('div', { class: 'plugin-panel-wrap' }, [pluginsBtn, pluginsPanel]);
+  // Status plus the one thing here that is about the deploy rather than about the
+  // timeline. „Export HTML" left, because it exports the active presentation with
+  // its extent and therefore belongs to that presentation, not to a status line.
   const footer = Toolbar({
     tone: 'footer',
-    children: [status, el('div', { class: 'footer-actions' }, [pluginsWrap, exportBtn])],
+    children: [status, el('div', { class: 'footer-actions' }, [pluginsWrap])],
   });
 
   return {
@@ -348,7 +368,6 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       listBody,
       contentArea,
       modeToggle,
-      viewToolbar,
       groupBy,
       groupByControl,
       filterControl,

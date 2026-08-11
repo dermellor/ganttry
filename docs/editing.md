@@ -852,20 +852,33 @@ visibly wrong without it:
   the error, because a placeholder that outlives its load keeps promising a
   timeline that is not coming.
 
-### Shared toolbar: Gruppieren + Filter
+### The presentation bar
 
-A single toolbar (`#view-toolbar`, styled `.view-toolbar` in
-[`src/styles/base.css`](../src/styles/base.css)) sits above **both** the timeline
-and the list (in the shared `.content-area` column, left of the detail panel)
-and is identical in either mode.
+One bar (`#view-toolbar`) sits above the timeline, the list and every plugin view,
+in the shared `.content-area` column left of the detail panel, and it carries the
+whole presentation level in the order the three actions happen: the **switch**
+(a presentation is chosen), **Gruppieren** (a perspective is set), **Filter** (an
+extent is narrowed), then at the far end what you *do* to what is on screen,
+**+ Eintrag** and **Export HTML**.
 
-**Which of its controls a presentation gets is declared by that presentation**, per
-control: the timeline and the list are two renderings of the item list and take
-both, while a plugin view declares what applies to it and gets nothing else (see
-„Accessories" (docs/architecture.md)). A control that does not apply is hidden
-rather than shown inert, because an inert control claims the view supports something
-it does not; when neither applies, the bar goes with them. Nothing in `main.ts`
-branches on „is this a plugin view" for this.
+Before this the switch and one narrowing sat in the header, the perspective and the
+other narrowing in this bar, „+ Eintrag" among the instance controls and
+„Export HTML" in the status line: four places for one level, so the row you were
+reading never said what a click would change. The header now identifies the instance
+and which timeline is open, and the footer holds the item count plus the plugin
+diagnostic.
+
+**Which controls a presentation gets is declared by that presentation** (see
+„Accessories" (docs/architecture.md)). The timeline and the list are two renderings
+of the item list and take all four; a plugin view takes what it declares and nothing
+else. A control that does not apply is hidden rather than shown inert, because an
+inert control claims the view supports something it does not — „+ Eintrag" in a view
+that cannot show the item is the clearest case. Nothing in `main.ts` branches on „is
+this a plugin view" for any of it.
+
+**The bar itself is never hidden**, and that is load-bearing rather than cosmetic:
+it carries the switch, so hiding it would leave whoever is in a plugin view with no
+way back to the timeline.
 
 It holds two
 controls that drive both views from one shared state; the app-state-aware glue

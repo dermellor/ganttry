@@ -106,21 +106,27 @@ are deliberately not part of this.
 | Default grouping, `colorBy` | config file | 3 | timeline settings, as the default for level 4 |
 | Phases as a set | only the ribbon | 3 | the set is structure of the timeline; one phase is level 5 |
 | Presence avatars | header, right | 3 | they belong with the timeline: a session joins per timeline |
-| Timeline / list switch | header | 4 | the presentation bar |
-| Plugin views | the same switch | 4 | also presentations, but each declaring its own accessories |
-| „Gruppieren" | view toolbar | 4, perspective | the presentation bar |
-| „Filter" | view toolbar | 4, extent | the presentation bar, beside the other narrowings |
+| Timeline / list switch | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
+| Plugin views | the same switch | 4 | done: also presentations, each declaring its own accessories |
+| „Gruppieren" | the bar | 4, perspective | done |
+| „Filter" | the bar | 4, extent | done: beside the switch, holding every narrowing |
 | „Nur Meilensteine" | gone | 4, extent | done: a value of the type dimension in the filter |
 | Time window (zoom, pan) | the chart | 4, extent | stays a gesture, counts as extent, travels with it |
-| „+ Eintrag" | header, right | 5 | an action of the presentation the object appears in |
+| „+ Eintrag" | the bar, right | 5 | done: an action of the presentation the object appears in, offered only where it can appear |
 | Detail panel, context menu, rail mark | at the object | 5 | they stay: three entrances to one level is right |
-| „Export HTML" | footer | 6 | it exports the active presentation with its extent, so it belongs to that presentation |
-| Status line | footer | across levels | stays, and loses the action beside it |
+| „Export HTML" | the bar, right | 6 | done: it exports the active presentation with its extent, so it sits with it |
+| Status line | footer | across levels | done: the footer holds the count and the plugin diagnostic, no actions on the timeline |
 | Playground | its own page | 6 | stays outside the product navigation |
 
-Three controls change level, and those are the moves with consequences: „Nur
+Three controls changed level, and those were the moves with consequences: „Nur
 Meilensteine" into the filter, „+ Eintrag" from the instance row to the
-presentation, „Export HTML" out of the status line.
+presentation, „Export HTML" out of the status line. All three have landed.
+
+**The bar is never hidden**, because it carries the switch: hiding it in a plugin
+view would strand whoever is in one with no way back. Only the controls that do not
+apply go, and „applies" is what the presentation declares — including whether
+creating an item and exporting make sense there, which they do not in a view that
+shows something else.
 
 ## The rules
 

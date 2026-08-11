@@ -201,7 +201,6 @@ export function updatePluginViews(): void {
   const builtin = viewAccessories();
   els.groupByControl.hidden = !builtin.grouping;
   els.filterControl.hidden = !builtin.filter;
-  els.viewToolbar.hidden = false;
   setModeButtons('timeline');
   if (!pluginAppliesTo(state.activeSourceFile, current.pluginId)) {
     state.viewMode = 'timeline';
@@ -234,7 +233,10 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   const accessories = viewAccessories(target?.view);
   els.groupByControl.hidden = !accessories.grouping;
   els.filterControl.hidden = !accessories.filter;
-  els.viewToolbar.hidden = !accessories.grouping && !accessories.filter;
+  els.exportBtn.hidden = !accessories.export;
+  // Editability is the other half and stays where it is (render.ts): a presentation
+  // may allow creating an item while this source does not.
+  els.addBtn.hidden = !accessories.create || !isEditableView();
   if (list) {
     renderListView();
   } else if (target && parsed) {

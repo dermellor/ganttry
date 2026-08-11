@@ -230,3 +230,19 @@
 .ds-IconButton:focus-visible {
   outline-offset: -2px;
 }
+
+/* ---- hidden --------------------------------------------------------------- */
+
+/* `display` beats the `hidden` attribute, so every component that sets one has to
+   say this — the attribute is the app's way of hiding a control (`els.addBtn.hidden`
+   and half a dozen siblings), and without the rule those assignments do nothing at
+   all. The bug this fixes was live: „+ Eintrag" stayed on screen on a read-only
+   source, and „Einstellungen" on an instance with access control off. Both are set
+   `hidden` in code and neither disappeared. Check a hiding rule against
+   `getComputedStyle`, never against the property.
+
+   Last in the file on purpose: `[data-block]` sets `display: flex` at the same
+   specificity, so this only wins by coming after it. */
+.ds-Button[hidden] {
+  display: none;
+}

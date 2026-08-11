@@ -45,9 +45,18 @@ export type ViewAccessories = {
   grouping?: boolean;
   /** The extent control: the value filter. */
   filter?: boolean;
+  /**
+   * „+ Eintrag": creating a timeline item from this presentation. A view that does
+   * not show items has no business offering it — the object would be created
+   * somewhere the user cannot see it. A plugin's own rows get their own
+   * affordances inside the view.
+   */
+  create?: boolean;
+  /** „Export HTML": exporting what this presentation shows. */
+  export?: boolean;
 };
 
-export const ACCESSORY_KEYS = ['grouping', 'filter'] as const;
+export const ACCESSORY_KEYS = ['grouping', 'filter', 'create', 'export'] as const;
 
 export type ManifestView = {
   id: string;
@@ -75,11 +84,20 @@ export type ManifestView = {
  * renderings of the item list, so both accessories apply.
  */
 export function viewAccessories(view?: ManifestView | null): Required<ViewAccessories> {
-  if (!view) return { grouping: true, filter: true };
-  if (view.accessories) {
-    return { grouping: !!view.accessories.grouping, filter: !!view.accessories.filter };
+  if (!view) return { grouping: true, filter: true, create: true, export: true };
+  const declared = view.accessories;
+  if (declared) {
+    return {
+      grouping: !!declared.grouping,
+      filter: !!declared.filter,
+      create: !!declared.create,
+      export: !!declared.export,
+    };
   }
-  return { grouping: !!view.toolbar, filter: !!view.toolbar };
+  // The retired boolean spoke about the grouping/filter bar and about nothing else,
+  // so it must not be read as permission to create or export: a plugin declaring it
+  // never said anything about those.
+  return { grouping: !!view.toolbar, filter: !!view.toolbar, create: false, export: false };
 }
 
 /** A set of rows the plugin owns, stored generically by the host (#12). */
