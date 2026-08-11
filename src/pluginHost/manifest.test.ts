@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { grants, validateManifest, type PluginManifest } from './manifest';
+import { grants, validateManifest, viewAccessories, type PluginManifest } from './manifest';
 import { apiVersionMismatch, parseApiRange, satisfiesApiVersion } from './apiVersion';
 import { productRoadmapManifest } from '../plugins/product-roadmap/manifest';
 
@@ -81,6 +81,58 @@ test('views need a usable id, label and icon', () => {
       views: [{ id: 'a', label: 'x', icon: 'i' }, { id: 'a', label: 'y', icon: 'i' }],
     }))[0],
     /duplicate view id/,
+  );
+});
+
+test('a view declares its accessories, and an unknown one is refused', () => {
+  const caps: PluginManifest['capabilities'] = ['views'];
+  const view = (accessories: unknown) => ({ id: 'a', label: 'x', icon: 'i', accessories });
+
+  assert.equal(validateManifest(base({ capabilities: caps, views: [view({ grouping: true })] as never })).ok, true);
+  assert.match(
+    problems(base({ capabilities: caps, views: [view({ sorting: true })] as never }))[0],
+    /unknown accessory "sorting"/,
+  );
+  assert.match(
+    problems(base({ capabilities: caps, views: [view({ filter: 'yes' })] as never }))[0],
+    /accessory "filter" must be a boolean/,
+  );
+  assert.match(
+    problems(base({ capabilities: caps, views: [view('all')] as never }))[0],
+    /accessories must be an object/,
+  );
+});
+
+test('viewAccessories answers for built-in and declared views alike', () => {
+  // No view = a built-in presentation: both apply, because the timeline and the
+  // list are two renderings of the item list.
+  assert.deepEqual(viewAccessories(), { grouping: true, filter: true });
+  // A declared view gets nothing it did not ask for.
+  assert.deepEqual(viewAccessories({ id: 'a', label: 'x', icon: 'i' }), {
+    grouping: false,
+    filter: false,
+  });
+  assert.deepEqual(
+    viewAccessories({ id: 'a', label: 'x', icon: 'i', accessories: { filter: true } }),
+    { grouping: false, filter: true },
+  );
+});
+
+test('the retired toolbar boolean is still read as both accessories', () => {
+  // A plugin built against 1.0 declared one boolean. Refusing to honour it would
+  // break an artifact the version contract promises to keep running.
+  assert.deepEqual(viewAccessories({ id: 'a', label: 'x', icon: 'i', toolbar: true }), {
+    grouping: true,
+    filter: true,
+  });
+  assert.deepEqual(viewAccessories({ id: 'a', label: 'x', icon: 'i', toolbar: false }), {
+    grouping: false,
+    filter: false,
+  });
+  // An explicit declaration wins over the old spelling beside it.
+  assert.deepEqual(
+    viewAccessories({ id: 'a', label: 'x', icon: 'i', toolbar: true, accessories: { grouping: true } }),
+    { grouping: true, filter: false },
   );
 });
 

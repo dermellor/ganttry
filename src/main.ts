@@ -61,6 +61,7 @@ import {
   type PluginView,
 } from './pluginHost/registry';
 import { parsePluginViewMode, pluginViewMode, readViewMode } from './pluginHost/viewMode';
+import { viewAccessories } from './pluginHost/manifest';
 import {
   pluginViewButton,
   pluginViewButtons,
@@ -194,6 +195,12 @@ export function updatePluginViews(): void {
   //     belongs to the timeline the user picked it on.
   showOnlyPluginSection(null);
   els.timeline.hidden = false;
+  // Back on the timeline, so the accessories are the built-in ones. Read from the
+  // same function rather than set to `false` by hand: two places deciding what a
+  // presentation's bar holds is how one of them ends up stale.
+  const builtin = viewAccessories();
+  els.groupByControl.hidden = !builtin.grouping;
+  els.filterControl.hidden = !builtin.filter;
   els.viewToolbar.hidden = false;
   setModeButtons('timeline');
   if (!pluginAppliesTo(state.activeSourceFile, current.pluginId)) {
@@ -219,10 +226,15 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   els.timeline.hidden = list || !!plugin;
   els.list.hidden = !list;
   showOnlyPluginSection(plugin);
-  // The grouping toolbar is shared by the timeline and list views; a plugin view
-  // has to ask for it, because most of them render something other than the item
-  // list and an inert toolbar above it implies otherwise.
-  els.viewToolbar.hidden = !!plugin && !target?.view.toolbar;
+  // The bar is built from what the presentation declares, per control. Nothing
+  // here asks „is this a plugin view?" any more: `viewAccessories` answers for
+  // built-in and declared views alike, so a second plugin view needs no change in
+  // this file. A control that does not apply is hidden rather than left inert,
+  // because an inert control claims the view supports something it does not.
+  const accessories = viewAccessories(target?.view);
+  els.groupByControl.hidden = !accessories.grouping;
+  els.filterControl.hidden = !accessories.filter;
+  els.viewToolbar.hidden = !accessories.grouping && !accessories.filter;
   if (list) {
     renderListView();
   } else if (target && parsed) {
