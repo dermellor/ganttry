@@ -104,35 +104,48 @@ test('a view declares its accessories, and an unknown one is refused', () => {
 });
 
 test('viewAccessories answers for built-in and declared views alike', () => {
-  // No view = a built-in presentation: both apply, because the timeline and the
-  // list are two renderings of the item list.
-  assert.deepEqual(viewAccessories(), { grouping: true, filter: true });
+  // No view = a built-in presentation: everything applies, because the timeline and
+  // the list are two renderings of the item list.
+  assert.deepEqual(viewAccessories(), {
+    grouping: true,
+    filter: true,
+    create: true,
+    export: true,
+  });
   // A declared view gets nothing it did not ask for.
   assert.deepEqual(viewAccessories({ id: 'a', label: 'x', icon: 'i' }), {
     grouping: false,
     filter: false,
+    create: false,
+    export: false,
   });
   assert.deepEqual(
     viewAccessories({ id: 'a', label: 'x', icon: 'i', accessories: { filter: true } }),
-    { grouping: false, filter: true },
+    { grouping: false, filter: true, create: false, export: false },
   );
 });
 
-test('the retired toolbar boolean is still read as both accessories', () => {
-  // A plugin built against 1.0 declared one boolean. Refusing to honour it would
-  // break an artifact the version contract promises to keep running.
+test('the retired toolbar boolean speaks about the bar and nothing else', () => {
+  // A plugin built against 1.0 declared one boolean about the grouping/filter bar.
+  // Refusing to honour it would break an artifact the version contract promises to
+  // keep running; reading it as permission to create items or export would grant
+  // something it never claimed.
   assert.deepEqual(viewAccessories({ id: 'a', label: 'x', icon: 'i', toolbar: true }), {
     grouping: true,
     filter: true,
+    create: false,
+    export: false,
   });
   assert.deepEqual(viewAccessories({ id: 'a', label: 'x', icon: 'i', toolbar: false }), {
     grouping: false,
     filter: false,
+    create: false,
+    export: false,
   });
   // An explicit declaration wins over the old spelling beside it.
   assert.deepEqual(
     viewAccessories({ id: 'a', label: 'x', icon: 'i', toolbar: true, accessories: { grouping: true } }),
-    { grouping: true, filter: false },
+    { grouping: true, filter: false, create: false, export: false },
   );
 });
 

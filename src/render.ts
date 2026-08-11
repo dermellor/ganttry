@@ -633,7 +633,10 @@ export async function renderTimeline(view: View) {
 
   const editable = editableOptions();
 
-  els.addBtn.hidden = !isEditableView();
+  // „+ Eintrag" is not set here any more. Its visibility takes two facts — is this
+  // source editable, and does the active presentation offer creating an item at all
+  // — and `applyViewMode` owns it, running right after this. Two writers is how one
+  // of them ends up showing the button in a view that cannot place the item.
 
   const initialStart = state.pendingWindow?.start ?? new Date(focusMin - padding);
   const initialEnd = state.pendingWindow?.end ?? new Date(focusMax + padding);
@@ -1409,7 +1412,8 @@ export function applyGrouping(): void {
   refreshDisplay();
   if (!timeline) return;
   timeline.setOptions({ editable: editableOptions() } as any);
-  els.addBtn.hidden = !isEditableView();
+  // No `addBtn` line here either: a grouping change touches neither the source's
+  // editability nor what the presentation offers.
 }
 
 // Filter change: only the visible item set changes, so a plain display refresh

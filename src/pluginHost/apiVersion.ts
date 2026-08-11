@@ -16,7 +16,12 @@
 // 1.1 added `ManifestView.accessories`, which is why it is a minor: the boolean
 // it replaces (`toolbar`) is still read, so a plugin built against 1.0 keeps
 // running. Removing that reading is what would make it a major.
-export const HOST_API_VERSION = { major: 1, minor: 1 } as const;
+//
+// 1.2 added the `create` and `export` accessories, when those two actions moved
+// into the presentation's own bar and a view therefore had to be able to say
+// whether they apply to it. Additive as well: an existing declaration simply does
+// not claim them.
+export const HOST_API_VERSION = { major: 1, minor: 2 } as const;
 
 export type ApiVersion = { major: number; minor: number };
 

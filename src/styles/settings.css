@@ -17,19 +17,17 @@
    read-only source, the detail panel when nothing is selected), and writing over
    that on open means guessing what to restore on close.
 
-   The add button is matched by attribute rather than by an id selector: its id
-   begins with three hex digits, so the hash form reads to the design-system
-   checker as a colour literal. (Writing that id here in the hash form would trip
-   the same check from inside this comment.) */
+   „+ Eintrag" needs no rule of its own any more: it sits in the presentation bar,
+   which is inside `.ds-ContentArea` and goes with it. It used to be matched by
+   attribute rather than by its id, because that id begins with three hex digits
+   and the hash form reads to the design-system checker as a colour literal. */
 body.settings-open .ds-ContentArea,
 body.settings-open .ds-Panel,
 body.settings-open .app-timeline-controls,
-body.settings-open [id='add-btn'],
 body.settings-open #presence,
-/* The footer counts the active timeline's items and exports it. Both are true
-   statements about something that is not on screen, and „8 items in Beispiel:
-   Projektplan" under a page of instance settings reads as a claim about the
-   settings. */
+/* The footer counts the active timeline's items, which is a true statement about
+   something that is not on screen: „8 items in Beispiel: Projektplan" under a page
+   of instance settings reads as a claim about the settings. */
 body.settings-open .ds-Toolbar[data-tone='footer'] {
   display: none;
 }

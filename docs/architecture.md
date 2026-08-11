@@ -200,9 +200,12 @@ to `renderView(container, viewId)`. Nothing plugin-shaped is in `index.html`, wh
 is what makes a second view possible without touching the core.
 
 **Accessories are declared per control, and the host asks every presentation the
-same way.** `accessories: { grouping?, filter? }` says whether the perspective
-control and the extent control apply; both default to false, so a view that renders
-something other than the item list gets a bar with nothing inert on it.
+same way.** `accessories: { grouping?, filter?, create?, export? }` says whether the
+perspective control, the extent control, „+ Eintrag" and „Export HTML" apply; all
+default to false, so a view that renders something other than the item list gets a
+bar with nothing inert on it. `create` and `export` joined the list when those two
+actions moved into the presentation's own bar (`HOST_API_VERSION` 1.2): standing in
+a view's bar, „+ Eintrag" would create an item that view cannot show.
 `viewAccessories(view)` ([`src/pluginHost/manifest.ts`](../src/pluginHost/manifest.ts))
 answers for a declared view and, with no argument, for the built-in timeline and
 list — which is why `main.ts` no longer asks „is this a plugin view?" and a second
@@ -211,8 +214,9 @@ plugin view needs no change there.
 It replaces a single `toolbar` boolean that could only say „all of them" or „none",
 and that boolean was the host deciding on the view's behalf. The two are different
 questions (the perspective bundles the same set, the extent narrows it), so a view
-can honour one and not the other. `toolbar` is **still read** as
-`{ grouping: true, filter: true }`: a plugin declaring `^1` was built against it,
+can honour one and not the other. `toolbar` is **still read**, as `{ grouping: true, filter: true }` and nothing more
+— it spoke about that one bar, so reading it as permission to create or export would
+grant what it never claimed. A plugin declaring `^1` was built against it,
 and the version contract exists so such an artifact keeps running. That is also why
 adding accessories was a **minor** bump (`HOST_API_VERSION` 1.1) rather than a major
 one — dropping that reading is what would make it major. An unknown accessory key
