@@ -31,6 +31,10 @@ export const productRoadmapManifest: PluginManifest = {
     {
       id: 'pricing',
       label: 'Preise',
+      // Declares nothing: the matrix renders tiers against features, so neither
+      // the item grouping nor the item filter has anything to act on here. Before
+      // views declared their accessories this was the boolean `toolbar: false`,
+      // and the host had to decide all-or-nothing for every plugin view.
       icon:
         '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
         '<rect x="3" y="4" width="18" height="16" rx="2" />' +

@@ -30,14 +30,57 @@ export const CAPABILITIES = [
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
+/**
+ * Which of the presentation level's shared controls apply to a view. Both default
+ * to false, so a view that renders something other than the item list gets a bar
+ * with nothing inert on it.
+ *
+ * Declared per accessory rather than as one „toolbar" boolean, because the two are
+ * different questions: the perspective bundles the same set, the extent narrows it.
+ * A view can honour one and not the other, and the boolean forced the host to
+ * decide for it. See „Level 4 has two halves" (docs/information-architecture.md).
+ */
+export type ViewAccessories = {
+  /** The perspective control: the grouping dimension. */
+  grouping?: boolean;
+  /** The extent control: the value filter. */
+  filter?: boolean;
+};
+
+export const ACCESSORY_KEYS = ['grouping', 'filter'] as const;
+
 export type ManifestView = {
   id: string;
   label: string;
   /** Inline SVG for the header toggle. */
   icon: string;
-  /** Does the shared grouping/filter toolbar apply? Default false. */
+  /** Which shared controls apply. Absent = none. */
+  accessories?: ViewAccessories;
+  /**
+   * @deprecated The one boolean `accessories` replaced, and the reason it did:
+   * it could only say „all of them" or „none". Still read, as
+   * `{ grouping: true, filter: true }`, because a plugin declaring `^1` was built
+   * against it and the point of a versioned contract is that such an artifact
+   * keeps running. Never written by anything in this repository.
+   */
   toolbar?: boolean;
 };
+
+/**
+ * What a view actually gets. One place, so „built-in" and „declared by a plugin"
+ * are answered the same way: the host asks the presentation instead of branching
+ * on whether it belongs to a plugin, which is what `toolbar` made it do.
+ *
+ * No argument means a built-in presentation (timeline, list). Those are two
+ * renderings of the item list, so both accessories apply.
+ */
+export function viewAccessories(view?: ManifestView | null): Required<ViewAccessories> {
+  if (!view) return { grouping: true, filter: true };
+  if (view.accessories) {
+    return { grouping: !!view.accessories.grouping, filter: !!view.accessories.filter };
+  }
+  return { grouping: !!view.toolbar, filter: !!view.toolbar };
+}
 
 /** A set of rows the plugin owns, stored generically by the host (#12). */
 export type CollectionDecl = {
@@ -208,6 +251,26 @@ export function validateManifest(input: unknown, host?: ApiVersion): ValidationR
     viewIds.add(v.id);
     if (typeof v.label !== 'string' || !v.label.trim()) problems.push(`view "${v.id}" needs a label`);
     if (typeof v.icon !== 'string' || !v.icon.trim()) problems.push(`view "${v.id}" needs an icon`);
+    // Refused rather than partly applied, for the same reason an unknown
+    // capability is: a declaration the host silently dropped leaves the plugin
+    // running as if it had been honoured, and the symptom then surfaces far from
+    // the cause — here as a control that is missing or inert with no explanation.
+    if (v.accessories != null) {
+      if (!isPlainObject(v.accessories)) {
+        problems.push(`view "${v.id}": accessories must be an object`);
+      } else {
+        for (const [key, value] of Object.entries(v.accessories)) {
+          if (!(ACCESSORY_KEYS as readonly string[]).includes(key)) {
+            problems.push(`view "${v.id}": unknown accessory "${key}"`);
+          } else if (typeof value !== 'boolean') {
+            problems.push(`view "${v.id}": accessory "${key}" must be a boolean`);
+          }
+        }
+      }
+    }
+    if (v.toolbar != null && typeof v.toolbar !== 'boolean') {
+      problems.push(`view "${v.id}": toolbar must be a boolean`);
+    }
   }
   if (viewIds.size && !caps.has('views')) problems.push('declaring views requires the "views" capability');
 

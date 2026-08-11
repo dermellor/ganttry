@@ -857,8 +857,16 @@ visibly wrong without it:
 A single toolbar (`#view-toolbar`, styled `.view-toolbar` in
 [`src/styles/base.css`](../src/styles/base.css)) sits above **both** the timeline
 and the list (in the shared `.content-area` column, left of the detail panel)
-and is identical in either mode — hidden when a plugin view is active, since
-grouping and filtering apply to items and a plugin view renders something else.
+and is identical in either mode.
+
+**Which of its controls a presentation gets is declared by that presentation**, per
+control: the timeline and the list are two renderings of the item list and take
+both, while a plugin view declares what applies to it and gets nothing else (see
+„Accessories" (docs/architecture.md)). A control that does not apply is hidden
+rather than shown inert, because an inert control claims the view supports something
+it does not; when neither applies, the bar goes with them. Nothing in `main.ts`
+branches on „is this a plugin view" for this.
+
 It holds two
 controls that drive both views from one shared state; the app-state-aware glue
 lives in [`src/grouping.ts`](../src/grouping.ts), the pure sectioning stays in

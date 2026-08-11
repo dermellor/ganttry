@@ -193,11 +193,32 @@ Postgres-only capability, which would undo the symmetry the source adapters just
 achieved.
 
 **A plugin declares its views; the host builds the chrome.** `PluginView` carries
-an id, a label and the icon markup for the header toggle. The host creates one
-button and one `.plugin-view` section per declared view
-([`src/pluginHost/views.ts`](../src/pluginHost/views.ts)) and hands the section to
-`renderView(container, viewId)`. Nothing plugin-shaped is in `index.html`, which is
-what makes a second view possible without touching the core.
+an id, a label, the icon markup for the header toggle, and the **accessories** the
+view wants. The host creates one button and one `.plugin-view` section per declared
+view ([`src/pluginHost/views.ts`](../src/pluginHost/views.ts)) and hands the section
+to `renderView(container, viewId)`. Nothing plugin-shaped is in `index.html`, which
+is what makes a second view possible without touching the core.
+
+**Accessories are declared per control, and the host asks every presentation the
+same way.** `accessories: { grouping?, filter? }` says whether the perspective
+control and the extent control apply; both default to false, so a view that renders
+something other than the item list gets a bar with nothing inert on it.
+`viewAccessories(view)` ([`src/pluginHost/manifest.ts`](../src/pluginHost/manifest.ts))
+answers for a declared view and, with no argument, for the built-in timeline and
+list — which is why `main.ts` no longer asks „is this a plugin view?" and a second
+plugin view needs no change there.
+
+It replaces a single `toolbar` boolean that could only say „all of them" or „none",
+and that boolean was the host deciding on the view's behalf. The two are different
+questions (the perspective bundles the same set, the extent narrows it), so a view
+can honour one and not the other. `toolbar` is **still read** as
+`{ grouping: true, filter: true }`: a plugin declaring `^1` was built against it,
+and the version contract exists so such an artifact keeps running. That is also why
+adding accessories was a **minor** bump (`HOST_API_VERSION` 1.1) rather than a major
+one — dropping that reading is what would make it major. An unknown accessory key
+makes the manifest invalid rather than being silently ignored, for the reason every
+declaration here is checked: one the host quietly dropped surfaces far from its
+cause, as a control that is missing with no explanation.
 
 **A view is addressable.** `ViewMode` is `timeline`, `list`, or
 `plugin:<pluginId>:<viewId>`, and that one scalar is what `state.viewMode`, the

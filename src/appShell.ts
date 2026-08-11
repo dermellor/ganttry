@@ -61,6 +61,7 @@ export type AppShellElements = {
   modeToggle: HTMLElement;
   viewToolbar: HTMLElement;
   groupBy: HTMLSelectElement;
+  groupByControl: HTMLElement;
   filterControl: HTMLElement;
   filterToggle: HTMLButtonElement;
   filterMenu: HTMLElement;
@@ -203,6 +204,14 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   });
 
   const groupBy = Select({ id: 'groupby' });
+  // Kept as a node rather than inlined into the bar: the presentation declares
+  // which accessories apply (see main.ts), so each of them has to be hideable on
+  // its own.
+  const groupByControl = ToolbarControl({
+    label: 'Gruppieren',
+    attrs: { id: 'groupby-control' },
+    children: groupBy,
+  });
   // No dimension dropdown beside it any more: the panel holds every dimension at
   // once, so picking one was a step that bought nothing and a limit that cost the
   // combination of two narrowings (see src/filterControl.ts).
@@ -230,7 +239,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   const viewToolbar = Toolbar({
     tone: 'view',
     attrs: { id: 'view-toolbar' },
-    children: [ToolbarControl({ label: 'Gruppieren', children: groupBy }), filterControl],
+    children: [groupByControl, filterControl],
   });
 
   const timeline = ViewSection({
@@ -341,6 +350,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       modeToggle,
       viewToolbar,
       groupBy,
+      groupByControl,
       filterControl,
       filterToggle,
       filterMenu,

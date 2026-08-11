@@ -13,7 +13,10 @@
  * working on 1.7; one built against 1.7 does not run on 1.0, because it may use
  * something that did not exist yet.
  */
-export const HOST_API_VERSION = { major: 1, minor: 0 } as const;
+// 1.1 added `ManifestView.accessories`, which is why it is a minor: the boolean
+// it replaces (`toolbar`) is still read, so a plugin built against 1.0 keeps
+// running. Removing that reading is what would make it a major.
+export const HOST_API_VERSION = { major: 1, minor: 1 } as const;
 
 export type ApiVersion = { major: number; minor: number };
 
