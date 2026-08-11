@@ -26,6 +26,7 @@ export const CAPABILITIES = [
   'fields',
   'views',
   'data:own',
+  'tools',
   'public:read',
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
@@ -150,6 +151,60 @@ export type ReferenceDecl = {
   onDelete?: 'cascade' | 'restrict' | 'unlink';
 };
 
+/**
+ * One agent verb the plugin contributes.
+ *
+ * The half of a plugin that fields cannot express: an agent gets `add_item` and
+ * `update_item` from the core, and everything domain-specific about *when* to
+ * apply them has to come from somewhere. A rule carried in a prompt cannot be
+ * tested and cannot be reused, and it is wrong in a way nobody notices until a
+ * date is wrong.
+ *
+ * Declared here rather than exported by the plugin's code for the reason the
+ * whole manifest exists: the host has to be able to list and version-check a
+ * tool without executing the plugin. What runs is a pure function (see
+ * `./tools.ts`), which is what keeps a domain rule unit-testable and lets the
+ * host apply the result through the write path it already owns.
+ *
+ * A plugin whose verbs are the point of it should declare `apiVersion: "^1.3"`,
+ * the version this section arrived in. `^1` is accepted, because the section is
+ * additive and an artifact built against 1.0 has to keep loading — but any host
+ * older than 1.3 will load such a plugin and list its tools nowhere, and that is
+ * not something a newer host can warn about on the older one's behalf.
+ */
+export type ToolDecl = {
+  /**
+   * The name an agent calls, in a namespace shared by every installed plugin.
+   *
+   * Bare snake_case, because a tool name is not an id: the MCP tool namespace is
+   * flat and the common constraint on it is `[a-zA-Z0-9_-]`, so the reverse-DNS
+   * plugin id cannot be a prefix. Two plugins claiming one verb is therefore
+   * possible, and is resolved where the list is assembled (`pluginTools`) rather
+   * than by mangling the name into something no one would type.
+   */
+  name: string;
+  title: string;
+  /**
+   * What it does, for the agent choosing between tools. This is the only thing a
+   * model sees before calling, so „applies the rule" is not a description.
+   */
+  description: string;
+  /**
+   * JSON Schema for the arguments, in the `./dataSchema` subset.
+   *
+   * `id` is reserved: a tool always runs against one timeline, and the host
+   * supplies it under that name.
+   */
+  inputSchema?: Record<string, unknown>;
+  /**
+   * What the tool may change. Absent means it answers a question and changes
+   * nothing, which is a real category (`check_regulatory_gates`) and not an
+   * oversight — a plan from such a tool carrying changes is refused rather than
+   * applied, so an analysis tool cannot quietly become a write.
+   */
+  writes?: 'items';
+};
+
 /** Collections (and fields) the host may serve unauthenticated (#20). */
 export type PublicReadDecl = {
   collections: string[];
@@ -173,6 +228,8 @@ export type PluginManifest = {
   configSchema?: Record<string, unknown>;
   collections?: CollectionDecl[];
   references?: ReferenceDecl[];
+  /** Agent verbs this plugin contributes. */
+  tools?: ToolDecl[];
   /** Item `metadata` keys this plugin owns, so uninstalling can clean them up. */
   metadataKeys?: string[];
   publicRead?: PublicReadDecl;
@@ -211,6 +268,16 @@ export type ValidationResult =
  */
 const ID_RE = /^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+$/;
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+/**
+ * A tool name: snake_case, at least four characters, no dots.
+ *
+ * The shape agents already meet everywhere (`add_item`, `read_plugin_data`), and
+ * a subset of the `[a-zA-Z0-9_-]` every tool namespace accepts. The minimum
+ * length is there because a two-letter verb in a namespace shared by every
+ * installed plugin is a collision waiting to happen.
+ */
+const TOOL_NAME_RE = /^[a-z][a-z0-9_]{3,47}$/;
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -330,6 +397,49 @@ export function validateManifest(input: unknown, host?: ApiVersion): ValidationR
       problems.push(`reference ${r.from}.${r.field}: array must be a boolean when present`);
     }
   }
+
+  const toolNames = new Set<string>();
+  for (const t of m.tools ?? []) {
+    if (!isPlainObject(t) || typeof t.name !== 'string' || !TOOL_NAME_RE.test(t.name)) {
+      problems.push(
+        'every tool needs a snake_case name of at least four characters ' +
+          '(e.g. "recalculate_deadlines"); a tool namespace is flat and takes no dots',
+      );
+      continue;
+    }
+    if (toolNames.has(t.name)) problems.push(`duplicate tool "${t.name}"`);
+    toolNames.add(t.name);
+    if (typeof t.title !== 'string' || !t.title.trim()) problems.push(`tool "${t.name}" needs a title`);
+    // The description is what a model reads when it decides whether to call the
+    // tool at all, so an empty one does not make the tool unavailable — it makes
+    // it invisible, which is the harder failure to diagnose.
+    if (typeof t.description !== 'string' || !t.description.trim()) {
+      problems.push(`tool "${t.name}" needs a description; it is what an agent chooses on`);
+    }
+    if (t.inputSchema != null) {
+      if (!isPlainObject(t.inputSchema)) problems.push(`tool "${t.name}": inputSchema must be an object`);
+      // Same rule as a collection's schema, and for the same reason: a keyword the
+      // host cannot apply is refused here rather than skipped on every call, where
+      // the author would keep believing their constraint was checked.
+      else {
+        for (const problem of unsupportedKeywords(t.inputSchema)) problems.push(`tool "${t.name}" inputSchema ${problem}`);
+        // A tool always runs against one timeline, and the host passes it as `id`.
+        // A declared argument of that name would shadow it, which does not fail —
+        // it sends the rule someone else's timeline.
+        const props = t.inputSchema.properties;
+        if (isPlainObject(props) && 'id' in props) {
+          problems.push(`tool "${t.name}": "id" is reserved for the timeline the tool runs against`);
+        }
+      }
+    }
+    if (t.writes != null && t.writes !== 'items') {
+      problems.push(`tool "${t.name}": writes must be "items" when present`);
+    }
+    if (t.writes === 'items' && !caps.has('items:write')) {
+      problems.push(`tool "${t.name}" writes items, which requires the "items:write" capability`);
+    }
+  }
+  if (toolNames.size && !caps.has('tools')) problems.push('declaring tools requires the "tools" capability');
 
   for (const k of m.metadataKeys ?? []) {
     if (typeof k !== 'string' || !k.trim()) problems.push('metadataKeys entries must be non-empty strings');

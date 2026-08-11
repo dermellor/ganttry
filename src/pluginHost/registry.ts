@@ -18,7 +18,8 @@
 
 import type { CustomFieldDef, TimelineFile } from '../types';
 import { pluginViewMode, type PluginViewMode } from './viewMode';
-import { validateManifest, type ManifestView, type PluginManifest } from './manifest';
+import { validateManifest, type ManifestView, type PluginManifest, type ToolDecl } from './manifest';
+import type { ToolHandler } from './tools';
 import { productRoadmapDescriptor } from '../plugins/product-roadmap/descriptor';
 import type { HostApi } from './hostApi';
 
@@ -80,6 +81,16 @@ export interface PluginDescriptor {
    * demands enough data to make the *view* worth offering.
    */
   fields(file: TimelineFile | null | undefined): CustomFieldDef[];
+  /**
+   * The implementation of each tool the manifest declares, keyed by tool name.
+   *
+   * Pure functions over the timeline (see ./tools.ts), so this stays as cheap and
+   * synchronous as `fields`: the module holding a plugin's domain rules imports
+   * types and nothing else. A rule behind the dynamic `load()` would be
+   * unreachable for the process that actually calls tools, which has no DOM to
+   * render a view into.
+   */
+  tools?: Record<string, ToolHandler>;
   /** Dynamic import of the plugin's module — the only edge into its chunk. */
   load(): Promise<PluginModule>;
 }
@@ -172,6 +183,85 @@ export function legacyViewMode(legacyId: string): PluginViewMode | null {
     if (viewId) return pluginViewMode(plugin.manifest.id, viewId);
   }
   return null;
+}
+
+/** One callable verb: what was declared, and what implements it. */
+export type RegisteredTool = {
+  pluginId: string;
+  decl: ToolDecl;
+  run: ToolHandler;
+};
+
+/** Why a declared tool is not callable. Reported, never swallowed. */
+export type ToolProblem = {
+  pluginId: string;
+  tool: string;
+  reason: 'name-taken' | 'no-handler' | 'not-declared';
+  problem: string;
+};
+
+/**
+ * Every callable tool across the registered plugins, plus the ones that are not.
+ *
+ * **A tool namespace is flat**, so two plugins can claim one verb. The first
+ * registration keeps the name and the second is reported: the alternative is
+ * silent shadowing, where an agent calls `recalculate_deadlines` and gets a
+ * different plugin's rule with no indication that it happened. Refusing to
+ * assemble any list at all would be worse still — one squatted name would cost
+ * an instance every other plugin's tools.
+ *
+ * The two mismatch cases are reported for the same reason. A declaration without
+ * a handler is a tool an agent can see and cannot call; a handler without a
+ * declaration is a rule nobody approved on install, and it stays uncallable.
+ */
+export function pluginTools(): { tools: RegisteredTool[]; problems: ToolProblem[] } {
+  const tools: RegisteredTool[] = [];
+  const problems: ToolProblem[] = [];
+  const claimed = new Map<string, string>();
+
+  for (const plugin of PLUGINS) {
+    const pluginId = plugin.manifest.id;
+    const handlers = plugin.tools ?? {};
+    const declared = new Set<string>();
+
+    for (const decl of plugin.manifest.tools ?? []) {
+      declared.add(decl.name);
+      const owner = claimed.get(decl.name);
+      if (owner) {
+        problems.push({
+          pluginId,
+          tool: decl.name,
+          reason: 'name-taken',
+          problem: `"${decl.name}" is already provided by "${owner}"`,
+        });
+        continue;
+      }
+      const run = handlers[decl.name];
+      if (typeof run !== 'function') {
+        problems.push({
+          pluginId,
+          tool: decl.name,
+          reason: 'no-handler',
+          problem: `"${decl.name}" is declared but the plugin provides no implementation for it`,
+        });
+        continue;
+      }
+      claimed.set(decl.name, pluginId);
+      tools.push({ pluginId, decl, run });
+    }
+
+    for (const name of Object.keys(handlers)) {
+      if (declared.has(name)) continue;
+      problems.push({
+        pluginId,
+        tool: name,
+        reason: 'not-declared',
+        problem: `"${name}" is implemented but not declared in the manifest, so it is not callable`,
+      });
+    }
+  }
+
+  return { tools, problems };
 }
 
 /** Every table a registered plugin owns, for the realtime subscription. */

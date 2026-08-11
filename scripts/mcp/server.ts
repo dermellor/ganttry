@@ -23,7 +23,8 @@ import { z } from 'zod';
 import type { TimelineFile, TimelineFileItem } from '../../src/types.js';
 import { envSourcesHint, envValue } from '../db/env.js';
 import { enforceExtentExclusivity, type TimelineGroupDecl } from '../db/timeline-repo.js';
-import { resolveItemPatch } from './patch.js';
+import { resolveItemPatch, type ItemPatch } from './patch.js';
+import { mcpPluginTools, splitChanges, toolResult } from './pluginTools.js';
 
 // ---------- config / env ----------
 
@@ -130,6 +131,40 @@ async function apiSub(
     body: body !== undefined ? JSON.stringify(body) : undefined,
     ...(ifMatch != null ? { headers: { 'If-Match': String(ifMatch) } } : {}),
   });
+}
+
+/**
+ * Apply one item patch in place, with the semantics `update_item` documents.
+ *
+ * Extracted because a plugin's tool produces the same kind of change and must
+ * behave identically: a second copy of the merge is how „metadata: null clears
+ * the object" ends up true for one caller and not the other.
+ */
+function applyItemPatch(file: TimelineFile, itemId: string, patch: ItemPatch): void {
+  const it = file.items.find((i) => i.id === itemId);
+  if (!it) throw new Error(`Item "${itemId}" not found.`);
+  const rest = resolveItemPatch(it, patch);
+  Object.assign(it, rest);
+  // An emptied metadata object is dropped rather than written as `{}`: that is
+  // the shape a read returns (rowToItem omits it) and what the form leaves
+  // behind, so a round-trip through this tool does not add a key to the file.
+  if (it.metadata && Object.keys(it.metadata).length === 0) delete it.metadata;
+  // Extent fields are mutually exclusive: whichever the patch set wins and
+  // clears the counterpart, so switching end↔duration never leaves both.
+  if (rest.end != null) delete it.duration;
+  else if (rest.duration != null) delete it.end;
+}
+
+/** Append an item, with the semantics `add_item` documents. */
+function appendItem(file: TimelineFile, item: TimelineFileItem): void {
+  if (item.id && file.items.some((i) => i.id === item.id)) {
+    throw new Error(`Item id "${item.id}" already exists.`);
+  }
+  enforceExtentExclusivity(item);
+  // `metadata` is nullable so a patch can clear it; on a create there is nothing
+  // to clear, and writing the null through would put it in the file.
+  if (item.metadata == null) delete (item as { metadata?: unknown }).metadata;
+  file.items.push(item);
 }
 
 /** Read-modify-write helper: fetch, mutate in memory, push back. Returns the new file. */
@@ -479,17 +514,7 @@ server.registerTool(
     inputSchema: { id: z.string().describe('Timeline id.'), item: z.object(itemFields) },
   },
   async ({ id, item }) => {
-    const file = await mutate(id, (f) => {
-      if (item.id && f.items.some((i) => i.id === item.id)) {
-        throw new Error(`Item id "${item.id}" already exists in "${id}".`);
-      }
-      // Extent fields are mutually exclusive (end wins); never store both.
-      enforceExtentExclusivity(item);
-      // `metadata` is nullable so update_item can clear it; on a create there is
-      // nothing to clear, and writing the null through would put it in the file.
-      if (item.metadata == null) delete (item as { metadata?: unknown }).metadata;
-      f.items.push(item as TimelineFileItem);
-    });
+    const file = await mutate(id, (f) => appendItem(f, item as TimelineFileItem));
     return ok({ ok: true, id, itemId: item.id, items: file.items.length });
   },
 );
@@ -509,23 +534,8 @@ server.registerTool(
     },
   },
   async ({ id, itemId, patch }) => {
-    let found = false;
-    await mutate(id, (f) => {
-      const it = f.items.find((i) => i.id === itemId);
-      if (!it) throw new Error(`Item "${itemId}" not found in "${id}".`);
-      found = true;
-      const rest = resolveItemPatch(it, patch);
-      Object.assign(it, rest);
-      // An emptied metadata object is dropped rather than written as `{}`: that is
-      // the shape a read returns (rowToItem omits it) and what the form leaves
-      // behind, so a round-trip through this tool does not add a key to the file.
-      if (it.metadata && Object.keys(it.metadata).length === 0) delete it.metadata;
-      // Extent fields are mutually exclusive: whichever the patch set wins and
-      // clears the counterpart, so switching end↔duration never leaves both.
-      if (rest.end != null) delete it.duration;
-      else if (rest.duration != null) delete it.end;
-    });
-    return ok({ ok: true, id, itemId, updated: found });
+    await mutate(id, (f) => applyItemPatch(f, itemId, patch));
+    return ok({ ok: true, id, itemId, updated: true });
   },
 );
 
@@ -614,6 +624,36 @@ server.registerTool(
   },
 );
 
+// ---------- tools contributed by plugins ----------
+
+// One registration per declared verb, so a plugin's domain rule is a tool an
+// agent picks like any other. The list is assembled from the registered plugins
+// rather than written here: a core file that spelled out one plugin's verbs would
+// be the privilege no third-party plugin can have (see #10).
+const contributed = mcpPluginTools();
+for (const tool of contributed.tools) {
+  server.registerTool(
+    tool.decl.name,
+    {
+      title: tool.decl.title,
+      description: tool.decl.description,
+      inputSchema: tool.shape,
+    },
+    async ({ id, ...args }) => {
+      // Fetch once and plan against exactly the file that gets written back. A
+      // second read between planning and writing would let the rule compute from
+      // dates that are no longer there.
+      const file = await getTimeline(id as string);
+      const plan = tool.plan(file, args as Record<string, unknown>);
+      const { updates, adds } = splitChanges(plan);
+      for (const { itemId, patch } of updates) applyItemPatch(file, itemId, patch as ItemPatch);
+      for (const item of adds) appendItem(file, item as TimelineFileItem);
+      if (updates.length || adds.length) await putTimeline(id as string, file);
+      return ok(toolResult(plan, { updated: updates.length, added: adds.length }));
+    },
+  );
+}
+
 // ---------- boot ----------
 
 async function main(): Promise<void> {
@@ -629,6 +669,15 @@ async function main(): Promise<void> {
   await server.connect(transport);
   // stderr is safe for logs (stdout is the MCP channel).
   console.error(`[timelines-mcp] connected — base ${BASE_URL}${API_TOKEN ? '' : ' (no MCP_API_TOKEN!)'}`);
+  if (contributed.tools.length) {
+    console.error(`[timelines-mcp] plugin tools: ${contributed.tools.map((t) => t.decl.name).join(', ')}`);
+  }
+  // A verb that is declared and not callable has to be said out loud. Silence
+  // makes it indistinguishable from a plugin that was never installed, which is
+  // the wrong thing to go looking for.
+  for (const p of contributed.problems) {
+    console.error(`[timelines-mcp] plugin tool unavailable — ${p.pluginId}: ${p.problem}`);
+  }
 }
 
 main().catch((err) => {
