@@ -70,6 +70,39 @@ test('groupByOptions offers Status only when an item actually carries one', () =
   assert.equal(some.find((o) => o.key === 'status')?.label, 'Status');
 });
 
+test('groupByOptions offers Typ only when more than one kind is present', () => {
+  // All ranges: the dimension would have a single bucket, and narrowing to „the
+  // only kind there is" does nothing. Same rule as Status.
+  const oneKind = groupByOptions(
+    [item('a', '2026-01-01'), item('b', '2026-01-02')],
+    [],
+  );
+  assert.deepEqual(oneKind.map((o) => o.key), ['group']);
+
+  const twoKinds = groupByOptions(
+    [item('a', '2026-01-01'), item('b', '2026-01-02', { type: 'point' })],
+    [],
+  );
+  assert.deepEqual(twoKinds.map((o) => o.key), ['group', 'type']);
+  assert.equal(twoKinds.find((o) => o.key === 'type')?.label, 'Typ');
+});
+
+test('type dimension buckets by the item’s kind, in the declared order', () => {
+  const entries = [
+    item('a', '2026-01-01', { type: 'box' }),
+    item('b', '2026-01-02', { type: 'point' }),
+    item('c', '2026-01-03'), // range
+  ];
+  const options = groupByOptions(entries, []);
+  const { sections } = computeSections(entries, 'type', options, ctx());
+  assert.deepEqual(sections.map((s) => [s.id, s.label]), [
+    ['point', 'Meilenstein'],
+    ['range', 'Zeitraum'],
+    ['box', 'Markierung'],
+  ]);
+  assert.deepEqual(sections.find((s) => s.id === 'point')?.items.map((i) => i.id), ['b']);
+});
+
 test('status dimension orders sections Open → Doing → Done, then "Ohne Status"', () => {
   const entries = [
     item('a', '2026-01-01', { status: 'Done' }),

@@ -161,10 +161,9 @@ export interface AppState {
   pendingItem: string | null;
   pendingWindow: { start: Date; end: Date } | null;
   suppressUrlSync: boolean;
-  // The five values below describe how ONE timeline is being looked at, and they
+  // The three values below describe how ONE timeline is being looked at, and they
   // are stored per timeline (see viewPrefs.ts). `loadViewPrefs` swaps them on
   // every view change, `saveViewPrefs` writes them back.
-  milestonesOnly: boolean;
   viewMode: ViewMode;
   // Shared grouping dimension for the timeline and list views. 'group'
   // (default), 'tag', or a custom field key (e.g. 'cf:tier'); validated against
@@ -179,7 +178,7 @@ export interface AppState {
   // opened remembers. Same pattern as pendingItem / pendingWindow above: the URL
   // is read before the view exists, so it waits here until applyView has loaded
   // that timeline's own state and can let the link win over it.
-  pendingPrefs: { mode?: ViewMode; milestonesOnly?: boolean } | null;
+  pendingPrefs: { mode?: ViewMode; filters?: FilterSelection } | null;
   // Parent items whose children are folded away in the ACTIVE source (see
   // COLLAPSED_ITEMS_KEY). Swapped wholesale by loadCollapsedItems on every view
   // change, so nothing here ever refers to another timeline's ids.
@@ -228,9 +227,8 @@ export const state: AppState = {
   pendingWindow: null,
   suppressUrlSync: false,
   // Defaults only: which timeline is being opened is not known at module load, and
-  // these five belong to it. `loadViewPrefs` fills them in from that timeline's
+  // these three belong to it. `loadViewPrefs` fills them in from that timeline's
   // stored state before the first render reads them.
-  milestonesOnly: DEFAULT_VIEW_PREFS.milestonesOnly,
   viewMode: 'timeline',
   groupBy: DEFAULT_VIEW_PREFS.groupBy,
   filters: {},
@@ -286,7 +284,6 @@ export function loadViewPrefs(viewId: string | null): void {
   state.viewMode = readViewMode(prefs.mode, legacyViewMode);
   state.groupBy = prefs.groupBy;
   state.filters = prefs.filters;
-  state.milestonesOnly = prefs.milestonesOnly;
 }
 
 /** Write the current display state back to the timeline it belongs to. */
@@ -297,7 +294,6 @@ export function saveViewPrefs(viewId: string | null = state.activeView?.id ?? nu
       mode: state.viewMode,
       groupBy: state.groupBy,
       filters: state.filters,
-      milestonesOnly: state.milestonesOnly,
     }),
   );
 }
@@ -425,7 +421,10 @@ export function syncUrl(): void {
     urlState.from = isoDateOnly(state.userWindow.start);
     urlState.to = isoDateOnly(state.userWindow.end);
   }
-  if (state.milestonesOnly) urlState.milestones = true;
+  // `m=1` is no longer written: „nur Meilensteine" is a value of the type
+  // dimension now, and the filter as a whole has never been in the hash. Writing
+  // one dimension of it and not the others would say something untrue about the
+  // rest. Old links carrying it are still read (see urlState.ts).
   if (state.viewMode !== 'timeline') urlState.mode = state.viewMode;
   // Written alongside everything else: the view, item and window stay in the
   // hash while the area is open, so closing it returns to the timeline the

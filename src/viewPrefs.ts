@@ -21,7 +21,7 @@
 // that decision stays at the one call site that already makes it.
 
 import { filterSelectionFromPair, isFilterSelectionActive, type FilterSelection } from './filterRule';
-import { GROUP_DIM } from './listGrouping';
+import { GROUP_DIM, TYPE_DIM } from './listGrouping';
 
 /** What one timeline remembers, as it sits in storage. */
 export type StoredViewPrefs = {
@@ -37,6 +37,11 @@ export type StoredViewPrefs = {
    */
   filterDim?: string;
   filterValues?: string[];
+  /**
+   * „Nur Meilensteine", when it was a control of its own. Also read-only now: it
+   * is the type dimension of `filters`, so a stored `true` is folded into that
+   * selection and never written again.
+   */
   milestonesOnly?: boolean;
 };
 
@@ -45,7 +50,6 @@ export type ViewPrefs = {
   mode: string;
   groupBy: string;
   filters: FilterSelection;
-  milestonesOnly: boolean;
 };
 
 export type ViewPrefsStore = Record<string, StoredViewPrefs>;
@@ -72,8 +76,10 @@ export const DEFAULT_VIEW_PREFS: ViewPrefs = {
   mode: 'timeline',
   groupBy: GROUP_DIM,
   filters: {},
-  milestonesOnly: false,
 };
+
+/** What „nur Meilensteine" means now: the type dimension narrowed to `point`. */
+export const MILESTONES_ONLY_SELECTION: FilterSelection = { [TYPE_DIM]: ['point'] };
 
 function stringList(raw: unknown): string[] | undefined {
   if (!Array.isArray(raw)) return undefined;
@@ -143,8 +149,17 @@ export function parseViewPrefsStore(raw: string | null | undefined): ViewPrefsSt
  */
 function storedSelection(stored: StoredViewPrefs | undefined): FilterSelection {
   if (!stored) return {};
-  if (stored.filters) return copySelection(stored.filters);
-  return filterSelectionFromPair(stored.filterDim, stored.filterValues);
+  const base = stored.filters
+    ? copySelection(stored.filters)
+    : filterSelectionFromPair(stored.filterDim, stored.filterValues);
+  // „Nur Meilensteine" was a second narrowing beside the filter and composed with
+  // it, so a stored `true` adds the type dimension rather than replacing what is
+  // there. An explicit type selection wins: it is the newer statement about the
+  // same dimension.
+  if (stored.milestonesOnly && !base[TYPE_DIM]?.length) {
+    return { ...base, ...MILESTONES_ONLY_SELECTION };
+  }
+  return base;
 }
 
 /** What `viewId` remembers, filled up with the defaults. */
@@ -157,7 +172,6 @@ export function viewPrefsFor(
     mode: stored?.mode ?? DEFAULT_VIEW_PREFS.mode,
     groupBy: stored?.groupBy ?? DEFAULT_VIEW_PREFS.groupBy,
     filters: storedSelection(stored),
-    milestonesOnly: stored?.milestonesOnly ?? DEFAULT_VIEW_PREFS.milestonesOnly,
   };
 }
 
@@ -165,8 +179,7 @@ function isDefault(prefs: ViewPrefs): boolean {
   return (
     prefs.mode === DEFAULT_VIEW_PREFS.mode &&
     prefs.groupBy === DEFAULT_VIEW_PREFS.groupBy &&
-    !isFilterSelectionActive(prefs.filters) &&
-    prefs.milestonesOnly === DEFAULT_VIEW_PREFS.milestonesOnly
+    !isFilterSelectionActive(prefs.filters)
   );
 }
 
@@ -176,8 +189,9 @@ function isDefault(prefs: ViewPrefs): boolean {
  * same reason `toggleItemCollapsed` deletes instead of storing an empty list:
  * otherwise the store grows a key per timeline anybody ever opened.
  *
- * The legacy `filterDim` / `filterValues` pair is never written back, so a
- * timeline that has been saved once carries only the current shape.
+ * The legacy `filterDim` / `filterValues` pair and `milestonesOnly` are never
+ * written back, so a timeline that has been saved once carries only the current
+ * shape.
  */
 export function withViewPrefs(
   store: ViewPrefsStore,
@@ -193,7 +207,6 @@ export function withViewPrefs(
   if (prefs.mode !== DEFAULT_VIEW_PREFS.mode) entry.mode = prefs.mode;
   if (prefs.groupBy !== DEFAULT_VIEW_PREFS.groupBy) entry.groupBy = prefs.groupBy;
   if (isFilterSelectionActive(prefs.filters)) entry.filters = copySelection(prefs.filters);
-  if (prefs.milestonesOnly) entry.milestonesOnly = true;
   next[viewId] = entry;
   return next;
 }
@@ -228,6 +241,10 @@ export function legacyViewPrefs(
       // selection already means: no restriction.
     }
   }
-  if (raw.milestonesOnly === 'true') prefs.milestonesOnly = true;
+  // Same fold as a stored per-timeline `milestonesOnly`: the type dimension joins
+  // whatever the filter already narrowed, because the two used to compose.
+  if (raw.milestonesOnly === 'true' && !prefs.filters?.[TYPE_DIM]?.length) {
+    prefs.filters = { ...(prefs.filters ?? {}), ...MILESTONES_ONLY_SELECTION };
+  }
   return Object.keys(prefs).length ? prefs : null;
 }

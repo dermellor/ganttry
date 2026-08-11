@@ -33,7 +33,7 @@ test('one timeline’s filter is invisible to another', () => {
 
 test('a timeline back at its default keeps no entry', () => {
   let store: ViewPrefsStore = {};
-  store = withViewPrefs(store, 'a', { ...DEFAULT_VIEW_PREFS, milestonesOnly: true });
+  store = withViewPrefs(store, 'a', { ...DEFAULT_VIEW_PREFS, filters: { type: ['point'] } });
   assert.deepEqual(Object.keys(store), ['a']);
 
   store = withViewPrefs(store, 'a', { ...DEFAULT_VIEW_PREFS });
@@ -72,7 +72,6 @@ test('a stored field of the wrong type reads as absent', () => {
   assert.equal(prefs.groupBy, 'tag');
   // The malformed dimension drops out, the well-typed one keeps its string values.
   assert.deepEqual(prefs.filters, { status: ['Open'] });
-  assert.equal(prefs.milestonesOnly, false);
 });
 
 test('a round trip through the serialized store survives', () => {
@@ -80,7 +79,6 @@ test('a round trip through the serialized store survives', () => {
     mode: 'plugin:product-roadmap:pricing',
     groupBy: 'cf:tier',
     filters: { status: ['Open', 'Doing'], 'cf:tier': ['Free'] },
-    milestonesOnly: true,
   });
   assert.deepEqual(parseViewPrefsStore(JSON.stringify(store)), store);
 });
@@ -117,12 +115,33 @@ test('the instance-wide keys carry over', () => {
       [LEGACY_PREF_KEYS.milestonesOnly]: 'true',
     }),
   );
+  // The instance-wide „nur Meilensteine" folds into the type dimension and joins
+  // the filter it used to compose with, rather than replacing it.
   assert.deepEqual(prefs, {
     mode: 'list',
     groupBy: 'tag',
-    filters: { status: ['Open'] },
-    milestonesOnly: true,
+    filters: { status: ['Open'], type: ['point'] },
   });
+});
+
+test('a stored milestonesOnly folds into the type dimension', () => {
+  const store = parseViewPrefsStore(
+    JSON.stringify({ a: { milestonesOnly: true, filters: { status: ['Open'] } } }),
+  );
+  assert.deepEqual(viewPrefsFor(store, 'a').filters, { status: ['Open'], type: ['point'] });
+});
+
+test('an explicit type selection wins over a stored milestonesOnly', () => {
+  const store = parseViewPrefsStore(
+    JSON.stringify({ a: { milestonesOnly: true, filters: { type: ['range'] } } }),
+  );
+  assert.deepEqual(viewPrefsFor(store, 'a').filters, { type: ['range'] });
+});
+
+test('saving drops milestonesOnly rather than carrying it along', () => {
+  const store = parseViewPrefsStore(JSON.stringify({ a: { milestonesOnly: true } }));
+  const saved = withViewPrefs(store, 'a', viewPrefsFor(store, 'a'));
+  assert.deepEqual(saved.a, { filters: { type: ['point'] } });
 });
 
 test('nothing stored instance-wide carries nothing over', () => {

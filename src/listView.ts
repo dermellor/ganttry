@@ -35,13 +35,8 @@ import { syncFilterControl } from './filterControl';
 import { parentGroupIds } from './groupHierarchy';
 import { treeOrder } from './itemHierarchy';
 import { ownerCell } from './users';
+import { itemTypeLabel } from './itemType';
 
-const TYPE_LABELS: Record<TimelineItem['type'], string> = {
-  point: 'Meilenstein',
-  range: 'Zeitraum',
-  box: 'Box',
-  background: 'Hintergrund',
-};
 
 // "2026-01-15" / ISO → "15.01.2026". Falls back to the raw slice if it can't
 // be parsed, so odd inputs still show something rather than "Invalid Date".
@@ -99,7 +94,7 @@ function row(
       }),
       TableCell({ nowrap: true, muted: true, children: formatDate(item.start) }),
       TableCell({ nowrap: true, muted: true, children: item.type === 'point' ? '—' : formatDate(item.end) }),
-      TableCell({ nowrap: true, muted: true, children: TYPE_LABELS[item.type] ?? item.type }),
+      TableCell({ nowrap: true, muted: true, children: itemTypeLabel(item.type) }),
       TableCell({ nowrap: true, muted: true, children: item.status ? item.status : EMPTY() }),
       TableCell({ nowrap: true, muted: true, children: ownerCell(ownerOf(item.id)) }),
     ],

@@ -23,10 +23,12 @@ way the document is drawn.
 
 Two symptoms pin it down, and both are in the code rather than in an opinion:
 
-- **A narrowing control two rows from its siblings.** „Nur Meilensteine" filters by
-  item type and sits in the header; the filter for every other dimension sits in
-  the toolbar below. Two controls, two code paths, composed in
-  `filterBuildForDisplay`.
+- **A narrowing control two rows from its siblings.** „Nur Meilensteine" filtered by
+  item type and sat in the header, while the filter for every other dimension sat in
+  the toolbar below: two controls, two code paths, composed in
+  `filterBuildForDisplay`. Fixed by making the type an ordinary filter dimension,
+  which first needed a filter that holds more than one of them (see „Filter" in
+  [`editing.md`](editing.md)).
 - **A class that exists to draw a boundary nothing names.** The header wraps the
   view picker, the presentation switch and the milestones checkbox in
   `.app-timeline-controls`, so the instance area can hide exactly those while it is
@@ -108,7 +110,7 @@ are deliberately not part of this.
 | Plugin views | the same switch | 4 | also presentations, but each declaring its own accessories |
 | „Gruppieren" | view toolbar | 4, perspective | the presentation bar |
 | „Filter" | view toolbar | 4, extent | the presentation bar, beside the other narrowings |
-| „Nur Meilensteine" | header | 4, extent | a value of the type dimension, not a control of its own |
+| „Nur Meilensteine" | gone | 4, extent | done: a value of the type dimension in the filter |
 | Time window (zoom, pan) | the chart | 4, extent | stays a gesture, counts as extent, travels with it |
 | „+ Eintrag" | header, right | 5 | an action of the presentation the object appears in |
 | Detail panel, context menu, rail mark | at the object | 5 | they stay: three entrances to one level is right |
