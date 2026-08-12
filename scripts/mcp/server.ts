@@ -23,7 +23,7 @@ import { z } from 'zod';
 import type { TimelineFile, TimelineFileItem } from '../../src/types.js';
 import { envSourcesHint, envValue } from '../db/env.js';
 import { enforceExtentExclusivity, type TimelineGroupDecl } from '../db/timeline-repo.js';
-import { resolveItemPatch, type ItemPatch } from './patch.js';
+import { appendItemTo, applyItemPatchTo, type ItemPatch } from './patch.js';
 import { mcpPluginTools, splitChanges, toolResult } from './pluginTools.js';
 
 // ---------- config / env ----------
@@ -133,39 +133,11 @@ async function apiSub(
   });
 }
 
-/**
- * Apply one item patch in place, with the semantics `update_item` documents.
- *
- * Extracted because a plugin's tool produces the same kind of change and must
- * behave identically: a second copy of the merge is how „metadata: null clears
- * the object" ends up true for one caller and not the other.
- */
-function applyItemPatch(file: TimelineFile, itemId: string, patch: ItemPatch): void {
-  const it = file.items.find((i) => i.id === itemId);
-  if (!it) throw new Error(`Item "${itemId}" not found.`);
-  const rest = resolveItemPatch(it, patch);
-  Object.assign(it, rest);
-  // An emptied metadata object is dropped rather than written as `{}`: that is
-  // the shape a read returns (rowToItem omits it) and what the form leaves
-  // behind, so a round-trip through this tool does not add a key to the file.
-  if (it.metadata && Object.keys(it.metadata).length === 0) delete it.metadata;
-  // Extent fields are mutually exclusive: whichever the patch set wins and
-  // clears the counterpart, so switching end↔duration never leaves both.
-  if (rest.end != null) delete it.duration;
-  else if (rest.duration != null) delete it.end;
-}
-
-/** Append an item, with the semantics `add_item` documents. */
-function appendItem(file: TimelineFile, item: TimelineFileItem): void {
-  if (item.id && file.items.some((i) => i.id === item.id)) {
-    throw new Error(`Item id "${item.id}" already exists.`);
-  }
-  enforceExtentExclusivity(item);
-  // `metadata` is nullable so a patch can clear it; on a create there is nothing
-  // to clear, and writing the null through would put it in the file.
-  if (item.metadata == null) delete (item as { metadata?: unknown }).metadata;
-  file.items.push(item);
-}
+/** The two item writes, with the extent rule this server's repo layer supplies. */
+const applyItemPatch = (file: TimelineFile, itemId: string, patch: ItemPatch): void =>
+  applyItemPatchTo(file, itemId, patch);
+const appendItem = (file: TimelineFile, item: TimelineFileItem): void =>
+  appendItemTo(file, item, enforceExtentExclusivity);
 
 /** Read-modify-write helper: fetch, mutate in memory, push back. Returns the new file. */
 async function mutate(
