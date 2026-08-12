@@ -26,11 +26,11 @@
 
   <g mask="url(#milestone-cutouts)">
     <path
-      d="M 716 312 L 342 716"
+      d="M 689 328 L 369 700"
       fill="none"
       stroke="url(#connector-gradient)"
       stroke-width="104"
-      stroke-linecap="butt"
+      stroke-linecap="round"
     />
 
     <g fill="#FBFBFB">
