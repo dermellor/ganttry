@@ -36,7 +36,9 @@ import {
   legacyViewPrefs,
   parseViewPrefsStore,
   VIEW_PREFS_KEY,
-  viewPrefsFor,
+  presentationPrefsFor,
+  storedMode,
+  withLegacyFallback,
   withViewPrefs,
   type ViewPrefsStore,
 } from './viewPrefs';
@@ -272,9 +274,7 @@ function writeViewPrefsStore(store: ViewPrefsStore): void {
 function adoptLegacyViewPrefs(store: ViewPrefsStore, viewId: string): ViewPrefsStore {
   const legacy = legacyViewPrefs((key) => localStorage.getItem(key));
   if (!legacy) return store;
-  const next = store[viewId]
-    ? store
-    : withViewPrefs(store, viewId, { ...DEFAULT_VIEW_PREFS, ...legacy });
+  const next = store[viewId] ? store : withLegacyFallback(store, viewId, legacy);
   for (const key of Object.values(LEGACY_PREF_KEYS)) localStorage.removeItem(key);
   if (next !== store) writeViewPrefsStore(next);
   return next;
@@ -288,11 +288,26 @@ function adoptLegacyViewPrefs(store: ViewPrefsStore, viewId: string): ViewPrefsS
 export function loadViewPrefs(viewId: string | null): void {
   let store = readViewPrefsStore();
   if (viewId) store = adoptLegacyViewPrefs(store, viewId);
-  const prefs = viewPrefsFor(store, viewId);
   // A stored mode may predate addressable plugin views (`pricing`), so it goes
   // through the legacy lookup rather than a bare comparison: reading it without
   // that would silently reset every user's saved view.
-  state.viewMode = readViewMode(prefs.mode, legacyViewMode);
+  state.viewMode = readViewMode(storedMode(store, viewId), legacyViewMode);
+  // …and then that presentation's own perspective and extent, because they are
+  // stored per presentation (see viewPrefs.ts).
+  const prefs = presentationPrefsFor(store, viewId, state.viewMode);
+  state.groupBy = prefs.groupBy;
+  state.filters = prefs.filters;
+}
+
+/**
+ * Swap perspective and extent to the ones `mode` remembers, without touching which
+ * timeline is open. Called when the presentation changes: each one keeps its own,
+ * so switching has to carry them along or the new presentation would inherit the
+ * previous one's and then save it as its own on the next edit.
+ */
+export function loadPresentationPrefs(mode: ViewMode): void {
+  const viewId = state.activeView?.id ?? null;
+  const prefs = presentationPrefsFor(readViewPrefsStore(), viewId, mode);
   state.groupBy = prefs.groupBy;
   state.filters = prefs.filters;
 }
