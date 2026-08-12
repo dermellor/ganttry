@@ -44,6 +44,7 @@ import {
   type Capability,
   type MemberRole,
 } from '../../src/access.ts';
+import type { SavedViewCaller } from '../../src/savedViews.ts';
 import { declaredSettings } from '../../src/settings.ts';
 
 /** What the runtime resolved before dispatching: connections plus who is asking. */
@@ -207,6 +208,26 @@ export { accessControlEnabled, serviceRoleFrom };
  * dispatcher below: a per-branch check is eleven chances to forget one, and the
  * one forgotten is a write path.
  */
+/**
+ * The one write path a `viewer` is allowed to take.
+ *
+ * A saved view is display state, not timeline content: keeping „only what is
+ * overdue, grouped by owner" under a name changes nothing anybody else reads, and
+ * a read-only member who cannot save one has to rebuild it by hand every time —
+ * which is the whole thing this feature removes. The narrower rules that DO cost
+ * `write` (publishing to the instance, naming somebody else as the owner) are
+ * enforced in `handleSavedViewApi`, where the row and its owner are in hand.
+ *
+ * Matched the way `parseSourcePath` matches, rather than by looking for the word
+ * anywhere in the path: a timeline whose id contains `saved-view` addresses its
+ * items at `…/saved-view/item`, and a substring test would hand that timeline's
+ * item writes to every viewer on the instance.
+ */
+function isSavedViewPath(path: string): boolean {
+  if (!path.startsWith('/api/source/')) return false;
+  return parseSourcePath(path.replace(/^\/api\/source/, ''))?.sub?.kind === 'saved-view';
+}
+
 function requiredCapability(path: string, method: string): Capability {
   // Everything about administering people needs `manage`, reading included: the
   // member list carries roles, statuses and invitation state, which is not what
@@ -216,13 +237,29 @@ function requiredCapability(path: string, method: string): Capability {
   // configured as — which domains may sign in, which credentials are set at all,
   // what the automations act as — is administration, not viewer-facing state.
   if (path === '/api/settings') return 'manage';
+  if (isSavedViewPath(path)) return 'read';
   return capabilityForMethod(method);
 }
 
 /** The two routes that administer the instance rather than a timeline. */
 const ADMIN_PATHS = new Set(['/api/members', '/api/settings']);
 
-async function authorize(path: string, method: string, ctx: ApiContext): Promise<Response | null> {
+/**
+ * The outcome of authorizing one request: a refusal to send, or the caller the
+ * dispatcher gets to work with.
+ *
+ * The caller is returned rather than re-derived downstream because deriving it
+ * again means a second `getMember` per request — a second read that can disagree
+ * with the one that just decided the request was allowed.
+ */
+type Authorized = { denied: Response; caller?: undefined } | { denied?: undefined; caller: SavedViewCaller };
+
+/** Everybody past the gate may do everything: no member list, no roles to consult. */
+function unrestricted(ctx: ApiContext): SavedViewCaller {
+  return { email: ctx.caller?.email ?? ctx.updatedBy ?? null, canWrite: true, canManage: true };
+}
+
+async function authorize(path: string, method: string, ctx: ApiContext): Promise<Authorized> {
   // Administration is never ungated, and the switch does NOT open it.
   //
   // The switch means „membership decides what people may do". Off, there are no
@@ -244,29 +281,40 @@ async function authorize(path: string, method: string, ctx: ApiContext): Promise
   // enabled the feature. A 403 would send an admin looking for their missing
   // permission instead of at TIMELINES_ACCESS_CONTROL.
   if (ADMIN_PATHS.has(path) && !ctx.accessControl) {
-    return json(
-      {
-        error: 'access_control_disabled',
-        message:
-          'Administration is off on this instance. Set TIMELINES_ACCESS_CONTROL=true to enable it.',
-      },
-      503,
-    );
+    return {
+      denied: json(
+        {
+          error: 'access_control_disabled',
+          message:
+            'Administration is off on this instance. Set TIMELINES_ACCESS_CONTROL=true to enable it.',
+        },
+        503,
+      ),
+    };
   }
-  if (!ctx.accessControl) return null;
+  if (!ctx.accessControl) return { caller: unrestricted(ctx) };
 
   const capability: Capability = requiredCapability(path, method);
   // `message` rather than `detail`: the client's `apiJson` surfaces that field
   // (src/editor.ts), so the user reads the reason instead of the word
   // „forbidden". It also does NOT redirect on 403 — only 401 means „log in
   // again" — so a refusal has to explain itself where it lands.
-  const deny = (message: string) => json({ error: 'forbidden', capability, message }, 403);
+  const deny = (message: string): Authorized => ({
+    denied: json({ error: 'forbidden', capability, message }, 403),
+  });
 
   // A program acting under a service token: no person, no membership row.
   if (ctx.serviceRole) {
-    return roleAllows(ctx.serviceRole, capability)
-      ? null
-      : deny(`this token acts as ${ctx.serviceRole}, which may not ${capability}`);
+    if (!roleAllows(ctx.serviceRole, capability)) {
+      return deny(`this token acts as ${ctx.serviceRole}, which may not ${capability}`);
+    }
+    return {
+      caller: {
+        email: ctx.caller?.email ?? ctx.updatedBy ?? null,
+        canWrite: roleAllows(ctx.serviceRole, 'write'),
+        canManage: roleAllows(ctx.serviceRole, 'manage'),
+      },
+    };
   }
 
   const email = ctx.caller?.email?.trim();
@@ -278,14 +326,16 @@ async function authorize(path: string, method: string, ctx: ApiContext): Promise
   // switch would leave an operator believing they had turned something on.
   const repo = resolveRepo(ctx.conns);
   if (!repo) {
-    return json(
-      {
-        error: 'access_control_without_database',
-        message:
-          'TIMELINES_ACCESS_CONTROL is on, but no database is configured to hold the member list.',
-      },
-      503,
-    );
+    return {
+      denied: json(
+        {
+          error: 'access_control_without_database',
+          message:
+            'TIMELINES_ACCESS_CONTROL is on, but no database is configured to hold the member list.',
+        },
+        503,
+      ),
+    };
   }
 
   let member;
@@ -300,19 +350,28 @@ async function authorize(path: string, method: string, ctx: ApiContext): Promise
     //
     // Refusing rather than passing through: a database that cannot answer „may
     // this caller do this" has not answered yes.
-    return json(
-      {
-        error: 'membership_unavailable',
-        message:
-          'TIMELINES_ACCESS_CONTROL is on, but the member list could not be read. Apply the pending migrations (npm run db:migrate).',
-        detail: e instanceof Error ? e.message : String(e),
-      },
-      503,
-    );
+    return {
+      denied: json(
+        {
+          error: 'membership_unavailable',
+          message:
+            'TIMELINES_ACCESS_CONTROL is on, but the member list could not be read. Apply the pending migrations (npm run db:migrate).',
+          detail: e instanceof Error ? e.message : String(e),
+        },
+        503,
+      ),
+    };
   }
   // One message for „not a member" and „wrong role" on purpose: the difference
   // is only interesting to somebody probing which addresses exist.
-  return memberCan(member, capability) ? null : deny(`${email} may not ${capability} here`);
+  if (!memberCan(member, capability)) return deny(`${email} may not ${capability} here`);
+  return {
+    caller: {
+      email,
+      canWrite: memberCan(member, 'write'),
+      canManage: memberCan(member, 'manage'),
+    },
+  };
 }
 
 /**
@@ -382,8 +441,8 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
   // Ours, and only now: everything below may refuse, and a refusal must never
   // reach a path this module does not own (see `isOurs`).
   if (!isOurs(path)) return null;
-  const denied = await authorize(path, method, ctx);
-  if (denied) return denied;
+  const authorized = await authorize(path, method, ctx);
+  if (authorized.denied) return authorized.denied;
 
   if (path === '/api/members') {
     const repo = resolveRepo(ctx.conns);
@@ -518,6 +577,10 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
     body,
     ifMatch: Number.isFinite(ifMatch as number) ? (ifMatch as number) : undefined,
     updatedBy: ctx.updatedBy,
+    // Resolved by `authorize` above rather than looked up again: the saved-view
+    // sub-resource answers differently per caller, and the two lookups could
+    // disagree if one of them ran twice.
+    caller: authorized.caller,
   };
 
   try {

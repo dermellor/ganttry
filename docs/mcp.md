@@ -35,6 +35,42 @@ live site and therefore not manipulable here.
 | `read_plugin_data`  | The rows one plugin owns on a timeline; one collection or all of them |
 | `write_plugin_data` | One row of one collection: `put`, `patch`, `delete` or `move`  |
 | `configure_plugin`  | Enables a plugin on a timeline, sets its config, or turns it off |
+| `describe_view_dimensions` | The grouping dimensions and filter values a timeline actually offers |
+| `list_saved_views`  | The saved views on a timeline this identity may see                     |
+| `create_saved_view` | Stores one; `owner` decides whose list it lands in                      |
+| `update_saved_view` | Patches one (null clears `mode` / `groupBy` / `filters`)                |
+| `delete_saved_view` | Removes one                                                            |
+
+### Saved views: writing one FOR somebody
+
+An **Ansicht** is a named combination of presentation, grouping dimension and filter
+selection, stored on the timeline („Gespeicherte Ansichten" (docs/editing.md)). „Set
+this person up with the views they need" is what these tools exist for, and it needs
+two things the other tools do not have.
+
+**The owner is explicit.** `owner` takes an address from `list_users`, and the row then
+belongs to that person: it appears in *their* list rather than in the token's. Writing
+somebody else's address needs `write` and is deliberately not restricted to `manage`,
+because owning a saved view grants nothing — it is the same kind of statement
+`metadata.owner` already makes about an item. Without an `owner` the view belongs to
+the calling identity, which for the shared service token is `mcp` and therefore
+visible to nobody.
+
+**The vocabulary has to be read, not guessed.** A filter is
+`{ "<dimension>": ["<value>"] }`, and neither half is inventable from outside: `cf:tier`
+is not a field name anybody would guess, and the status bucket is `Open`, not „open". So
+`describe_view_dimensions` reports what one timeline offers, through the very functions
+the interface's own „Gruppieren" and „Filter" controls read
+([`scripts/mcp/savedViewTools.ts`](../scripts/mcp/savedViewTools.ts)) — an agent is
+offered exactly what a person is. A dimension or value that does not exist narrows
+nothing rather than failing, which is the same forgiving rule the panel applies when a
+custom field is removed, so writing one is a quiet no-op rather than an error.
+
+Both servers carry all five. The remote one still has no role model of its own (issue
+#54): it reaches the dispatcher without the membership check the browser goes through,
+so an OAuth caller there acts unrestricted rather than as their instance role. Their
+address is still what `owner` defaults to, so visibility is right; what is missing is
+the refusal.
 
 The granular item and group tools run read-modify-write: the local server fetches
 the timeline, mutates it in memory and writes it back with a PUT (bulk replace);

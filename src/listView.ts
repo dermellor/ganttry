@@ -32,6 +32,7 @@ import { state, els, syncUrl, isEditableView } from './state';
 import { computeSections, GROUP_DIM } from './listGrouping';
 import { metaOf, resolveGrouping, sectionContext, syncGroupByControl } from './grouping';
 import { syncFilterControl } from './filterControl';
+import { syncSavedViewsControl } from './savedViewsControl';
 import { parentGroupIds } from './groupHierarchy';
 import { treeOrder } from './itemHierarchy';
 import { ownerCell } from './users';
@@ -131,6 +132,10 @@ export function renderListView(): void {
   const { dim, options } = resolveGrouping(entries);
   syncGroupByControl(options, dim);
   syncFilterControl();
+  // Every repaint, so the trigger's asterisk follows a grouping or filter change
+  // made in the two controls beside it. Cheap: the panel is a list of commands
+  // rebuilt from state, not something anybody is mid-way through ticking.
+  syncSavedViewsControl();
 
   const { sections, grouped } = computeSections(entries, dim, options, sectionContext(groups));
 

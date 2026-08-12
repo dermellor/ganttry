@@ -23,9 +23,16 @@ export type UrlState = {
   // one of them is ever set — both areas replace the content, so opening one closes
   // the other.
   timelineSettings?: string;
+  /**
+   * The saved view a link applies (`sv=<id>`), raw like `mode`: which ids exist is
+   * a property of the timeline being opened, and this module never loads one. An
+   * id the timeline does not have is dropped rather than refused — a link outliving
+   * a deleted view has to open the timeline, not fail.
+   */
+  savedView?: string;
 };
 
-const ORDER = ['view', 'item', 'from', 'to', 'm', 'mode', 'settings', 'timeline-settings'] as const;
+const ORDER = ['view', 'item', 'from', 'to', 'm', 'mode', 'sv', 'settings', 'timeline-settings'] as const;
 
 function parseHash(hash: string): URLSearchParams {
   const h = hash.startsWith('#') ? hash.slice(1) : hash;
@@ -46,6 +53,8 @@ export function readUrlState(): UrlState {
   if (p.get('m') === '1') state.milestones = true;
   const mode = p.get('mode');
   if (mode) state.mode = mode;
+  const savedView = p.get('sv');
+  if (savedView) state.savedView = savedView;
   const settings = p.get('settings');
   // A bare `#settings` (no `=`) opens the area on its first section. URLSearchParams
   // reads that as an empty string, which is a *present* key — distinguishing it
@@ -98,6 +107,10 @@ function buildHash(state: UrlState): string {
   // 'timeline' is the default and stays out of the hash, so a plain link keeps
   // looking plain. Everything else (list, or a plugin view) is written verbatim.
   if (state.mode && state.mode !== 'timeline') map.mode = state.mode;
+  // Written only while a saved view is applied, so a plain link stays plain. It
+  // carries the whole extent under one short key, which is what the filter itself
+  // has never done (see „URL state" in docs/editing.md).
+  if (state.savedView) map.sv = state.savedView;
   if (state.settings) map.settings = state.settings;
   if (state.timelineSettings) map['timeline-settings'] = state.timelineSettings;
   return ORDER.flatMap((k) =>

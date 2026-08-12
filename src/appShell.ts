@@ -33,6 +33,7 @@ import {
   el,
   fromHtml,
   Heading,
+  Icon,
   IconButton,
   html,
   Panel,
@@ -63,6 +64,9 @@ export type AppShellElements = {
   contentArea: HTMLElement;
   modeToggle: HTMLElement;
   pluginViewBar: HTMLElement;
+  savedViewsControl: HTMLElement;
+  savedViewsToggle: HTMLButtonElement;
+  savedViewsMenu: HTMLElement;
   groupBy: HTMLSelectElement;
   groupByControl: HTMLElement;
   filterControl: HTMLElement;
@@ -107,12 +111,6 @@ const TIMELINE_ICON = `
   <line x1="4" y1="6" x2="14" y2="6" />
   <line x1="9" y1="12" x2="20" y2="12" />
   <line x1="4" y1="18" x2="12" y2="18" />
-</svg>`;
-
-const GEAR_ICON = `
-<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  <circle cx="12" cy="12" r="3" />
-  <path d="M12 3.5v2M12 18.5v2M4.9 7.5l1.8 1M17.3 15.5l1.8 1M4.9 16.5l1.8-1M17.3 8.5l1.8-1" />
 </svg>`;
 
 const LIST_ICON = `
@@ -292,7 +290,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // header unreadable in the first place. Unhidden by main.ts for a role that may
   // write — an affordance, never the permission.
   const tlSettingsBtn = IconButton({
-    icon: fromHtml(GEAR_ICON),
+    icon: Icon({ name: 'gear', chrome: true, size: 'md', standalone: true }),
     ariaLabel: 'Einstellungen dieser Timeline',
     boxSize: 'md',
     attrs: { id: 'tl-settings-btn', hidden: true },
@@ -343,6 +341,41 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       }),
       ToolbarGroup({ end: true, children: [settingsBtn] }),
     ],
+  });
+
+  // „Ansicht": the named bundle of the two controls that follow it, and — when the
+  // saved view states one — of the presentation chosen before them. It leads the
+  // group it is a shortcut over, so the row reads „this whole look, then the parts
+  // of it". Hidden until the timeline has one to offer or one can be made (see
+  // syncSavedViewsControl).
+  //
+  // **A mark, not a labelled control**, and that is the space decision: this bar
+  // already wraps onto a second row on a 13" window once a plugin contributes its
+  // own control, so a third „LABEL [Wert ▾]" pair is a cost the row cannot carry.
+  // Resting, it is one 30px box; it grows a name only while a view is applied,
+  // which is the state where the name is the point. `savedViewsToggle` therefore
+  // starts label-less and `syncSavedViewsControl` swaps its content — the caret
+  // comes and goes with it, since the variant suppresses it on an icon-only button.
+  const savedViewsToggle = Button({
+    variant: 'trigger',
+    icon: Icon({ name: 'view', chrome: true, size: 'sm', standalone: true }),
+    ariaLabel: 'Gespeicherte Ansichten',
+    attrs: { id: 'saved-views-toggle', 'aria-haspopup': 'true', 'aria-expanded': 'false' },
+  });
+  const savedViewsMenu = Popover({
+    role: 'group',
+    ariaLabel: 'Gespeicherte Ansichten',
+    scroll: true,
+    hidden: true,
+    attrs: { id: 'saved-views-menu' },
+  });
+  // No `ToolbarControl` around it: that component's job is to pair a caption with
+  // a control, and the caption is exactly what this variant gives up. The anchor
+  // is still needed — the panel positions against it — and it doubles as the box
+  // the outside-click test asks about.
+  const savedViewsControl = ToolbarAnchor({
+    attrs: { id: 'saved-views-control', hidden: true },
+    children: [savedViewsToggle, savedViewsMenu],
   });
 
   const groupBy = Select({ id: 'groupby' });
@@ -408,7 +441,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       // Split this way the bar is at most two rows — which presentation on the
       // first, how it is bundled and narrowed on the second.
       ToolbarGroup({ children: [modeToggle, pluginViewBar] }),
-      ToolbarGroup({ children: [groupByControl, filterControl] }),
+      ToolbarGroup({ children: [savedViewsControl, groupByControl, filterControl] }),
       ToolbarGroup({ end: true, children: [addBtn, exportBtn] }),
     ],
   });
@@ -492,6 +525,9 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       contentArea,
       modeToggle,
       pluginViewBar,
+      savedViewsControl,
+      savedViewsToggle,
+      savedViewsMenu,
       groupBy,
       groupByControl,
       filterControl,

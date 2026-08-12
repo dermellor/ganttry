@@ -25,6 +25,7 @@ import { envSourcesHint, envValue } from '../db/env.js';
 import { enforceExtentExclusivity, type TimelineGroupDecl } from '../db/timeline-repo.js';
 import { appendItemTo, applyItemPatchTo, type ItemPatch } from './patch.js';
 import { mcpPluginTools, splitChanges, toolResult } from './pluginTools.js';
+import { NO_BUCKET, SAVED_VIEW_HELP, savedViewDimensions } from './savedViewTools.js';
 
 // ---------- config / env ----------
 
@@ -594,6 +595,133 @@ server.registerTool(
     });
     return ok({ ok: true, id, groupId, removed });
   },
+);
+
+// ---------- saved views ----------
+//
+// The one surface here that writes something a PERSON sees rather than something
+// the timeline holds: a saved view is a named combination of presentation,
+// grouping and filter, and `owner` decides whose list it lands in. That is why
+// these tools take an owner at all — "set up the views for the new team member" is
+// the case they exist for, and it needs the row to belong to them rather than to
+// the token.
+//
+// Owning a saved view grants nothing, which is what makes writing another person's
+// address here ordinary rather than impersonation: it is the same statement
+// `metadata.owner` already makes about an item.
+
+const savedViewFields = {
+  name: z.string().optional().describe('What the view is called. Required when creating one.'),
+  mode: z
+    .string()
+    .optional()
+    .describe(
+      'Presentation to open in: "timeline", "list", or "plugin:<pluginId>:<viewId>". Leave it out ' +
+        'and applying the view keeps whatever presentation is showing.',
+    ),
+  groupBy: z
+    .string()
+    .optional()
+    .describe('Grouping dimension, e.g. "group", "status", "cf:tier" — a key from describe_view_dimensions.'),
+  filters: z
+    .record(z.array(z.string()))
+    .optional()
+    .describe(
+      'Selected values per dimension, e.g. { "status": ["Open"], "cf:tier": ["Pro"] }. AND across ' +
+        'dimensions, OR within one; an empty object narrows nothing. Values come from ' +
+        'describe_view_dimensions.',
+    ),
+  owner: z
+    .string()
+    .optional()
+    .describe('E-mail of the person this view is for, from list_users. Defaults to the calling identity.'),
+  visibility: z
+    .enum(['private', 'instance'])
+    .optional()
+    .describe('"instance" shows it to every member of the deployment; "private" (the default) to its owner alone.'),
+};
+
+server.registerTool(
+  'describe_view_dimensions',
+  {
+    title: 'Describe view dimensions',
+    description:
+      'The grouping dimensions and filter values a timeline actually offers, as `groupBy` keys and ' +
+      '`filters` values for the saved-view tools. Call this before writing a filter: the keys ' +
+      '(`group`, `tag`, `status`, `type`, `cf:<field>`) and their values are properties of this ' +
+      'timeline, and one that does not exist narrows nothing rather than failing. ' +
+      `The value "${NO_BUCKET}" is the "Ohne …" bucket: items with no value for that dimension.`,
+    inputSchema: { id: z.string().describe('Timeline id from list_timelines.') },
+  },
+  async ({ id }) => ok({ id, dimensions: savedViewDimensions(await getTimeline(id)) }),
+);
+
+server.registerTool(
+  'list_saved_views',
+  {
+    title: 'List saved views',
+    description: `The saved views on a timeline that this identity may see. ${SAVED_VIEW_HELP}`,
+    inputSchema: { id: z.string().describe('Timeline id.') },
+  },
+  async ({ id }) => ok(await api(`/api/source/${encodeId(id)}/saved-view`)),
+);
+
+server.registerTool(
+  'create_saved_view',
+  {
+    title: 'Create saved view',
+    description: `Store a new saved view on a timeline. ${SAVED_VIEW_HELP}`,
+    inputSchema: { id: z.string().describe('Timeline id.'), ...savedViewFields },
+  },
+  async ({ id, ...view }) =>
+    ok(
+      await api(`/api/source/${encodeId(id)}/saved-view`, {
+        method: 'POST',
+        body: JSON.stringify(view),
+      }),
+    ),
+);
+
+server.registerTool(
+  'update_saved_view',
+  {
+    title: 'Update saved view',
+    description:
+      'Patch one saved view: only the fields given change. Send null for `mode`, `groupBy` or ' +
+      '`filters` to clear one. The id is fixed — every link carrying `sv=<id>` depends on it.',
+    inputSchema: {
+      id: z.string().describe('Timeline id.'),
+      viewId: z.string().describe('Saved view id from list_saved_views.'),
+      ...savedViewFields,
+    },
+  },
+  async ({ id, viewId, ...patch }) =>
+    ok(
+      await api(`/api/source/${encodeId(id)}/saved-view/${encodeURIComponent(viewId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }),
+    ),
+);
+
+server.registerTool(
+  'delete_saved_view',
+  {
+    title: 'Delete saved view',
+    description:
+      'Remove a saved view. A shared one disappears for everybody, so check `visibility` before ' +
+      'deleting somebody else\'s.',
+    inputSchema: {
+      id: z.string().describe('Timeline id.'),
+      viewId: z.string().describe('Saved view id from list_saved_views.'),
+    },
+  },
+  async ({ id, viewId }) =>
+    ok(
+      await api(`/api/source/${encodeId(id)}/saved-view/${encodeURIComponent(viewId)}`, {
+        method: 'DELETE',
+      }),
+    ),
 );
 
 // ---------- tools contributed by plugins ----------
