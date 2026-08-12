@@ -46,6 +46,7 @@ const SCHEMA_TYPES = [
   'PluginRef',
   'PluginDataRow',
   'PluginStatus',
+  'SavedView',
 ];
 
 /**

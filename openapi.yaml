@@ -569,6 +569,298 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/Error"
+  "/api/source/{id}/saved-view":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
+        schema:
+          type: string
+    get:
+      operationId: getSourceByIdSavedView
+      summary: "The saved views this caller may see"
+      description: |-
+          A saved view is a named combination of presentation, grouping dimension and filter selection, stored with the timeline rather than in a browser. The answer carries every view shared with the instance plus the caller's own private ones, sorted by name; somebody else's private view is never in it.
+
+          They are also folded into `GET /api/source/{id}` under `savedViews`, already filtered the same way — one payload serves a database timeline and a static local one alike.
+      responses:
+        "200":
+          description: "The visible saved views."
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - savedViews
+                properties:
+                  savedViews:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/SavedView"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    post:
+      operationId: postSourceByIdSavedView
+      summary: "Create a saved view"
+      description: |-
+          `name` is required; everything else is optional, and a view that states no `mode` deliberately leaves the presentation alone when applied. The `id` is derived from the name unless one is given, counting up on a collision — a stated id that is taken answers 409 instead, because a caller that names one means that one.
+
+          Two fields cost more than `read`: `visibility: "instance"` (publishing to everybody) and an `owner` other than the caller (creating a view **for** somebody, which is what an agent does). Both need `write` and answer 403 otherwise. Creating a private view of one's own needs only `read`, so a `viewer` can keep one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SavedView"
+      responses:
+        "201":
+          description: "The created view."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SavedView"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "403":
+          description: "forbidden — publishing or naming another owner needs write access."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "409":
+          description: "saved_view_exists — the stated id is taken on this timeline."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+  "/api/source/{id}/saved-view/{viewId}":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: "Timeline id. May contain slashes for a namespace, e.g. `acme/plan`; encode each segment."
+        schema:
+          type: string
+      - name: viewId
+        in: path
+        required: true
+        description: "Saved view id within the timeline; the same value a link carries as `sv=`."
+        schema:
+          type: string
+    get:
+      operationId: getSourceByIdSavedViewByViewId
+      summary: "One saved view"
+      description: "A view the caller may not see answers 404 rather than 403 — the difference is only useful to somebody probing what exists."
+      responses:
+        "200":
+          description: "The view."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SavedView"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    patch:
+      operationId: patchSourceByIdSavedViewByViewId
+      summary: "Update one saved view"
+      description: |-
+          Touches only the keys present in the body; an explicit `null` on `mode`, `groupBy` or `filters` clears it, so a view can stop having an opinion about the presentation. The `id` is not patchable: changing it would leave every link carrying `sv=<old>` pointing at nothing.
+
+          The owner and an admin may edit; anybody else gets 403. Publishing and handing a view to another owner need `write`, exactly as on POST.
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: "The row version the client last saw. A mismatch answers 409 instead of overwriting. Falls back to `body.version` when the header is absent — except for pricing features, where `version` is the domain field 'available from'."
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SavedView"
+      responses:
+        "200":
+          description: "The updated view."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SavedView"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "403":
+          description: "forbidden — the view belongs to somebody else, or the change needs write access."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "409":
+          description: "version_conflict — the stored row version differs from If-Match. The client reloads that row instead of overwriting."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+    delete:
+      operationId: deleteSourceByIdSavedViewByViewId
+      summary: "Delete one saved view"
+      description: "The owner or an admin. Deleting a shared view removes it for everybody, which is why it is not offered to every member who may write."
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ok"
+        "400":
+          description: "invalid_request — a required field is missing or a rule was violated (reversed item extent, overlapping phases)."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "401":
+          description: "session_expired — the auth gate rejected the request. The client sends the top window to the login."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "403":
+          description: "forbidden — the view belongs to somebody else."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "404":
+          description: "not found — unknown timeline, unknown child id, or an unknown sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "405":
+          description: "method not allowed for this sub-resource."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
+        "500":
+          description: "server_error — includes the case where no database is configured, which fails loudly rather than serving stale content."
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Error"
   "/api/source/{id}/watermark":
     parameters:
       - name: id
@@ -1874,6 +2166,65 @@ components:
       name: X-MCP-Token
       description: "Service token that bypasses the interactive login for non-interactive clients such as the MCP server, compared in constant time. Edits made with it are attributed as `mcp`. Inactive when MCP_API_TOKEN is unset."
   schemas:
+    SavedView:
+      type: object
+      properties:
+        id:
+          type: string
+          description: "Unique within its timeline; travels in the hash as `sv=<id>`."
+        name:
+          type: string
+        mode:
+          type: string
+          description: "The presentation to open in — a `ViewMode` string (`timeline`, `list`, `plugin:<id>:<view>`). Absent means „leave the presentation alone\", which is what makes a view that is only about the narrowing possible."
+        groupBy:
+          type: string
+          description: "The grouping dimension, as `state.groupBy` spells it (`group`, `cf:tier`, …)."
+        filters:
+          "$ref": "#/components/schemas/Recordstringstring"
+          description: "Selected values per filter dimension; the shape `FilterSelection` describes."
+        owner:
+          type: string
+          description: "The address of whoever created it. Empty on a source with no identity."
+        visibility:
+          "$ref": "#/components/schemas/SavedViewVisibility"
+          description: "Defaults to `private` when absent, which is what an older file spells."
+        version:
+          type: number
+          description: "Optimistic-lock counter, server-managed like an item's."
+        createdAt:
+          type: string
+        createdBy:
+          type: string
+        updatedAt:
+          type: string
+        updatedBy:
+          type: string
+      required:
+        - id
+        - name
+      additionalProperties: false
+      description: |-
+          A named combination of presentation, grouping dimension and filter selection, stored with the timeline rather than in one person's browser.
+
+          The display state itself is per person and per timeline in `localStorage` (docs/editing.md → „Where the display state lives"). That answers „how am I looking at this right now" and cannot answer „the way we look at this every Monday", because it has no name, no second reader and no address.
+
+          What it deliberately does NOT carry is the visible time window. An absolute window ages into something nobody wants to see within a quarter, and „the next three months" is a relative window — a different feature that this one must not smuggle in under the same name.
+    Recordstringstring:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string
+    SavedViewVisibility:
+      type: string
+      enum:
+        - private
+        - instance
+      description: |-
+          Who a saved view is for.
+
+          `private` is the default because a half-built narrowing is the normal state of one: somebody sets a filter, keeps it, and refines it over a week. Publishing is a separate act, and it needs `write` — a `viewer` may keep their own without being able to put one in front of everybody (see docs/users.md).
     PluginRef:
       type: object
       properties:
@@ -1906,9 +2257,9 @@ components:
       additionalProperties:
         "$ref": "#/components/schemas/PluginCollectionData"
     PluginCollectionData:
-      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-14245-15421-src_types.ts-0-193121108268078"
+      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-14245-15421-src_types.ts-0-219321108268078"
       description: "A plugin's collections, keyed by the collection id its manifest declares."
-    Recordstringdef-alias-src_types.ts-14245-15421-src_types.ts-0-193121108268078:
+    Recordstringdef-alias-src_types.ts-14245-15421-src_types.ts-0-219321108268078:
       type: object
       additionalProperties:
         type: array
@@ -2072,6 +2423,14 @@ components:
           type: string
         groupBy:
           type: string
+        savedViews:
+          type: array
+          items:
+            "$ref": "#/components/schemas/SavedView"
+          description: |-
+              Named ways of looking at this timeline. On a `db` source these are rows of the `saved_views` table folded in for the caller; in a file they are the store itself, which is what keeps a local timeline self-contained — the same split `pluginData` makes (docs/plugin-storage.md).
+
+              What reaches a client is already filtered by who asked: a private view of somebody else is never in this array.
         plugins:
           type: array
           items:

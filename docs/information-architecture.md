@@ -59,7 +59,7 @@ flowchart TD
 | --- | --- | --- | --- |
 | 1 Instance | the deployment | server, env, database | `#settings`, `#settings=<section>` |
 | 2 Inventory | the deployment | the discovered sources | none |
-| 3 Timeline | one timeline | the timeline record | `#view=<id>`, `#timeline-settings=<section>` |
+| 3 Timeline | one timeline | the timeline record | `#view=<id>`, `#timeline-settings=<section>`, `#sv=<id>` |
 | 4 Presentation | one timeline, per person | per person and timeline | `#mode=`, `#m=`, `#from=`/`#to=` |
 | 5 Object | one object | the object record | `#item=<id>` |
 | 6 Tools | varies | nothing | `playground.html` |
@@ -86,9 +86,16 @@ different actions, so three places in one bar rather than two controls in the
 header and two below it.
 
 The extent is **private and per person**, stored per timeline, and shared by
-copying the link (see „Where the display state lives" (docs/editing.md)). Named
-extents that everybody sees would be level 3 with a store of their own, and they
-are deliberately not part of this.
+copying the link (see „Where the display state lives" (docs/editing.md)).
+
+**A named bundle of the two is level 3**, because it is stored with the document
+and can be somebody else's to read: that is what a saved view („Ansicht") is, and
+it has the store of its own this chapter said it would need — see „Gespeicherte
+Ansichten" (docs/editing.md). It does not change where the unnamed extent lives.
+The control sits at the head of the perspective/extent group in the level 4 bar,
+which is the one place a level-3 object appears among level-4 controls: it is a
+shortcut over exactly those two, and putting it anywhere else would mean reaching
+for a different part of the screen to set the same thing.
 
 ## Where every control belongs
 
@@ -111,6 +118,7 @@ are deliberately not part of this.
 | Plugin views | the bar, one control per plugin | 4 | done: each plugin's views sit in its own control, its name inside on the left; the control marks itself while one of its views is active |
 | „Gruppieren" | the bar | 4, perspective | done |
 | „Filter" | the bar | 4, extent | done: beside the switch, holding every narrowing |
+| „Ansicht" (saved views) | the bar, first of its group | 3 | done: a named bundle of the presentation, the perspective and the extent, stored with the timeline and shareable with the instance. A **mark** rather than a labelled control: the bar wraps below ~1000px with a plugin present, and a third caption moved that to ~1200px |
 | „Nur Meilensteine" | gone | 4, extent | done: a value of the type dimension in the filter |
 | Time window (zoom, pan) | the chart | 4, extent | stays a gesture, counts as extent, travels with it |
 | „+ Eintrag" | the bar, right | 5 | done: an action of the presentation the object appears in, offered only where it can appear |
@@ -232,14 +240,18 @@ affordance, with every route enforcing for itself (see [`users.md`](users.md)).
   a registered timeline with a source (`config.views[]`, `?view=`,
   `state.activeView`); the interface now says **Timeline** for that document and
   **Darstellung** for the way it is drawn, and no longer spends „Ansicht" on the
-  second while the code spends `View` on the first. Renaming the type would mean
+  second while the code spends `View` on the first. The freed word now names the
+  saved combination of presentation, perspective and extent (code: `SavedView`),
+  which is a different object from either and the one people already call an
+  „Ansicht". Renaming the type would mean
   migrating the built config, the hash parameter and every stored preference, so it
   earns its own change — same reasoning as „The name covers the product, not its
   vocabulary or its instances" ([`AGENTS.md`](../AGENTS.md)). The mapping, for
   whoever reads both: interface „Timeline" = `View` + its `TimelineFile`; interface
   „Darstellung" = `ViewMode` (`timeline`, `list`, `plugin:<id>:<view>`).
-- **Named, shared extents**, per-timeline access rules, and creating a timeline
-  from the interface (which needs a create route first).
+- Per-timeline access rules, and creating a timeline from the interface (which
+  needs a create route first). **Named, shared extents used to be on this list**
+  and are now „Gespeicherte Ansichten" (docs/editing.md).
 - **The published hash format.** A new address form is added beside it; the old one
   keeps being read, legacy mode ids included (see „A view is addressable"
   (docs/architecture.md)).

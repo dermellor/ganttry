@@ -239,3 +239,39 @@
 .plugin-view-bar:empty {
   display: none;
 }
+
+/* One saved view in the „Ansicht" panel: the row that applies it, and the gear
+   that opens its settings. Two sibling buttons rather than one row with two hit
+   areas — see src/savedViewsControl.ts for why they are not nested. The gear is
+   quiet until the row is hovered (the Button's own `reveal`), so a list of five
+   views is a list of names rather than a column of gears. */
+.saved-view-row {
+  display: flex;
+  align-items: center;
+}
+
+.saved-view-row > .saved-view-apply {
+  flex: 1;
+  min-width: 0;
+}
+
+.saved-view-row > .ds-IconButton {
+  flex: none;
+  margin-right: var(--space-xs);
+}
+
+/* The name field inside the „Ansicht" panel: one row, the input taking whatever
+   the button leaves. It is an app-level composition rather than a component,
+   like `.footer-actions` above — two design-system controls side by side, with
+   no behaviour of its own worth naming. */
+.saved-view-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+}
+
+.saved-view-name > .ds-Input {
+  flex: 1;
+  min-width: 0;
+}

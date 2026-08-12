@@ -66,6 +66,9 @@ export type AppShellElements = {
   contentArea: HTMLElement;
   modeToggle: HTMLElement;
   pluginViewBar: HTMLElement;
+  savedViewsControl: HTMLElement;
+  savedViewsToggle: HTMLButtonElement;
+  savedViewsMenu: HTMLElement;
   groupBy: HTMLSelectElement;
   groupByControl: HTMLElement;
   filterControl: HTMLElement;
@@ -414,6 +417,41 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     ],
   });
 
+  // „Ansicht": the named bundle of the two controls that follow it, and — when the
+  // saved view states one — of the presentation chosen before them. It leads the
+  // group it is a shortcut over, so the row reads „this whole look, then the parts
+  // of it". Hidden until the timeline has one to offer or one can be made (see
+  // syncSavedViewsControl).
+  //
+  // **A mark, not a labelled control**, and that is the space decision: this bar
+  // already wraps onto a second row on a 13" window once a plugin contributes its
+  // own control, so a third „LABEL [Wert ▾]" pair is a cost the row cannot carry.
+  // Resting, it is one 30px box; it grows a name only while a view is applied,
+  // which is the state where the name is the point. `savedViewsToggle` therefore
+  // starts label-less and `syncSavedViewsControl` swaps its content — the caret
+  // comes and goes with it, since the variant suppresses it on an icon-only button.
+  const savedViewsToggle = Button({
+    variant: 'trigger',
+    icon: Icon({ name: 'view', chrome: true, size: 'sm', standalone: true }),
+    ariaLabel: 'Gespeicherte Ansichten',
+    attrs: { id: 'saved-views-toggle', 'aria-haspopup': 'true', 'aria-expanded': 'false' },
+  });
+  const savedViewsMenu = Popover({
+    role: 'group',
+    ariaLabel: 'Gespeicherte Ansichten',
+    scroll: true,
+    hidden: true,
+    attrs: { id: 'saved-views-menu' },
+  });
+  // No `ToolbarControl` around it: that component's job is to pair a caption with
+  // a control, and the caption is exactly what this variant gives up. The anchor
+  // is still needed — the panel positions against it — and it doubles as the box
+  // the outside-click test asks about.
+  const savedViewsControl = ToolbarAnchor({
+    attrs: { id: 'saved-views-control', hidden: true },
+    children: [savedViewsToggle, savedViewsMenu],
+  });
+
   const groupBy = Select({ id: 'groupby' });
   // Kept as a node rather than inlined into the bar: the presentation declares
   // which accessories apply (see main.ts), so each of them has to be hideable on
@@ -477,7 +515,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       // Split this way the bar is at most two rows — which presentation on the
       // first, how it is bundled and narrowed on the second.
       ToolbarGroup({ children: [modeToggle, pluginViewBar] }),
-      ToolbarGroup({ children: [groupByControl, filterControl] }),
+      ToolbarGroup({ children: [savedViewsControl, groupByControl, filterControl] }),
       ToolbarGroup({ end: true, children: [addBtn, exportBtn] }),
     ],
   });
@@ -561,6 +599,9 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       contentArea,
       modeToggle,
       pluginViewBar,
+      savedViewsControl,
+      savedViewsToggle,
+      savedViewsMenu,
       groupBy,
       groupByControl,
       filterControl,

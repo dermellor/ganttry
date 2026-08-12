@@ -22,6 +22,7 @@ import type {
   PluginData,
   PluginDataRow,
   PluginRef,
+  SavedView,
   TimelineFile,
   TimelineFileItem,
   TimelinePhase,
@@ -360,6 +361,23 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
     const pluginData = await listPluginData(db, id, plugins.map((p) => p.id));
     if (Object.keys(pluginData).length) file.pluginData = pluginData;
   }
+  // Unfiltered on purpose: which of these the caller may see is decided once,
+  // above the seam, in the dispatcher (see src/savedViews.ts).
+  // Tolerated rather than fatal, and this is the ONE read here that is: a
+  // migration is a deliberate manual step while a deploy happens on merge, so the
+  // two cannot be made atomic and the window between them is real. A timeline that
+  // will not load because a DISPLAY-STATE table is missing spends the whole
+  // window's cost on content that is perfectly fine — the same trade `touchUser`
+  // makes for the user directory. What is pending is reported by `npm run db:check`,
+  // which is where an operator looks for it; nothing here quietly invents data
+  // („no fallback data" is about content, and this returns none).
+  let savedViews: SavedView[] = [];
+  try {
+    savedViews = await listSavedViews(db, id);
+  } catch {
+    // The saved views are simply absent until the migration lands.
+  }
+  if (savedViews.length) file.savedViews = savedViews;
   if (groupRows && groupRows.length) file.groups = groupRows.map(rowToGroup);
   return file;
 }
@@ -1172,6 +1190,116 @@ export async function purgeItemMetadata(
   return changed;
 }
 
+// ---- saved views -----------------------------------------------------------
+//
+// PostgREST has no upsert-with-a-guard, so the write is the same read-then-branch
+// `putPluginRow` uses next door: an existing row is UPDATEd with the version in
+// the filter (zero rows back = stale), a missing one INSERTed. Nothing here asks
+// who is reading — see the note on the seam in repo.ts.
+
+const SAVED_VIEW_SELECT =
+  'id, name, mode, group_by, filters, owner, visibility, version, created_at, created_by, updated_at, updated_by';
+
+function rowToSavedView(row: Record<string, any>): SavedView {
+  const out: SavedView = { id: row.id, name: row.name };
+  if (row.mode != null) out.mode = row.mode;
+  if (row.group_by != null) out.groupBy = row.group_by;
+  const filters = (row.filters ?? {}) as Record<string, string[]>;
+  if (Object.keys(filters).length) out.filters = filters;
+  if (row.owner != null) out.owner = row.owner;
+  out.visibility = row.visibility === 'instance' ? 'instance' : 'private';
+  if (row.version != null) out.version = row.version;
+  if (row.created_at != null) out.createdAt = row.created_at;
+  if (row.created_by != null) out.createdBy = row.created_by;
+  if (row.updated_at != null) out.updatedAt = row.updated_at;
+  if (row.updated_by != null) out.updatedBy = row.updated_by;
+  return out;
+}
+
+export async function listSavedViews(db: SupabaseClient, timelineId: string): Promise<SavedView[]> {
+  const { data, error } = await db
+    .from('saved_views')
+    .select(SAVED_VIEW_SELECT)
+    .eq('timeline_id', timelineId)
+    .order('name', { ascending: true })
+    .order('id', { ascending: true });
+  if (error) throw new Error(`listSavedViews: ${error.message}`);
+  return (data ?? []).map(rowToSavedView);
+}
+
+export async function getSavedView(
+  db: SupabaseClient,
+  timelineId: string,
+  viewId: string,
+): Promise<SavedView | null> {
+  const { data, error } = await db
+    .from('saved_views')
+    .select(SAVED_VIEW_SELECT)
+    .eq('timeline_id', timelineId)
+    .eq('id', viewId)
+    .maybeSingle();
+  if (error) throw new Error(`getSavedView: ${error.message}`);
+  return data ? rowToSavedView(data) : null;
+}
+
+export async function putSavedView(
+  db: SupabaseClient,
+  timelineId: string,
+  view: SavedView,
+  expectedVersion?: number,
+  updatedBy?: string,
+): Promise<SavedView> {
+  const key = (q: any) => q.eq('timeline_id', timelineId).eq('id', view.id);
+  const { data: existing } = await key(db.from('saved_views').select('version')).maybeSingle();
+
+  if (existing) {
+    // `owner` and `created_by` are deliberately not in the update: a saved view
+    // keeps its author, so an admin fixing somebody's shared view does not take it
+    // over — which would also move it out of that person's own list.
+    let q = key(
+      db.from('saved_views').update({
+        name: view.name,
+        mode: view.mode ?? null,
+        group_by: view.groupBy ?? null,
+        filters: view.filters ?? {},
+        visibility: view.visibility ?? 'private',
+        updated_by: updatedBy ?? null,
+      }),
+    );
+    if (expectedVersion != null) q = q.eq('version', expectedVersion);
+    const { data, error } = await q.select(SAVED_VIEW_SELECT);
+    if (error) throw new Error(`putSavedView: ${error.message}`);
+    if (!data || data.length === 0) {
+      throw new ConflictError(`saved view ${view.id} changed since version ${expectedVersion}`);
+    }
+    return rowToSavedView(data[0]);
+  }
+
+  const { data, error } = await db
+    .from('saved_views')
+    .insert({
+      timeline_id: timelineId,
+      id: view.id,
+      name: view.name,
+      mode: view.mode ?? null,
+      group_by: view.groupBy ?? null,
+      filters: view.filters ?? {},
+      owner: view.owner ?? null,
+      visibility: view.visibility ?? 'private',
+      created_by: updatedBy ?? null,
+      updated_by: updatedBy ?? null,
+    })
+    .select(SAVED_VIEW_SELECT)
+    .single();
+  if (error) throw new Error(`putSavedView: ${error.message}`);
+  return rowToSavedView(data);
+}
+
+export async function deleteSavedView(db: SupabaseClient, timelineId: string, viewId: string): Promise<void> {
+  const { error } = await db.from('saved_views').delete().eq('timeline_id', timelineId).eq('id', viewId);
+  if (error) throw new Error(`deleteSavedView: ${error.message}`);
+}
+
 // -- bulk replace (import, MCP set_pricing seed, PUT) --
 
 // ---- TimelineRepo factory (supabase-js) ------------------------------------
@@ -1224,5 +1352,10 @@ export function makeSupabaseRepo(db: SupabaseClient): TimelineRepo {
       orderPluginRows(db, timelineId, pluginId, collection, orderedIds, updatedBy),
     purgePluginData: (pluginId, timelineId) => purgePluginData(db, pluginId, timelineId),
     purgeItemMetadata: (keys, timelineId) => purgeItemMetadata(db, keys, timelineId),
+    listSavedViews: (timelineId) => listSavedViews(db, timelineId),
+    getSavedView: (timelineId, viewId) => getSavedView(db, timelineId, viewId),
+    putSavedView: (timelineId, view, expectedVersion, updatedBy) =>
+      putSavedView(db, timelineId, view, expectedVersion, updatedBy),
+    deleteSavedView: (timelineId, viewId) => deleteSavedView(db, timelineId, viewId),
   };
 }

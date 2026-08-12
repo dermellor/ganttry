@@ -207,6 +207,20 @@ export interface AppState {
   // is read before the view exists, so it waits here until applyView has loaded
   // that timeline's own state and can let the link win over it.
   pendingPrefs: { mode?: ViewMode; filters?: FilterSelection } | null;
+  /**
+   * Which saved view the current display came from, or null for a display nobody
+   * named. Not persisted: it says where this look started, and reopening a
+   * timeline restores the stored grouping and filter directly (viewPrefs.ts) —
+   * claiming a view is applied when only its values were restored would put the
+   * drift marker on state the user never chose.
+   */
+  activeSavedViewId: string | null;
+  /**
+   * A saved view a link asked for (`sv=<id>`), held until the timeline carrying it
+   * has loaded. Same pattern as pendingItem / pendingPrefs above: the URL is read
+   * before the source exists.
+   */
+  pendingSavedView: string | null;
   // Parent items whose children are folded away in the ACTIVE source (see
   // COLLAPSED_ITEMS_KEY). Swapped wholesale by loadCollapsedItems on every view
   // change, so nothing here ever refers to another timeline's ids.
@@ -263,6 +277,8 @@ export const state: AppState = {
   groupBy: DEFAULT_VIEW_PREFS.groupBy,
   filters: {},
   pendingPrefs: null,
+  activeSavedViewId: null,
+  pendingSavedView: null,
   collapsedItems: new Set(),
   persisting: false,
   persistAgain: false,
@@ -467,6 +483,10 @@ export function syncUrl(): void {
   // one dimension of it and not the others would say something untrue about the
   // rest. Old links carrying it are still read (see urlState.ts).
   if (state.viewMode !== 'timeline') urlState.mode = state.viewMode;
+  // The saved view travels as one short parameter, which is what makes "look at
+  // this the way I am" a link rather than a description of six clicks. Only while
+  // one is actually applied — a plain link stays plain, the rule `mode` follows.
+  if (state.activeSavedViewId) urlState.savedView = state.activeSavedViewId;
   // Written alongside everything else: the view, item and window stay in the
   // hash while the area is open, so closing it returns to the timeline the
   // operator left rather than to the default view.

@@ -29,6 +29,7 @@ import {
   syncGroupByControl,
 } from './grouping';
 import { syncFilterControl } from './filterControl';
+import { syncSavedViewsControl } from './savedViewsControl';
 import { GROUP_DIM } from './listGrouping';
 import { DependencyArrows } from './arrows';
 import { HierarchyFolders } from './hierarchyFolders';
@@ -273,6 +274,10 @@ function computeDisplay(): { items: TimelineItem[]; groups: TimelineGroup[] } {
   const { dim, options } = resolveGrouping(entries);
   syncGroupByControl(options, dim);
   syncFilterControl();
+  // Every repaint, so the trigger's asterisk follows a grouping or filter change
+  // made in the two controls beside it. Cheap: the panel is a list of commands
+  // rebuilt from state, not something anybody is mid-way through ticking.
+  syncSavedViewsControl();
   regroupedMode = dim !== GROUP_DIM;
 
   const regroup = regroupForTimeline(filtered.items, filtered.groups, dim, options);

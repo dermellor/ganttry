@@ -327,7 +327,7 @@ const marksSection = section(
       // already lost `caret`, which is how a chrome glyph goes years without anyone
       // looking at it — the gear was a sun the whole time it was drawn inline in
       // appShell.ts, outside both this grid and the glyph file.
-      ...['delete', 'warning', 'check', 'caret', 'gear', 'menu'].map((name) =>
+      ...['delete', 'warning', 'check', 'caret', 'gear', 'menu', 'view'].map((name) =>
         specimen(`ui: ${name}`, Icon({ name, chrome: true, size: 'lg', standalone: true })),
       ),
     ]),
