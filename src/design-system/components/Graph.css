@@ -76,3 +76,34 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* One colour per column, from the same lane tokens the timeline's tracks use —
+   `assignLanes` stamps the class per group, so a group is the same colour in both
+   presentations. Tinted fill plus a saturated left edge: the fill groups the
+   column at a glance, the edge survives the dimming a hover applies. */
+.ds-GraphNode[class*='lane-'] {
+  border-color: color-mix(in srgb, var(--ds-graph-node-accent) 45%, var(--item-border));
+}
+
+.ds-GraphNode.lane-0 { --ds-graph-node-accent: var(--lane-0-border); background: var(--lane-0-bg); }
+.ds-GraphNode.lane-1 { --ds-graph-node-accent: var(--lane-1-border); background: var(--lane-1-bg); }
+.ds-GraphNode.lane-2 { --ds-graph-node-accent: var(--lane-2-border); background: var(--lane-2-bg); }
+.ds-GraphNode.lane-3 { --ds-graph-node-accent: var(--lane-3-border); background: var(--lane-3-bg); }
+.ds-GraphNode.lane-4 { --ds-graph-node-accent: var(--lane-4-border); background: var(--lane-4-bg); }
+.ds-GraphNode.lane-5 { --ds-graph-node-accent: var(--lane-5-border); background: var(--lane-5-bg); }
+
+/* Hover and selection still have to win over the lane's own border. */
+.ds-GraphNode[class*='lane-']:hover,
+.ds-GraphNode[class*='lane-'][data-selected] {
+  border-color: var(--accent);
+}
+
+/* The scene line. One line, clipped: five scene titles at a node would otherwise
+   push the box past the height the layout reserved for it. */
+.ds-GraphNode-ref {
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

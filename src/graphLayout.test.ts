@@ -1,9 +1,10 @@
-import test from 'node:test';
+import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
   layoutGraph,
   BAND_GAP,
+  BAND_TITLE_H,
   HEADER_H,
   MARGIN,
   NODE_H,
@@ -291,4 +292,155 @@ test('an edge inside one column is kept and its nodes share a band', () => {
   assert.equal(out.edges.length, 1);
   assert.equal(out.bands.length, 1);
   assert.equal(out.bands[0].loose, false);
+});
+
+describe('band roots', () => {
+  // A root names a strand instead of sitting in it: „An Expedition teilnehmen" as a
+  // heading over its hints and tasks says more than the same string in a box with
+  // five lines going into it.
+  test('a root claims what it reaches, lends its title, and is not drawn', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('hint', 'task'),
+        nodes: [
+          { id: 'h1', column: 'hint' },
+          { id: 't1', column: 'task' },
+        ],
+        edges: [
+          { from: 'h1', to: 'p1', kind: 'depends' },
+          { from: 'p1', to: 't1', kind: 'depends' },
+        ],
+        roots: [{ id: 'p1', title: 'Der Plan' }],
+      }),
+    );
+    assert.equal(out.nodes.length, 2, 'the root is not a node');
+    assert.equal(out.bands.length, 1);
+    assert.equal(out.bands[0].title, 'Der Plan');
+    assert.deepEqual(out.bands[0].nodeIds, ['h1', 't1']);
+    // Both edges touch the root, which has no position, so neither is drawn.
+    assert.deepEqual(out.edges, []);
+  });
+
+  test('two nodes joined only through a root still share its band', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a'),
+        nodes: [{ id: 'x', column: 'a' }, { id: 'y', column: 'a' }],
+        edges: [
+          { from: 'x', to: 'p', kind: 'depends' },
+          { from: 'y', to: 'p', kind: 'depends' },
+        ],
+        roots: [{ id: 'p', title: 'P' }],
+      }),
+    );
+    assert.equal(out.bands.length, 1);
+    assert.equal(out.bands[0].loose, false);
+    assert.deepEqual(out.bands[0].nodeIds, ['x', 'y']);
+  });
+
+  // A heading over nothing reads as data that failed to load.
+  test('a root that claims nothing produces no band', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a'),
+        nodes: [{ id: 'x', column: 'a' }],
+        roots: [{ id: 'p', title: 'P' }],
+      }),
+    );
+    assert.equal(out.bands.length, 1);
+    assert.equal(out.bands[0].title, undefined);
+    assert.equal(out.bands[0].loose, true);
+  });
+
+  test('claimed bands come first, then anonymous components, then the loose one', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a', 'b'),
+        nodes: [
+          { id: 'solo', column: 'a' },
+          { id: 'c1', column: 'a' },
+          { id: 'c2', column: 'b' },
+          { id: 'claimed', column: 'b' },
+        ],
+        edges: [
+          { from: 'c1', to: 'c2', kind: 'depends' },
+          { from: 'p', to: 'claimed', kind: 'depends' },
+        ],
+        roots: [{ id: 'p', title: 'P' }],
+      }),
+    );
+    assert.deepEqual(
+      out.bands.map((b) => [b.title ?? null, b.loose, b.nodeIds]),
+      [
+        ['P', false, ['claimed']],
+        [null, false, ['c1', 'c2']],
+        [null, true, ['solo']],
+      ],
+    );
+  });
+
+  test('a node two roots can reach goes to the nearer one', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a', 'b'),
+        nodes: [
+          { id: 'near', column: 'a' },
+          { id: 'far', column: 'b' },
+        ],
+        edges: [
+          // p2 → near directly; p1 → far → near is one hop longer.
+          { from: 'p1', to: 'far', kind: 'depends' },
+          { from: 'far', to: 'near', kind: 'depends' },
+          { from: 'p2', to: 'near', kind: 'depends' },
+        ],
+        roots: [
+          { id: 'p1', title: 'Erster' },
+          { id: 'p2', title: 'Zweiter' },
+        ],
+      }),
+    );
+    const bandOf = (id: string) => out.bands[out.nodes.find((n) => n.id === id)!.band].title;
+    assert.equal(bandOf('far'), 'Erster');
+    assert.equal(bandOf('near'), 'Zweiter');
+  });
+
+  test('an edge between two claimed nodes is still drawn', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a', 'b'),
+        nodes: [
+          { id: 'x', column: 'a' },
+          { id: 'y', column: 'b' },
+        ],
+        edges: [
+          { from: 'p', to: 'x', kind: 'depends' },
+          { from: 'x', to: 'y', kind: 'depends' },
+        ],
+        roots: [{ id: 'p', title: 'P' }],
+      }),
+    );
+    assert.deepEqual(out.edges, [{ from: 'x', to: 'y', kind: 'depends' }]);
+    assert.equal(out.bands[0].title, 'P');
+  });
+});
+
+// The nodes' y positions come from the layout, so a heading the stylesheet made
+// room for would still have a box sitting on top of it.
+test('a titled band reserves room for its heading', () => {
+  const input = (withRoot: boolean) =>
+    graph({
+      columns: columns('a'),
+      nodes: [{ id: 'x', column: 'a' }, { id: 'y', column: 'a' }],
+      edges: withRoot
+        ? [{ from: 'p', to: 'x', kind: 'depends' as const }, { from: 'p', to: 'y', kind: 'depends' as const }]
+        : [{ from: 'x', to: 'y', kind: 'depends' as const }],
+      roots: withRoot ? [{ id: 'p', title: 'P' }] : [],
+    });
+  const titled = layoutGraph(input(true));
+  const plain = layoutGraph(input(false));
+  assert.equal(titled.bands[0].title, 'P');
+  assert.equal(plain.bands[0].title, undefined);
+  const firstY = (l: ReturnType<typeof layoutGraph>) => Math.min(...l.nodes.map((n) => n.y));
+  assert.equal(firstY(titled) - firstY(plain), BAND_TITLE_H);
+  assert.equal(titled.bands[0].height - plain.bands[0].height, BAND_TITLE_H);
 });

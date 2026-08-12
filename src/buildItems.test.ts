@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assignLanes,
+  buildFromJson,
   assignLaneSubgroups,
   backgroundLabelId,
   laneCountOf,
@@ -12,6 +13,10 @@ import {
   type TimelineGroup,
   type TimelineItem,
 } from './buildItems';
+
+import type { View } from './types';
+
+const VIEW: View = { id: 'v', name: 'Test', source: { kind: 'local', id: 'v' } };
 
 // Lane packing lays out items into vertical lanes (`subgroup`) so nothing
 // overlaps under vis-timeline's `stack: false`. The subtle case: a point item
@@ -341,4 +346,38 @@ test('a lane count survives the round trip through the group style', () => {
   // A group vis never laid out carries no style; one lane is the honest floor.
   assert.equal(laneCountOf(undefined), 1);
   assert.equal(laneCountOf('color: red;'), 1);
+});
+
+// A group name with punctuation came out as `Hero&#39;s Journey` in the list's
+// section rows and in the graph's column heads, because `content` is escaped
+// markup for vis-timeline's group label and both consumers build DOM. The bug
+// stayed invisible until a group name contained an apostrophe.
+test('a group carries its name twice: escaped markup and plain text', () => {
+  const built = buildFromJson(VIEW, {
+    groups: [{ id: 'hj', content: "Hero's Journey" }],
+    items: [{ id: 'a', content: 'Erstes', start: '2026-01-01', group: 'hj' }],
+  });
+  const group = built.groups.find((g) => g.id === 'hj')!;
+  assert.equal(group.content, 'Hero&#39;s Journey');
+  assert.equal(group.label, "Hero's Journey");
+});
+
+test('groupOrder: declared beats the alphabet, and alpha stays the default', () => {
+  const file = {
+    groups: [{ id: '_Hints', content: 'H' }, { id: "_Hero's", content: 'X' }],
+    items: [
+      { id: 'a', content: 'A', start: '2026-01-01', group: '_Hints' },
+      { id: 'b', content: 'B', start: '2026-01-02', group: "_Hero's" },
+    ],
+  };
+  // „_Hero's" sorts before „_Hints" alphabetically, which is why the declaration
+  // has to be able to win.
+  assert.deepEqual(
+    buildFromJson(VIEW, file).groups.map((g) => g.id),
+    ["_Hero's", '_Hints'],
+  );
+  assert.deepEqual(
+    buildFromJson(VIEW, { ...file, groupOrder: 'declared' as const }).groups.map((g) => g.id),
+    ['_Hints', "_Hero's"],
+  );
 });

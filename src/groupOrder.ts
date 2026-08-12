@@ -1,10 +1,10 @@
 // In what order the groups of a timeline are laid out.
 //
-// Its own DOM-free module for one reason: `buildFromJson` imports the design
-// system (for the tag markup it writes into vis-timeline items), so it cannot be
-// loaded under `node --test` and nothing inside it can be unit-tested. The rule
-// here decides the lane order of every timeline and the column order of the graph,
-// which is too much to leave unpinned.
+// Its own module because it is a rule, and the rule decides the lane order of
+// every timeline plus the column order of the graph. Kept DOM-free so it can be
+// read and tested without the build around it — `buildFromJson` reaches the
+// design system for the tag markup it writes into vis-timeline items, which drags
+// a stylesheet into anything that imports it.
 
 /** The subset of a group this ordering needs. */
 export type OrderableGroup = { id: string };

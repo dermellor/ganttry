@@ -26,6 +26,20 @@ export type GraphInput = {
    */
   nodes: { id: string; column: string }[];
   edges: { from: string; to: string; kind: EdgeKind }[];
+  /**
+   * Nodes that name a band instead of sitting in one.
+   *
+   * A root claims everything reachable from it and lends the band its title, then
+   * disappears from the picture — which is the whole point: „An Expedition
+   * teilnehmen" as a heading over its hints, revelations and tasks says more than
+   * the same string in a box with five lines going into it.
+   *
+   * Deliberately not part of `nodes`: a root has no column, and every rule here
+   * that reads a node's column would need a special case for it. Edges touching a
+   * root still belong in `edges` — they are what the claim follows — and are
+   * dropped from the drawn set because one end has no position.
+   */
+  roots?: { id: string; title: string }[];
 };
 
 export type PlacedNode = {
@@ -41,6 +55,8 @@ export type PlacedNode = {
 
 export type PlacedBand = {
   index: number;
+  /** The claiming root's title, absent for an anonymous component. */
+  title?: string;
   /**
    * A band of nodes that have no edge at all. It is kept apart and drawn apart
    * because mixing them into the connected structure is what makes a graph look
@@ -79,6 +95,12 @@ export const BAND_GAP = 28;
 export const MARGIN = 24;
 /** Room above the first band for the column headers. */
 export const HEADER_H = 34;
+/**
+ * Extra room at the top of a band that carries a heading. Reserved by the layout
+ * rather than by the stylesheet: the nodes' y positions come from here, so a title
+ * the CSS made room for would still have a box sitting on top of it.
+ */
+export const BAND_TITLE_H = 26;
 
 const ROW_PITCH = NODE_H + ROW_GAP;
 const COL_PITCH = NODE_W + COL_GAP;
@@ -107,7 +129,10 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   }
 
   const edges = usableEdges(input.edges, columnOf);
-  const bands = findBands(order, edges);
+  // Banding follows *every* edge, including the ones touching a root, because that
+  // is what a root's claim travels along. Drawing follows only `edges`, where both
+  // ends have a position.
+  const bands = findBands(order, input.edges, input.roots ?? [], columnOf);
 
   const placed: PlacedNode[] = [];
   const placedBands: PlacedBand[] = [];
@@ -118,6 +143,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       ? packLoose(band.nodeIds, columnOf, input.columns.length)
       : orderBand(band.nodeIds, columnOf, edges, order, input.columns.length);
 
+    const titleRoom = band.title ? BAND_TITLE_H : 0;
     let height = 0;
     for (const [column, ids] of rows.entries()) {
       for (const [row, id] of ids.entries()) {
@@ -127,14 +153,21 @@ export function layoutGraph(input: GraphInput): GraphLayout {
           row,
           band: index,
           x: MARGIN + column * COL_PITCH,
-          y: top + BAND_PAD + row * ROW_PITCH,
+          y: top + BAND_PAD + titleRoom + row * ROW_PITCH,
         });
       }
       height = Math.max(height, ids.length * ROW_PITCH - ROW_GAP);
     }
 
-    const full = height + 2 * BAND_PAD;
-    placedBands.push({ index, loose: band.loose, top, height: full, nodeIds: band.nodeIds });
+    const full = height + 2 * BAND_PAD + titleRoom;
+    placedBands.push({
+      index,
+      title: band.title,
+      loose: band.loose,
+      top,
+      height: full,
+      nodeIds: band.nodeIds,
+    });
     top += full + BAND_GAP;
   }
 
@@ -177,50 +210,108 @@ function usableEdges(
   return out;
 }
 
-type Band = { nodeIds: string[]; loose: boolean };
+type Band = { nodeIds: string[]; loose: boolean; title?: string };
 
 /**
- * Connected components over the undirected edge set, plus one trailing band for
- * everything with no edge.
+ * The bands, in the order they are stacked: the ones a root claims first, then the
+ * anonymous connected components, then everything with no edge at all.
  *
- * Bands come out in the order of their first node, which is the order the
- * sections produced. Ordering them by size instead would reshuffle the whole
- * picture whenever one item gains a dependency, and a layout that jumps on an
- * unrelated edit is one nobody trusts to be showing the same graph as before.
+ * Three tiers rather than one, because they answer different questions. A claimed
+ * band says „this is what plan X consists of". An anonymous component says „these
+ * hang together, and nothing declares why". The loose band says „these hang off
+ * nothing" — and keeping it apart is what stops three connected items from
+ * disappearing into forty unconnected ones.
+ *
+ * Within a tier the order follows the first node, which is the order the sections
+ * produced. Ordering by size instead would reshuffle the whole picture whenever one
+ * item gains a dependency, and a layout that jumps on an unrelated edit is one
+ * nobody trusts to be showing the same graph as before.
  */
-function findBands(order: string[], edges: PlacedEdge[]): Band[] {
-  const parent = new Map(order.map((id) => [id, id]));
-  const find = (id: string): string => {
-    let root = id;
-    while (parent.get(root) !== root) root = parent.get(root)!;
-    while (parent.get(id) !== root) {
-      const next = parent.get(id)!;
-      parent.set(id, root);
-      id = next;
-    }
-    return root;
+function findBands(
+  order: string[],
+  allEdges: { from: string; to: string }[],
+  roots: { id: string; title: string }[],
+  columnOf: Map<string, number>,
+): Band[] {
+  const rootIds = new Set(roots.map((r) => r.id));
+  // An end that exists: drawn as a node, or a root, whose edge is real even though
+  // the root itself is not placed. An end that is neither — a `dependsOn` naming
+  // something the extent removed or that never existed — makes the edge nothing,
+  // and a node whose only edge is that one is loose.
+  const known = (id: string) => columnOf.has(id) || rootIds.has(id);
+
+  // Undirected adjacency over everything, roots included: a claim spreads along an
+  // edge regardless of which way the relation points.
+  const near = new Map<string, string[]>();
+  const link = (a: string, b: string) => {
+    (near.get(a) ?? near.set(a, []).get(a)!).push(b);
   };
   const degree = new Map<string, number>();
-  for (const edge of edges) {
-    const a = find(edge.from);
-    const b = find(edge.to);
-    if (a !== b) parent.set(a, b);
-    degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
-    degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
+  for (const edge of allEdges) {
+    if (edge.from === edge.to) continue;
+    if (!known(edge.from) || !known(edge.to)) continue;
+    link(edge.from, edge.to);
+    link(edge.to, edge.from);
+    // Counted for the placed end only: a root is not a node that could be loose.
+    if (columnOf.has(edge.from)) degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
+    if (columnOf.has(edge.to)) degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
   }
+  const claimedBy = new Map<string, string>();
 
-  const bands = new Map<string, string[]>();
-  const loose: string[] = [];
-  for (const id of order) {
-    if (!degree.get(id)) {
-      loose.push(id);
-      continue;
+  // Breadth-first from every root at once rather than root by root, so a node two
+  // roots can both reach goes to the nearer one instead of to whichever root was
+  // declared first. A tie at equal distance still falls to the earlier root, which
+  // is at least stable.
+  let frontier = roots.map((r) => r.id);
+  const seen = new Set(frontier);
+  const ownerOf = new Map(roots.map((r) => [r.id, r.id]));
+  while (frontier.length) {
+    const next: string[] = [];
+    for (const current of frontier) {
+      for (const neighbour of near.get(current) ?? []) {
+        if (seen.has(neighbour) || rootIds.has(neighbour)) continue;
+        seen.add(neighbour);
+        ownerOf.set(neighbour, ownerOf.get(current)!);
+        if (columnOf.has(neighbour)) claimedBy.set(neighbour, ownerOf.get(current)!);
+        next.push(neighbour);
+      }
     }
-    const root = find(id);
-    (bands.get(root) ?? bands.set(root, []).get(root)!).push(id);
+    frontier = next;
   }
 
-  const out: Band[] = [...bands.values()].map((nodeIds) => ({ nodeIds, loose: false }));
+  const out: Band[] = [];
+
+  // 1. One band per root that claimed anything. A root claiming nothing is not an
+  //    empty band: a heading over nothing reads as data that failed to load.
+  for (const root of roots) {
+    const nodeIds = order.filter((id) => claimedBy.get(id) === root.id);
+    if (nodeIds.length) out.push({ nodeIds, loose: false, title: root.title });
+  }
+
+  // 2. Connected components among what is left.
+  const componentOf = new Map<string, number>();
+  let components = 0;
+  for (const id of order) {
+    if (claimedBy.has(id) || componentOf.has(id) || !degree.get(id)) continue;
+    const stack = [id];
+    componentOf.set(id, components);
+    while (stack.length) {
+      const current = stack.pop()!;
+      for (const neighbour of near.get(current) ?? []) {
+        if (!columnOf.has(neighbour) || claimedBy.has(neighbour) || componentOf.has(neighbour)) continue;
+        componentOf.set(neighbour, components);
+        stack.push(neighbour);
+      }
+    }
+    components += 1;
+  }
+  for (let c = 0; c < components; c++) {
+    const nodeIds = order.filter((id) => componentOf.get(id) === c);
+    if (nodeIds.length) out.push({ nodeIds, loose: false });
+  }
+
+  // 3. Everything untouched by any edge.
+  const loose = order.filter((id) => !claimedBy.has(id) && !componentOf.has(id) && !degree.get(id));
   if (loose.length) out.push({ nodeIds: loose, loose: true });
   return out;
 }

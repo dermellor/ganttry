@@ -870,6 +870,33 @@ arrows, and an item with no date yet lived in the list and nowhere else.
   dashed band at the end: on a timeline where three items depend on each other and
   forty do not, mixing them in loses the three.
 
+**Bands can be named, and nodes can carry references.** Both are declared per
+timeline (`graph` in [`src/types.ts`](../src/types.ts)), and both name a *group*,
+because that is the vocabulary a timeline already has for „what kind of thing is
+this":
+
+- `bandRootGroup` — items of that group become **band roots**. A root is one that
+  no other item of the same group points at, so it is the top of its own chain; it
+  claims everything reachable from it, lends the band its heading, and is taken out
+  of the columns. Sub-items of the same group stay as boxes, which is what makes
+  the picture read as „this plan, and the plans under it". A root that claims
+  nothing produces no band: a heading over nothing reads as data that failed to
+  load. Claimed bands stack first, then anonymous components, then the loose band.
+- `referenceGroup` — items of that group are listed *on* the nodes they reference
+  instead of drawn as edges to them. A revelation that surfaces in four scenes is
+  four edges of noise, and those edges vanish the moment the extent hides scenes;
+  as a line on the node the information survives both. Both derivations read the
+  **unfiltered** relations for exactly that reason.
+
+The reference line shows the referencing items' titles. Their *position* in the
+story („Szene 2.1.2") would be more useful and is not in the data — deriving it
+needs an order and a level per item, which is
+<https://github.com/zeitlines/zeitlines/issues/119>.
+
+**One colour per column**, from the `--lane-*` tokens the timeline's tracks use:
+`assignLanes` stamps the class per group, so a group is the same colour in both
+presentations and the mapping exists once.
+
 The layout is pure and unit-tested ([`src/graphLayout.ts`](../src/graphLayout.ts),
 `src/graphLayout.test.ts`); the view turns its output into one transformed canvas
 carrying an SVG edge layer under the HTML boxes. Nodes stay HTML so a long title

@@ -15,8 +15,22 @@ import { Icon, StatusDot } from './Marks';
 export type GraphNodeOptions = {
   /** The item's title, as text. Truncated by CSS after two lines. */
   label: string;
-  /** The line under it — the graph puts the item's dates there, or an em-dash. */
+  /** The item's dates, when it has any. Omitted rather than dashed: a column of
+   * em-dashes on a timeline where nothing is dated is a line of noise. */
   meta?: string;
+  /**
+   * Context that is a reference rather than a relation — the scenes a revelation
+   * surfaces in. Drawn as one muted line under the title, because as edges the
+   * same information is noise and disappears the moment the extent hides the other
+   * end.
+   */
+  reference?: string;
+  /**
+   * The lane colour class the build stamped on the item (`lane-0` … `lane-5`),
+   * which is one colour per group. Passed through rather than derived here: the
+   * mapping from group to lane lives in `assignLanes` and must not exist twice.
+   */
+  lane?: string;
   /** An `ITEM_STATUSES` value, shown as the same dot the list and the form use. */
   status?: string;
   /** A key from `src/icons.ts`. */
@@ -31,12 +45,13 @@ export type GraphNodeOptions = {
 };
 
 export function GraphNode(options: GraphNodeOptions): HTMLButtonElement {
-  const { label, meta, status, icon, selected, dimmed, className, attrs, on } = options;
+  const { label, meta, reference, status, icon, selected, dimmed, lane, className, attrs, on } =
+    options;
   const node = el(
     'button',
     {
       type: 'button',
-      class: classes('ds-GraphNode', className),
+      class: classes('ds-GraphNode', lane, className),
       'aria-pressed': selected ? 'true' : undefined,
       ...data({ selected, dimmed }),
       ...attrs,
@@ -48,6 +63,7 @@ export function GraphNode(options: GraphNodeOptions): HTMLButtonElement {
         el('span', { class: 'ds-GraphNode-label' }, label),
       ]),
       meta ? el('span', { class: 'ds-GraphNode-meta' }, meta) : null,
+      reference ? el('span', { class: 'ds-GraphNode-ref' }, reference) : null,
     ] as Child,
   );
   listen(node, on);

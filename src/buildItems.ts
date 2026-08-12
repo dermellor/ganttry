@@ -181,6 +181,22 @@ function laneClass(index: number): string {
   return `lane-${index % LANE_COUNT}`;
 }
 
+// `className` carries status marks and hierarchy flags beside the lane, so the
+// lane has to be picked out rather than used whole.
+const LANE_CLASS = /(?:^|\s)(lane-\d+)(?:\s|$)/;
+
+/**
+ * The lane colour class on an item or a group, or undefined for something that
+ * never got one (the ungrouped bucket, a phase tint).
+ *
+ * Here beside `laneClass`, which produces it: the milestone rail and the graph
+ * both need to read one back, and a second copy of the pattern silently starts
+ * matching nothing the day the format changes.
+ */
+export function laneClassOf(className: string | undefined): string | undefined {
+  return className?.match(LANE_CLASS)?.[1];
+}
+
 export function assignLanes(items: TimelineItem[], groups: TimelineGroup[]): void {
   if (groups.length === 0) return;
   const laneByGroup = new Map<string, string>();

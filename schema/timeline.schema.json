@@ -27,6 +27,10 @@
           ],
           "description": "In what order the groups are laid out: alphabetically by id (the default and the behaviour every existing timeline has), or in the order `groups` declares.\n\n`alpha` is the default rather than the obvious `declared` because it is what shipped: the committed examples number their group ids (`1-strategy`, `2-design`) precisely to steer the alphabetical sort, and flipping the default would silently reorder the lanes of every timeline in existence — including ones whose declared order was never meant to be read.\n\n`declared` is for the case the workaround cannot reach: group ids that carry meaning of their own and cannot be renumbered, such as the folder names a directory source derives its groups from. Groups that only appear on items, with no declaration, follow the declared ones alphabetically either way."
         },
+        "graph": {
+          "$ref": "#/definitions/GraphConfig",
+          "description": "How the relation graph reads this timeline. See `GraphConfig`."
+        },
         "plugins": {
           "type": "array",
           "items": {
@@ -87,6 +91,21 @@
         "items"
       ],
       "additionalProperties": false
+    },
+    "GraphConfig": {
+      "type": "object",
+      "properties": {
+        "bandRootGroup": {
+          "type": "string",
+          "description": "The group whose items are **band roots**: each one claims everything reachable from it, its title becomes the band's heading, and it is taken out of the columns.\n\nWithout it a band is an anonymous connected component, which is honest but says nothing. With it, a strand is labelled by the thing it hangs off — the plan a set of tasks serves, the epic a set of stories belongs to. Members nothing claims fall back to anonymous components behind the titled ones."
+        },
+        "referenceGroup": {
+          "type": "string",
+          "description": "The group whose items are shown **on** a node rather than beside it: every item of that group which references this node is listed under its title.\n\nIt exists for the references that are context and not structure. A revelation surfaces in four scenes; drawn as four edges that is noise, and it also disappears the moment the extent hides scenes. As a line on the node it survives both."
+        }
+      },
+      "additionalProperties": false,
+      "description": "What the relation graph needs told about a timeline, beyond its items and relations.\n\nBoth fields name a **group**, because that is the vocabulary a timeline already has for „what kind of thing is this\" — no new dimension, and a folder-derived group works as well as a declared one."
     },
     "PluginRef": {
       "type": "object",

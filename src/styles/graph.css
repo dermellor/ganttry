@@ -138,3 +138,19 @@
 .graph-legend-line[data-kind='parent'] {
   border-top-style: dashed;
 }
+
+/* The band's heading, when a root claims it. Inside the frame rather than above it,
+   because the frame is what says how far the strand reaches. */
+.graph-band-title {
+  position: absolute;
+  left: var(--space-md);
+  top: var(--space-2xs);
+  right: var(--space-md);
+  overflow: hidden;
+  color: var(--fg);
+  font-family: var(--font-headline);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

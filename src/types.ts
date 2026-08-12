@@ -361,6 +361,38 @@ export type PluginCollectionData = Record<string, PluginDataRow[]>;
  */
 export type PluginData = Record<string, PluginCollectionData>;
 
+/**
+ * What the relation graph needs told about a timeline, beyond its items and
+ * relations.
+ *
+ * Both fields name a **group**, because that is the vocabulary a timeline already
+ * has for „what kind of thing is this" — no new dimension, and a folder-derived
+ * group works as well as a declared one.
+ */
+export type GraphConfig = {
+  /**
+   * The group whose items are **band roots**: each one claims everything reachable
+   * from it, its title becomes the band's heading, and it is taken out of the
+   * columns.
+   *
+   * Without it a band is an anonymous connected component, which is honest but
+   * says nothing. With it, a strand is labelled by the thing it hangs off — the
+   * plan a set of tasks serves, the epic a set of stories belongs to. Members
+   * nothing claims fall back to anonymous components behind the titled ones.
+   */
+  bandRootGroup?: string;
+  /**
+   * The group whose items are shown **on** a node rather than beside it: every
+   * item of that group which references this node is listed under its title.
+   *
+   * It exists for the references that are context and not structure. A revelation
+   * surfaces in four scenes; drawn as four edges that is noise, and it also
+   * disappears the moment the extent hides scenes. As a line on the node it
+   * survives both.
+   */
+  referenceGroup?: string;
+};
+
 export type TimelineFile = {
   /** Points editors at schema/timeline.schema.json for completion + validation. */
   $schema?: string;
@@ -383,6 +415,8 @@ export type TimelineFile = {
    * with no declaration, follow the declared ones alphabetically either way.
    */
   groupOrder?: 'alpha' | 'declared';
+  /** How the relation graph reads this timeline. See `GraphConfig`. */
+  graph?: GraphConfig;
   // Plugins enabled on this timeline (e.g. 'dev.zeitlines.product-roadmap' → pricing matrix).
   // Replaces the former `type: 'product'` gate; see ./plugins.
   plugins?: PluginRef[];

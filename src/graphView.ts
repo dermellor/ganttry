@@ -23,7 +23,7 @@
 
 import './styles/graph.css';
 
-import type { TimelineItem } from './buildItems';
+import { laneClassOf, type TimelineItem } from './buildItems';
 import { GraphNode, Text, el } from './design-system';
 import { showDetailForId } from './detailPanel';
 import { computeSections } from './listGrouping';
@@ -32,6 +32,7 @@ import { syncFilterControl } from './filterControl';
 import { displayIdsFor, filterBuildForDisplay } from './render';
 import { els, state, syncUrl } from './state';
 import { layoutGraph, MARGIN, NODE_H, NODE_W, type EdgeKind } from './graphLayout';
+import type { GraphConfig } from './types';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -271,6 +272,60 @@ function selectNode(id: string): void {
   showDetailForId(id);
 }
 
+/**
+ * The nodes that name a band rather than sitting in one.
+ *
+ * A root is an item of the declared group that no *other item of that same group*
+ * points at — the top of its own chain. Sub-plans stay in their column, which is
+ * what makes the picture read as „this plan, and the plans under it".
+ *
+ * Computed off the unfiltered relations on purpose: whether a plan is top-level is
+ * a property of the timeline, not of what the reader currently has switched on.
+ * Deriving it from the filtered set would promote a sub-plan to a heading the
+ * moment its parent was filtered away.
+ */
+function bandRoots(
+  entries: TimelineItem[],
+  group: string | undefined,
+  dependencies: Map<string, string[]>,
+  inGroup: (id: string) => boolean,
+): { id: string; title: string }[] {
+  if (!group) return [];
+  const out: { id: string; title: string }[] = [];
+  for (const item of entries) {
+    if (item.group !== group) continue;
+    const hasParentOfSameKind = (dependencies.get(item.id) ?? []).some(inGroup);
+    if (!hasParentOfSameKind) out.push({ id: item.id, title: item.label ?? item.id });
+  }
+  return out;
+}
+
+/**
+ * For each item, the titles of the items in `group` that reference it.
+ *
+ * Built from the **unfiltered** relations, which is the entire point: a revelation
+ * should still say which scenes it surfaces in after the extent has hidden the
+ * scenes. Reading the filtered set would make the line vanish exactly when it is
+ * most useful.
+ */
+function referencesByTarget(
+  all: TimelineItem[],
+  group: string | undefined,
+  dependencies: Map<string, string[]>,
+): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  if (!group) return out;
+  const byId = new Map(all.map((it) => [it.id, it]));
+  for (const item of all) {
+    if (item.group !== group) continue;
+    for (const target of dependencies.get(item.id) ?? []) {
+      if (!byId.has(target)) continue;
+      (out.get(target) ?? out.set(target, []).get(target)!).push(item.label ?? item.id);
+    }
+  }
+  return out;
+}
+
 function emptyState(message: string): HTMLElement {
   return el('div', { class: 'graph-empty' }, Text({ as: 'p', text: message, tone: 'muted' }));
 }
@@ -296,6 +351,11 @@ export function renderGraphView(): void {
   // identity a relation could point at.
   const entries = items.filter((it) => it.type !== 'background');
 
+  // Keyed before the layout runs: a root only earns a heading if the extent still
+  // lets its own kind through, and the layout has to be told which roots those are.
+  const byIdVisible = new Map(entries.map((it) => [it.id, it]));
+  const byId = byIdVisible;
+
   const { dim, options } = resolveGrouping(entries);
   syncGroupByControl(options, dim);
   syncFilterControl();
@@ -305,14 +365,30 @@ export function renderGraphView(): void {
     return;
   }
 
+  const config: GraphConfig = state.activeSourceFile?.graph ?? {};
+  // Both derivations read the *unfiltered* build: which plan is top-level, and which
+  // scenes mention a revelation, are properties of the timeline rather than of what
+  // the reader currently has switched on.
+  const inRootGroup = (id: string) =>
+    build.items.find((it) => it.id === id)?.group === config.bandRootGroup;
+  const roots = bandRoots(build.items, config.bandRootGroup, build.dependencies, inRootGroup);
+  const rootIds = new Set(roots.map((r) => r.id));
+  const references = referencesByTarget(build.items, config.referenceGroup, build.dependencies);
+  // The line is prefixed with the referencing group's own name („Szenen: …"), so it
+  // says what the titles after it are without this file knowing any domain word.
+  const referenceLabel =
+    build.groups.find((g) => g.id === config.referenceGroup)?.label ?? config.referenceGroup ?? '';
+
   const { sections } = computeSections(entries, dim, options, sectionContext(groups));
   const layout = layoutGraph({
     columns: sections.map((s) => ({ id: s.id, label: s.label })),
-    nodes: sections.flatMap((s) => s.items.map((it) => ({ id: it.id, column: s.id }))),
+    nodes: sections.flatMap((s) =>
+      s.items.filter((it) => !rootIds.has(it.id)).map((it) => ({ id: it.id, column: s.id })),
+    ),
     edges: edgesOf(build.dependencies, build.parents),
+    roots: roots.filter((r) => byIdVisible.has(r.id)),
   });
 
-  const byId = new Map(entries.map((it) => [it.id, it]));
   const positions = new Map(layout.nodes.map((n) => [n.id, n]));
 
   // The node box size travels to CSS as two custom properties rather than being
@@ -334,6 +410,9 @@ export function renderGraphView(): void {
       style: `left:${MARGIN / 2}px;top:${band.top}px;width:${Math.max(0, layout.width - MARGIN)}px;height:${band.height}px`,
     });
     if (band.loose) frame.dataset.loose = '';
+    if (band.title) {
+      frame.appendChild(el('div', { class: 'graph-band-title' }, band.title));
+    }
     canvas.appendChild(frame);
   }
 
@@ -365,9 +444,14 @@ export function renderGraphView(): void {
   for (const placed of layout.nodes) {
     const item = byId.get(placed.id);
     if (!item) continue;
+    const scenes = references.get(item.id);
     const node = GraphNode({
       label: item.label ?? '',
-      meta: dateLabel(item),
+      // Undated is the normal case for a relation graph, and a column of em-dashes
+      // is a line of noise rather than information.
+      meta: item.start ? dateLabel(item) : undefined,
+      reference: scenes?.length ? `${referenceLabel}: ${scenes.join(', ')}` : undefined,
+      lane: laneClassOf(item.className),
       status: statusOf(item.id),
       icon: item.icon,
       selected: state.selectedItemId === item.id,
