@@ -99,10 +99,10 @@ reach this seam.
 ### Plugins (`src/pluginHost/`, `src/plugins/<id>/`)
 
 A **plugin** is the *orthogonal* axis to source kinds: it decides what a timeline
-carries beyond items and groups (extra item fields, and optionally extra views),
-not where its data comes from. The generic timeline+list core knows nothing
-plugin-specific; a plugin plugs into a registration seam
-([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)).
+carries beyond items and groups (extra item fields, optionally extra views, and
+the domain verbs an agent can call), not where its data comes from. The generic
+timeline+list core knows nothing plugin-specific; a plugin plugs into a
+registration seam ([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)).
 
 The split in the file tree says which half is which. `src/pluginHost/` is core and
 permanent: the registry, the view-mode encoding, the DOM a plugin view gets.
@@ -134,6 +134,21 @@ metadata keys it owns. Static data on purpose — listing, verifying and
 version-checking a plugin has to work **without executing it**, which is what makes
 installing one possible at all.
 
+**A plugin also contributes verbs, and that is the half fields cannot express.**
+An agent gets `add_item` and `update_item` from the core; the rule that decides
+*which* items and *what* dates is domain knowledge, and kept in a prompt it cannot
+be tested or reused. A `tools` declaration in the manifest names the verb and its
+arguments; the implementation is a **pure function** from the timeline, the
+plugin's config, the arguments and today's date to a plan of item changes
+([`src/pluginHost/tools.ts`](../src/pluginHost/tools.ts)). The host applies the
+plan through the write path it already owns, so capabilities, optimistic locking
+and the audit trail keep holding, and the rule stays unit-testable without a DOM
+or a database. Tool names share one flat namespace across installed plugins;
+`pluginTools()` resolves a contested name by registration order and reports the
+loser rather than shadowing it silently. Which processes run them, and why an
+installed artifact's do not, is in
+[`docs/plugin-isolation.md`](plugin-isolation.md).
+
 `register()` refuses a manifest that does not validate, loudly. Strictness is the
 point: a declaration the host silently ignored leaves the plugin running as if it
 had access it was never granted, and the symptom then surfaces far from the cause.
@@ -162,7 +177,7 @@ plugin attaching one to `document.body`.
 **The host API is async and serializable throughout**
 ([`src/pluginHost/hostApi.ts`](../src/pluginHost/hostApi.ts)), even though plugins
 currently run in the app's own realm where a direct call would be cheaper. The
-isolation decision is still open (<https://github.com/dermellor/zeitlines/issues/14>),
+isolation decision is still open (<https://github.com/zeitlines/zeitlines/issues/14>),
 and an API shaped around shared objects cannot be moved behind an iframe or a
 worker afterwards without rewriting every plugin. `createHostApi` gates by
 capability structurally: without `items:write` there is no item-write method to
@@ -171,7 +186,7 @@ call, rather than a check that refuses at call time.
 The contract is re-exported as one import from
 [`src/pluginHost/api.ts`](../src/pluginHost/api.ts), which pulls in no runtime code
 from the app. Publishing it as a package belongs with distribution
-(<https://github.com/dermellor/zeitlines/issues/15>).
+(<https://github.com/zeitlines/zeitlines/issues/15>).
 
 **Which plugins an instance HAS is a row, not a build.** `installed_plugins`
 records the artifact, its pinned version, the capabilities an operator granted and
@@ -255,7 +270,7 @@ Adding a plugin is a `register()` call plus a `src/plugins/<id>/` folder, and no
 core-file change. The step-by-step is
 [`docs/plugin-playbook.md`](plugin-playbook.md); the endgame, where a plugin is
 installed at runtime instead of registered at build time, is
-<https://github.com/dermellor/zeitlines/issues/9>.
+<https://github.com/zeitlines/zeitlines/issues/9>.
 
 **Enablement is pure data (the plugin registry table).** Which plugins a timeline
 carries is **not** a column on a core table. It lives in the generic

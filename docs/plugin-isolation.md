@@ -3,7 +3,7 @@
 Where a plugin's code runs, what protects an instance instead of a sandbox, and
 the condition under which this decision gets revisited.
 
-This is the decision half of [issue #14](https://github.com/dermellor/zeitlines/issues/14).
+This is the decision half of [issue #14](https://github.com/zeitlines/zeitlines/issues/14).
 The loader itself is [`src/pluginHost/loader.ts`](../src/pluginHost/loader.ts); for
 installing a plugin read [`plugin-lifecycle.md`](plugin-lifecycle.md), for its data
 [`plugin-storage.md`](plugin-storage.md).
@@ -115,6 +115,30 @@ every item.
 sentence, surfaced in the footer's plugin list. A plugin that silently fails to
 appear is indistinguishable from a bug in the app, and gets reported as one.
 
+## Where a plugin's code runs, and the one place it does not
+
+Everything above is about the browser. A plugin's **tools** are the one part
+called by a server process instead, and that is a different trust question: the
+browser realm holds a user's session, a server realm holds the database
+credentials and every tenant's data at once. So the answer today is narrow and
+deliberately so:
+
+| Kind of plugin | Views and fields | Tools |
+| --- | --- | --- |
+| In-tree (`src/plugins/<id>/`) | app realm | run, in the local MCP server's process |
+| Installed artifact | app realm, integrity-pinned | **not run**, and listed as declared with no implementation |
+
+An artifact's tool code is not executed anywhere. That is not a gap somebody
+forgot to close: the install gate makes „same realm as the app" defensible
+because an operator chose the plugin, and the same argument does not extend by
+itself to a process holding a service key. What a tool *is* keeps the question
+answerable later — a pure function from a timeline and arguments to a plan of
+item changes, with no I/O of its own to grant.
+
+The condition that would revisit it is the same one this chapter uses everywhere
+else: a plugin worth running server-side that cannot express its rule as such a
+function. None exists yet.
+
 ## What is deliberately not claimed
 
 - **No protection against a hostile plugin an operator installed.** Same realm
@@ -123,6 +147,6 @@ appear is indistinguishable from a bug in the app, and gets reported as one.
 - **No network egress control beyond the CSP.** A plugin cannot be prevented from
   trying; it can be prevented from succeeding at the easy routes.
 - **No review of what a plugin does.** A catalog with a review gate is
-  [#15](https://github.com/dermellor/zeitlines/issues/15), and the human gate is the
+  [#15](https://github.com/zeitlines/zeitlines/issues/15), and the human gate is the
   thing the technical measures here are meant to make meaningful rather than
   replace.

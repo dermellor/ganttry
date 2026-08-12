@@ -16,7 +16,7 @@
 import { createGenerator } from 'ts-json-schema-generator';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,15 +32,31 @@ type Target = {
   examples: string[];
 };
 
+/**
+ * Every shipped timeline example: the top-level `data/*.json`.
+ *
+ * Found rather than listed, because a list is a second place to maintain and the
+ * one that gets forgotten — a new example is then committed and validated by
+ * nothing, which is how an example that no longer matches the item shape survives.
+ * The same reasoning as the bundle-split check reading its markers out of each
+ * plugin's stylesheet.
+ *
+ * Only the top level, which is exactly the boundary the repository already draws:
+ * every *subdirectory* of `data/` is gitignored instance data (AGENTS.md →
+ * „Instances"), so it is neither committed nor ours to validate.
+ */
+function shippedExamples(): string[] {
+  return readdirSync(resolve(REPO_ROOT, 'data'), { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith('.json'))
+    .map((e) => `data/${e.name}`)
+    .sort();
+}
+
 const TARGETS: Target[] = [
   {
     type: 'TimelineFile',
     out: 'schema/timeline.schema.json',
-    examples: [
-      'data/example-projektplan.json',
-      'data/launch-roadmap.json',
-      'data/programm-2026.json',
-    ],
+    examples: shippedExamples(),
   },
   {
     // The `timeline.json` of a directory source: a timeline without its items,

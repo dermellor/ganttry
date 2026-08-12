@@ -1,0 +1,258 @@
+{
+  "$schema": "../schema/timeline.schema.json",
+  "name": "Produkt-Roadmap mit Preismodell",
+  "description": "Beispiel für ein Plugin: die Arbeit als Items, das Preismodell als eigene Zeilen des Plugins. Die Items verweisen über das Feld „Feature\" auf die Features der Matrix, die Ansicht „Preise\" rendert dieselben Daten als Matrix und als Karten.",
+  "plugins": [
+    {
+      "id": "dev.zeitlines.product-roadmap",
+      "config": {
+        "versions": [
+          "1.0",
+          "1.1",
+          "2.0"
+        ]
+      },
+      "public": true
+    }
+  ],
+  "pluginData": {
+    "dev.zeitlines.product-roadmap": {
+      "features": [
+        {
+          "id": "f-import",
+          "data": {
+            "name": "CSV-Import"
+          }
+        },
+        {
+          "id": "f-api",
+          "data": {
+            "name": "REST-API"
+          }
+        },
+        {
+          "id": "f-sso",
+          "data": {
+            "name": "Single Sign-on"
+          }
+        },
+        {
+          "id": "f-audit",
+          "data": {
+            "name": "Audit-Log"
+          }
+        },
+        {
+          "id": "f-support",
+          "data": {
+            "name": "Support"
+          }
+        }
+      ],
+      "tiers": [
+        {
+          "id": "free",
+          "data": {
+            "name": "Free",
+            "price": "0 €"
+          }
+        },
+        {
+          "id": "team",
+          "data": {
+            "name": "Team",
+            "price": "19 € / Monat"
+          }
+        },
+        {
+          "id": "scale",
+          "data": {
+            "name": "Scale",
+            "price": "49 € / Monat"
+          }
+        }
+      ],
+      "tier-values": [
+        {
+          "id": "free:f-import",
+          "data": {
+            "tierId": "free",
+            "featureId": "f-import",
+            "value": true,
+            "availableFrom": "1.0"
+          }
+        },
+        {
+          "id": "free:f-support",
+          "data": {
+            "tierId": "free",
+            "featureId": "f-support",
+            "value": "Community"
+          }
+        },
+        {
+          "id": "team:f-import",
+          "data": {
+            "tierId": "team",
+            "featureId": "f-import",
+            "value": true
+          }
+        },
+        {
+          "id": "team:f-api",
+          "data": {
+            "tierId": "team",
+            "featureId": "f-api",
+            "value": true,
+            "availableFrom": "1.1"
+          }
+        },
+        {
+          "id": "team:f-support",
+          "data": {
+            "tierId": "team",
+            "featureId": "f-support",
+            "value": "E-Mail"
+          }
+        },
+        {
+          "id": "scale:f-import",
+          "data": {
+            "tierId": "scale",
+            "featureId": "f-import",
+            "value": true
+          }
+        },
+        {
+          "id": "scale:f-api",
+          "data": {
+            "tierId": "scale",
+            "featureId": "f-api",
+            "value": true
+          }
+        },
+        {
+          "id": "scale:f-sso",
+          "data": {
+            "tierId": "scale",
+            "featureId": "f-sso",
+            "value": true,
+            "availableFrom": "2.0"
+          }
+        },
+        {
+          "id": "scale:f-audit",
+          "data": {
+            "tierId": "scale",
+            "featureId": "f-audit",
+            "value": true,
+            "availableFrom": "2.0"
+          }
+        },
+        {
+          "id": "scale:f-support",
+          "data": {
+            "tierId": "scale",
+            "featureId": "f-support",
+            "value": "E-Mail + Telefon"
+          }
+        }
+      ],
+      "highlights": [
+        {
+          "id": "h-2-0",
+          "data": {
+            "label": "Enterprise-Zugang",
+            "section": "Inkludiert",
+            "featureIds": [
+              "f-sso",
+              "f-audit"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "groups": [
+    {
+      "id": "plattform",
+      "content": "Plattform"
+    },
+    {
+      "id": "integrationen",
+      "content": "Integrationen"
+    },
+    {
+      "id": "enterprise",
+      "content": "Enterprise"
+    }
+  ],
+  "items": [
+    {
+      "id": "i-import",
+      "start": "2026-01-12",
+      "duration": "3w",
+      "content": "CSV-Import",
+      "group": "integrationen",
+      "status": "Done",
+      "metadata": {
+        "feature": "f-import",
+        "itemVersion": "1.0"
+      }
+    },
+    {
+      "id": "i-api",
+      "start": "2026-02-09",
+      "duration": "6w",
+      "content": "REST-API v1",
+      "group": "integrationen",
+      "status": "Done",
+      "body": "## REST-API v1\n\nLesen und Schreiben von Items, Token-Auth.",
+      "metadata": {
+        "feature": "f-api",
+        "itemVersion": "1.1"
+      }
+    },
+    {
+      "id": "i-sso",
+      "start": "2026-04-06",
+      "duration": "8w",
+      "content": "Single Sign-on (SAML)",
+      "group": "enterprise",
+      "status": "Doing",
+      "metadata": {
+        "feature": "f-sso",
+        "itemVersion": "2.0"
+      }
+    },
+    {
+      "id": "i-audit",
+      "start": "2026-05-04",
+      "duration": "5w",
+      "content": "Audit-Log",
+      "group": "enterprise",
+      "metadata": {
+        "feature": "f-audit",
+        "itemVersion": "2.0"
+      }
+    },
+    {
+      "id": "i-rechte",
+      "start": "2026-06-01",
+      "duration": "4w",
+      "content": "Rollen und Rechte",
+      "group": "plattform",
+      "metadata": {
+        "itemVersion": "2.0"
+      }
+    },
+    {
+      "id": "i-2-0",
+      "start": "2026-07-01",
+      "content": "Release 2.0",
+      "group": "plattform",
+      "type": "point",
+      "icon": "release"
+    }
+  ]
+}

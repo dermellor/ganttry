@@ -27,7 +27,7 @@ The contract as TypeScript types is
 [`src/pluginHost/api.ts`](../src/pluginHost/api.ts) — one import for the manifest
 shape, the host API and the version helpers, with no runtime code from the app
 behind it. Packaging it as `@zeitlines/plugin-api` is
-[#15](https://github.com/dermellor/zeitlines/issues/15); until then, that path is
+[#15](https://github.com/zeitlines/zeitlines/issues/15); until then, that path is
 the reference.
 
 ## Choosing an id
@@ -71,6 +71,80 @@ Use `container.ownerDocument`, never the global `document`. It costs nothing
 today and it is the difference between a view that can move behind a sandbox
 later and one that has to be rewritten (docs/plugin-isolation.md).
 
+## Contributing verbs an agent can call
+
+**Declare a tool per domain rule that turns one instruction into many item
+changes.** An agent gets `add_item` and `update_item` from the core; what it
+cannot get is the rule that decides *which* items and *what* dates. Kept in a
+prompt, that rule cannot be tested, cannot be reused, and is wrong in a way
+nobody notices until a date is wrong.
+
+The declaration goes in the manifest, needs the `tools` capability, and needs
+`apiVersion: "^1.3"` or later:
+
+```json
+{
+  "capabilities": ["tools", "items:read", "items:write"],
+  "tools": [
+    {
+      "name": "recalculate_deadlines",
+      "title": "Recalculate deadlines",
+      "description": "Recompute every deadline from the service date, skipping weekends.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "servedOn": { "type": "string", "description": "ISO date." } },
+        "required": ["servedOn"],
+        "additionalProperties": false
+      },
+      "writes": "items"
+    }
+  ]
+}
+```
+
+| Field | What it decides |
+| --- | --- |
+| `name` | what an agent calls. snake_case, at least four characters, no dots |
+| `description` | whether an agent picks the tool at all. It is the only thing a model sees before calling |
+| `inputSchema` | the arguments, in the same subset a collection's schema uses. `id` is reserved for the timeline |
+| `writes` | `"items"`, or absent for a tool that only answers a question |
+
+**A tool is a pure function**, and everything about the shape follows from that:
+
+```ts
+export const tools = {
+  recalculate_deadlines: ({ file, config, args, now }) => ({
+    changes: [{ op: 'update', itemId: 'frist-1', patch: { start: '2026-04-13' } }],
+    notes: ['die vierte Frist war bereits verstrichen'],
+  }),
+};
+```
+
+- It reads `file`, its own `config` and the checked `args`, and it returns changes
+  rather than performing them. The host applies them through the write path it
+  already owns, so the capability checks, the optimistic locking and the audit
+  trail keep holding.
+- **`now` is handed in**; a rule that reads the clock itself cannot be tested
+  against the boundary it exists for, which is the deadline landing on a weekend.
+- A plan is applied whole or not at all. „Six dates moved, the seventh was
+  refused" is worse than „nothing moved, here is why", because the first looks
+  like it worked.
+- A tool declaring no `writes` that returns changes is refused, so an analysis
+  tool cannot quietly become a write.
+- Throwing is a legitimate answer: a domain rule meeting data it cannot handle is
+  an expected outcome, and the message reaches the agent.
+
+Tool names share one flat namespace across every installed plugin. Two plugins
+claiming one name is resolved by registration order and **reported**, never
+silently shadowed, so pick a name your domain owns rather than `update_dates`.
+
+**Two boundaries as of today.** A tool is called by a server process, and only
+in-tree plugins are wired into it: an installed artifact's tools are listed as
+declared with no implementation ([#108](https://github.com/zeitlines/zeitlines/issues/108)),
+and running an artifact's code next to the database is a trust question
+docs/plugin-isolation.md has not answered. The remote MCP server does not carry
+plugin tools yet for the same reason.
+
 ## The host API
 
 `renderView` receives it as its third argument. What is on it is decided by the
@@ -103,7 +177,7 @@ unsubscribe function, but a view plugin has nowhere to call it: `renderView` is
 the only entry point, and it runs again on every repaint. Subscribe behind a
 module-level flag so a repaint cannot add a second listener — and know that this
 is the contract's gap rather than your mistake
-([#11](https://github.com/dermellor/zeitlines/issues/11)).
+([#11](https://github.com/zeitlines/zeitlines/issues/11)).
 
 ```js
 let subscribed = false;

@@ -155,7 +155,7 @@ The sub-resources in `SUB_KINDS` split cleanly:
   There used to be six more sub-resources here — one plugin's entities, each
   answering `501`, which is what made a pricing model in a JSON file readable and
   not editable. They went with the repo methods behind them
-  (<https://github.com/dermellor/zeitlines/issues/17>), so a local source is now
+  (<https://github.com/zeitlines/zeitlines/issues/17>), so a local source is now
   writable for a plugin without a line of plugin-specific code.
 
 ### Optimistic locking without a version column

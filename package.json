@@ -32,6 +32,9 @@
     "schema:check": "tsx scripts/schema/build.ts --check",
     "openapi": "tsx scripts/schema/openapi.ts",
     "openapi:check": "tsx scripts/schema/openapi.ts --check",
+    "plugins:catalogue": "tsx scripts/plugins/catalogue.ts",
+    "plugins:catalogue:check": "tsx scripts/plugins/catalogue.ts --check",
+    "plugins:preview": "tsx scripts/plugins/preview.ts",
     "mcp": "tsx scripts/mcp/server.ts"
   },
   "engines": {

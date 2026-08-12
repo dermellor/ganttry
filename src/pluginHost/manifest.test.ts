@@ -161,6 +161,108 @@ test('references and publicRead must point at declared collections', () => {
   assert.ok(p.some((x) => /publicRead names unknown collection "nope"/.test(x)));
 });
 
+// Tools are the half of a plugin an agent calls, so what gets refused here is
+// what stops a verb from being callable-but-wrong: an unusable name, a
+// description no model can choose on, a constraint the host would not apply, and
+// an analysis tool quietly granted write access.
+const tool = (over: Record<string, unknown> = {}) => ({
+  name: 'recalculate_deadlines',
+  title: 'Recalculate deadlines',
+  description: 'Recompute every deadline from the reference date.',
+  ...over,
+});
+const withTools = (tools: unknown[], caps: string[] = ['tools']) =>
+  base({ capabilities: caps as PluginManifest['capabilities'], tools: tools as never });
+
+test('a declared tool needs a usable name, a title and a description', () => {
+  assert.deepEqual(problems(withTools([tool()])), []);
+  assert.match(problems(withTools([tool({ name: 'Recalculate' })]))[0], /snake_case/, 'no capitals');
+  assert.match(problems(withTools([tool({ name: 'com.acme.recalc' })]))[0], /snake_case/, 'no dots');
+  assert.match(problems(withTools([tool({ name: 'go' })]))[0], /snake_case/, 'too short to share a namespace');
+  assert.match(problems(withTools([tool({ title: ' ' })]))[0], /needs a title/);
+  assert.match(problems(withTools([tool({ description: '' })]))[0], /what an agent chooses on/);
+  assert.match(problems(withTools([tool(), tool()]))[0], /duplicate tool/);
+});
+
+test('declaring tools requires the tools capability, and writing items the write one', () => {
+  assert.match(problems(withTools([tool()], []))[0], /requires the "tools" capability/);
+  assert.match(
+    problems(withTools([tool({ writes: 'items' })], ['tools']))[0],
+    /requires the "items:write" capability/,
+  );
+  assert.deepEqual(problems(withTools([tool({ writes: 'items' })], ['tools', 'items:write'])), []);
+  assert.match(problems(withTools([tool({ writes: 'groups' })]))[0], /writes must be "items"/);
+});
+
+test('an inputSchema is held to the subset the host can apply, and may not claim "id"', () => {
+  // Same rule as a collection's schema: a keyword that would be skipped is
+  // refused, so an author cannot read a constraint that is never enforced.
+  assert.match(
+    problems(withTools([tool({ inputSchema: { type: 'object', properties: { d: { multipleOf: 2 } } } })]))[0],
+    /unsupported keyword "multipleOf"/,
+  );
+  // `id` addresses the timeline the tool runs against. A declared argument of
+  // that name does not fail — it sends the rule at someone else's timeline.
+  assert.match(
+    problems(withTools([tool({ inputSchema: { type: 'object', properties: { id: { type: 'string' } } } })]))[0],
+    /"id" is reserved/,
+  );
+});
+
+test('the tools section is additive: a plugin declaring "^1" still validates', () => {
+  // 1.3 added `tools`, and „additive" is a claim with a consequence: an artifact
+  // built against 1.0 has to keep loading. So `^1` plus tools validates here.
+  //
+  // The reverse is what an author has to get right themselves — a plugin whose
+  // verbs are the point should declare `^1.3`, or an older host loads it and lists
+  // them nowhere. This host cannot catch that for them: on 1.3 the tools work, and
+  // the host where they would not is the one that has never heard of the section.
+  assert.equal(validateManifest(withTools([tool()]), { major: 1, minor: 3 }).ok, true);
+  assert.equal(
+    validateManifest(base({ capabilities: ['tools'], tools: [tool()] as never, apiVersion: '^1.3' }), {
+      major: 1,
+      minor: 3,
+    }).ok,
+    true,
+  );
+  // A host older than the range keeps refusing, which is the mechanism that does
+  // work in this direction.
+  assert.equal(
+    validateManifest(base({ capabilities: ['tools'], tools: [tool()] as never, apiVersion: '^1.3' }), {
+      major: 1,
+      minor: 2,
+    }).ok,
+    false,
+  );
+});
+
+// The catalogue entry is a publication requirement, not a boot requirement: a
+// plugin without one still runs, and `plugins:catalogue:check` is what insists.
+// What is checked here is the entry that IS there, because a blank card and a
+// two-paragraph summary both make the catalogue useless in different ways.
+test('a catalogue entry is optional, and checked when present', () => {
+  assert.deepEqual(problems(base()), [], 'no entry is not an error');
+  assert.deepEqual(
+    problems(base({ catalogue: { summary: 'Plans court deadlines.', domain: 'legal', keywords: ['fristen'] } })),
+    [],
+  );
+  assert.match(problems(base({ catalogue: {} as never }))[0], /summary is required/);
+});
+
+test('what a catalogue entry may not be', () => {
+  const entry = (over: Record<string, unknown>) =>
+    problems(base({ catalogue: { summary: 'S.', domain: 'legal', keywords: ['fristen'], ...over } as never }));
+
+  assert.match(entry({ summary: 'a'.repeat(201) })[0], /card subtitle stops at 200/);
+  assert.match(entry({ summary: 'Two\nlines' })[0], /single line/);
+  assert.match(entry({ domain: 'Legal Tech' })[0], /lowercase slug/);
+  assert.match(entry({ keywords: [] })[0], /at least one entry/);
+  // Case-insensitive, because a catalogue that lists "Fristen, fristen" reads as
+  // sloppy to exactly the reader it is trying to convince.
+  assert.match(entry({ keywords: ['Fristen', 'fristen'] })[0], /repeats/);
+  assert.match(entry({ example: '  ' })[0], /must be a view id/);
+});
+
 test('legacyModeIds must point at a declared view', () => {
   assert.match(
     problems(base({ capabilities: ['views'], views: [{ id: 'board', label: 'B', icon: 'i' }], legacyModeIds: { old: 'gone' } }))[0],

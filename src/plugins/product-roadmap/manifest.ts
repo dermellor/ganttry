@@ -27,6 +27,18 @@ export const productRoadmapManifest: PluginManifest = {
   apiVersion: '^1',
   capabilities: ['items:read', 'fields', 'views', 'data:own', 'public:read'],
 
+  // What the generated catalogue renders (PLUGINS.md). The keywords are the words
+  // a reader searches with rather than the ones the code uses: nobody looks for
+  // „tier values", and „Produkt" is the label in a German interface, not a term
+  // anybody types into a search.
+  catalogue: {
+    summary:
+      'Keeps a pricing matrix and the roadmap that fills it in one timeline, so the pricing page and the plan cannot drift apart.',
+    domain: 'product',
+    keywords: ['pricing matrix', 'pricing page', 'product roadmap', 'feature comparison', 'tiers', 'release planning'],
+    example: 'src:example-produkt-roadmap',
+  },
+
   views: [
     {
       id: 'pricing',

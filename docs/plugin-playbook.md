@@ -28,24 +28,25 @@ and invisible.
 
 ---
 
-## What this playbook presupposes and the code does not have yet
+## What the code does and does not carry
 
-Four requirements below describe a contract that is not built. They are written here
-because the process is what decides them and because a plugin built without them has
-to be revisited; they are **not** descriptions of what `main` does today. Until each
-lands, say so rather than working around it.
+Everything this playbook asks for exists. Two boundaries are worth knowing before
+you plan a plugin around them, because both are about *where a tool runs* rather
+than whether you can write one:
 
-| Requirement | Status | What is missing |
-| --- | --- | --- |
-| **Agent tools contributed by a plugin** (`tools.ts`, phase 0 question 4) | not built | `PluginManifest` in [`src/pluginHost/manifest.ts`](../src/pluginHost/manifest.ts) has no `tools` field, and the MCP server's tool list is fixed. The pricing tools are built into the server rather than contributed by `product-roadmap`, so there is a precedent for plugin-specific tools but no seam |
-| **Catalogue metadata in the manifest** (summary, domain, keywords) | not built | The manifest carries `id`, `name` and `version` only |
-| **Catalogue generation and check** (`plugins:catalogue`) | not built | No script in `package.json`. Phase 5.3 describes the target shape, modelled on `schema:check` and `openapi:check` |
-| **Preview image rendering** (`preview.png`) | not built | No harness renders an example timeline to an image |
+| Boundary | What it means for a plugin |
+| --- | --- |
+| **An installed artifact's tools do not run** | Tools are called by a server process, and only in-tree plugins (`src/plugins/<id>/`) are wired into it. An artifact's verbs are listed as declared with no implementation. Running an artifact's code next to the database is a trust question [`docs/plugin-isolation.md`](plugin-isolation.md) has not answered |
+| **The remote MCP server carries no plugin tools** ([#108](https://github.com/zeitlines/zeitlines/issues/108)) | A local agent sees a plugin's verbs, one connected over HTTP does not |
 
-The first one is the load-bearing gap. A plugin's fields make a domain visible; its
-tools make an agent able to act in it, and that is the half that cannot be recovered
-by writing better prompts. Building fifty plugins before the seam exists means fifty
-plugins that express half of what they are for.
+Neither is a reason to skip phase 0's fourth question. A plugin's fields make a
+domain visible; its tools make an agent able to act in it, and that is the half
+that cannot be recovered by writing better prompts.
+
+**The plugin's own rules stay testable regardless**, because a tool is a pure
+function from the timeline, the config, the arguments and today's date to a plan
+of item changes. That is what the tests in phase 4 exercise, with no server
+involved.
 
 ---
 
@@ -58,7 +59,9 @@ Answer four questions before writing anything:
    plugin: it flows into the item form, grouping, filtering and the context menu with
    no further work.
 2. **Does it need data of its own?** Item-level values live in `metadata[key]` and
-   need nothing. Rows of its own need storage, which is [#12](https://github.com/dermellor/zeitlines/issues/12).
+   need nothing. Rows of its own are declared as `collections` in the manifest and
+   stored generically by the host — a plugin never ships a migration. See
+   [`docs/plugin-storage.md`](plugin-storage.md).
 3. **Does it need a view of its own?** A view is a lazily loaded chunk and roughly
    ten times the work of a field. Grouping by a contributed field often gives the
    useful rendering already, so a first cut without a view is usually right.
@@ -70,8 +73,8 @@ Answer four questions before writing anything:
 
 **The budget:** one folder, one registration line, and **no core file touched**. If
 the design needs a change in the generic core, that is not permission to make one.
-It is a finding: comment on [#10](https://github.com/dermellor/zeitlines/issues/10) or
-[#11](https://github.com/dermellor/zeitlines/issues/11) with what was missing. Every
+It is a finding: comment on [#10](https://github.com/zeitlines/zeitlines/issues/10) or
+[#11](https://github.com/zeitlines/zeitlines/issues/11) with what was missing. Every
 plugin built this way measures the contract, which is the point.
 
 **Exit condition:** you can name which of the four shapes the plugin has, and no
@@ -219,6 +222,7 @@ Files, all inside the plugin's own folder:
 | File | What |
 | --- | --- |
 | `manifest.ts` | what the plugin declares: id, capabilities, views, tools, config schema, the metadata keys it owns, and the catalogue entry from phase 2 |
+| `descriptor.ts` | the one object the registry takes: the manifest, `matches`/`applies`, `fields`, `tools`, and `load()` |
 | `fields.ts` | derived `CustomFieldDef[]`, gated on the plugin being enabled |
 | `fields.test.ts` | the derivation, tested without a DOM |
 | `tools.ts` | the agent verbs and the domain rules behind them, if any |
@@ -229,14 +233,38 @@ Files, all inside the plugin's own folder:
 | `AGENTS.md` | conventions for changing **this** plugin: its invariants with the failure each prevents, where its data lives, what must not be renamed, and how to verify it |
 | `docs/` | anything longer than the README carries: the model reference, the migrations, the endpoints |
 
-Registration is one `register()` call in the registry
-([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)), passing the
-manifest plus the parts that are code rather than data. An invalid manifest is
-refused there, so a missing capability shows up at startup and not halfway through
-a render. That entry has to stay cheap
-and synchronous: `matches` and `fields` may import types and the plugin helper and
-nothing else, or the plugin's code lands in the generic bundle and the lazy split is
-gone.
+### Which id, and which contract version
+
+**The id is reverse-DNS from a domain you own** (`com.acme.sprints`), at least two
+lowercase labels. The validator refuses anything else, and the reason is that the
+id keys the plugin's rows and the metadata it writes on items: a collision is a
+collision in somebody's data. It is permanent in practice, so pick it in phase 1
+rather than here.
+
+**`apiVersion` is `"^1"`** unless the plugin declares `tools`, which arrived in
+1.3 and needs `"^1.3"`. A plugin using a newer section while claiming `^1` loads on
+an older host with its verbs listed nowhere, and no host can warn about that on the
+older one's behalf.
+
+### The two registration shapes
+
+The playbook fits both, and the difference is one file plus what covers it:
+
+| | **In-tree** (`src/plugins/<id>/`) | **Vendored artifact** (`plugins/<id>/`) |
+| --- | --- | --- |
+| Registration | one `register()` call plus a static import in [`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts) | none. `manifest.json` plus an ES module, installed with `npm run plugin:install -- <id>` |
+| Covered by | this repository's `npm test`, `npm run typecheck` and the CI guards | its own tests, wherever it lives |
+| Agent tools | run | declared, not run ([#108](https://github.com/zeitlines/zeitlines/issues/108)) |
+| Use it when | the plugin ships with Zeitlines | the plugin is somebody else's, or lives in its own repository |
+
+For anything built by following this playbook, in-tree is the answer. The artifact
+path is documented in [`docs/plugin-authoring.md`](plugin-authoring.md).
+
+The registry entry has to stay cheap and synchronous: `descriptor.ts`, `fields.ts`
+and `tools.ts` may import types and the plugin helpers and nothing else, or the
+plugin's code lands in the generic bundle and the lazy split is gone. An invalid
+manifest is refused at `register()`, so a missing capability shows up at startup
+rather than halfway through a render.
 
 **Domain rules live in `tools.ts` and are testable without a DOM.** That is the whole
 point of pulling them out of prompts: a rule in a prompt cannot be tested and cannot
@@ -247,7 +275,7 @@ chapter in the core `docs/`. `product-roadmap` was the counter-example for a
 while — a 200-line chapter in `docs/pricing.md` plus a field table in
 `docs/items.md`, so uninstalling it would have left the core documentation wrong
 rather than merely shorter. Both moved into its folder
-([#18](https://github.com/dermellor/zeitlines/issues/18)), and writing it there
+([#18](https://github.com/zeitlines/zeitlines/issues/18)), and writing it there
 in the first place costs nothing.
 
 **Exit condition:** `npm run typecheck` shows no new errors, and no file outside the
@@ -263,19 +291,36 @@ plugin folder changed except the one registry line.
   cares about: the deadline that falls on a weekend, the trade with zero lead time,
   the gate that is already closed. A plausible-looking wrong rule is worse than a
   missing one, because it gets trusted.
-- **An example timeline** in `data/`. `npm run schema:check` validates the committed
-  examples, so the example doubles as a test, and phase 5 needs it anyway as the
-  public demonstration.
-- **A preview image** rendered from that example timeline, committed as
-  `preview.png` in the plugin folder. The catalogue needs it, and fifty preview
-  images reviewed side by side catch what fifty separate click paths would not:
-  the plugin that renders correctly and still looks like nothing.
-- **`npm run test`, `npm run schema:check`, `npm run build`**, plus
-  [`scripts/ci/check-bundle-split.sh`](../scripts/ci/check-bundle-split.sh) if the
-  plugin has a view: a generic build must download none of it.
+- **An example timeline** in `data/`, named in the manifest's `catalogue.example`.
+  Every top-level `data/*.json` is validated by `npm run schema:check`, so the
+  example doubles as a test, and phase 5 needs it anyway as the public
+  demonstration.
+
+  **It has to consent to publication.** A plugin's rows are materialized into the
+  build only with `"public": true` on its entry in the file's `plugins` array.
+  Without it the build strips `pluginData` and the example renders as a plain
+  timeline — which reads as „the plugin is broken" rather than as the publication
+  gate doing its job ([`docs/plugin-public-read.md`](plugin-public-read.md)).
+- **A preview image**, `npm run plugins:preview -- <folder>`, committed as
+  `preview.png` in the plugin folder. It needs the app running and a Chrome on the
+  machine. The catalogue needs the image, and fifty of them reviewed side by side
+  catch what fifty separate click paths would not: the plugin that renders
+  correctly and still looks like nothing.
+- **`npm test`, `npm run typecheck`, `npm run schema:check`,
+  `npm run plugins:catalogue:check`, `npm run build`**, plus, if the plugin has a
+  view, [`scripts/ci/check-bundle-split.sh`](../scripts/ci/check-bundle-split.sh)
+  (a generic build must download none of it) and
+  [`scripts/ci/check-design-system.sh`](../scripts/ci/check-design-system.sh) (the
+  view is built from the components and the tokens, like everything else that
+  draws).
 - **A manual click path**, written down as steps and expected results. It goes into
   the pull request or the commit message so the change can be checked by somebody
   who did not build it.
+
+  **Switching the plugin on is part of that path**, and there is no interface for
+  it yet ([#85](https://github.com/zeitlines/zeitlines/issues/85)): on a database
+  timeline it is the `configure_plugin` MCP tool, on a local file the `plugins`
+  array. Write down which one, or the reader cannot reproduce step one.
 
 **Exit condition:** green, the preview image is committed, and the click path is
 written down.
@@ -362,6 +407,13 @@ again and record the result with its date in the plugin README's own log. A plug
 that never gets named is not a failed plugin; it is a signal that the questions were
 wrong or the page answers them incompletely, and both are fixable.
 
+**Budget it, because nothing automates it.** Three to five questions in two
+languages, against several models, twice per plugin — for one plugin an afternoon's
+interruption, for a batch of ten the largest single block of manual work in the
+whole process. Two consequences worth deciding up front: measure the batch on one
+date rather than per plugin, and if the baseline (phase 1.4) was not recorded, phase
+6 has nothing to compare against and is skipped rather than estimated.
+
 Done means what it means everywhere in this repository: committed, pushed, and the
 deploy verified green. See „Branching, Commits & Session Isolation" in
 [`AGENTS.md`](../AGENTS.md).
@@ -415,17 +467,25 @@ it is faster and more consistent over fifty rows than over fifty conversations.
 plugins are reviewed side by side; only the ones that look wrong get a click path
 walked manually.
 
-**The one shared file is the bottleneck.** A plugin touches its own folder plus a
-single `register()` line, so parallel subagents collide on exactly one file:
-[`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts). Two ways out, in
-order of preference:
+**The one shared file is the bottleneck.** An in-tree plugin touches its own folder
+plus a single `register()` line, so parallel subagents collide on exactly one file:
+[`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts). The runtime loader
+([#14](https://github.com/zeitlines/zeitlines/issues/14)) does **not** remove that
+— it reads an installed *artifact's* manifest, while an in-tree plugin still needs
+its import and its `register()` call. So there are two real options:
 
-1. **Land [#14](https://github.com/dermellor/zeitlines/issues/14) first.** With the
-   loader reading manifests out of the plugin folders, a plugin has *no* shared file
-   and parallelism is free. This is the cheapest work with the largest effect on a
-   batch and should be done before one, not after.
-2. **The orchestrator writes every registry line itself**, after the subagents are
-   done. Workable, and it serialises the last step of every plugin.
+1. **The orchestrator writes every registry line itself**, after the subagents are
+   done. This is the answer for a batch of in-tree plugins: it serialises exactly
+   one step, and it is the step where a manifest error surfaces anyway.
+2. **Build them as vendored artifacts** (`plugins/<id>/`), which touch no shared
+   file at all. Parallelism is then free, and the price is that the plugins are
+   outside this repository's tests and typecheck, and that their agent verbs do not
+   run ([#108](https://github.com/zeitlines/zeitlines/issues/108)). Right for
+   plugins that belong somewhere else, wrong for a first batch.
+
+Whichever it is, the catalogue is regenerated **once** at the end of the batch:
+`PLUGINS.md` is one file too, and it is derived, so there is no reason for a
+subagent to touch it.
 
 **What batching does not solve is depth.** Subagents in parallel produce breadth;
 the domain model in phase 1 is where a plugin becomes worth installing, and no
@@ -436,19 +496,24 @@ wrong date.
 
 ---
 
-## What changes once the plugin platform lands
+## What the platform work already changed, and what is still open
 
-The epic ([#9](https://github.com/dermellor/zeitlines/issues/9)) makes plugins
-installable at runtime. Exactly two paragraphs of this playbook change:
+The epic ([#9](https://github.com/zeitlines/zeitlines/issues/9)) has landed the
+parts this playbook depends on. Two of its steps changed a paragraph here and are
+noted so a reader of an older version is not confused:
 
-- **Registration** loses its `register()` call: the manifest already in the plugin
-  folder is read by the loader instead
-  ([#14](https://github.com/dermellor/zeitlines/issues/14)).
-- **The path** becomes `src/plugins/<id>/`, with the host under `src/pluginHost/`
-  ([#19](https://github.com/dermellor/zeitlines/issues/19)).
+- **The path** is `src/plugins/<id>/`, with the host under `src/pluginHost/`
+  ([#19](https://github.com/zeitlines/zeitlines/issues/19)).
+- **A runtime loader** installs an artifact from a URL or from `plugins/<id>/`
+  ([#14](https://github.com/zeitlines/zeitlines/issues/14), [#15](https://github.com/zeitlines/zeitlines/issues/15)).
+  It did **not** remove the `register()` line for an in-tree plugin: see „The two
+  registration shapes" in phase 3.
 
-Everything else, the gate, the research, the spec, the verification and the
-publication, is written to survive that change unaltered.
+Still open, and both about where a tool runs rather than how one is written:
+[#108](https://github.com/zeitlines/zeitlines/issues/108) (the remote MCP server
+carries no plugin tools) and the artifact-execution question in
+[`docs/plugin-isolation.md`](plugin-isolation.md). Everything else — the gate, the
+research, the spec, the verification and the publication — is unaffected by either.
 
 ---
 
@@ -460,11 +525,14 @@ publication, is written to survive that change unaltered.
        baseline recording, terminology table (core vocabulary respected)
 [ ] 2  Spec written: fields, tools, view, config, data, catalogue entry,
        and what it does not do
-[ ] 3  fields.ts, tools.ts, tests, README, AGENTS.md; one registry line
-[ ] 4  Tests incl. domain rules, schema check, build, bundle split,
-       preview.png, click path
+[ ] 3  Reverse-DNS id, apiVersion (^1.3 with tools); manifest, descriptor,
+       fields.ts, tools.ts, tests, README, AGENTS.md; one registry line
+[ ] 4  Tests incl. domain rules; typecheck, schema check, catalogue check,
+       build, bundle split, design system; example with "public": true;
+       preview.png; click path incl. how the plugin gets switched on
 [ ] 5  Plugin README incl. tools, confidence and contribution call;
        uninstall test on every sentence outside the plugin folder;
        check-plugin-isolation green; plugins:catalogue:check green
-[ ] 6  Measurement scheduled; committed, pushed, deploy green
+[ ] 6  Baseline recorded → measurement scheduled (or explicitly skipped);
+       committed, pushed, deploy green
 ```

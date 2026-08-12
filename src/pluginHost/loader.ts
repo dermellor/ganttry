@@ -125,6 +125,14 @@ export function moduleProblems(manifest: PluginManifest, mod: unknown): string[]
  * Both `fields` and `renderView` are wrapped: a plugin that throws must cost the
  * user its own view, not the timeline. `fields` in particular runs on the item
  * form's path, where an exception would take the form down for every item.
+ *
+ * **`tools` is deliberately not wired here, and an artifact's tools do not run.**
+ * A tool is called by a server process, and executing an installed artifact's
+ * code there is a decision docs/plugin-isolation.md has not taken — this file
+ * loads plugins into the app's own realm in the browser, which is a different
+ * trust question from running them next to the database. The gap does not need a
+ * check of its own to be visible: `pluginTools()` reports such a plugin's verbs
+ * as declared with no implementation, which is what they are.
  */
 export function descriptorFor(manifest: PluginManifest, mod: unknown, onError: (e: unknown) => void): PluginDescriptor {
   const m = (mod ?? {}) as LoadedModule;
