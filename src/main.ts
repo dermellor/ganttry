@@ -56,6 +56,11 @@ import { hideDetail, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
 import { setupFilterControl } from './filterControl';
 import {
+  applySavedView,
+  setupSavedViewsControl,
+  syncSavedViewsControl,
+} from './savedViewsControl';
+import {
   activePlugins,
   ensurePluginLoaded,
   legacyViewMode,
@@ -148,12 +153,26 @@ async function applyView(viewId: string) {
     saveViewPrefs(viewId);
   }
   setModeButtons(state.viewMode);
+  // A saved view belongs to the timeline it was saved on, so opening another one
+  // leaves it — before the render, or the drift marker would briefly claim the
+  // new timeline is showing the old timeline's view.
+  state.activeSavedViewId = null;
   await renderTimeline(view);
   // The mode is per timeline now, so a switch can change it: the sections have to
   // follow, not just the buttons. Persisting here would write the stored value
   // straight back, so it stays off.
   applyViewMode(state.viewMode, { persist: false });
   updatePluginViews();
+  // After the source is loaded, because which saved views exist arrives with it.
+  // An id the timeline does not carry is dropped rather than reported: a link can
+  // outlive the view it names, and it still has to open the timeline.
+  const wantedView = state.pendingSavedView;
+  state.pendingSavedView = null;
+  const savedView = wantedView
+    ? state.activeSourceFile?.savedViews?.find((v) => v.id === wantedView)
+    : undefined;
+  if (savedView) applySavedView(savedView);
+  else syncSavedViewsControl();
   syncUrl();
 }
 
@@ -372,6 +391,12 @@ async function bootstrap() {
   }
   setupListView();
   setupFilterControl();
+  // The presentation switch is handed over rather than reimplemented: applying a
+  // view may enter a plugin view, which needs the mode resolved against this
+  // timeline's plugins and its chunk loaded.
+  setupSavedViewsControl((mode) => applyViewMode(mode));
+
+  state.pendingSavedView = urlState.savedView ?? null;
 
   state.pendingItem = urlState.item ?? null;
   state.pendingWindow = parseUrlWindow(urlState);
@@ -542,6 +567,7 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
     if (switching) {
       state.pendingItem = incoming.item ?? null;
       state.pendingWindow = targetWindow;
+      state.pendingSavedView = incoming.savedView ?? null;
       await applyView(targetViewId);
     } else {
       if (incoming.item && incoming.item !== state.selectedItemId) {
@@ -560,6 +586,26 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
       if (targetWindow && state.timeline) {
         state.timeline.setWindow(targetWindow.start, targetWindow.end, { animation: false });
         state.userWindow = targetWindow;
+      }
+    }
+
+    // An incoming hash is authoritative about the saved view it names, the way it
+    // is about the mode: that is what makes back reverse „apply Q3" instead of
+    // leaving it standing. An id this timeline does not have leaves the display
+    // alone and only drops the marker.
+    if (!switching) {
+      const wanted = incoming.savedView ?? null;
+      const view = wanted
+        ? state.activeSourceFile?.savedViews?.find((v) => v.id === wanted)
+        : undefined;
+      // Re-applied even when that view is already the active one, because the
+      // interesting case is exactly that: somebody drifted away from it and then
+      // opened the link again. Comparing against `activeSavedViewId` first made
+      // pasting the link a no-op, which reads as the link not working.
+      if (view) applySavedView(view);
+      else if (state.activeSavedViewId) {
+        state.activeSavedViewId = null;
+        syncSavedViewsControl();
       }
     }
 

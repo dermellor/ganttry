@@ -119,6 +119,21 @@ runner works against any Postgres).
   „Standalone JSON timelines" (docs/data-model.md)). There is no DB CHECK for it, because `start` and
   `end` are `text` columns.
 - `timeline_groups` — id, content, nested_groups, show_nested, sort.
+- `saved_views` — named ways of looking at one timeline (migration `0023`): PK
+  (`timeline_id`, `id`), a `name`, the presentation (`mode`), the grouping
+  dimension (`group_by`), the filter selection (`filters` jsonb), an `owner`
+  address, a `visibility` of `private` or `instance` (CHECK-constrained), plus the
+  usual `version` trigger and audit columns. FK cascade on `timelines`.
+
+  **No anon SELECT policy, unlike every other table here.** The item and
+  `plugin_data` tables are read through the anon role by the browser's Realtime
+  subscription, which is fine for content the timeline already serves to whoever is
+  past the gate. A private saved view is the one row whose whole point is that
+  another signed-in member cannot read it, so it is served only through the API,
+  where the visibility filter runs. Owned by an address rather than a member id for
+  the same reason `metadata.owner` is: membership rows are never deleted, so an
+  address stays resolvable. The whole model is „Gespeicherte Ansichten"
+  (docs/editing.md).
 - `app_users` — the **user directory and the member list**, which are one table
   because they are one set of people (migrations `0015` and `0016`): `email` as
   PK, optional `name`, `first_seen_at`, `last_seen_at`, plus `role`, `status` and

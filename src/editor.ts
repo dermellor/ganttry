@@ -1,6 +1,7 @@
 import { dataUrl } from './data-base';
 import { assignMissingItemIds, nextItemId } from './itemId';
 import type {
+  SavedView,
   SourceLive,
   TimelineFile,
   TimelineFileItem,
@@ -51,6 +52,54 @@ export async function apiJson(res: Response): Promise<any> {
   // the terse error code.
   if (!res.ok) throw new Error((data as any).message || (data as any).error || `HTTP ${res.status}`);
   return data;
+}
+
+// ---- saved views -----------------------------------------------------------
+//
+// The endpoint answers per caller (a private view of somebody else is never in
+// the list), so nothing here filters: what arrives is what this person may see.
+
+/** Create one. `name` is required; the server derives the id and owns it. */
+export async function apiCreateSavedView(
+  sourceId: string,
+  view: Record<string, unknown>,
+): Promise<SavedView> {
+  return apiJson(
+    await fetch(`/api/source/${sourceId}/saved-view`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(view),
+    }),
+  );
+}
+
+/**
+ * Patch one, with the same optimistic lock every other write here uses: an
+ * explicit `null` clears `mode` / `groupBy` / `filters`, an absent key leaves it.
+ */
+export async function apiUpdateSavedView(
+  sourceId: string,
+  viewId: string,
+  patch: Record<string, unknown>,
+  version?: number,
+): Promise<SavedView> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (version != null) headers['If-Match'] = String(version);
+  return apiJson(
+    await fetch(`/api/source/${sourceId}/saved-view/${encodeURIComponent(viewId)}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(patch),
+    }),
+  );
+}
+
+export async function apiDeleteSavedView(sourceId: string, viewId: string): Promise<void> {
+  await apiJson(
+    await fetch(`/api/source/${sourceId}/saved-view/${encodeURIComponent(viewId)}`, {
+      method: 'DELETE',
+    }),
+  );
 }
 
 /** Create a new item; returns the stored item (with version). */

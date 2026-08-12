@@ -239,3 +239,19 @@
 .plugin-view-bar:empty {
   display: none;
 }
+
+/* The name field inside the „Ansicht" panel: one row, the input taking whatever
+   the button leaves. It is an app-level composition rather than a component,
+   like `.footer-actions` above — two design-system controls side by side, with
+   no behaviour of its own worth naming. */
+.saved-view-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+}
+
+.saved-view-name > .ds-Input {
+  flex: 1;
+  min-width: 0;
+}

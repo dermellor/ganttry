@@ -27,6 +27,7 @@ import type {
   PluginData,
   PluginDataRow,
   PluginRef,
+  SavedView,
   TimelineFile,
   TimelineFileItem,
   TimelinePhase,
@@ -346,6 +347,13 @@ export async function getTimeline(sql: Sql, id: string): Promise<TimelineFile | 
     const pluginData = await listPluginData(sql, id);
     if (Object.keys(pluginData).length) file.pluginData = pluginData;
   }
+  // Saved views travel with the timeline for the same reason plugin rows do: a
+  // static local deploy has no server to ask afterwards, so one payload shape has
+  // to serve both kinds of source. What this returns is UNFILTERED — the
+  // dispatcher removes the ones this caller may not see, because that rule must
+  // exist once rather than once per driver (see src/savedViews.ts).
+  const savedViews = await listSavedViews(sql, id);
+  if (savedViews.length) file.savedViews = savedViews;
   if (groupRows.length) file.groups = groupRows.map(rowToGroup);
   return file;
 }
@@ -1074,6 +1082,85 @@ export async function purgeItemMetadata(sql: Sql, keys: string[], timelineId?: s
   return rows.length;
 }
 
+// ---- saved views -----------------------------------------------------------
+//
+// The same locking rule as an item: the UPDATE half of the upsert is gated on
+// `version`, and zero rows written with a guard present means the row moved on.
+// Nothing here asks who is reading — see the note on the seam in repo.ts.
+
+const SAVED_VIEW_SELECT =
+  'id, name, mode, group_by, filters, owner, visibility, version, created_at, created_by, updated_at, updated_by';
+
+function rowToSavedView(row: Record<string, any>): SavedView {
+  const out: SavedView = { id: row.id, name: row.name };
+  if (row.mode != null) out.mode = row.mode;
+  if (row.group_by != null) out.groupBy = row.group_by;
+  const filters = (row.filters ?? {}) as Record<string, string[]>;
+  if (Object.keys(filters).length) out.filters = filters;
+  if (row.owner != null) out.owner = row.owner;
+  out.visibility = row.visibility === 'instance' ? 'instance' : 'private';
+  if (row.version != null) out.version = row.version;
+  const createdAt = toIso(row.created_at);
+  if (createdAt != null) out.createdAt = createdAt;
+  if (row.created_by != null) out.createdBy = row.created_by;
+  const updatedAt = toIso(row.updated_at);
+  if (updatedAt != null) out.updatedAt = updatedAt;
+  if (row.updated_by != null) out.updatedBy = row.updated_by;
+  return out;
+}
+
+export async function listSavedViews(sql: Sql, timelineId: string): Promise<SavedView[]> {
+  const rows = await sql`
+    select ${sql.unsafe(SAVED_VIEW_SELECT)} from saved_views
+    where timeline_id = ${timelineId} order by name asc, id asc`;
+  return rows.map(rowToSavedView);
+}
+
+export async function getSavedView(sql: Sql, timelineId: string, viewId: string): Promise<SavedView | null> {
+  const [row] = await sql`
+    select ${sql.unsafe(SAVED_VIEW_SELECT)} from saved_views
+    where timeline_id = ${timelineId} and id = ${viewId}`;
+  return row ? rowToSavedView(row) : null;
+}
+
+export async function putSavedView(
+  sql: Sql,
+  timelineId: string,
+  view: SavedView,
+  expectedVersion?: number,
+  updatedBy?: string,
+): Promise<SavedView> {
+  const guard = expectedVersion != null ? sql`where saved_views.version = ${expectedVersion}` : sql``;
+  const rows = await sql`
+    insert into saved_views (timeline_id, id, name, mode, group_by, filters, owner, visibility, created_by, updated_by)
+    values (
+      ${timelineId}, ${view.id}, ${view.name}, ${view.mode ?? null}, ${view.groupBy ?? null},
+      ${sql.json((view.filters ?? {}) as any)}, ${view.owner ?? null}, ${view.visibility ?? 'private'},
+      ${updatedBy ?? null}, ${updatedBy ?? null}
+    )
+    on conflict (timeline_id, id) do update
+      set name = excluded.name,
+          mode = excluded.mode,
+          group_by = excluded.group_by,
+          filters = excluded.filters,
+          -- owner and created_by are left out on purpose: a saved view keeps the
+          -- author it was created by, so an admin editing somebody's shared view
+          -- does not quietly take it over, which would also move it out of that
+          -- person's own list.
+          visibility = excluded.visibility,
+          updated_by = excluded.updated_by
+      ${guard}
+    returning ${sql.unsafe(SAVED_VIEW_SELECT)}`;
+  if (rows.length === 0) {
+    throw new ConflictError(`saved view ${view.id} changed since version ${expectedVersion}`);
+  }
+  return rowToSavedView(rows[0]);
+}
+
+export async function deleteSavedView(sql: Sql, timelineId: string, viewId: string): Promise<void> {
+  await sql`delete from saved_views where timeline_id = ${timelineId} and id = ${viewId}`;
+}
+
 // -- bulk replace (import, MCP set_pricing seed, PUT) --
 
 // ---- TimelineRepo factory (postgres.js) ------------------------------------
@@ -1127,5 +1214,10 @@ export function makePostgresRepo(sql: Sql): TimelineRepo {
       orderPluginRows(sql, timelineId, pluginId, collection, orderedIds, updatedBy),
     purgePluginData: (pluginId, timelineId) => purgePluginData(sql, pluginId, timelineId),
     purgeItemMetadata: (keys, timelineId) => purgeItemMetadata(sql, keys, timelineId),
+    listSavedViews: (timelineId) => listSavedViews(sql, timelineId),
+    getSavedView: (timelineId, viewId) => getSavedView(sql, timelineId, viewId),
+    putSavedView: (timelineId, view, expectedVersion, updatedBy) =>
+      putSavedView(sql, timelineId, view, expectedVersion, updatedBy),
+    deleteSavedView: (timelineId, viewId) => deleteSavedView(sql, timelineId, viewId),
   };
 }

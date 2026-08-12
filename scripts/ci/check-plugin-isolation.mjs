@@ -73,6 +73,7 @@ const REPO_METHODS = [
   'setTimelinePlugin', 'getTimelinePlugin', 'removeTimelinePlugin',
   'listPluginRows', 'listPluginData', 'putPluginRow', 'patchPluginRow', 'deletePluginRow',
   'orderPluginRows', 'purgePluginData', 'purgeItemMetadata',
+  'listSavedViews', 'getSavedView', 'putSavedView', 'deleteSavedView',
 ];
 
 /** The source folder an id lives in. Filled once the manifests are read. */

@@ -29,6 +29,7 @@ import {
   type ScanOptions,
 } from './scan.ts';
 import { patchFrontmatter, setBody, type Patch } from './frontmatter.ts';
+import { sanitizeSavedViews } from '../../src/savedViews.ts';
 import { scanVendoredPlugins } from '../plugins/vendored.ts';
 import { describePhaseOverlap, findPhaseOverlap } from '../../src/phaseOverlap.ts';
 import { describeReversedExtent, findReversedExtent, hasReversedExtent } from '../../src/itemExtent.ts';
@@ -49,6 +50,7 @@ import type {
   PluginData,
   PluginDataRow,
   PluginRef,
+  SavedView,
   TimelineContainer,
   TimelineFile,
   TimelineFileItem,
@@ -241,6 +243,9 @@ async function save(loaded: Loaded, file: TimelineFile): Promise<number> {
   };
   const pluginData = withoutRowVersions(file.pluginData);
   if (pluginData) clean.pluginData = pluginData;
+  // Same reason as the plugin rows above: the stamp is the file's mtime handed out
+  // for `If-Match`, and writing it back would freeze one moment into the document.
+  if (file.savedViews) clean.savedViews = file.savedViews.map(({ version: _v, ...rest }) => rest);
   const tmp = `${loaded.path}.${process.pid}.tmp`;
   await mkdir(dirname(loaded.path), { recursive: true });
   await writeFile(tmp, `${JSON.stringify(clean, null, 2)}\n`, 'utf8');
@@ -269,6 +274,10 @@ function assertVersion(loaded: Loaded, expected: number | undefined, what: strin
 function withVersions(file: TimelineFile, version: number): TimelineFile {
   const out: TimelineFile = { ...file, items: file.items.map((it) => ({ ...it, version })) };
   if (out.pluginData) out.pluginData = stampedPluginData(file, version);
+  // Saved views take the same stamp for the same reason: `If-Match` on one of them
+  // means „the file has not changed since you read it", because a file is what a
+  // write here rewrites.
+  if (out.savedViews) out.savedViews = out.savedViews.map((v) => ({ ...v, version }));
   return out;
 }
 
@@ -504,6 +513,9 @@ function containerOf(file: TimelineFile): TimelineContainer {
   const { items: _items, ...rest } = file;
   const pluginData = withoutRowVersions(rest.pluginData);
   if (pluginData) rest.pluginData = pluginData;
+  // The stamp is the directory's version, not the view's; see `save` for the same
+  // strip on a JSON source.
+  if (rest.savedViews) rest.savedViews = rest.savedViews.map(({ version: _v, ...view }) => view);
   return rest;
 }
 
@@ -1010,6 +1022,69 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
         else delete next.pluginData;
         await persist(loaded, next);
       }
+    },
+
+    // ---- saved views -------------------------------------------------------
+    //
+    // In the document the user owns, like everything else here: copying the file
+    // copies its saved views with it, and a hand-written timeline can ship one.
+    // The two differences to a DB source are the ones the plugin store already
+    // has — the version is the file's, so `If-Match` locks the whole document,
+    // and everything left in the file is public once a static deploy is. The
+    // second one is why the build strips private views while materializing
+    // (`stripSavedViewsForPublication`), and forgetting that is what leaks.
+
+    async listSavedViews(id: string): Promise<SavedView[]> {
+      const loaded = await load(dirs, id);
+      return sanitizeSavedViews(loaded.file.savedViews).map((v) => ({ ...v, version: loaded.version }));
+    },
+
+    async getSavedView(id: string, viewId: string): Promise<SavedView | null> {
+      const loaded = await load(dirs, id);
+      const found = sanitizeSavedViews(loaded.file.savedViews).find((v) => v.id === viewId);
+      return found ? { ...found, version: loaded.version } : null;
+    },
+
+    async putSavedView(
+      id: string,
+      view: SavedView,
+      expectedVersion?: number,
+      updatedBy?: string,
+    ): Promise<SavedView> {
+      const loaded = await loadForWrite(dirs, id);
+      assertVersion(loaded, expectedVersion, `„${id}"`);
+      const views = sanitizeSavedViews(loaded.file.savedViews);
+      const at = views.findIndex((v) => v.id === view.id);
+      const now = new Date().toISOString();
+      // The author and the creation stamp survive a rewrite: an admin fixing
+      // somebody's shared view must not take it over, which would also move it out
+      // of that person's own list. Same rule as both DB implementations.
+      const previous = at >= 0 ? views[at] : undefined;
+      const stored: SavedView = {
+        ...view,
+        ...(previous?.owner != null ? { owner: previous.owner } : {}),
+        createdAt: previous?.createdAt ?? now,
+        ...(previous?.createdBy ?? updatedBy ? { createdBy: previous?.createdBy ?? updatedBy } : {}),
+        updatedAt: now,
+        ...(updatedBy ? { updatedBy } : {}),
+      };
+      delete stored.version;
+      const next = [...views];
+      if (at >= 0) next[at] = stored;
+      else next.push(stored);
+      const version = await persist(loaded, { ...loaded.file, savedViews: next });
+      return { ...stored, version };
+    },
+
+    async deleteSavedView(id: string, viewId: string): Promise<void> {
+      const loaded = await loadForWrite(dirs, id);
+      const views = sanitizeSavedViews(loaded.file.savedViews).filter((v) => v.id !== viewId);
+      const next = { ...loaded.file };
+      // Dropped rather than left as `[]`: this is a file somebody reads by hand,
+      // and an empty array is residue that reads as „something went wrong here".
+      if (views.length) next.savedViews = views;
+      else delete next.savedViews;
+      await persist(loaded, next);
     },
 
     async purgeItemMetadata(keys: string[], id?: string | null): Promise<number> {

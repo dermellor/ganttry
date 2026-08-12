@@ -282,6 +282,13 @@ on top of sources rather than a reason to keep a second data path alive.
   no notes directory, and that path has to keep working (see „CI" (AGENTS.md)).
 - **Nothing instance-specific becomes a tracked file.** `data/<name>/` stays
   gitignored, and a notes directory outside the repo stays outside it.
+- **Everything left in the file is public once a static deploy is.** The build
+  materializes it under `public/`, so anything stored there needs a stripping rule
+  or it ships: `pluginData` has one (`publicRead`), and `savedViews` has one that
+  drops every private view plus the `owner` of the ones that stay (see
+  „Gespeicherte Ansichten" (docs/editing.md)). Both run at both write sites through
+  one call, because calling only one of them at one of them is the shape of leak
+  they exist to prevent.
 
 ## Staging
 

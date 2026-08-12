@@ -63,6 +63,9 @@ export type AppShellElements = {
   contentArea: HTMLElement;
   modeToggle: HTMLElement;
   pluginViewBar: HTMLElement;
+  savedViewsControl: HTMLElement;
+  savedViewsToggle: HTMLButtonElement;
+  savedViewsMenu: HTMLElement;
   groupBy: HTMLSelectElement;
   groupByControl: HTMLElement;
   filterControl: HTMLElement;
@@ -345,6 +348,32 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     ],
   });
 
+  // "Ansicht": the named bundle of the two controls that follow it, and - when the
+  // saved view states one - of the presentation chosen before them. It leads the
+  // group it is a shortcut over, so the row reads "this whole look, then the parts
+  // of it". Hidden until the timeline has one to offer or one can be made (see
+  // syncSavedViewsControl).
+  const savedViewsToggle = Button({
+    label: 'Keine Ansicht',
+    variant: 'trigger',
+    attrs: { id: 'saved-views-toggle', 'aria-haspopup': 'true', 'aria-expanded': 'false' },
+  });
+  const savedViewsMenu = Popover({
+    role: 'group',
+    ariaLabel: 'Gespeicherte Ansichten',
+    scroll: true,
+    hidden: true,
+    attrs: { id: 'saved-views-menu' },
+  });
+  const savedViewsControl = ToolbarControl({
+    // Not a `<label>`, for the same reason the filter's is not: the trigger is a
+    // button and already carries its own accessible name.
+    labelled: false,
+    label: 'Ansicht',
+    attrs: { id: 'saved-views-control', hidden: true },
+    children: ToolbarAnchor({ children: [savedViewsToggle, savedViewsMenu] }),
+  });
+
   const groupBy = Select({ id: 'groupby' });
   // Kept as a node rather than inlined into the bar: the presentation declares
   // which accessories apply (see main.ts), so each of them has to be hideable on
@@ -408,7 +437,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       // Split this way the bar is at most two rows — which presentation on the
       // first, how it is bundled and narrowed on the second.
       ToolbarGroup({ children: [modeToggle, pluginViewBar] }),
-      ToolbarGroup({ children: [groupByControl, filterControl] }),
+      ToolbarGroup({ children: [savedViewsControl, groupByControl, filterControl] }),
       ToolbarGroup({ end: true, children: [addBtn, exportBtn] }),
     ],
   });
@@ -492,6 +521,9 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       contentArea,
       modeToggle,
       pluginViewBar,
+      savedViewsControl,
+      savedViewsToggle,
+      savedViewsMenu,
       groupBy,
       groupByControl,
       filterControl,

@@ -8,6 +8,7 @@ import { envValue } from './db/env.ts';
 import { scanDirectory, timelineDirectories } from './local/scan.ts';
 import { buildCsp, parseOrigins } from '../src/pluginHost/csp.ts';
 import { stripFileForPublication } from '../src/pluginHost/publicRead.ts';
+import { stripSavedViewsForPublication } from '../src/savedViews.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CONFIG_PATH = join(ROOT, 'timelines.config.json');
@@ -22,6 +23,22 @@ const OUT_DIR = join(ROOT, 'public', DATA_DIR);
 const SOURCES_SUBDIR = envValue('TIMELINES_SOURCES_SUBDIR').replace(/^\/+|\/+$/g, '');
 const SOURCES_DIR_IN = SOURCES_SUBDIR ? join(ROOT, 'data', SOURCES_SUBDIR) : join(ROOT, 'data');
 const SOURCES_DIR_OUT = join(OUT_DIR, 'sources');
+
+/**
+ * Everything a materialized copy must not carry, in one call.
+ *
+ * Two strippers rather than one, because they answer to different declarations —
+ * a plugin's `publicRead`, and a saved view's own visibility — but they have to
+ * run together at both write sites. Calling only one of them at one of them is
+ * exactly the shape of leak both exist to prevent, so neither site names them
+ * individually.
+ */
+function forPublication<T extends Parameters<typeof stripFileForPublication>[0]>(
+  file: T,
+  manifestFor: Parameters<typeof stripFileForPublication>[1],
+): T {
+  return stripSavedViewsForPublication(stripFileForPublication(file, manifestFor) as any) as T;
+}
 
 type Config = {
   dateFields: string[];
@@ -357,7 +374,7 @@ async function collectStandaloneSources(config: Config, manifestFor: (pluginId: 
     await mkdir(dirname(outPath), { recursive: true });
     // A static deploy hands this file to anyone who asks, so a plugin's rows in it
     // are published unless the timeline said so. See stripFileForPublication.
-    await writeIfChanged(outPath, `${JSON.stringify(stripFileForPublication(file, manifestFor), null, 2)}\n`);
+    await writeIfChanged(outPath, `${JSON.stringify(forPublication(file, manifestFor), null, 2)}\n`);
     views.push({
       id: `src:${id}`,
       name: file.name || basename(id),
@@ -406,7 +423,7 @@ async function collectStandaloneSources(config: Config, manifestFor: (pluginId: 
     // Re-serialized rather than copied verbatim, which is the change that closes
     // the leak: a byte-for-byte copy publishes every plugin row in the file
     // regardless of whether the timeline consented.
-    const published = stripFileForPublication(parsed as any, manifestFor);
+    const published = forPublication(parsed as any, manifestFor);
     await writeIfChanged(outPath, `${JSON.stringify(published, null, 2)}\n`);
     views.push({
       id: `src:${id}`,
