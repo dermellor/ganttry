@@ -157,16 +157,28 @@ function timelinesApi(): Plugin {
       server.middlewares.use('/api/me', async (req, res, next) => {
         if (req.method !== 'GET') return next();
         const me = devIdentity(req);
-        if (!accessControlEnabled(process.env.TIMELINES_ACCESS_CONTROL)) return send(res, 200, me);
+        // `accessControl` mirrors the edge function for the same reason `role`
+        // does: the interface reads it to tell „this instance has no roles" apart
+        // from „you have none here", and a field that only production sets is a
+        // field whose consequences only production shows. `session` deliberately
+        // stays absent — there is no auth gate here, so there is nothing to end.
+        const accessControl = accessControlEnabled(process.env.TIMELINES_ACCESS_CONTROL);
+        if (!accessControl) return send(res, 200, { ...me, accessControl });
         const repo = resolveRepo(dbConns());
-        if (!repo) return send(res, 200, me);
+        if (!repo) return send(res, 200, { ...me, accessControl });
         try {
           const member = await repo.getMember(me.email);
-          return send(res, 200, member ? { ...me, role: member.role, status: member.status } : me);
+          return send(
+            res,
+            200,
+            member ? { ...me, accessControl, role: member.role, status: member.status } : { ...me, accessControl },
+          );
         } catch {
           // The identity matters more than the affordance hints, and every route
-          // enforces for itself regardless of what this answers.
-          return send(res, 200, me);
+          // enforces for itself regardless of what this answers. `accessControl`
+          // rides along even here: it is read from the environment, not from the
+          // lookup that just failed.
+          return send(res, 200, { ...me, accessControl });
         }
       });
 

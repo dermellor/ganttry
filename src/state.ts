@@ -153,6 +153,17 @@ export interface AppState {
   // Signed-in user (from /api/me); labels our own presence avatar. Null when the
   // site isn't gated / identity is unknown.
   currentUser: PresenceUser | null;
+  // Whether the identity above came with a session that can be ended, reported by
+  // the auth gate and by nothing else. Deliberately separate from `currentUser`:
+  // the dev server hands out an identity with no gate behind it, so „I know who
+  // you are" is routinely true where „you are signed in" is false, and only the
+  // second one may put „Abmelden" on screen.
+  hasSession: boolean;
+  // Whether this instance runs access control at all, from the same probe. Not
+  // derivable from `currentRole`: that is null both here and for somebody who is
+  // not a member of an instance that does run it, and the interface has to tell
+  // „there are no roles" from „you have none".
+  accessControl: boolean;
   // What this instance says the current user may do, from the same probe. Null
   // when access control is off, which is also what the interface reads as „no
   // membership screen": there is nothing to administer then. Only ever an
@@ -233,6 +244,8 @@ export const state: AppState = {
   presenceHandle: null,
   presenceSourceId: null,
   currentUser: null,
+  hasSession: false,
+  accessControl: false,
   currentRole: null,
   settingsSection: null,
   tlSection: null,

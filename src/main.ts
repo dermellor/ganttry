@@ -47,6 +47,7 @@ import type { PresenceUser } from './presence';
 import { loadUserDirectory } from './users';
 import { normalizeMemberRole, roleAllows } from './access';
 import { settingsSection, showSettings, wireSettingsArea } from './settingsArea';
+import { refreshAppMenu, wireAppMenu } from './appMenu';
 import {
   showTimelineSettings,
   timelineSection,
@@ -110,7 +111,24 @@ async function loadCurrentUser(): Promise<PresenceUser | null> {
   try {
     const res = await fetch('/api/me');
     if (!res.ok) return null;
-    const data = (await res.json()) as { email?: unknown; name?: unknown; role?: unknown; status?: unknown };
+    const data = (await res.json()) as {
+      email?: unknown;
+      name?: unknown;
+      role?: unknown;
+      status?: unknown;
+      session?: unknown;
+      accessControl?: unknown;
+    };
+    // „Does this instance have roles at all", which `role` cannot answer: it is
+    // absent both on an instance with access control off and for a caller who is
+    // not a member of one that has it on. The interface needs the two apart, or a
+    // control gated on „may manage" is gated on something nobody can satisfy.
+    state.accessControl = data.accessControl === true;
+    // Not derived from `email`: the dev server hands out an identity with no gate
+    // behind it (vite.config.ts), so an address here says nothing about whether
+    // there is a session to end. Only the gated deployment sets this, and it is
+    // what „Abmelden" hangs on — see netlify/edge-functions/me.ts.
+    state.hasSession = data.session === true;
     // The role rides along on the same probe. It is absent whenever access
     // control is off, which is exactly when there is nothing to administer.
     state.currentRole =
@@ -411,9 +429,30 @@ async function bootstrap() {
   // what is on screen.
   wireSettingsArea();
   wireTimelineSettings();
-  if (state.currentRole && roleAllows(state.currentRole, 'manage')) {
+  wireAppMenu();
+  // „Einstellungen" on two different grounds, because the instance area answers two
+  // different questions. With access control ON it administers, so a role that may
+  // manage is the gate. With it OFF there are no roles to gate on, and the area's
+  // whole content is the sentence „access control is off on this instance, set
+  // TIMELINES_ACCESS_CONTROL=true" — gating that on `manage` hid it from everybody
+  // on exactly the instances where somebody needs to read it, reachable only by
+  // typing the hash by hand. /api/settings answers 503 with that same sentence, so
+  // the entry leads somewhere designed rather than to a refusal.
+  const mayManage = state.currentRole != null && roleAllows(state.currentRole, 'manage');
+  if (!state.accessControl || mayManage) {
     els.settingsBtn.hidden = false;
   }
+  // „Abmelden" follows the session, not the role and not the identity. The auth
+  // gate is the only thing that serves `/auth/logout`, and the only thing that
+  // reports `session: true` — a static deploy, an ungated instance and the dev
+  // server all know an identity while having no session to end. Offering the row
+  // on an address instead would put a link to a 404 in the menu on every machine
+  // this is developed on.
+  if (state.hasSession) {
+    els.logoutBtn.hidden = false;
+  }
+  // After both rows are decided: the trigger appears only if either did.
+  refreshAppMenu();
   // The timeline's own settings are offered wherever a timeline is: the area states
   // for itself that a read-only source cannot be changed, and reading its name and
   // default grouping is useful to anybody who can read the timeline. Access control

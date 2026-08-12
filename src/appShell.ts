@@ -36,6 +36,8 @@ import {
   Icon,
   IconButton,
   html,
+  Menu,
+  MenuItem,
   Panel,
   PanelBody,
   PanelHeader,
@@ -78,6 +80,10 @@ export type AppShellElements = {
   modeListBtn: HTMLButtonElement;
   presence: HTMLElement;
   sourceOrigin: HTMLElement;
+  appMenuBtn: HTMLButtonElement;
+  appMenu: HTMLElement;
+  appMenuEmpty: HTMLButtonElement;
+  logoutBtn: HTMLButtonElement;
   settingsBtn: HTMLButtonElement;
   settings: HTMLElement;
   settingsNav: HTMLElement;
@@ -303,14 +309,63 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     attrs: { id: 'tl-settings-btn', hidden: true },
   });
   const presence = AvatarStack({ ariaLabel: 'Online', hidden: true, attrs: { id: 'presence' } });
-  // Only an admin is offered the area (main.ts unhides it). Hiding it is an
-  // affordance, never the permission: /api/settings and /api/members refuse
-  // anyone else whatever is on screen.
-  const settingsBtn = Button({
+  // The instance's own controls, behind one trigger at the trailing edge.
+  //
+  // „Einstellungen" was an outline button sitting in the row itself, which was
+  // survivable while the timeline's gear was a sun nobody read as settings. Drawn
+  // as an actual gear, the row had two settings entries told apart only by where
+  // they sat. A menu answers that without spending a second glyph on it, and it is
+  // where „Abmelden" finally has a home: `/auth/logout` has existed in the auth
+  // gate all along (netlify/edge-functions/auth.ts) with nothing in the interface
+  // pointing at it.
+  //
+  // Both rows are hidden here and offered by main.ts — one by role, one by whether
+  // there is a session at all. An affordance, never the permission: /api/settings
+  // and /api/members refuse anyone else whatever is on screen. The trigger stays
+  // regardless of what is behind it, so the menu is findable on an instance where
+  // neither applies (see refreshAppMenu in src/appMenu.ts).
+  const settingsBtn = MenuItem({
     label: 'Einstellungen',
-    variant: 'outline',
-    ariaLabel: 'Einstellungen dieser Instanz',
     attrs: { id: 'settings-btn', hidden: true },
+  });
+  // A navigation rather than a fetch: the gate answers with a 302 that also clears
+  // the cookie, so following it in the address bar is the whole logout. Absent
+  // where there is no session to end — a static deploy and the dev server have no
+  // gate, and an entry that 404s is worse than none.
+  const logoutBtn = MenuItem({
+    label: 'Abmelden',
+    attrs: { id: 'logout-btn', hidden: true },
+  });
+  // What the menu says when neither row applies, which is the normal state of an
+  // ungated instance: no access control means no role to administer with, and no
+  // auth gate means no session to end. The trigger is on screen either way, so
+  // something has to be behind it — an empty popover reads as a failed load, and
+  // the alternative (hiding the trigger too) makes the whole menu invisible on
+  // every instance it is developed on.
+  const appMenuEmpty = MenuItem({
+    label: 'Keine Instanz-Aktionen',
+    none: true,
+    disabled: true,
+    attrs: { id: 'app-menu-empty', hidden: true },
+  });
+  const appMenu = Menu({
+    hidden: true,
+    ariaLabel: 'Menü',
+    alignEnd: true,
+    minWidth: 180,
+    attrs: { id: 'app-menu' },
+    children: [settingsBtn, logoutBtn, appMenuEmpty],
+  });
+  const appMenuBtn = IconButton({
+    icon: Icon({ name: 'menu', chrome: true, size: 'md', standalone: true }),
+    ariaLabel: 'Menü',
+    boxSize: 'md',
+    attrs: {
+      id: 'app-menu-btn',
+      'aria-haspopup': 'true',
+      'aria-expanded': 'false',
+      'aria-controls': 'app-menu',
+    },
   });
   const addBtn = Button({
     label: '+ Eintrag',
@@ -352,7 +407,10 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       // the layout: exactly one timeline is ever open, so no position here can say
       // the wrong one. What the trailing edge does buy is the place every other
       // tool puts the people on a document, and a header row that stays one line.
-      ToolbarGroup({ end: true, children: [presence, settingsBtn] }),
+      ToolbarGroup({
+        end: true,
+        children: [presence, ToolbarAnchor({ children: [appMenuBtn, appMenu] })],
+      }),
     ],
   });
 
@@ -517,6 +575,10 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       modeListBtn,
       presence,
       sourceOrigin,
+      appMenuBtn,
+      appMenu,
+      appMenuEmpty,
+      logoutBtn,
       settingsBtn,
       settings: instanceArea.root,
       settingsNav: instanceArea.nav,

@@ -434,8 +434,8 @@ export const ROUTES: RouteDef[] = [
       {
         method: 'GET',
         summary: 'Who the caller is',
-        description: 'Reads the session behind the auth gate; the cookie is HttpOnly, so the client cannot determine this itself. Without a gate it answers a placeholder identity.',
-        responses: { '200': { description: 'The current identity.', schema: { type: 'object', properties: { email: { type: 'string' }, name: { type: 'string' } } } }, ...commonErrors() },
+        description: 'Reads the session behind the auth gate; the cookie is HttpOnly, so the client cannot determine this itself. Without a gate it answers a placeholder identity.\n\nThree fields answer three different questions, and none of them implies another. `email` is who the caller is; the dev server answers it with an identity so presence and attribution stay testable on one machine. `session` is whether there is a session that can be ended, which only the gate can say and which is what decides whether the interface offers `/auth/logout`. `accessControl` is whether this instance has roles at all — `role` is absent both when it does not and when the caller is simply not a member, so a client that has only `role` cannot tell an instance without administration from a caller without permission.',
+        responses: { '200': { description: 'The current identity.', schema: { type: 'object', properties: { email: { type: 'string' }, name: { type: 'string' }, session: { type: 'boolean' }, accessControl: { type: 'boolean' }, role: { type: 'string' }, status: { type: 'string' } } } }, ...commonErrors() },
       },
     ],
   },

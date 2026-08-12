@@ -95,7 +95,8 @@ are deliberately not part of this.
 | Control | Where it is today | Level | What follows |
 | --- | --- | --- | --- |
 | App mark | header, left | 1 | the entry into the instance |
-| „Einstellungen" | header, right | 1 | done: the `#settings` route |
+| „Einstellungen" | the header menu | 1 | done: the `#settings` route, reached from the menu at the trailing edge rather than from a button in the row. Offered on a `manage` role, or to anybody where no access control runs — gating it on a role nobody can hold hid the one page that says so |
+| „Abmelden" | the header menu | 1 | done: `/auth/logout` had existed in the auth gate from the start with nothing pointing at it. Offered only where a session exists, which only the gate can report |
 | Access switch, domains, instance profile | env, shown in `#settings=instance` | 1 | done: origin and reason on every row |
 | „Plugins" panel | footer | 1 + 3 | the catalog belongs in the instance area; the per-timeline half belongs to level 3. The footer entry stays reachable from a timeline, because that is where „why is this view missing" gets asked |
 | Timeline switcher | header, left | 2 | done: search, grouped by origin, the open one marked; the trigger doubles as the statement of which timeline is open |
@@ -166,9 +167,28 @@ control goes, so the argument is had once.
 
 Not a layout, just the set of places the levels demand. One each.
 
-- **Levels 1 and 2** share an entry in the header. There is no start page: the app
-  opens a timeline, so level 2 is a switcher over the open timeline and level 1 is
-  a route behind the same entry.
+- **Levels 1 and 2** are both in the header and at opposite ends of it. There is no
+  start page: the app opens a timeline, so level 2 is the switcher over the open
+  timeline, at the leading edge beside the logo. Level 1 is a menu at the trailing
+  edge holding „Einstellungen" and „Abmelden", each offered only where it applies:
+  „Einstellungen" to a role that may `manage`, or to anybody on an instance that
+  runs no access control at all, since the area's content is then the sentence
+  saying so (see „The cost of gating it on `manage`" in [`settings.md`](settings.md));
+  „Abmelden" wherever a session exists, which only the auth gate can report.
+
+  It is a menu rather than a button because level 3 needs a gear of its own, and
+  two settings entries in one row told apart only by where they sit is not a
+  distinction anybody makes at a glance. The row is not the place for „Konto"
+  either: there is no account surface, and a heading over an empty one would be
+  inventing a level rather than naming it.
+
+  **The trigger is always on screen, and the empty case says so in a row.** Hiding
+  the trigger when neither action applies was the first shape of this and it reads
+  well until you notice which instances it hides on: an ungated one has no role to
+  administer with and no session to end, which is every instance this is developed
+  on. The menu was then invisible precisely where somebody goes looking for it.
+  What an empty menu must not be is an empty popover, which reads as a failed load
+  rather than as an answer.
 - **Level 3** needs a header for the open timeline: name, origin, who else is
   looking, the way into its settings. The name leads, with nothing written in front
   of it, and the gear that opens `#timeline-settings=<section>` sits directly against

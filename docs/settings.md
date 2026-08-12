@@ -139,10 +139,24 @@ the timeline the operator left rather than to the default view. The section is
 recorded from the URL *before* the first `syncUrl`, or the section a deep link
 named would be stripped out of the URL it arrived in.
 
-The header button is offered only to somebody who may `manage` — an affordance,
-never the permission. The **deep link opens the area for anybody**, and the
-sections then show whatever the server answers. A silently ignored link would
-leave the reader with a timeline and no explanation.
+The entry sits in the header menu at the trailing edge, and it is offered on two
+different grounds because the area answers two different questions. With access
+control **on** it administers, so somebody who may `manage` is offered it and
+nobody else — an affordance, never the permission. With it **off** there is no
+role that could satisfy `manage`, so gating on one hid the entry from everybody on
+exactly the instance whose operator wants to read „access control is off here, set
+`TIMELINES_ACCESS_CONTROL=true`" — the refusal above, the one written to be worth
+following. It was reachable only by typing the hash by hand.
+
+The **deep link opens the area for anybody** either way, and the sections then show
+whatever the server answers. A silently ignored link would leave the reader with a
+timeline and no explanation.
+
+Telling the two cases apart needs a field of its own: `role` is absent both while
+access control is off and for a caller who is not a member of an instance that has
+it on. `GET /api/me` reports `accessControl` for that reason, from the environment
+rather than from any lookup, and the dev server mirrors it — a field only
+production sets is a field whose consequences only production shows.
 
 While the area is open the timeline, the list, the detail panel, `+ Eintrag` and
 the footer are hidden by a class on `<body>`, **not** by setting `hidden` on each
