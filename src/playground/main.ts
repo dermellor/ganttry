@@ -18,6 +18,7 @@ import '../design-system';
 import './playground.css';
 import {
   AppMain,
+  AppMark,
   Avatar,
   Badge,
   AvatarStack,
@@ -323,7 +324,11 @@ const marksSection = section(
       ...TIMELINE_ICONS.map(({ key, label }) =>
         specimen(key, Icon({ name: key, size: 'lg', standalone: true, attrs: { title: label } })),
       ),
-      ...['delete', 'warning', 'check'].map((name) =>
+      // Every `--ui-icon-*` in icons.css belongs here. The list is hand-kept and had
+      // already lost `caret`, which is how a chrome glyph goes years without anyone
+      // looking at it — the gear was a sun the whole time it was drawn inline in
+      // appShell.ts, outside both this grid and the glyph file.
+      ...['delete', 'warning', 'check', 'caret', 'gear', 'menu', 'view'].map((name) =>
         specimen(`ui: ${name}`, Icon({ name, chrome: true, size: 'lg', standalone: true })),
       ),
     ]),
@@ -626,6 +631,16 @@ const selectorSection = section(
           ],
         }),
       ),
+      specimen(
+        'SegmentedControl mit Label',
+        SegmentedControl({
+          label: 'Risiken',
+          segments: [
+            { value: 'matrix', label: 'Matrix', icon: fromHtml(TIMELINE_GLYPH) },
+            { value: 'cards', label: 'Karten', icon: fromHtml(LIST_GLYPH), selected: true },
+          ],
+        }),
+      ),
       specimen('Separator, horizontal', el('div', { style: 'width:120px' }, Separator())),
       specimen('Separator, vertikal', el('div', { class: 'pg-VRule' }, Separator({ orientation: 'vertical' }))),
     ),
@@ -814,7 +829,7 @@ const frameSection = section(
         children: [
           ToolbarGroup({
             children: [
-              el('span', { class: 'ds-AppMark' }),
+              AppMark(),
               ToolbarControl({ label: 'Timeline', children: Select({ wide: true, options: [{ value: 'v', label: 'Produkt-Roadmap' }] }) }),
               Checkbox({ label: 'Nur Meilensteine', className: 'ds-ToolbarControl' }),
             ],

@@ -59,9 +59,31 @@
      style as the delete „×" so the two read as one family of rail marks — this
      is chrome, not the user-pickable `--icon-done`. */
   --ui-icon-check: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M5 12.5l5 5 9-10' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  /* The way into a settings area. **Filled**, and the teeth are part of the same
+     outline as the ring — which is the entire difference between a gear and a sun.
+     The version this replaced was a stroked circle with six detached strokes
+     around it, and at the 16px it is actually used at, detached strokes are a sun
+     every time: there is no room left to read them as teeth. Only `--ui-icon-warning`
+     is filled for a reason of its own; a stroked cog is the other thing that does
+     not survive 16px, because the gaps between the teeth close up at 2px stroke.
+     Six teeth on the 24-grid, hole punched by `fill-rule='evenodd'`. Six rather
+     than eight because a tooth has to survive being about one device pixel wide:
+     at 16px the eight-tooth version's gaps start closing, and what closes first
+     is what tells a gear from a flower. */
+  --ui-icon-gear: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%23000' fill-rule='evenodd' d='M10.1 2.59A9.6 9.6 0 0 1 13.9 2.59L14.26 5.06A7.3 7.3 0 0 1 16.88 6.58L19.2 5.65A9.6 9.6 0 0 1 21.1 8.94L19.14 10.48A7.3 7.3 0 0 1 19.14 13.52L21.1 15.06A9.6 9.6 0 0 1 19.2 18.35L16.88 17.42A7.3 7.3 0 0 1 14.26 18.94L13.9 21.41A9.6 9.6 0 0 1 10.1 21.41L9.74 18.94A7.3 7.3 0 0 1 7.12 17.42L4.8 18.35A9.6 9.6 0 0 1 2.9 15.06L4.86 13.52A7.3 7.3 0 0 1 4.86 10.48L2.9 8.94A9.6 9.6 0 0 1 4.8 5.65L7.12 6.58A7.3 7.3 0 0 1 9.74 5.06L10.1 2.59ZM12 8.8A3.2 3.2 0 1 0 12 15.2A3.2 3.2 0 1 0 12 8.8Z'/%3E%3C/svg%3E");
+  /* The saved-view mark: a bookmark, which is what a saved view is — a place
+     you come back to. Outline in the same weight and cap style as the delete
+     „×" and the fold caret, because it sits in the same chrome family; the item
+     set has nothing close enough to borrow, and borrowing one would tie a
+     control's glyph to a key the user can reassign. */
+  --ui-icon-view: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6.5 4.5h11a1 1 0 0 1 1 1v14l-6.5-4.2L5.5 19.5v-14a1 1 0 0 1 1-1Z' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   /* The fold caret on a summary bar and in the list's tree column. One glyph
      pointing down for both states: folded rotates it a quarter turn rather than
      swapping in a second icon, so the two states are visibly the same control. */
   --ui-icon-caret: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6 9.5l6 6 6-6' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  /* The header's own menu, at the trailing edge. Three rules in the weight and
+     cap style of the „×" and the check, because it sits in the same row as those
+     and a heavier bar set would read as a different family. */
+  --ui-icon-menu: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 7h15M4.5 12h15M4.5 17h15' stroke='%23000' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 

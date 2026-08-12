@@ -101,6 +101,14 @@
   cursor: pointer;
 }
 
+/* `display` beats the `hidden` attribute, so a component that sets one has to say
+   this or `hidden` does nothing at all — the same bug `.ds-Button` and `.ds-Badge`
+   had. It surfaced here on a menu whose rows are offered per role: without it,
+   „Einstellungen" stayed on screen for everyone. */
+.ds-MenuItem[hidden] {
+  display: none;
+}
+
 .ds-MenuItem:hover:not(:disabled),
 .ds-MenuItem[aria-expanded='true'] {
   background: var(--hover);

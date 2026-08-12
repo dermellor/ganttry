@@ -4,7 +4,7 @@
 // document. Pure and deterministic (no Date / IO) so it's unit-testable and the
 // caller stamps the date.
 
-import { statusOrDefault, type StatusKey } from '../../status';
+import { statusOrDefault, type StatusKey } from '../../pluginHost/api';
 import { PRICING_FEATURE_META_KEY, PRICING_ITEM_VERSION_META_KEY } from './plugin';
 import {
   type TimelineFileItem,
@@ -25,6 +25,17 @@ export type PricingDoc = {
 // Escape a value for use inside a Markdown table cell.
 function cell(s: string): string {
   return s.replace(/\|/g, '\\|').replace(/\n/g, ' ').trim();
+}
+
+// Display label for a version id, falling back to the id itself when no label is
+// declared. Every place that PRINTS a version (the switcher, the "ab <version>"
+// chips, the version dropdowns, the exported matrix) goes through here; the
+// comparison/ordering helpers below never do, because they operate on ids. The
+// fallback is deliberate: a re-keyed timeline whose config lost a label still
+// renders something addressable rather than an empty chip (issue #110).
+export function versionLabel(labels: Record<string, string> | undefined, id: string): string {
+  const label = labels?.[id];
+  return label != null && label !== '' ? label : id;
 }
 
 // Cumulative version filter (shared by the app matrix + potential export use):
@@ -198,11 +209,16 @@ export function resolveFeatureDescriptionParts(
  * the feature carries no description at all. Kept for non-HTML consumers (tests,
  * plain-text contexts).
  */
-export function resolveFeatureDescription(feature: PricingFeature, versions: string[]): string {
+export function resolveFeatureDescription(
+  feature: PricingFeature,
+  versions: string[],
+  labels?: Record<string, string>,
+): string {
   const { base, notes } = resolveFeatureDescriptionParts(feature, versions);
   const lines: string[] = [];
   if (base) lines.push(base);
-  for (const n of notes) lines.push(`ab ${n.version}: ${n.text}`);
+  // `n.version` is a version id; the note prints its label (id fallback built in).
+  for (const n of notes) lines.push(`ab ${versionLabel(labels, n.version)}: ${n.text}`);
   return lines.join('\n');
 }
 
@@ -405,6 +421,36 @@ export function slugId(name: string, taken: Iterable<string>, fallback: string):
   }
 }
 
+/** One ordered version entry: a display label and, for an EXISTING version being
+ *  kept or renamed, its stable id. */
+export type VersionEntry = { label: string; id?: string };
+
+/**
+ * Turn an ordered list of `{label, id?}` entries into the plugin config a version
+ * carries: `versions` (ordered ids) and `versionLabels` (id → label). Used by the
+ * label→id migration, and available to any caller building a version config for
+ * `enable_plugin` rather than hand-assembling the two structures.
+ *
+ * An entry that brings its own `id` keeps it — that is the whole point of the
+ * split (issue #110): a rename is the same id with a new label, so every
+ * `featureVersion` / feature `version` / `valueVersions` / `*ByVersion` key still
+ * resolves. An entry without an id is a new version and gets a slug of its label
+ * (via `slugId`), uniquified against the ids already assigned so two versions
+ * never collide, with `v` as the fallback for a label that slugifies to nothing.
+ */
+export function versionConfigFromEntries(
+  entries: VersionEntry[],
+): { versions: string[]; versionLabels: Record<string, string> } {
+  const versions: string[] = [];
+  const versionLabels: Record<string, string> = {};
+  for (const entry of entries) {
+    const id = entry.id?.trim() || slugId(entry.label, versions, 'v');
+    versions.push(id);
+    versionLabels[id] = entry.label;
+  }
+  return { versions, versionLabels };
+}
+
 export function groupFeatures(features: PricingFeature[]): { group: string; features: PricingFeature[] }[] {
   const order: string[] = [];
   const byGroup = new Map<string, PricingFeature[]>();
@@ -431,6 +477,7 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
   const tiers = pricing.tiers ?? [];
   const features = pricing.features ?? [];
   const versions = pricing.versions ?? [];
+  const labels = pricing.versionLabels;
   const title = (name?.trim() || timelineId) + ' – Preismodell';
 
   const lines: string[] = [];
@@ -474,7 +521,7 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
       }
       for (const f of fs) {
         const marks = tiers.map((t) => markdownCell(t, f.id));
-        const tail = withVersions ? [f.version ? cell(f.version) : ''] : [];
+        const tail = withVersions ? [f.version ? cell(versionLabel(labels, f.version)) : ''] : [];
         lines.push(`| ${cell(resolveFeatureName(f, versions, null))} | ${[...marks, ...tail].join(' | ')} |`);
       }
     }

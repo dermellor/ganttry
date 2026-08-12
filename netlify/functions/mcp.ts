@@ -17,6 +17,7 @@ import { getServiceClient } from '../../scripts/db/client.ts';
 import { resolveAdapter, resolveRepo, type DbConnections, type ApiRequest } from '../../scripts/db/api.ts';
 import { MOVE_SEGMENT, handlePluginsApi, type PluginsApiRequest } from '../../scripts/db/plugin-api.ts';
 import { resolveGroupPatch, resolveItemPatch, type ItemPatch } from '../../scripts/mcp/patch.ts';
+import { NO_BUCKET, SAVED_VIEW_HELP, savedViewDimensions } from '../../scripts/mcp/savedViewTools.ts';
 import type { TimelineGroupDecl } from '../../scripts/db/timeline-repo.ts';
 import type { TimelineFileItem } from '../../src/types.ts';
 
@@ -165,6 +166,64 @@ function buildServer(updatedBy: string): McpServer {
   server.tool('delete_group', 'Delete a group by id.', { id: z.string(), groupId: z.string() }, async ({ id, groupId }) =>
     ok(await run({ method: 'DELETE', id, sub: { kind: 'group', childId: groupId } })),
   );
+  // ---- saved views --------------------------------------------------------
+  //
+  // The same four tools the stdio server carries, against the dispatcher rather
+  // than over HTTP. `owner` is what makes „set this person up with the views they
+  // need" possible: the row belongs to them, not to whoever holds the token. It
+  // grants nothing — a saved view decides whose list it appears in and nothing
+  // else — which is why writing another address here is ordinary.
+
+  const savedViewFields = {
+    name: z.string().optional().describe('What the view is called. Required when creating one.'),
+    mode: z
+      .string()
+      .optional()
+      .describe('Presentation: "timeline", "list" or "plugin:<pluginId>:<viewId>". Absent leaves it alone.'),
+    groupBy: z.string().optional().describe('Grouping dimension, e.g. "status" or "cf:tier".'),
+    filters: z
+      .record(z.array(z.string()))
+      .optional()
+      .describe('Selected values per dimension. AND across dimensions, OR within one.'),
+    owner: z.string().optional().describe('E-mail of the person this view is for; defaults to the caller.'),
+    visibility: z.enum(['private', 'instance']).optional().describe('"instance" shares it with every member.'),
+  };
+
+  server.tool(
+    'describe_view_dimensions',
+    'The grouping dimensions and filter values a timeline offers, as `groupBy` keys and `filters` ' +
+      `values for the saved-view tools. The value "${NO_BUCKET}" is the "Ohne …" bucket.`,
+    { id: z.string() },
+    async ({ id }) => ok({ id, dimensions: savedViewDimensions((await run({ method: 'GET', id })) as never) }),
+  );
+  server.tool(
+    'list_saved_views',
+    `The saved views on a timeline that this identity may see. ${SAVED_VIEW_HELP}`,
+    { id: z.string() },
+    async ({ id }) => ok(await run({ method: 'GET', id, sub: { kind: 'saved-view' } })),
+  );
+  server.tool(
+    'create_saved_view',
+    `Store a new saved view on a timeline. ${SAVED_VIEW_HELP}`,
+    { id: z.string(), ...savedViewFields },
+    async ({ id, ...view }) => ok(await run({ method: 'POST', id, sub: { kind: 'saved-view' }, body: view })),
+  );
+  server.tool(
+    'update_saved_view',
+    'Patch one saved view: only the fields given change, and null clears `mode`, `groupBy` or ' +
+      '`filters`. The id is fixed, because links carry it as `sv=<id>`.',
+    { id: z.string(), viewId: z.string(), ...savedViewFields },
+    async ({ id, viewId, ...patch }) =>
+      ok(await run({ method: 'PATCH', id, sub: { kind: 'saved-view', childId: viewId }, body: patch })),
+  );
+  server.tool(
+    'delete_saved_view',
+    'Remove a saved view. A shared one disappears for everybody.',
+    { id: z.string(), viewId: z.string() },
+    async ({ id, viewId }) =>
+      ok(await run({ method: 'DELETE', id, sub: { kind: 'saved-view', childId: viewId } })),
+  );
+
   server.tool(
     'replace_timeline',
     'Replace a whole timeline (bulk). Body is the full { items, groups, phases } object.',
@@ -173,10 +232,11 @@ function buildServer(updatedBy: string): McpServer {
   );
   server.tool(
     'set_pricing',
-    'BULK: replace a timeline\'s whole pricing model (features + tiers + highlights + versions) in one ' +
+    'BULK: replace a timeline\'s whole pricing model (features + tiers + highlights) in one ' +
       "call, and optionally set its type. Prefer the granular tools below (add_/update_/delete_feature, " +
-      '…_tier, set_tier_value, …_highlight, set_versions) for single edits — they touch one row and ' +
-      "don't clobber concurrent edits. Use this only to seed a new model or do a full rewrite. Set " +
+      '…_tier, set_tier_value, …_highlight) for single edits — they touch one row and ' +
+      "don't clobber concurrent edits. The version list is plugin config: set it with enable_plugin " +
+      "({ versions, versionLabels }). Use this only to seed a new model or do a full rewrite. Set " +
       "type to 'product' to surface the matrix.",
     { id: z.string(), pricing: z.record(z.any()), type: z.string().optional() },
     async ({ id, pricing, type }) => {
@@ -406,13 +466,14 @@ function buildServer(updatedBy: string): McpServer {
     { id: z.string(), highlightId: z.string() },
     async ({ id, highlightId }) => ok(await run({ method: 'DELETE', id, sub: { kind: 'highlight', childId: highlightId } })),
   );
-  server.tool(
-    'set_versions',
-    'Replace the ordered list of pricing version labels (e.g. ["1.0","2.0","3.0"]). Drives the matrix ' +
-      "version switcher and features' available-from ordering.",
-    { id: z.string(), versions: z.array(z.string()) },
-    async ({ id, versions }) => ok(await run({ method: 'PUT', id, sub: { kind: 'pversion' }, body: { versions } })),
-  );
+  // No dedicated version tools live here: a plugin's version list is ordinary
+  // plugin CONFIG, so it is set through the generic `enable_plugin` (PUT config),
+  // the same route every plugin's config uses. A product-roadmap config carries
+  // `versions` (stable ids) and `versionLabels` (id → display label); renaming a
+  // version is a config write that changes only a label, leaving every id — and
+  // so every reference to it — intact. Keeping this out of the MCP core is what
+  // `check-plugin-isolation` enforces: a built-in plugin gets no tool a
+  // third-party one could not. See the plugin's own README for the recipe.
   return server;
 }
 

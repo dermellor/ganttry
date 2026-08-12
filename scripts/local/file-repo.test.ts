@@ -763,3 +763,78 @@ describe('makeFileRepo: a read-only runtime', () => {
     assert.equal(isLocalWritable({ ...dirs, readOnly: true }, 'ro-flag'), false);
   });
 });
+
+describe('makeFileRepo: saved views', () => {
+  test('a saved view is written into the document the user owns', async () => {
+    await seed('sv-1');
+    const repo = makeFileRepo(dirs);
+    const stored = await repo.putSavedView(
+      'sv-1',
+      { id: 'q3', name: 'Q3', groupBy: 'status', filters: { status: ['Open'] }, owner: 'a@example.com', visibility: 'instance' },
+      undefined,
+      'a@example.com',
+    );
+    assert.equal(stored.id, 'q3');
+    const file = await raw('sv-1');
+    assert.equal(file.savedViews?.length, 1);
+    assert.equal(file.savedViews?.[0].name, 'Q3');
+    // The stamp is the file's mtime handed out for If-Match, so writing it into
+    // the document would freeze one moment into it — the plugin rows' rule.
+    assert.equal('version' in file.savedViews![0], false);
+    assert.equal(file.savedViews![0].createdBy, 'a@example.com');
+  });
+
+  test('every view reports the file version, which is what If-Match means here', async () => {
+    await seed('sv-2');
+    const repo = makeFileRepo(dirs);
+    await repo.putSavedView('sv-2', { id: 'a', name: 'A' });
+    await repo.putSavedView('sv-2', { id: 'b', name: 'B' });
+    const views = await repo.listSavedViews('sv-2');
+    assert.equal(views.length, 2);
+    assert.equal(new Set(views.map((v) => v.version)).size, 1, 'one file, one version');
+  });
+
+  test('a stale If-Match is refused, because the whole file is the unit', async () => {
+    await seed('sv-3');
+    const repo = makeFileRepo(dirs);
+    const first = await repo.putSavedView('sv-3', { id: 'a', name: 'A' });
+    await repo.putSavedView('sv-3', { id: 'b', name: 'B' });
+    await assert.rejects(
+      () => repo.putSavedView('sv-3', { id: 'a', name: 'A neu' }, first.version),
+      ConflictError,
+    );
+  });
+
+  test('a rewrite keeps the author, so an admin does not take a view over', async () => {
+    await seed('sv-4');
+    const repo = makeFileRepo(dirs);
+    await repo.putSavedView('sv-4', { id: 'a', name: 'A', owner: 'bob@example.com' }, undefined, 'bob@example.com');
+    const current = await repo.getSavedView('sv-4', 'a');
+    const stored = await repo.putSavedView(
+      'sv-4',
+      { ...current!, name: 'A korrigiert', owner: 'root@example.com' },
+      current!.version,
+      'root@example.com',
+    );
+    assert.equal(stored.owner, 'bob@example.com');
+    assert.equal(stored.updatedBy, 'root@example.com');
+  });
+
+  test('deleting the last one drops the key rather than leaving an empty array', async () => {
+    await seed('sv-5');
+    const repo = makeFileRepo(dirs);
+    await repo.putSavedView('sv-5', { id: 'a', name: 'A' });
+    await repo.deleteSavedView('sv-5', 'a');
+    assert.equal('savedViews' in (await raw('sv-5')), false);
+    assert.deepEqual(await repo.listSavedViews('sv-5'), []);
+  });
+
+  test('the timeline payload carries them, unfiltered — the dispatcher filters', async () => {
+    await seed('sv-6');
+    const repo = makeFileRepo(dirs);
+    await repo.putSavedView('sv-6', { id: 'a', name: 'A', owner: 'bob@example.com' });
+    const file = await repo.getTimeline('sv-6');
+    assert.equal(file?.savedViews?.length, 1);
+    assert.ok(file!.savedViews![0].version! > 0, 'stamped like the items beside them');
+  });
+});

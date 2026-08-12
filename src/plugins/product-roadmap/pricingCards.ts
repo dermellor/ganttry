@@ -5,9 +5,9 @@
 // "← Alles aus <prev>" row (arrow + pill). Read-only; highlights are the curated
 // layer (pricing.highlights). Class names + SVGs match the rendered original.
 
-import { escapeHtml } from '../../buildItems';
+import { escapeHtml } from '../../pluginHost/api';
 import { html, Separator } from '../../pluginHost/api';
-import { resolveHighlight, resolveHighlightLabel, type ResolvedHighlight } from './pricing';
+import { resolveHighlight, resolveHighlightLabel, versionLabel, type ResolvedHighlight } from './pricing';
 import type { TimelineFile } from '../../types';
 import type { PricingHighlight, PricingTier } from './types';
 import { currentPricing } from './compose';
@@ -45,15 +45,24 @@ function checkRow(inner: string): string {
 // Badge shown after a highlight label: "Neu" when the switcher pins the exact
 // introducing version, otherwise (in "Alle" mode) an "ab <version>" chip stating
 // when the highlight became available. Pre-existing highlights get neither.
-function highlightBadge(r: ResolvedHighlight, selected: string | null): string {
+function highlightBadge(
+  r: ResolvedHighlight,
+  selected: string | null,
+  labels?: Record<string, string>,
+): string {
   if (r.isNew) return '<span class="pricing-badge-new">Neu</span>';
   if (!selected && r.introducedVersion)
-    return `<span class="pricing-badge-version">ab ${escapeHtml(r.introducedVersion)}</span>`;
+    return `<span class="pricing-badge-version">ab ${escapeHtml(versionLabel(labels, r.introducedVersion))}</span>`;
   return '';
 }
 
-function bulletHtml(label: string, r: ResolvedHighlight, selected: string | null): string {
-  const badge = highlightBadge(r, selected);
+function bulletHtml(
+  label: string,
+  r: ResolvedHighlight,
+  selected: string | null,
+  labels?: Record<string, string>,
+): string {
+  const badge = highlightBadge(r, selected, labels);
   if (r.value) {
     return checkRow(
       `<span class="pc-label">${escapeHtml(label)}:</span> <span class="pc-value">${escapeHtml(r.value)}</span>${badge}`,
@@ -118,7 +127,7 @@ export function renderCardsHtml(
             );
           }
           for (const r of changed) {
-            lines.push(bulletHtml(resolveHighlightLabel(r.h, versions, selected), r.cur, selected));
+            lines.push(bulletHtml(resolveHighlightLabel(r.h, versions, selected), r.cur, selected, p.versionLabels));
           }
           return `<p class="pc-section-label">${escapeHtml(section)}</p><ul class="pc-features">${lines.join('')}</ul>`;
         })

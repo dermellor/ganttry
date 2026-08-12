@@ -179,6 +179,64 @@ export const ROUTES: RouteDef[] = [
     ],
   },
   {
+    path: '/api/source/{id}/saved-view',
+    pathParams: timelineId,
+    operations: [
+      {
+        method: 'GET',
+        summary: 'The saved views this caller may see',
+        description: 'A saved view is a named combination of presentation, grouping dimension and filter selection, stored with the timeline rather than in a browser. The answer carries every view shared with the instance plus the caller\'s own private ones, sorted by name; somebody else\'s private view is never in it.\n\nThey are also folded into `GET /api/source/{id}` under `savedViews`, already filtered the same way — one payload serves a database timeline and a static local one alike.',
+        responses: { '200': { description: 'The visible saved views.', schema: { type: 'object', required: ['savedViews'], properties: { savedViews: { type: 'array', items: ref('SavedView') } } } }, ...commonErrors() },
+      },
+      {
+        method: 'POST',
+        summary: 'Create a saved view',
+        description: '`name` is required; everything else is optional, and a view that states no `mode` deliberately leaves the presentation alone when applied. The `id` is derived from the name unless one is given, counting up on a collision — a stated id that is taken answers 409 instead, because a caller that names one means that one.\n\nTwo fields cost more than `read`: `visibility: "instance"` (publishing to everybody) and an `owner` other than the caller (creating a view **for** somebody, which is what an agent does). Both need `write` and answer 403 otherwise. Creating a private view of one\'s own needs only `read`, so a `viewer` can keep one.',
+        requestBody: ref('SavedView'),
+        responses: {
+          '201': { description: 'The created view.', schema: ref('SavedView') },
+          '403': { description: 'forbidden — publishing or naming another owner needs write access.', schema: ERROR },
+          '409': { description: 'saved_view_exists — the stated id is taken on this timeline.', schema: ERROR },
+          ...commonErrors(),
+        },
+      },
+    ],
+  },
+  {
+    path: '/api/source/{id}/saved-view/{viewId}',
+    pathParams: [...timelineId, { name: 'viewId', description: 'Saved view id within the timeline; the same value a link carries as `sv=`.' }],
+    operations: [
+      {
+        method: 'GET',
+        summary: 'One saved view',
+        description: 'A view the caller may not see answers 404 rather than 403 — the difference is only useful to somebody probing what exists.',
+        responses: { '200': { description: 'The view.', schema: ref('SavedView') }, ...commonErrors() },
+      },
+      {
+        method: 'PATCH',
+        summary: 'Update one saved view',
+        description: 'Touches only the keys present in the body; an explicit `null` on `mode`, `groupBy` or `filters` clears it, so a view can stop having an opinion about the presentation. The `id` is not patchable: changing it would leave every link carrying `sv=<old>` pointing at nothing.\n\nThe owner and an admin may edit; anybody else gets 403. Publishing and handing a view to another owner need `write`, exactly as on POST.',
+        optimisticLock: true,
+        requestBody: ref('SavedView'),
+        responses: {
+          '200': { description: 'The updated view.', schema: ref('SavedView') },
+          '403': { description: 'forbidden — the view belongs to somebody else, or the change needs write access.', schema: ERROR },
+          ...commonErrors(CONFLICT),
+        },
+      },
+      {
+        method: 'DELETE',
+        summary: 'Delete one saved view',
+        description: 'The owner or an admin. Deleting a shared view removes it for everybody, which is why it is not offered to every member who may write.',
+        responses: {
+          '200': { description: 'Deleted.', schema: OK },
+          '403': { description: 'forbidden — the view belongs to somebody else.', schema: ERROR },
+          ...commonErrors(),
+        },
+      },
+    ],
+  },
+  {
     path: '/api/source/{id}/watermark',
     pathParams: timelineId,
     operations: [
@@ -434,8 +492,8 @@ export const ROUTES: RouteDef[] = [
       {
         method: 'GET',
         summary: 'Who the caller is',
-        description: 'Reads the session behind the auth gate; the cookie is HttpOnly, so the client cannot determine this itself. Without a gate it answers a placeholder identity.',
-        responses: { '200': { description: 'The current identity.', schema: { type: 'object', properties: { email: { type: 'string' }, name: { type: 'string' } } } }, ...commonErrors() },
+        description: 'Reads the session behind the auth gate; the cookie is HttpOnly, so the client cannot determine this itself. Without a gate it answers a placeholder identity.\n\nThree fields answer three different questions, and none of them implies another. `email` is who the caller is; the dev server answers it with an identity so presence and attribution stay testable on one machine. `session` is whether there is a session that can be ended, which only the gate can say and which is what decides whether the interface offers `/auth/logout`. `accessControl` is whether this instance has roles at all — `role` is absent both when it does not and when the caller is simply not a member, so a client that has only `role` cannot tell an instance without administration from a caller without permission.',
+        responses: { '200': { description: 'The current identity.', schema: { type: 'object', properties: { email: { type: 'string' }, name: { type: 'string' }, session: { type: 'boolean' }, accessControl: { type: 'boolean' }, role: { type: 'string' }, status: { type: 'string' } } } }, ...commonErrors() },
       },
     ],
   },

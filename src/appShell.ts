@@ -33,8 +33,11 @@ import {
   el,
   fromHtml,
   Heading,
+  Icon,
   IconButton,
   html,
+  Menu,
+  MenuItem,
   Panel,
   PanelBody,
   PanelHeader,
@@ -63,6 +66,10 @@ export type AppShellElements = {
   graph: HTMLElement;
   contentArea: HTMLElement;
   modeToggle: HTMLElement;
+  pluginViewBar: HTMLElement;
+  savedViewsControl: HTMLElement;
+  savedViewsToggle: HTMLButtonElement;
+  savedViewsMenu: HTMLElement;
   groupBy: HTMLSelectElement;
   groupByControl: HTMLElement;
   filterControl: HTMLElement;
@@ -78,6 +85,10 @@ export type AppShellElements = {
   modeGraphBtn: HTMLButtonElement;
   presence: HTMLElement;
   sourceOrigin: HTMLElement;
+  appMenuBtn: HTMLButtonElement;
+  appMenu: HTMLElement;
+  appMenuEmpty: HTMLButtonElement;
+  logoutBtn: HTMLButtonElement;
   settingsBtn: HTMLButtonElement;
   settings: HTMLElement;
   settingsNav: HTMLElement;
@@ -108,12 +119,6 @@ const TIMELINE_ICON = `
   <line x1="4" y1="6" x2="14" y2="6" />
   <line x1="9" y1="12" x2="20" y2="12" />
   <line x1="4" y1="18" x2="12" y2="18" />
-</svg>`;
-
-const GEAR_ICON = `
-<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  <circle cx="12" cy="12" r="3" />
-  <path d="M12 3.5v2M12 18.5v2M4.9 7.5l1.8 1M17.3 15.5l1.8 1M4.9 16.5l1.8-1M17.3 8.5l1.8-1" />
 </svg>`;
 
 const LIST_ICON = `
@@ -267,9 +272,14 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     ariaLabel: 'Timelines',
     attrs: { id: 'switcher-list' },
   });
+  // No caption: the trigger shows a timeline's name and opens a list grouped by
+  // origin, so „TIMELINE" in front of it labelled a document with the word
+  // „document". The one thing that caption did carry moved into the trigger's
+  // accessible name (see renderTrigger in src/timelineSwitcher.ts) — it was never
+  // tied to the button programmatically, so a reader who hears the page got
+  // nothing from it in the first place.
   const switcherControl = ToolbarControl({
     labelled: false,
-    label: 'Timeline',
     attrs: { id: 'switcher-control' },
     children: ToolbarAnchor({ children: [switcherBtn, switcherSearchWrap, switcherList] }),
   });
@@ -287,6 +297,10 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       { value: 'graph', label: 'Graph', icon: fromHtml(GRAPH_ICON) },
     ],
   });
+  // Where each plugin's own control goes: beside the built-in switch, not inside it.
+  // A plugin's views belong to that plugin, and the host builds one control per
+  // plugin into this row (see src/pluginHost/views.ts).
+  const pluginViewBar = el('div', { class: 'plugin-view-bar', id: 'plugin-views' });
   const [modeTimelineBtn, modeListBtn, modeGraphBtn] = Array.from(
     modeToggle.querySelectorAll('button'),
   );
@@ -304,20 +318,74 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // header unreadable in the first place. Unhidden by main.ts for a role that may
   // write — an affordance, never the permission.
   const tlSettingsBtn = IconButton({
-    icon: fromHtml(GEAR_ICON),
+    // From the chrome glyph set rather than an inline drawing of its own: the two
+    // segmented-control icons below are inline because a segment's icon is part of
+    // that control's content, but a lone affordance glyph is exactly what
+    // `--ui-icon-*` is for — and being the only glyph outside icons.css is how this
+    // one stayed a sun through several passes over the header.
+    icon: Icon({ name: 'gear', chrome: true, size: 'md', standalone: true }),
     ariaLabel: 'Einstellungen dieser Timeline',
     boxSize: 'md',
     attrs: { id: 'tl-settings-btn', hidden: true },
   });
   const presence = AvatarStack({ ariaLabel: 'Online', hidden: true, attrs: { id: 'presence' } });
-  // Only an admin is offered the area (main.ts unhides it). Hiding it is an
-  // affordance, never the permission: /api/settings and /api/members refuse
-  // anyone else whatever is on screen.
-  const settingsBtn = Button({
+  // The instance's own controls, behind one trigger at the trailing edge.
+  //
+  // „Einstellungen" was an outline button sitting in the row itself, which was
+  // survivable while the timeline's gear was a sun nobody read as settings. Drawn
+  // as an actual gear, the row had two settings entries told apart only by where
+  // they sat. A menu answers that without spending a second glyph on it, and it is
+  // where „Abmelden" finally has a home: `/auth/logout` has existed in the auth
+  // gate all along (netlify/edge-functions/auth.ts) with nothing in the interface
+  // pointing at it.
+  //
+  // Both rows are hidden here and offered by main.ts — one by role, one by whether
+  // there is a session at all. An affordance, never the permission: /api/settings
+  // and /api/members refuse anyone else whatever is on screen. The trigger stays
+  // regardless of what is behind it, so the menu is findable on an instance where
+  // neither applies (see refreshAppMenu in src/appMenu.ts).
+  const settingsBtn = MenuItem({
     label: 'Einstellungen',
-    variant: 'outline',
-    ariaLabel: 'Einstellungen dieser Instanz',
     attrs: { id: 'settings-btn', hidden: true },
+  });
+  // A navigation rather than a fetch: the gate answers with a 302 that also clears
+  // the cookie, so following it in the address bar is the whole logout. Absent
+  // where there is no session to end — a static deploy and the dev server have no
+  // gate, and an entry that 404s is worse than none.
+  const logoutBtn = MenuItem({
+    label: 'Abmelden',
+    attrs: { id: 'logout-btn', hidden: true },
+  });
+  // What the menu says when neither row applies, which is the normal state of an
+  // ungated instance: no access control means no role to administer with, and no
+  // auth gate means no session to end. The trigger is on screen either way, so
+  // something has to be behind it — an empty popover reads as a failed load, and
+  // the alternative (hiding the trigger too) makes the whole menu invisible on
+  // every instance it is developed on.
+  const appMenuEmpty = MenuItem({
+    label: 'Keine Instanz-Aktionen',
+    none: true,
+    disabled: true,
+    attrs: { id: 'app-menu-empty', hidden: true },
+  });
+  const appMenu = Menu({
+    hidden: true,
+    ariaLabel: 'Menü',
+    alignEnd: true,
+    minWidth: 180,
+    attrs: { id: 'app-menu' },
+    children: [settingsBtn, logoutBtn, appMenuEmpty],
+  });
+  const appMenuBtn = IconButton({
+    icon: Icon({ name: 'menu', chrome: true, size: 'md', standalone: true }),
+    ariaLabel: 'Menü',
+    boxSize: 'md',
+    attrs: {
+      id: 'app-menu-btn',
+      'aria-haspopup': 'true',
+      'aria-expanded': 'false',
+      'aria-controls': 'app-menu',
+    },
   });
   const addBtn = Button({
     label: '+ Eintrag',
@@ -340,21 +408,65 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
           // timeline is open. Everything about *how* it is drawn moved into the
           // bar below (see „Where every control belongs" in
           // docs/information-architecture.md).
-          // The open timeline, as one group: which one it is, where it comes
-          // from, and who else is looking at it. Presence used to sit on the
-          // right among the instance controls, which said it was about the
-          // deployment; a session joins per timeline (see „Where every control
-          // belongs" in docs/information-architecture.md).
-          el('div', { class: 'app-timeline-controls' }, [
-            switcherControl,
-            sourceOrigin,
-            tlSettingsBtn,
-            presence,
-          ]),
+          //
+          // A `ToolbarGroup` rather than a bare `<div>`: as a plain element it had
+          // no layout at all, and the avatar stack inside it — a block-level flex
+          // container — dropped onto a second line under the app mark, which grew
+          // the header by half again. Layout that a group already has must not be
+          // re-invented as an unstyled wrapper.
+          ToolbarGroup({
+            spacing: 'tight',
+            className: 'app-timeline-controls',
+            children: [switcherControl, sourceOrigin, tlSettingsBtn],
+          }),
         ],
       }),
-      ToolbarGroup({ end: true, children: [settingsBtn] }),
+      // Presence sits with the instance controls again, at the trailing edge. It
+      // was moved beside the timeline's name on the argument that a session joins
+      // per timeline rather than per deployment, and that argument does not reach
+      // the layout: exactly one timeline is ever open, so no position here can say
+      // the wrong one. What the trailing edge does buy is the place every other
+      // tool puts the people on a document, and a header row that stays one line.
+      ToolbarGroup({
+        end: true,
+        children: [presence, ToolbarAnchor({ children: [appMenuBtn, appMenu] })],
+      }),
     ],
+  });
+
+  // „Ansicht": the named bundle of the two controls that follow it, and — when the
+  // saved view states one — of the presentation chosen before them. It leads the
+  // group it is a shortcut over, so the row reads „this whole look, then the parts
+  // of it". Hidden until the timeline has one to offer or one can be made (see
+  // syncSavedViewsControl).
+  //
+  // **A mark, not a labelled control**, and that is the space decision: this bar
+  // already wraps onto a second row on a 13" window once a plugin contributes its
+  // own control, so a third „LABEL [Wert ▾]" pair is a cost the row cannot carry.
+  // Resting, it is one 30px box; it grows a name only while a view is applied,
+  // which is the state where the name is the point. `savedViewsToggle` therefore
+  // starts label-less and `syncSavedViewsControl` swaps its content — the caret
+  // comes and goes with it, since the variant suppresses it on an icon-only button.
+  const savedViewsToggle = Button({
+    variant: 'trigger',
+    icon: Icon({ name: 'view', chrome: true, size: 'sm', standalone: true }),
+    ariaLabel: 'Gespeicherte Ansichten',
+    attrs: { id: 'saved-views-toggle', 'aria-haspopup': 'true', 'aria-expanded': 'false' },
+  });
+  const savedViewsMenu = Popover({
+    role: 'group',
+    ariaLabel: 'Gespeicherte Ansichten',
+    scroll: true,
+    hidden: true,
+    attrs: { id: 'saved-views-menu' },
+  });
+  // No `ToolbarControl` around it: that component's job is to pair a caption with
+  // a control, and the caption is exactly what this variant gives up. The anchor
+  // is still needed — the panel positions against it — and it doubles as the box
+  // the outside-click test asks about.
+  const savedViewsControl = ToolbarAnchor({
+    attrs: { id: 'saved-views-control', hidden: true },
+    children: [savedViewsToggle, savedViewsMenu],
   });
 
   const groupBy = Select({ id: 'groupby' });
@@ -414,7 +526,13 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     tone: 'view',
     attrs: { id: 'view-toolbar' },
     children: [
-      ToolbarGroup({ children: [modeToggle, groupByControl, filterControl] }),
+      // Two groups on the left rather than one, because a toolbar wraps by whole
+      // flex items: with everything in one group, five plugin controls pushed
+      // „Gruppieren" onto a second line and the right-aligned actions onto a third.
+      // Split this way the bar is at most two rows — which presentation on the
+      // first, how it is bundled and narrowed on the second.
+      ToolbarGroup({ children: [modeToggle, pluginViewBar] }),
+      ToolbarGroup({ children: [savedViewsControl, groupByControl, filterControl] }),
       ToolbarGroup({ end: true, children: [addBtn, exportBtn] }),
     ],
   });
@@ -507,6 +625,10 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       graph,
       contentArea,
       modeToggle,
+      pluginViewBar,
+      savedViewsControl,
+      savedViewsToggle,
+      savedViewsMenu,
       groupBy,
       groupByControl,
       filterControl,
@@ -522,6 +644,10 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       modeGraphBtn,
       presence,
       sourceOrigin,
+      appMenuBtn,
+      appMenu,
+      appMenuEmpty,
+      logoutBtn,
       settingsBtn,
       settings: instanceArea.root,
       settingsNav: instanceArea.nav,

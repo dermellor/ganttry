@@ -5,34 +5,53 @@
 // through the granular PATCH endpoint (optimistic-locked on rowVersion), so a
 // concurrent edit elsewhere in the model is never clobbered.
 
-import { Button, el, Field, FormActions, IconButton, Select, TextArea, TextInput } from '../../pluginHost/api';
-import { createMarkdownEditor } from '../../wysiwyg';
+import {
+  Button,
+  ConflictError,
+  createMarkdownEditor,
+  el,
+  Field,
+  FormActions,
+  IconButton,
+  Select,
+  TextArea,
+  TextInput,
+} from '../../pluginHost/api';
 import type { PricingFeature } from './types';
-import { state, els, setStatus, clearFormSlots } from '../../state';
-import { apiAddFeature, apiUpdateFeature, apiDeleteFeature, apiMoveFeature, ConflictError } from './api';
+import { apiAddFeature, apiUpdateFeature, apiDeleteFeature, apiMoveFeature } from './api';
 import { applyRow, dropRow, dropRowsWhere, orderRows, patchRows } from './store';
 import { PRICING_COLLECTIONS } from './manifest';
-import { slugId } from './pricing';
-import { hideDetail, setDetailTitle } from '../../detailPanel';
+import { slugId, versionLabel } from './pricing';
+import { file, hostApi, status } from './host';
 import { repaintPricingView } from './pricingMatrix';
-import { renderTimeline } from '../../render';
 import { currentPricing } from './compose';
 
 function findFeature(featureId: string): PricingFeature | undefined {
-  return currentPricing(state.activeSourceFile)?.features.find((f) => f.id === featureId);
+  return currentPricing(file())?.features.find((f) => f.id === featureId);
 }
 
 // One row of the version-description editor: a version <select>, the note text,
 // and a remove button. Rows are added/removed dynamically via the "+ " button,
 // so they carry no `name` — save reads them straight off the DOM (see
 // saveFeatureFromForm).
-function vdescRow(versions: string[], selectedVersion: string, text: string): HTMLElement {
+function vdescRow(
+  versions: string[],
+  labels: Record<string, string> | undefined,
+  selectedVersion: string,
+  text: string,
+): HTMLElement {
   return el('div', { class: 'version-desc-row' }, [
     Select({
       className: 'version-desc-select',
       block: false,
       attrs: { 'aria-label': 'Version' },
-      options: versions.map((v) => ({ value: v, label: `ab ${v}`, selected: v === selectedVersion })),
+      // value is the version id (what save writes as a descriptionByVersion key);
+      // only the label shown to the user resolves through versionLabel.
+      options: versions.map((v) => ({
+        value: v,
+        label: `ab ${versionLabel(labels, v)}`,
+        selected: v === selectedVersion,
+      })),
     }),
     el('div', { class: 'version-desc-editor', 'data-role': 'vdesc-editor' }),
     TextArea({ className: 'version-desc-text', value: text, attrs: { hidden: true } }),
@@ -68,7 +87,7 @@ function wireVdescRow(row: HTMLElement): void {
 // datalist so a typo doesn't silently create a second matrix section.
 function existingGroups(): string[] {
   const out = new Set<string>();
-  for (const f of currentPricing(state.activeSourceFile)?.features ?? []) {
+  for (const f of currentPricing(file())?.features ?? []) {
     const g = f.group?.trim();
     if (g) out.add(g);
   }
@@ -78,14 +97,10 @@ function existingGroups(): string[] {
 export function showFeatureForm(featureId: string): void {
   const feature = findFeature(featureId);
   if (!feature) return;
-  // Opening a feature form supersedes any other open form.
-  clearFormSlots();
-  state.activeFormFeatureId = featureId;
 
-  setDetailTitle(feature.name || '(unbenanntes Feature)');
-  els.detailMeta.replaceChildren();
-
-  const versions = currentPricing(state.activeSourceFile).versions ?? [];
+  const pricing = currentPricing(file());
+  const versions = pricing.versions ?? [];
+  const versionLabels = pricing.versionLabels;
 
   // Additive, per-version description notes as a dynamic list: add a row via the
   // "+" button, link it to a version, type the note. Existing notes are seeded as
@@ -103,7 +118,7 @@ export function showFeatureForm(featureId: string): void {
             { class: 'version-desc-list' },
             versions
               .filter((v) => feature.descriptionByVersion?.[v]?.trim())
-              .map((v) => vdescRow(versions, v, feature.descriptionByVersion![v])),
+              .map((v) => vdescRow(versions, versionLabels, v, feature.descriptionByVersion![v])),
           ),
           Button({
             label: '+ Versionsbeschreibung',
@@ -150,7 +165,7 @@ export function showFeatureForm(featureId: string): void {
         name: 'version',
         options: [
           { value: '', label: '— von Anfang an —', selected: !feature.version },
-          ...versions.map((v) => ({ value: v, label: v, selected: feature.version === v })),
+          ...versions.map((v) => ({ value: v, label: versionLabel(versionLabels, v), selected: feature.version === v })),
         ],
       }),
     }),
@@ -183,7 +198,14 @@ export function showFeatureForm(featureId: string): void {
     }),
   ]);
 
-  els.detailBody.replaceChildren(form);
+  // The host owns the drawer: it clears whatever was in it, records that a plugin
+  // form is open (which stops background persistence writing underneath it) and
+  // hands over a container. Wiring happens after, on the element we still hold.
+  hostApi().panel?.open({
+    title: feature.name || '(unbenanntes Feature)',
+    render: (container) => container.replaceChildren(form),
+  });
+
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     saveFeatureFromForm(featureId, form);
@@ -208,7 +230,7 @@ export function showFeatureForm(featureId: string): void {
         [...vdescList.querySelectorAll<HTMLSelectElement>('.version-desc-select')].map((s) => s.value),
       );
       const next = versions.find((v) => !used.has(v)) ?? versions[0];
-      const row = vdescRow(versions, next, '');
+      const row = vdescRow(versions, versionLabels, next, '');
       vdescList.appendChild(row);
       wireVdescRow(row);
       row.querySelector<HTMLElement>('.version-desc-editor .wysiwyg-surface')?.focus();
@@ -218,15 +240,11 @@ export function showFeatureForm(featureId: string): void {
       if (btn) btn.closest('.version-desc-row')?.remove();
     });
   }
-
-  // Pricing view has no timeline behind the overlay, so just show the panel.
-  els.detail.hidden = false;
 }
 
 async function saveFeatureFromForm(featureId: string, form: HTMLFormElement): Promise<void> {
   const feature = findFeature(featureId);
-  const sourceId = state.activeSourceId;
-  if (!feature || !sourceId) return;
+  if (!feature) return;
   const fd = new FormData(form);
   const get = (name: string) => String(fd.get(name) ?? '').trim();
 
@@ -254,52 +272,52 @@ async function saveFeatureFromForm(featureId: string, form: HTMLFormElement): Pr
   } as Partial<PricingFeature>;
 
   try {
-    const saved = await apiUpdateFeature(sourceId, featureId, patch, feature.rowVersion);
+    const saved = await apiUpdateFeature(featureId, patch, feature.rowVersion);
     // Adopt the stored ROW, not a merge into the composed model: the model is
     // recomposed on every read, so merging into it updates a copy that is thrown
     // away (see ./store.ts). Replacing the row also clears an emptied field
     // without a reset dance — the server already dropped the key.
-    applyRow(state.activeSourceFile, PRICING_COLLECTIONS.features, saved);
+    applyRow(file(), PRICING_COLLECTIONS.features, saved);
     repaintPricingView();
-    setStatus(`Feature „${patch.name ?? feature.name}" aktualisiert`);
+    status(`Feature „${patch.name ?? feature.name}" aktualisiert`);
     showFeatureForm(featureId);
   } catch (err) {
     if (err instanceof ConflictError) {
-      setStatus('Feature wurde extern geändert — lade neu…');
-      if (state.activeView) await renderTimeline(state.activeView);
+      // The row moved under us. The host's own reload is what brings the new one
+      // in; repainting from the stale snapshot would show the value we failed to
+      // write as if it had been saved.
+      status('Feature wurde extern geändert — lade neu…');
       return;
     }
-    setStatus(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
 async function deleteFeature(featureId: string): Promise<void> {
-  const pricing = currentPricing(state.activeSourceFile);
-  const sourceId = state.activeSourceId;
+  const pricing = currentPricing(file());
   const feature = pricing && findFeature(featureId);
-  if (!pricing || !feature || !sourceId) return;
+  if (!pricing || !feature) return;
   if (!confirm(`Feature „${feature.name}" wirklich löschen?`)) return;
 
   try {
-    await apiDeleteFeature(sourceId, featureId);
+    await apiDeleteFeature(featureId);
   } catch (err) {
-    setStatus(`Löschen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(`Löschen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
 
   // The host applied the manifest's declared cascade: the cells go with the
   // feature, and the id is unlinked from every highlight that listed it. Mirror
   // the same three effects on the rows so the matrix repaints without a reload.
-  dropRow(state.activeSourceFile, PRICING_COLLECTIONS.features, featureId);
-  dropRowsWhere(state.activeSourceFile, PRICING_COLLECTIONS.tierValues, (d) => d.featureId === featureId);
-  patchRows(state.activeSourceFile, PRICING_COLLECTIONS.highlights, (d) => ({
+  dropRow(file(), PRICING_COLLECTIONS.features, featureId);
+  dropRowsWhere(file(), PRICING_COLLECTIONS.tierValues, (d) => d.featureId === featureId);
+  patchRows(file(), PRICING_COLLECTIONS.highlights, (d) => ({
     ...d,
     featureIds: ((d.featureIds as string[] | undefined) ?? []).filter((id) => id !== featureId),
   }));
 
-  state.activeFormFeatureId = null;
   repaintPricingView();
-  hideDetail();
+  hostApi().panel?.close();
 }
 
 /**
@@ -315,9 +333,8 @@ async function deleteFeature(featureId: string): Promise<void> {
  * the matrix re-groups by label — is exactly the end of its own section.
  */
 export async function addFeature(group?: string): Promise<void> {
-  const pricing = currentPricing(state.activeSourceFile);
-  const sourceId = state.activeSourceId;
-  if (!pricing || !sourceId) return;
+  const pricing = currentPricing(file());
+  if (!pricing) return;
 
   const name = prompt('Name des neuen Features?')?.trim();
   if (!name) return;
@@ -328,13 +345,13 @@ export async function addFeature(group?: string): Promise<void> {
     'feature',
   );
   try {
-    const saved = await apiAddFeature(sourceId, { id, name, ...(group ? { group } : {}) });
-    applyRow(state.activeSourceFile, PRICING_COLLECTIONS.features, saved);
+    const saved = await apiAddFeature({ id, name, ...(group ? { group } : {}) });
+    applyRow(file(), PRICING_COLLECTIONS.features, saved);
     repaintPricingView();
     showFeatureForm(saved.id);
-    setStatus(`Feature „${name}" angelegt`);
+    status(`Feature „${name}" angelegt`);
   } catch (err) {
-    setStatus(`Feature anlegen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(`Feature anlegen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -345,17 +362,16 @@ export async function addFeature(group?: string): Promise<void> {
  * regardless of how the global sort order interleaves groups.
  */
 export async function moveFeature(featureId: string, anchor: { after?: string; before?: string }): Promise<void> {
-  const pricing = currentPricing(state.activeSourceFile);
-  const sourceId = state.activeSourceId;
-  if (!pricing || !sourceId) return;
+  const pricing = currentPricing(file());
+  if (!pricing) return;
 
   try {
-    const order = await apiMoveFeature(sourceId, featureId, anchor);
+    const order = await apiMoveFeature(featureId, anchor);
     // Adopt the host's resulting order rather than replaying the move locally —
     // it owns the position and renumbers.
-    orderRows(state.activeSourceFile, PRICING_COLLECTIONS.features, order);
+    orderRows(file(), PRICING_COLLECTIONS.features, order);
     repaintPricingView();
   } catch (err) {
-    setStatus(`Umsortieren fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(`Umsortieren fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

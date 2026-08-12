@@ -20,7 +20,7 @@ import {
   TextInput,
   type Child,
 } from '../../pluginHost/api';
-import { state, setStatus } from '../../state';
+import { file, status } from './host';
 import { apiSetTierValue } from './api';
 import { applyRow, dropRow } from './store';
 import { PRICING_COLLECTIONS } from './manifest';
@@ -28,6 +28,7 @@ import { cellId } from './compose';
 import { anchorRect, layerFor } from './popover';
 import type { PricingTier } from './types';
 import { currentPricing } from './compose';
+import { versionLabel } from './pricing';
 
 const LAYER_ID = 'pm-cell-editor';
 
@@ -52,11 +53,10 @@ export function closeCellEditor(): void {
 }
 
 export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: string): void {
-  const pricing = currentPricing(state.activeSourceFile);
-  const sourceId = state.activeSourceId;
+  const pricing = currentPricing(file());
   const tier = pricing?.tiers.find((t) => t.id === tierId);
   const feature = pricing?.features.find((f) => f.id === featureId);
-  if (!pricing || !tier || !feature || !sourceId) return;
+  if (!pricing || !tier || !feature) return;
 
   closeCellEditor();
 
@@ -96,7 +96,11 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
               className: 'pm-ce-version',
               options: [
                 { value: '', label: '— von Anfang an —', selected: !availableFrom },
-                ...versions.map((v) => ({ value: v, label: v, selected: v === availableFrom })),
+                ...versions.map((v) => ({
+                  value: v,
+                  label: versionLabel(pricing.versionLabels, v),
+                  selected: v === availableFrom,
+                })),
               ],
             }),
           })
@@ -169,14 +173,13 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
     const value: string | boolean | null = m === 'on' ? true : m === 'value' && text ? text : null;
     const from = value === null ? null : versionSelect?.value.trim() || null;
     close();
-    void saveCell(sourceId, tier, featureId, value, from);
+    void saveCell(tier, featureId, value, from);
   });
 
   (modeInputs.find((i) => i.checked) ?? modeInputs[0])?.focus();
 }
 
 async function saveCell(
-  sourceId: string,
   tier: PricingTier,
   featureId: string,
   value: string | boolean | null,
@@ -187,9 +190,9 @@ async function saveCell(
   const { repaintPricingView } = await import('./pricingMatrix');
   let saved;
   try {
-    saved = await apiSetTierValue(sourceId, tier.id, featureId, value, availableFrom);
+    saved = await apiSetTierValue(tier.id, featureId, value, availableFrom);
   } catch (err) {
-    setStatus(`Zelle speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(`Zelle speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
 
@@ -198,9 +201,9 @@ async function saveCell(
   // updates a copy nothing reads (see ./store.ts). A cleared cell has no row at
   // all — which is also what drops its version gate, since the gate was a field
   // of the row rather than a thing of its own.
-  if (saved) applyRow(state.activeSourceFile, PRICING_COLLECTIONS.tierValues, saved);
-  else dropRow(state.activeSourceFile, PRICING_COLLECTIONS.tierValues, cellId(tier.id, featureId));
+  if (saved) applyRow(file(), PRICING_COLLECTIONS.tierValues, saved);
+  else dropRow(file(), PRICING_COLLECTIONS.tierValues, cellId(tier.id, featureId));
 
   repaintPricingView();
-  setStatus(value === null ? 'Zelle geleert' : 'Zelle gespeichert');
+  status(value === null ? 'Zelle geleert' : 'Zelle gespeichert');
 }

@@ -11,7 +11,7 @@
 // declared now and enforced by the generic store (#12) and the generic public
 // route (#20); until then they are documentation that the validator keeps honest.
 
-import type { PluginManifest } from '../../pluginHost/manifest';
+import type { PluginManifest } from '../../pluginHost/api';
 
 export const PRICING_COLLECTIONS = {
   features: 'features',
@@ -26,6 +26,18 @@ export const productRoadmapManifest: PluginManifest = {
   version: '1.0.0',
   apiVersion: '^1',
   capabilities: ['items:read', 'fields', 'views', 'data:own', 'public:read'],
+
+  // What the generated catalogue renders (PLUGINS.md). The keywords are the words
+  // a reader searches with rather than the ones the code uses: nobody looks for
+  // „tier values", and „Produkt" is the label in a German interface, not a term
+  // anybody types into a search.
+  catalogue: {
+    summary:
+      'Keeps a pricing matrix and the roadmap that fills it in one timeline, so the pricing page and the plan cannot drift apart.',
+    domain: 'product',
+    keywords: ['pricing matrix', 'pricing page', 'product roadmap', 'feature comparison', 'tiers', 'release planning'],
+    example: 'src:example-produkt-roadmap',
+  },
 
   views: [
     {
@@ -51,7 +63,14 @@ export const productRoadmapManifest: PluginManifest = {
   configSchema: {
     type: 'object',
     properties: {
+      // Ordered list of stable version IDs. Everything references a version by ID
+      // (see `Pricing.versions` in ./types.ts); the label is separate so a rename
+      // touches nothing else (issue #110).
       versions: { type: 'array', items: { type: 'string' } },
+      // Display label per version ID. `additionalProperties: {type: string}` is the
+      // JSON-Schema way to say „a string-valued map with arbitrary keys" — the keys
+      // are version ids, which are data, not a fixed set.
+      versionLabels: { type: 'object', additionalProperties: { type: 'string' } },
     },
     additionalProperties: false,
   },

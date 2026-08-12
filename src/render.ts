@@ -29,6 +29,7 @@ import {
   syncGroupByControl,
 } from './grouping';
 import { syncFilterControl } from './filterControl';
+import { syncSavedViewsControl } from './savedViewsControl';
 import { GROUP_DIM } from './listGrouping';
 import { DependencyArrows } from './arrows';
 import { HierarchyFolders } from './hierarchyFolders';
@@ -282,6 +283,10 @@ function computeDisplay(): { items: TimelineItem[]; groups: TimelineGroup[] } {
   const { dim, options } = resolveGrouping(entries);
   syncGroupByControl(options, dim);
   syncFilterControl();
+  // Every repaint, so the trigger's asterisk follows a grouping or filter change
+  // made in the two controls beside it. Cheap: the panel is a list of commands
+  // rebuilt from state, not something anybody is mid-way through ticking.
+  syncSavedViewsControl();
   regroupedMode = dim !== GROUP_DIM;
 
   const regroup = regroupForTimeline(filtered.items, filtered.groups, dim, options);
@@ -561,16 +566,17 @@ function clearLoadFailure(): void {
 }
 
 /**
- * The origin badge beside the open timeline's name. The wording lives in
- * [`src/sourceOrigin.ts`](./sourceOrigin.ts) (DOM-free, unit-tested); this is only
- * the two lines that put it on screen.
+ * The badge beside the open timeline's name. The wording *and* whether there is a
+ * badge at all live in [`src/sourceOrigin.ts`](./sourceOrigin.ts) (DOM-free,
+ * unit-tested); this is only the lines that put it on screen. An editable source
+ * shows none, so `hidden` is driven by the badge rather than always cleared here.
  */
 function showSourceOrigin(kind: SourceKind, editable: boolean, live: SourceLive): void {
   const badge = sourceOriginBadge(kind, editable, live);
   els.sourceOrigin.textContent = badge.label;
   els.sourceOrigin.dataset.tone = badge.tone;
   els.sourceOrigin.title = badge.title;
-  els.sourceOrigin.hidden = false;
+  els.sourceOrigin.hidden = !badge.shown;
 }
 
 function hideSourceOrigin(): void {

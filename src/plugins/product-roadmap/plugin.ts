@@ -15,7 +15,7 @@
 // extensionless relative import to nothing. A missing extension anywhere in that
 // graph fails the *deploy*, not the build or the tests — see the guard in
 // `netlify/edge-functions/imports.test.ts`.
-import { pluginConfig } from '../../pluginHost/plugins.ts';
+import { pluginConfig } from '../../pluginHost/api';
 import type { PluginRef, TimelineFile } from '../../types.ts';
 
 /** Stable id of the product-roadmap (pricing matrix/cards) plugin. */
@@ -35,18 +35,35 @@ export const PRICING_ITEM_VERSION_META_KEY = 'featureVersion';
 // key would orphan every value already stored on an item.
 export const PRICING_TIER_META_KEY = 'tier';
 
-/** The ordered version-label list a product-roadmap plugin config carries. */
+/** The ordered version-ID list a product-roadmap plugin config carries. */
 export function versionsFromConfig(config: Record<string, unknown> | null | undefined): string[] {
   const v = config?.versions;
   return Array.isArray(v) ? (v as string[]) : [];
 }
 
-/** Build a product-roadmap PluginRef from an ordered version list. */
-export function productRoadmapRef(versions: string[] | undefined): PluginRef {
-  return { id: PRODUCT_ROADMAP_PLUGIN, config: { versions: versions ?? [] } };
+/** The id→label map a product-roadmap plugin config carries (empty when unset). */
+export function versionLabelsFromConfig(
+  config: Record<string, unknown> | null | undefined,
+): Record<string, string> {
+  const v = config?.versionLabels;
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, string>) : {};
 }
 
-/** This plugin's version list as carried by a file's plugin row. */
+/**
+ * Build a product-roadmap PluginRef from an ordered version-ID list and an
+ * optional id→label map. Omitting the labels leaves the versions showing their
+ * raw ids, which is the correct default for a freshly-seeded timeline.
+ */
+export function productRoadmapRef(
+  versions: string[] | undefined,
+  versionLabels?: Record<string, string>,
+): PluginRef {
+  const config: Record<string, unknown> = { versions: versions ?? [] };
+  if (versionLabels && Object.keys(versionLabels).length) config.versionLabels = versionLabels;
+  return { id: PRODUCT_ROADMAP_PLUGIN, config };
+}
+
+/** This plugin's version-ID list as carried by a file's plugin row. */
 export function versionsOf(file: TimelineFile | null | undefined): string[] {
   return versionsFromConfig(pluginConfig(file, PRODUCT_ROADMAP_PLUGIN));
 }

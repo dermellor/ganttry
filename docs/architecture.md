@@ -99,10 +99,10 @@ reach this seam.
 ### Plugins (`src/pluginHost/`, `src/plugins/<id>/`)
 
 A **plugin** is the *orthogonal* axis to source kinds: it decides what a timeline
-carries beyond items and groups (extra item fields, and optionally extra views),
-not where its data comes from. The generic timeline+list core knows nothing
-plugin-specific; a plugin plugs into a registration seam
-([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)).
+carries beyond items and groups (extra item fields, optionally extra views, and
+the domain verbs an agent can call), not where its data comes from. The generic
+timeline+list core knows nothing plugin-specific; a plugin plugs into a
+registration seam ([`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts)).
 
 The split in the file tree says which half is which. `src/pluginHost/` is core and
 permanent: the registry, the view-mode encoding, the DOM a plugin view gets.
@@ -134,6 +134,34 @@ metadata keys it owns. Static data on purpose — listing, verifying and
 version-checking a plugin has to work **without executing it**, which is what makes
 installing one possible at all.
 
+**A plugin also contributes verbs, and that is the half fields cannot express.**
+An agent gets `add_item` and `update_item` from the core; the rule that decides
+*which* items and *what* dates is domain knowledge, and kept in a prompt it cannot
+be tested or reused. A `tools` declaration in the manifest names the verb and its
+arguments; the implementation is a **pure function** from the timeline, the
+plugin's config, the arguments and today's date to a plan of item changes
+([`src/pluginHost/tools.ts`](../src/pluginHost/tools.ts)). The host applies the
+plan through the write path it already owns, so capabilities, optimistic locking
+and the audit trail keep holding, and the rule stays unit-testable without a DOM
+or a database. Tool names share one flat namespace across installed plugins;
+`pluginTools()` resolves a contested name by registration order and reports the
+loser rather than shadowing it silently. Which processes run them, and why an
+installed artifact's do not, is in
+[`docs/plugin-isolation.md`](plugin-isolation.md).
+
+**The seam is enforced in both directions, and it took both to make it true.** #17
+removed what the core knew about one plugin: fifteen repo methods, seven API
+sub-resources, thirteen MCP tools, a public endpoint. #117 removed what that plugin
+knew about the core — 22 imports into `state.ts`, `render.ts`, `detailPanel.ts` and
+five more. The second half mattered for a reason the first does not suggest: a
+native plugin reaching into the app never *meets* a gap in the plugin API, so the
+gaps survive while looking like there are none. Closing it produced four contract
+methods (`DataApi.patch`, `panel`, `status`, `canWrite`) and moved two helpers to
+where a plugin can reach them.
+[`check-plugin-isolation.mjs`](../scripts/ci/check-plugin-isolation.mjs) asserts
+both directions, and its plugin-side allowlist is empty on purpose: an entry there
+is a gap to close, not an exception to grant.
+
 `register()` refuses a manifest that does not validate, loudly. Strictness is the
 point: a declaration the host silently ignored leaves the plugin running as if it
 had access it was never granted, and the symptom then surfaces far from the cause.
@@ -162,7 +190,7 @@ plugin attaching one to `document.body`.
 **The host API is async and serializable throughout**
 ([`src/pluginHost/hostApi.ts`](../src/pluginHost/hostApi.ts)), even though plugins
 currently run in the app's own realm where a direct call would be cheaper. The
-isolation decision is still open (<https://github.com/dermellor/zeitlines/issues/14>),
+isolation decision is still open (<https://github.com/zeitlines/zeitlines/issues/14>),
 and an API shaped around shared objects cannot be moved behind an iframe or a
 worker afterwards without rewriting every plugin. `createHostApi` gates by
 capability structurally: without `items:write` there is no item-write method to
@@ -171,7 +199,7 @@ call, rather than a check that refuses at call time.
 The contract is re-exported as one import from
 [`src/pluginHost/api.ts`](../src/pluginHost/api.ts), which pulls in no runtime code
 from the app. Publishing it as a package belongs with distribution
-(<https://github.com/dermellor/zeitlines/issues/15>).
+(<https://github.com/zeitlines/zeitlines/issues/15>).
 
 **Which plugins an instance HAS is a row, not a build.** `installed_plugins`
 records the artifact, its pinned version, the capabilities an operator granted and
@@ -193,11 +221,27 @@ Postgres-only capability, which would undo the symmetry the source adapters just
 achieved.
 
 **A plugin declares its views; the host builds the chrome.** `PluginView` carries
-an id, a label, the icon markup for the header toggle, and the **accessories** the
-view wants. The host creates one button and one `.plugin-view` section per declared
-view ([`src/pluginHost/views.ts`](../src/pluginHost/views.ts)) and hands the section
-to `renderView(container, viewId)`. Nothing plugin-shaped is in `index.html`, which
-is what makes a second view possible without touching the core.
+an id, a label, the icon markup for its segment, and the **accessories** the view
+wants. The host creates one `.plugin-view` section per declared view
+([`src/pluginHost/views.ts`](../src/pluginHost/views.ts)) and hands it to
+`renderView(container, viewId)`. Nothing plugin-shaped is in `index.html`, which is
+what makes a second view possible without touching the core.
+
+**One control per plugin, not one segment per view.** Every declared view used to be
+appended into the built-in switch as a peer of Timeline and Liste. Measured on five
+plugins declaring three views each: 17 segments in a control that divides its width
+rather than asking for more, 34px each for labels needing 90 — and since an icon
+segment renders only its icon, fifteen identical unlabelled squares whose meaning was
+reachable only by hovering one after another. A plugin's views are „matrix, cards,
+board" *of that plugin*, so `pluginViewGroup` gives each plugin its own
+`SegmentedControl` carrying the plugin's name inside it, before its first segment.
+That caption is the only thing explaining the icons, so it is not optional.
+
+The unit that is shown, hidden and marked active is therefore the **plugin**, not the
+view: its views arrive and go together, because enablement is per plugin.
+`setActivePluginGroup` marks the owning control while one of its views is active —
+`aria-pressed` on the segment alone leaves „some square is dark" as the only signal,
+which with five plugins is not an answer.
 
 **Accessories are declared per control, and the host asks every presentation the
 same way.** `accessories: { grouping?, filter?, create?, export? }` says whether the
@@ -265,7 +309,7 @@ Adding a plugin is a `register()` call plus a `src/plugins/<id>/` folder, and no
 core-file change. The step-by-step is
 [`docs/plugin-playbook.md`](plugin-playbook.md); the endgame, where a plugin is
 installed at runtime instead of registered at build time, is
-<https://github.com/dermellor/zeitlines/issues/9>.
+<https://github.com/zeitlines/zeitlines/issues/9>.
 
 **Enablement is pure data (the plugin registry table).** Which plugins a timeline
 carries is **not** a column on a core table. It lives in the generic

@@ -393,6 +393,56 @@ export type GraphConfig = {
   referenceGroup?: string;
 };
 
+/**
+ * Who a saved view is for.
+ *
+ * `private` is the default because a half-built narrowing is the normal state of
+ * one: somebody sets a filter, keeps it, and refines it over a week. Publishing is
+ * a separate act, and it needs `write` — a `viewer` may keep their own without
+ * being able to put one in front of everybody (see docs/users.md).
+ */
+export type SavedViewVisibility = 'private' | 'instance';
+
+/**
+ * A named combination of presentation, grouping dimension and filter selection,
+ * stored with the timeline rather than in one person's browser.
+ *
+ * The display state itself is per person and per timeline in `localStorage`
+ * (docs/editing.md → „Where the display state lives"). That answers „how am I
+ * looking at this right now" and cannot answer „the way we look at this every
+ * Monday", because it has no name, no second reader and no address.
+ *
+ * What it deliberately does NOT carry is the visible time window. An absolute
+ * window ages into something nobody wants to see within a quarter, and „the next
+ * three months" is a relative window — a different feature that this one must not
+ * smuggle in under the same name.
+ */
+export type SavedView = {
+  /** Unique within its timeline; travels in the hash as `sv=<id>`. */
+  id: string;
+  name: string;
+  /**
+   * The presentation to open in — a `ViewMode` string (`timeline`, `list`,
+   * `plugin:<id>:<view>`). Absent means „leave the presentation alone", which is
+   * what makes a view that is only about the narrowing possible.
+   */
+  mode?: string;
+  /** The grouping dimension, as `state.groupBy` spells it (`group`, `cf:tier`, …). */
+  groupBy?: string;
+  /** Selected values per filter dimension; the shape `FilterSelection` describes. */
+  filters?: Record<string, string[]>;
+  /** The address of whoever created it. Empty on a source with no identity. */
+  owner?: string;
+  /** Defaults to `private` when absent, which is what an older file spells. */
+  visibility?: SavedViewVisibility;
+  /** Optimistic-lock counter, server-managed like an item's. */
+  version?: number;
+  createdAt?: string;
+  createdBy?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
 export type TimelineFile = {
   /** Points editors at schema/timeline.schema.json for completion + validation. */
   $schema?: string;
@@ -417,6 +467,16 @@ export type TimelineFile = {
   groupOrder?: 'alpha' | 'declared';
   /** How the relation graph reads this timeline. See `GraphConfig`. */
   graph?: GraphConfig;
+  /**
+   * Named ways of looking at this timeline. On a `db` source these are rows of
+   * the `saved_views` table folded in for the caller; in a file they are the
+   * store itself, which is what keeps a local timeline self-contained — the same
+   * split `pluginData` makes (docs/plugin-storage.md).
+   *
+   * What reaches a client is already filtered by who asked: a private view of
+   * somebody else is never in this array.
+   */
+  savedViews?: SavedView[];
   // Plugins enabled on this timeline (e.g. 'dev.zeitlines.product-roadmap' → pricing matrix).
   // Replaces the former `type: 'product'` gate; see ./plugins.
   plugins?: PluginRef[];

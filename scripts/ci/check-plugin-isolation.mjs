@@ -8,7 +8,9 @@
 // one will too. So the rules are asserted rather than remembered, the same way
 // `check-bundle-split.sh` asserts the lazy-loading promise.
 //
-// Four checks, each with a failure it prevents:
+// Five checks, each with a failure it prevents. The first four run core → plugin,
+// the fifth runs plugin → core, and both directions are needed: #17 closed the one
+// where core knew about a plugin, #117 the one where a plugin knew about core.
 //
 // 1. **No core file imports from a plugin folder.** That import is how a plugin's
 //    vocabulary reaches code that must not know it — and, in a client file, how
@@ -22,6 +24,12 @@
 //    below, which is the checkpoint.
 // 4. **No plugin stylesheet is linked from `index.html`.** A plugin's CSS belongs
 //    in its chunk; a link in the shell downloads it for everyone.
+// 5. **A plugin imports only the contract, the shared types and its own folder.**
+//    The subtle one. `product-roadmap` reached into `state.ts`, `render.ts`,
+//    `detailPanel.ts` and five more, and nothing broke — but every gap in the
+//    plugin API was invisible, because the plugin that was meant to prove the
+//    contract stepped past each hole into the app. Four methods came out of
+//    closing it.
 //
 // The allowlists below are short on purpose, and each entry says why it is there.
 // A new entry is the thing to argue about in review.
@@ -46,6 +54,7 @@ const IMPORT_ALLOWLIST = new Map([
   ['scripts/db/plugin-manifests.ts', 'the server-side registry of built-in manifests'],
   ['scripts/db/legacy-pricing.ts', 'dated: reads the pre-#17 tables for the migration, deleted with them'],
   ['scripts/db/migrate-pricing-to-plugin-data.ts', 'dated: the migration itself'],
+  ['scripts/db/migrate-version-ids.ts', 'dated: the version label→id migration (#110)'],
 ]);
 
 /** Same idea for a bare id literal. A registry entry is an id by definition. */
@@ -72,6 +81,7 @@ const REPO_METHODS = [
   'setTimelinePlugin', 'getTimelinePlugin', 'removeTimelinePlugin',
   'listPluginRows', 'listPluginData', 'putPluginRow', 'patchPluginRow', 'deletePluginRow',
   'orderPluginRows', 'purgePluginData', 'purgeItemMetadata',
+  'listSavedViews', 'getSavedView', 'putSavedView', 'deleteSavedView',
 ];
 
 /** The source folder an id lives in. Filled once the manifests are read. */
@@ -164,6 +174,61 @@ function checkFile(path) {
     const literalPattern = new RegExp(`['"\`]${id}['"\`]`);
     if (literalPattern.test(code) && !LITERAL_ALLOWLIST.has(rel) && !IMPORT_ALLOWLIST.has(rel)) {
       note(rel, `names the plugin id "${id}" as a literal — no third-party plugin can be named there`);
+    }
+  }
+}
+
+// ---- the other direction: what a plugin may import --------------------------
+//
+// The four checks above all run core → plugin. This one runs plugin → core, and it
+// is the one that keeps a NATIVE plugin from having privileges a third-party one
+// cannot have.
+//
+// The failure it prevents is subtle and was real for a year: `product-roadmap`
+// imported `src/state.ts`, `src/render.ts`, `src/detailPanel.ts`, `src/editor.ts`
+// and four more. Nothing broke — but every gap in the plugin API was invisible,
+// because the one plugin that could have found them walked past each one into the
+// app instead. Four methods (`DataApi.patch`, `panel`, `status`, `canWrite`) and
+// three relocations came out of closing it (#117).
+//
+// A plugin may import: its own folder, the contract barrel, and the shared types.
+// Everything else is a finding — either a gap in the contract to close, or a reach
+// that should not exist.
+
+const PLUGIN_IMPORT_ALLOWED = [
+  // The contract. Everything a plugin gets from the host comes through here.
+  /^\.{1,2}\/(?:\.\.\/)*pluginHost\/api(?:\.ts)?$/,
+  // The shared data shapes. Types only in practice, and erased at build time.
+  /^\.{1,2}\/(?:\.\.\/)*types(?:\.ts)?$/,
+  // Anything inside the plugin's own folder, including its subdirectories.
+  /^\.\/[^.]/,
+  /^\.\/\.\.?[^.]*\//,
+];
+
+/**
+ * Exceptions, with the reason each is not a contract gap.
+ *
+ * Empty, and that is the point: an entry here means a plugin needs something the
+ * contract does not offer, which is a finding to argue about in review rather than
+ * a line to add quietly. See the four methods that came out of the last argument.
+ */
+const PLUGIN_IMPORT_ALLOWLIST = new Map([]);
+
+for (const folder of new Set(folders.values())) {
+  for (const path of sources(join(PLUGIN_ROOT, folder))) {
+    const rel = relative(ROOT, path).replace(/\\/g, '/');
+    const code = stripComments(readFileSync(path, 'utf8'));
+    for (const match of code.matchAll(/from\s*['"](\.[^'"]*)['"]/g)) {
+      const spec = match[1];
+      // Inside the plugin's own folder is always fine; `../` leaves it.
+      if (!spec.startsWith('../')) continue;
+      if (PLUGIN_IMPORT_ALLOWED.some((re) => re.test(spec))) continue;
+      if (PLUGIN_IMPORT_ALLOWLIST.has(rel)) continue;
+      note(
+        rel,
+        `imports "${spec}" — a plugin may only reach pluginHost/api, types, and its own folder. ` +
+          'If it needs something else, that is a gap in the plugin API',
+      );
     }
   }
 }

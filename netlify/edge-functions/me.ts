@@ -27,11 +27,28 @@ import { readSession } from './_shared/session.ts';
 
 export default async function handler(req: Request, _ctx: Context): Promise<Response> {
   const session = await readSession(req);
+  // `session` is reported separately from `email`, because the two are not the
+  // same question and the interface needs the narrower one. The dev server also
+  // answers this route with an identity (vite.config.ts) so that presence and
+  // attribution are testable on one machine, and there is no gate behind it — so
+  // „I know who you are" is true there while „you have a session you could end"
+  // is not. Only this handler can say the second, and it is what decides whether
+  // the interface offers `/auth/logout`, a route that exists nowhere else.
   const body: Record<string, unknown> = session
-    ? { email: session.email, name: session.name ?? null }
-    : { email: null };
+    ? { email: session.email, name: session.name ?? null, session: true }
+    : { email: null, session: false };
 
-  if (session && accessControlEnabled(Deno.env.get('TIMELINES_ACCESS_CONTROL'))) {
+  // Whether this instance has an access-control system at all, which is a
+  // different question from what the caller may do inside one. The interface needs
+  // both: with it off there are no roles, so a control gated on „may manage" is
+  // gated on something nobody can ever satisfy, and the instance area — whose job
+  // is then to say that it is off and how to turn it on — becomes unreachable for
+  // everybody. `role` cannot carry this: it is absent both here and for a caller
+  // who simply is not a member.
+  const accessControl = accessControlEnabled(Deno.env.get('TIMELINES_ACCESS_CONTROL'));
+  body.accessControl = accessControl;
+
+  if (session && accessControl) {
     const url = Deno.env.get('TIMELINES_SUPABASE_URL');
     const key = Deno.env.get('TIMELINES_SUPABASE_SERVICE_KEY');
     if (url && key) {

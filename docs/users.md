@@ -44,9 +44,18 @@ disagree about what it means.
 
 | Role | May |
 | --- | --- |
-| `viewer` | read every timeline. No write path, MCP included |
-| `editor` | additionally write items, groups, phases, pricing — what everybody could do before |
-| `admin` | additionally administer members: invite, change a role, suspend, restore, remove |
+| `viewer` | read every timeline, and keep **private saved views** of their own |
+| `editor` | additionally write items, groups, phases, pricing — what everybody could do before — plus share a saved view with the instance and create one for somebody else |
+| `admin` | additionally administer members: invite, change a role, suspend, restore, remove; and change or delete a saved view that belongs to somebody else |
+
+**The saved-view rules are the one place a `viewer` writes**, and the exception is
+deliberate: a saved view is display state, not timeline content, and a read-only
+member who cannot keep „nur was überfällig ist, nach Owner gruppiert" under a name
+has to rebuild it by hand every time, which is the whole thing the feature removes.
+The narrower actions still cost more than `read` — publishing to the instance and
+naming another owner need `write`, editing somebody else's view needs `manage` — and
+all of them are enforced in the write path rather than in the interface. The full
+model is „Gespeicherte Ansichten" (docs/editing.md).
 
 Instance-wide, deliberately not per timeline. Per-timeline access is the next cut
 and would make every read path timeline-aware; doing that before anything
@@ -107,6 +116,7 @@ stays useful afterwards for an instance with no mail provider configured.
 
 | Route | Needs | |
 | --- | --- | --- |
+| `/api/source/<id>/saved-view…` | `read` | the one write path below `write`; the finer rules are per row, see above |
 | `GET /api/users` | `read` | the owner picker's directory: address and name |
 | `GET /api/members` | `manage` | administration: roles, statuses, invitation state |
 | `POST /api/members` | `manage` | invite or re-invite; returns the one-time token |

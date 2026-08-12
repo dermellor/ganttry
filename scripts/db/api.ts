@@ -38,6 +38,8 @@ import { nextItemId } from '../../src/itemId.ts';
 import { makePostgresRepo } from './timeline-repo.ts';
 import { makeSupabaseRepo } from './timeline-repo-supabase.ts';
 import { handlePluginApi, handlePluginLifecycle, type PluginPath } from './plugin-api.ts';
+import { handleSavedViewApi, withVisibleSavedViews } from './saved-views-api.ts';
+import type { SavedViewCaller } from '../../src/savedViews.ts';
 import { makeManifestSource, type ManifestSource } from './plugin-manifests.ts';
 
 /** Sub-resource kinds addressable under /api/source/<id>/. */
@@ -53,6 +55,7 @@ export const SUB_KINDS = [
   'phases',
   'watermark',
   'plugin',
+  'saved-view',
 ] as const;
 
 export type SubKind = (typeof SUB_KINDS)[number];
@@ -68,6 +71,20 @@ export type ApiRequest = {
   ifMatch?: number;
   /** attribution for updated_by */
   updatedBy?: string;
+  /**
+   * Who is asking, as the runtime's authorization step already resolved them.
+   *
+   * Every other sub-resource answers the same thing to everybody past the gate, so
+   * the dispatcher never needed this. A saved view does not: which ones exist is a
+   * property of the caller. Resolved once in `authorize` and passed down rather
+   * than looked up again here, because a second member read per request would be a
+   * second chance for the two answers to differ.
+   *
+   * Absent means „no identity and no role model", which is what an unauthenticated
+   * runtime and an instance with access control off both are: everybody past the
+   * gate may do everything, which is the behaviour those instances already have.
+   */
+  caller?: SavedViewCaller;
   /**
    * What a plugin declared, so the dispatcher can enforce it without executing
    * the plugin. Injected rather than imported: today it reads the manifests this
@@ -288,6 +305,19 @@ export async function handleMembersApi(
   }
 }
 
+/**
+ * The caller a request carries, or the one an unauthenticated runtime implies.
+ *
+ * „No caller" resolves to full rights rather than none: a dev server, a
+ * self-hosted deployment behind its own gate and an instance with access control
+ * off all reach here without a role, and refusing them would take saved views away
+ * from exactly the instances that have no member list to consult (see
+ * docs/users.md → „The one switch").
+ */
+function callerOf(req: ApiRequest): SavedViewCaller {
+  return req.caller ?? { email: req.updatedBy ?? null, canWrite: true, canManage: true };
+}
+
 export async function handleTimelineApi(repo: TimelineRepo, req: ApiRequest): Promise<ApiResult> {
   // Collection: GET /api/sources
   if (req.id === '') {
@@ -302,11 +332,18 @@ export async function handleTimelineApi(repo: TimelineRepo, req: ApiRequest): Pr
     if (!sub) {
       if (method === 'GET') {
         const file = await repo.getTimeline(id);
-        return file ? ok(file) : err(404, 'not found');
+        // The repo hands over every saved view; this is where the ones the caller
+        // may not see come out, and it is the only gate — see `withVisibleSavedViews`.
+        return file ? ok(withVisibleSavedViews(file, callerOf(req))) : err(404, 'not found');
       }
       if (method === 'PUT') {
         const body = req.body as TimelineFile;
         if (!body || !Array.isArray(body.items)) return err(400, 'expected object with "items" array');
+        // `savedViews` in the body is deliberately ignored, unlike `pluginData`.
+        // What a caller holds is what THEY were allowed to see, so honouring it
+        // would let a round trip through GET → PUT delete every private view of
+        // everybody else on the timeline. They are written one at a time, through
+        // the sub-resource that knows who is asking.
         await repo.replaceTimeline(id, body);
         return ok({ ok: true });
       }
@@ -385,6 +422,25 @@ export async function handleTimelineApi(repo: TimelineRepo, req: ApiRequest): Pr
     if (sub.kind === 'watermark') {
       if (method === 'GET') return ok(await repo.getWatermark(id));
       return err(405, 'method not allowed');
+    }
+
+    // ---- saved views ------------------------------------------------------
+    // The one sub-resource whose answer depends on who is asking, which is why the
+    // caller travels on the request at all (see `ApiRequest.caller`).
+    if (sub.kind === 'saved-view') {
+      // `return await`, not `return`: the repo throws ConflictError on a stale
+      // If-Match, and a promise returned out of a try block rejects after the
+      // function has already returned — so the catch below never sees it and a
+      // 409 escapes as an unhandled rejection instead.
+      return await handleSavedViewApi(repo, {
+        method,
+        timelineId: id,
+        viewId: sub.childId,
+        body: req.body,
+        ifMatch: req.ifMatch,
+        updatedBy: req.updatedBy,
+        caller: callerOf(req),
+      });
     }
 
     // ---- plugin-owned rows (the generic store) ----------------------------

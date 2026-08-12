@@ -7,7 +7,7 @@ edited.
 This file belongs to the plugin, not to the core documentation, and that is the
 rule rather than a filing preference: uninstall the plugin and every sentence
 here becomes orphaned, which is what makes it plugin documentation
-([#18](https://github.com/dermellor/zeitlines/issues/18)). What the plugin *is*
+([#18](https://github.com/zeitlines/zeitlines/issues/18)). What the plugin *is*
 and how to switch it on is [`../README.md`](../README.md); how to change it is
 [`../AGENTS.md`](../AGENTS.md). The seams it sits on are core chapters: „The
 generic store" (docs/plugin-storage.md), „Publishing a plugin's data"
@@ -127,13 +127,21 @@ A few decisions that are not obvious:
   adding a counter suffix on collision), which keeps the model readable in SQL and
   in MCP output.
 
-**Not in the interface yet:** highlights (the card tiles) and a version editor. For
-versions that is no accident: the list is plugin config, and writing it migrates
-**no** references. Since the gates implement „an unknown version never
-hides" (`featureVisibleForVersion`), renaming `3.0` would make every 3.0-gated
-feature visible in *every* pinned version, silently and wrongly. A version editor
-has to migrate `feature.version`, `tier.valueVersions`, `descriptionByVersion`,
-`nameByVersion` and `labelByVersion` along with it.
+**Not in the interface yet:** highlights (the card tiles) and a version editor.
+Adding, reordering or removing a version is a config write (`enable_plugin`).
+Renaming is safe and needs no migration: a version is a stable **id** plus a
+renamable **label**, and everything references the id — so changing a label in
+`versionLabels` disturbs nothing.
+
+This split (issue #110) is what makes that true. Before it a version was only its
+label, `config.versions` held the labels, and every gate named a version by that
+string (`feature.version`, `tier.valueVersions`, `descriptionByVersion`,
+`nameByVersion`, `labelByVersion`, an item's `featureVersion`). Renaming `3.0`
+then left all of them pointing at the dead string `3.0`; because the gates
+implement „an unknown version never hides" (`featureVisibleForVersion`), those
+features silently became visible in *every* pinned version rather than failing
+loudly. `scripts/db/migrate-version-ids.ts` re-keyed existing timelines from
+labels to ids.
 
 ## The shape of the model
 
@@ -169,7 +177,12 @@ has to migrate `feature.version`, `tier.valueVersions`, `descriptionByVersion`,
 - `highlights[]`: `{ id, label, section?, featureIds, rowVersion? }` — the curated
   tiles of the card view, bundling features. Only what is referenced here appears
   on the cards; the matrix shows every feature.
-- `versions[]`: ordered labels; the switcher filters feature rows cumulatively.
+- `versions[]`: ordered version **ids**; the switcher filters feature rows
+  cumulatively by position in this list. `versionLabels` (`Record<id, string>`,
+  also in `config`) gives each id its display label. Every `Record<version, …>`
+  above (`nameByVersion`, `descriptionByVersion`, `valueVersions`, `labelByVersion`)
+  and an item's `featureVersion` are keyed by these ids, never by the label — that
+  is what lets a label be renamed without touching them (issue #110).
 
 Item↔feature: `metadata.featureIds` (n:m) plus `metadata.featureVersion` (the
 version being worked on) plus `status` (Open/Doing/Done) feed the work dot and the

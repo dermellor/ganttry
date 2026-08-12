@@ -21,7 +21,15 @@
 // into the presentation's own bar and a view therefore had to be able to say
 // whether they apply to it. Additive as well: an existing declaration simply does
 // not claim them.
-export const HOST_API_VERSION = { major: 1, minor: 2 } as const;
+//
+// 1.3 added `manifest.tools` plus the `tools` capability. Purely additive: a plugin
+// declaring neither is unaffected. A plugin whose verbs are the point of it should
+// say `^1.3`, or an older host loads it and lists them nowhere.
+// 1.4 added `DataApi.patch`, `panel`, `status` and `canWrite`. Additive, and every
+// one of them exists because the in-tree plugin could not be moved onto the public
+// contract without it (#117) — which is the evidence a contract addition should
+// have, rather than someone deciding a method sounded useful.
+export const HOST_API_VERSION = { major: 1, minor: 4 } as const;
 
 export type ApiVersion = { major: number; minor: number };
 

@@ -23,6 +23,7 @@ import {
   setStatus,
   syncUrl,
   isEditableView,
+  loadPresentationPrefs,
   loadViewPrefs,
   saveViewPrefs,
   type ViewMode,
@@ -47,16 +48,22 @@ import type { PresenceUser } from './presence';
 import { loadUserDirectory } from './users';
 import { normalizeMemberRole, roleAllows } from './access';
 import { settingsSection, showSettings, wireSettingsArea } from './settingsArea';
+import { refreshAppMenu, wireAppMenu } from './appMenu';
 import {
   showTimelineSettings,
   timelineSection,
   wireTimelineSettings,
 } from './timelineSettings';
 import { deleteItem } from './itemForm';
-import { hideDetail, showDetailForId } from './detailPanel';
+import { hideDetail, pluginPanelBackend, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
 import { renderGraphView, syncGraphSelection } from './graphView';
 import { setupFilterControl } from './filterControl';
+import {
+  applySavedView,
+  setupSavedViewsControl,
+  syncSavedViewsControl,
+} from './savedViewsControl';
 import {
   activePlugins,
   ensurePluginLoaded,
@@ -74,8 +81,10 @@ import {
 } from './pluginHost/viewMode';
 import { viewAccessories } from './pluginHost/manifest';
 import {
-  pluginViewButton,
   pluginViewButtons,
+  pluginViewGroup,
+  pluginViewGroups,
+  setActivePluginGroup,
   pluginViewSection,
   renderPluginViewInto,
   showOnlyPluginSection,
@@ -90,6 +99,7 @@ import { MILESTONES_ONLY_SELECTION } from './viewPrefs';
 import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 import { hostApiFor } from './pluginHost/hostBackend';
 import { setTimelineRefresh } from './pluginHost/refresh';
+import { setPanelBackend } from './pluginHost/panel';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -113,7 +123,24 @@ async function loadCurrentUser(): Promise<PresenceUser | null> {
   try {
     const res = await fetch('/api/me');
     if (!res.ok) return null;
-    const data = (await res.json()) as { email?: unknown; name?: unknown; role?: unknown; status?: unknown };
+    const data = (await res.json()) as {
+      email?: unknown;
+      name?: unknown;
+      role?: unknown;
+      status?: unknown;
+      session?: unknown;
+      accessControl?: unknown;
+    };
+    // „Does this instance have roles at all", which `role` cannot answer: it is
+    // absent both on an instance with access control off and for a caller who is
+    // not a member of one that has it on. The interface needs the two apart, or a
+    // control gated on „may manage" is gated on something nobody can satisfy.
+    state.accessControl = data.accessControl === true;
+    // Not derived from `email`: the dev server hands out an identity with no gate
+    // behind it (vite.config.ts), so an address here says nothing about whether
+    // there is a session to end. Only the gated deployment sets this, and it is
+    // what „Abmelden" hangs on — see netlify/edge-functions/me.ts.
+    state.hasSession = data.session === true;
     // The role rides along on the same probe. It is absent whenever access
     // control is off, which is exactly when there is nothing to administer.
     state.currentRole =
@@ -153,12 +180,26 @@ async function applyView(viewId: string) {
     saveViewPrefs(viewId);
   }
   setModeButtons(state.viewMode);
+  // A saved view belongs to the timeline it was saved on, so opening another one
+  // leaves it — before the render, or the drift marker would briefly claim the
+  // new timeline is showing the old timeline's view.
+  state.activeSavedViewId = null;
   await renderTimeline(view);
   // The mode is per timeline now, so a switch can change it: the sections have to
   // follow, not just the buttons. Persisting here would write the stored value
   // straight back, so it stays off.
   applyViewMode(state.viewMode, { persist: false });
   updatePluginViews();
+  // After the source is loaded, because which saved views exist arrives with it.
+  // An id the timeline does not carry is dropped rather than reported: a link can
+  // outlive the view it names, and it still has to open the timeline.
+  const wantedView = state.pendingSavedView;
+  state.pendingSavedView = null;
+  const savedView = wantedView
+    ? state.activeSourceFile?.savedViews?.find((v) => v.id === wantedView)
+    : undefined;
+  if (savedView) applySavedView(savedView);
+  else syncSavedViewsControl();
   syncUrl();
 }
 
@@ -171,6 +212,8 @@ function setModeButtons(mode: ViewMode) {
   for (const [btnMode, btn] of pluginViewButtons()) {
     btn.setAttribute('aria-pressed', String(mode === btnMode));
   }
+  // …and the control the active segment sits in, so the row says whose view it is.
+  setActivePluginGroup(mode);
 }
 
 // Show a plugin's view button only while its plugin applies to the active
@@ -182,16 +225,24 @@ export function updatePluginViews(): void {
   // only loads when a view is entered), so a generic timeline never downloads a
   // plugin's chunk.
   const available = new Set<string>();
+  const applying = new Set<string>();
   for (const plugin of activePlugins(state.activeSourceFile)) {
     const pluginId = plugin.manifest.id;
-    for (const view of pluginViews(plugin)) {
+    const views = pluginViews(plugin);
+    if (!views.length) continue;
+    applying.add(pluginId);
+    for (const view of views) {
       available.add(pluginViewMode(pluginId, view.id));
-      pluginViewButton(els.modeToggle, pluginId, view, (m) => applyViewMode(m as ViewMode)).hidden = false;
       pluginViewSection(els.contentArea, pluginId, view);
     }
+    // One control for the whole plugin, so its views arrive and go together — which
+    // is how enablement works: a plugin applies to a timeline or it does not.
+    pluginViewGroup(els.pluginViewBar, pluginId, plugin.manifest.name, views, (m) =>
+      applyViewMode(m as ViewMode),
+    ).hidden = false;
   }
-  for (const [mode, btn] of pluginViewButtons()) {
-    if (!available.has(mode)) btn.hidden = true;
+  for (const [pluginId, group] of pluginViewGroups()) {
+    if (!applying.has(pluginId)) group.hidden = true;
   }
   const current = parsePluginViewMode(state.viewMode);
   if (!current) return;
@@ -229,13 +280,36 @@ export function updatePluginViews(): void {
 // the form, persistence — keeps working; the list is a second view of the same
 // data. `persist` is false during bootstrap/external-URL application where the
 // caller drives localStorage + URL syncing itself.
-function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean } = {}) {
+function applyViewMode(
+  mode: ViewMode,
+  {
+    persist = true,
+    keepPrefs = false,
+  }: {
+    persist?: boolean;
+    /**
+     * Leave perspective and extent alone across the switch, because the caller is
+     * about to set them itself.
+     *
+     * Applying a saved view is the one case: it names a presentation AND what to
+     * group and narrow by, so loading that presentation's stored pair first would
+     * overwrite the view's with the last thing somebody happened to leave there —
+     * and the view would apply everything except its own two values.
+     */
+    keepPrefs?: boolean;
+  } = {},
+) {
   // Guard: a plugin view is only valid while its plugin applies to this timeline.
   // A stale deep link or a stored mode from another timeline lands here.
   const parsed = parsePluginViewMode(mode);
   const target = parsed ? resolveViewMode(state.activeSourceFile, parsed.pluginId, parsed.viewId) : null;
   if (parsed && !target) mode = 'timeline';
+  const switching = state.viewMode !== mode;
   state.viewMode = mode;
+  // Perspective and extent belong to the presentation, so they travel with the
+  // switch. Before the renders below, or the new presentation would paint once with
+  // the previous one's grouping and then again with its own.
+  if (switching && !keepPrefs) loadPresentationPrefs(mode);
   setModeButtons(mode);
   const list = mode === 'list';
   const graph = mode === 'graph';
@@ -259,6 +333,10 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   // Editability is the other half and stays where it is (render.ts): a presentation
   // may allow creating an item while this source does not.
   els.addBtn.hidden = !accessories.create || !isEditableView();
+  // A switch changed the grouping and the filter, so the display set has to be
+  // recomputed rather than only redrawn — the lanes and the visible items both
+  // follow from them.
+  if (switching) applyGrouping();
   if (list) {
     renderListView();
   } else if (graph) {
@@ -340,6 +418,11 @@ async function bootstrap() {
   setTimelineRefresh(() => {
     if (state.activeView) void renderTimeline(state.activeView);
   });
+  // The detail drawer, for the same reason and by the same route: a plugin opens
+  // its form through `HostApi.panel`, and the implementation is registered rather
+  // than imported because hostBackend.ts reaching detailPanel.ts closes a cycle
+  // through the item form. See pluginHost/panel.ts.
+  setPanelBackend(pluginPanelBackend);
 
   state.pluginLoad = await loadInstalledPlugins(
     await loadPluginStatuses(cfg.plugins),
@@ -375,6 +458,12 @@ async function bootstrap() {
   }
   setupListView();
   setupFilterControl();
+  // The presentation switch is handed over rather than reimplemented: applying a
+  // view may enter a plugin view, which needs the mode resolved against this
+  // timeline's plugins and its chunk loaded.
+  setupSavedViewsControl((mode) => applyViewMode(mode, { keepPrefs: true }));
+
+  state.pendingSavedView = urlState.savedView ?? null;
 
   state.pendingItem = urlState.item ?? null;
   state.pendingWindow = parseUrlWindow(urlState);
@@ -398,9 +487,30 @@ async function bootstrap() {
   // what is on screen.
   wireSettingsArea();
   wireTimelineSettings();
-  if (state.currentRole && roleAllows(state.currentRole, 'manage')) {
+  wireAppMenu();
+  // „Einstellungen" on two different grounds, because the instance area answers two
+  // different questions. With access control ON it administers, so a role that may
+  // manage is the gate. With it OFF there are no roles to gate on, and the area's
+  // whole content is the sentence „access control is off on this instance, set
+  // TIMELINES_ACCESS_CONTROL=true" — gating that on `manage` hid it from everybody
+  // on exactly the instances where somebody needs to read it, reachable only by
+  // typing the hash by hand. /api/settings answers 503 with that same sentence, so
+  // the entry leads somewhere designed rather than to a refusal.
+  const mayManage = state.currentRole != null && roleAllows(state.currentRole, 'manage');
+  if (!state.accessControl || mayManage) {
     els.settingsBtn.hidden = false;
   }
+  // „Abmelden" follows the session, not the role and not the identity. The auth
+  // gate is the only thing that serves `/auth/logout`, and the only thing that
+  // reports `session: true` — a static deploy, an ungated instance and the dev
+  // server all know an identity while having no session to end. Offering the row
+  // on an address instead would put a link to a 404 in the menu on every machine
+  // this is developed on.
+  if (state.hasSession) {
+    els.logoutBtn.hidden = false;
+  }
+  // After both rows are decided: the trigger appears only if either did.
+  refreshAppMenu();
   // The timeline's own settings are offered wherever a timeline is: the area states
   // for itself that a read-only source cannot be changed, and reading its name and
   // default grouping is useful to anybody who can read the timeline. Access control
@@ -552,6 +662,7 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
     if (switching) {
       state.pendingItem = incoming.item ?? null;
       state.pendingWindow = targetWindow;
+      state.pendingSavedView = incoming.savedView ?? null;
       await applyView(targetViewId);
     } else {
       if (incoming.item && incoming.item !== state.selectedItemId) {
@@ -570,6 +681,26 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
       if (targetWindow && state.timeline) {
         state.timeline.setWindow(targetWindow.start, targetWindow.end, { animation: false });
         state.userWindow = targetWindow;
+      }
+    }
+
+    // An incoming hash is authoritative about the saved view it names, the way it
+    // is about the mode: that is what makes back reverse „apply Q3" instead of
+    // leaving it standing. An id this timeline does not have leaves the display
+    // alone and only drops the marker.
+    if (!switching) {
+      const wanted = incoming.savedView ?? null;
+      const view = wanted
+        ? state.activeSourceFile?.savedViews?.find((v) => v.id === wanted)
+        : undefined;
+      // Re-applied even when that view is already the active one, because the
+      // interesting case is exactly that: somebody drifted away from it and then
+      // opened the link again. Comparing against `activeSavedViewId` first made
+      // pasting the link a no-op, which reads as the link not working.
+      if (view) applySavedView(view);
+      else if (state.activeSavedViewId) {
+        state.activeSavedViewId = null;
+        syncSavedViewsControl();
       }
     }
 

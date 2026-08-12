@@ -36,6 +36,13 @@
           "$ref": "#/definitions/GraphConfig",
           "description": "How the relation graph reads this timeline. See `GraphConfig`."
         },
+        "savedViews": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SavedView"
+          },
+          "description": "Named ways of looking at this timeline. On a `db` source these are rows of the `saved_views` table folded in for the caller; in a file they are the store itself, which is what keeps a local timeline self-contained — the same split `pluginData` makes (docs/plugin-storage.md).\n\nWhat reaches a client is already filtered by who asked: a private view of somebody else is never in this array."
+        },
         "plugins": {
           "type": "array",
           "items": {
@@ -134,6 +141,74 @@
       },
       "additionalProperties": false,
       "description": "What the relation graph needs told about a timeline, beyond its items and relations.\n\nBoth fields name a **group**, because that is the vocabulary a timeline already has for „what kind of thing is this\" — no new dimension, and a folder-derived group works as well as a declared one."
+    },
+    "SavedView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique within its timeline; travels in the hash as `sv=<id>`."
+        },
+        "name": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "description": "The presentation to open in — a `ViewMode` string (`timeline`, `list`, `plugin:<id>:<view>`). Absent means „leave the presentation alone\", which is what makes a view that is only about the narrowing possible."
+        },
+        "groupBy": {
+          "type": "string",
+          "description": "The grouping dimension, as `state.groupBy` spells it (`group`, `cf:tier`, …)."
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": "Selected values per filter dimension; the shape `FilterSelection` describes."
+        },
+        "owner": {
+          "type": "string",
+          "description": "The address of whoever created it. Empty on a source with no identity."
+        },
+        "visibility": {
+          "$ref": "#/definitions/SavedViewVisibility",
+          "description": "Defaults to `private` when absent, which is what an older file spells."
+        },
+        "version": {
+          "type": "number",
+          "description": "Optimistic-lock counter, server-managed like an item's."
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "updatedBy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": false,
+      "description": "A named combination of presentation, grouping dimension and filter selection, stored with the timeline rather than in one person's browser.\n\nThe display state itself is per person and per timeline in `localStorage` (docs/editing.md → „Where the display state lives\"). That answers „how am I looking at this right now\" and cannot answer „the way we look at this every Monday\", because it has no name, no second reader and no address.\n\nWhat it deliberately does NOT carry is the visible time window. An absolute window ages into something nobody wants to see within a quarter, and „the next three months\" is a relative window — a different feature that this one must not smuggle in under the same name."
+    },
+    "SavedViewVisibility": {
+      "type": "string",
+      "enum": [
+        "private",
+        "instance"
+      ],
+      "description": "Who a saved view is for.\n\n`private` is the default because a half-built narrowing is the normal state of one: somebody sets a filter, keeps it, and refines it over a week. Publishing is a separate act, and it needs `write` — a `viewer` may keep their own without being able to put one in front of everybody (see docs/users.md)."
     },
     "PluginRef": {
       "type": "object",

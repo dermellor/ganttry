@@ -36,7 +36,9 @@ import {
   legacyViewPrefs,
   parseViewPrefsStore,
   VIEW_PREFS_KEY,
-  viewPrefsFor,
+  presentationPrefsFor,
+  storedMode,
+  withLegacyFallback,
   withViewPrefs,
   type ViewPrefsStore,
 } from './viewPrefs';
@@ -107,12 +109,17 @@ export interface AppState {
   savedPhasesJson: string;
   activeFormItemId: string | null;
   activeFormPhaseIndex: number | null;
-  // Feature id whose Stammdaten form is open in the detail drawer (pricing
-  // matrix), mutually exclusive with activeFormItemId / activeFormPhaseIndex.
-  activeFormFeatureId: string | null;
-  // Tier id whose Stammdaten form is open in the detail drawer (pricing matrix
-  // column head) — mutually exclusive with the other activeForm* slots.
-  activeFormTierId: string | null;
+  // Id of the plugin whose own form is open in the detail drawer, mutually
+  // exclusive with the two slots above.
+  //
+  // One generic slot rather than one per plugin. It used to be two fields named
+  // after `product-roadmap`'s features and tiers — plugin facts in a core file,
+  // which `check-plugin-isolation` missed because the names carry no plugin id, and
+  // which no third-party plugin could ever get. What the core actually needs to
+  // know is only *that* a plugin form is open (`isAnyFormOpen`, which stops
+  // background persistence from writing under an open editor); *which* row it edits
+  // is the plugin's own business and lives in the plugin.
+  activePluginForm: string | null;
   // True while showItemForm is swapping the form's DOM. Removing the old
   // (focused) form fires a focusout → commit; suppress it so the previous
   // form's values aren't written onto the item being switched to.
@@ -146,6 +153,17 @@ export interface AppState {
   // Signed-in user (from /api/me); labels our own presence avatar. Null when the
   // site isn't gated / identity is unknown.
   currentUser: PresenceUser | null;
+  // Whether the identity above came with a session that can be ended, reported by
+  // the auth gate and by nothing else. Deliberately separate from `currentUser`:
+  // the dev server hands out an identity with no gate behind it, so „I know who
+  // you are" is routinely true where „you are signed in" is false, and only the
+  // second one may put „Abmelden" on screen.
+  hasSession: boolean;
+  // Whether this instance runs access control at all, from the same probe. Not
+  // derivable from `currentRole`: that is null both here and for somebody who is
+  // not a member of an instance that does run it, and the interface has to tell
+  // „there are no roles" from „you have none".
+  accessControl: boolean;
   // What this instance says the current user may do, from the same probe. Null
   // when access control is off, which is also what the interface reads as „no
   // membership screen": there is nothing to administer then. Only ever an
@@ -189,6 +207,20 @@ export interface AppState {
   // is read before the view exists, so it waits here until applyView has loaded
   // that timeline's own state and can let the link win over it.
   pendingPrefs: { mode?: ViewMode; filters?: FilterSelection } | null;
+  /**
+   * Which saved view the current display came from, or null for a display nobody
+   * named. Not persisted: it says where this look started, and reopening a
+   * timeline restores the stored grouping and filter directly (viewPrefs.ts) —
+   * claiming a view is applied when only its values were restored would put the
+   * drift marker on state the user never chose.
+   */
+  activeSavedViewId: string | null;
+  /**
+   * A saved view a link asked for (`sv=<id>`), held until the timeline carrying it
+   * has loaded. Same pattern as pendingItem / pendingPrefs above: the URL is read
+   * before the source exists.
+   */
+  pendingSavedView: string | null;
   // Parent items whose children are folded away in the ACTIVE source (see
   // COLLAPSED_ITEMS_KEY). Swapped wholesale by loadCollapsedItems on every view
   // change, so nothing here ever refers to another timeline's ids.
@@ -214,8 +246,7 @@ export const state: AppState = {
   savedPhasesJson: '[]',
   activeFormItemId: null,
   activeFormPhaseIndex: null,
-  activeFormFeatureId: null,
-  activeFormTierId: null,
+  activePluginForm: null,
   formRebuilding: false,
   formJiraIssues: [],
   formDependsOn: [],
@@ -227,6 +258,8 @@ export const state: AppState = {
   presenceHandle: null,
   presenceSourceId: null,
   currentUser: null,
+  hasSession: false,
+  accessControl: false,
   currentRole: null,
   settingsSection: null,
   tlSection: null,
@@ -244,6 +277,8 @@ export const state: AppState = {
   groupBy: DEFAULT_VIEW_PREFS.groupBy,
   filters: {},
   pendingPrefs: null,
+  activeSavedViewId: null,
+  pendingSavedView: null,
   collapsedItems: new Set(),
   persisting: false,
   persistAgain: false,
@@ -272,9 +307,7 @@ function writeViewPrefsStore(store: ViewPrefsStore): void {
 function adoptLegacyViewPrefs(store: ViewPrefsStore, viewId: string): ViewPrefsStore {
   const legacy = legacyViewPrefs((key) => localStorage.getItem(key));
   if (!legacy) return store;
-  const next = store[viewId]
-    ? store
-    : withViewPrefs(store, viewId, { ...DEFAULT_VIEW_PREFS, ...legacy });
+  const next = store[viewId] ? store : withLegacyFallback(store, viewId, legacy);
   for (const key of Object.values(LEGACY_PREF_KEYS)) localStorage.removeItem(key);
   if (next !== store) writeViewPrefsStore(next);
   return next;
@@ -288,11 +321,26 @@ function adoptLegacyViewPrefs(store: ViewPrefsStore, viewId: string): ViewPrefsS
 export function loadViewPrefs(viewId: string | null): void {
   let store = readViewPrefsStore();
   if (viewId) store = adoptLegacyViewPrefs(store, viewId);
-  const prefs = viewPrefsFor(store, viewId);
   // A stored mode may predate addressable plugin views (`pricing`), so it goes
   // through the legacy lookup rather than a bare comparison: reading it without
   // that would silently reset every user's saved view.
-  state.viewMode = readViewMode(prefs.mode, legacyViewMode);
+  state.viewMode = readViewMode(storedMode(store, viewId), legacyViewMode);
+  // …and then that presentation's own perspective and extent, because they are
+  // stored per presentation (see viewPrefs.ts).
+  const prefs = presentationPrefsFor(store, viewId, state.viewMode);
+  state.groupBy = prefs.groupBy;
+  state.filters = prefs.filters;
+}
+
+/**
+ * Swap perspective and extent to the ones `mode` remembers, without touching which
+ * timeline is open. Called when the presentation changes: each one keeps its own,
+ * so switching has to carry them along or the new presentation would inherit the
+ * previous one's and then save it as its own on the next edit.
+ */
+export function loadPresentationPrefs(mode: ViewMode): void {
+  const viewId = state.activeView?.id ?? null;
+  const prefs = presentationPrefsFor(readViewPrefsStore(), viewId, mode);
   state.groupBy = prefs.groupBy;
   state.filters = prefs.filters;
 }
@@ -410,8 +458,7 @@ export function isEditableView(): boolean {
 export function clearFormSlots(): void {
   state.activeFormItemId = null;
   state.activeFormPhaseIndex = null;
-  state.activeFormFeatureId = null;
-  state.activeFormTierId = null;
+  state.activePluginForm = null;
 }
 
 /** True while any detail form is open (an edit in progress). */
@@ -419,8 +466,7 @@ export function isAnyFormOpen(): boolean {
   return (
     state.activeFormItemId != null ||
     state.activeFormPhaseIndex != null ||
-    state.activeFormFeatureId != null ||
-    state.activeFormTierId != null
+    state.activePluginForm != null
   );
 }
 
@@ -437,6 +483,10 @@ export function syncUrl(): void {
   // one dimension of it and not the others would say something untrue about the
   // rest. Old links carrying it are still read (see urlState.ts).
   if (state.viewMode !== 'timeline') urlState.mode = state.viewMode;
+  // The saved view travels as one short parameter, which is what makes "look at
+  // this the way I am" a link rather than a description of six clicks. Only while
+  // one is actually applied — a plain link stays plain, the rule `mode` follows.
+  if (state.activeSavedViewId) urlState.savedView = state.activeSavedViewId;
   // Written alongside everything else: the view, item and window stay in the
   // hash while the area is open, so closing it returns to the timeline the
   // operator left rather than to the default view.

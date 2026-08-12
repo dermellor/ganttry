@@ -3,7 +3,7 @@
 How a plugin serves data to the open internet without an endpoint of its own, and
 the three gates in front of it.
 
-This chapter covers [issue #20](https://github.com/dermellor/zeitlines/issues/20).
+This chapter covers [issue #20](https://github.com/zeitlines/zeitlines/issues/20).
 For where the data lives, [`plugin-storage.md`](plugin-storage.md); for installing
 and enabling, [`plugin-lifecycle.md`](plugin-lifecycle.md).
 
@@ -93,7 +93,7 @@ check" must not resolve to „ship it".
 pricing model sat in a `pricing` field of its own and was materialized as-is, so
 a local timeline's prices were as public as its file was, whatever anybody had
 decided. That field is gone
-([#17](https://github.com/dermellor/zeitlines/issues/17)) and its rows go through
+([#17](https://github.com/zeitlines/zeitlines/issues/17)) and its rows go through
 the check above like everybody else's.
 
 ## One exclusion in the auth gate

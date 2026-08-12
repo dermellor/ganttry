@@ -2,6 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_VIEW_PREFS,
+  presentationPrefsFor,
+  storedMode,
+  withLegacyFallback,
   LEGACY_PREF_KEYS,
   legacyViewPrefs,
   parseViewPrefsStore,
@@ -97,12 +100,145 @@ test('the current shape wins over a pair left beside it', () => {
   assert.deepEqual(viewPrefsFor(store, 'a').filters, { tag: ['x'] });
 });
 
-test('saving drops the legacy pair rather than carrying it along', () => {
+test('saving one presentation keeps the legacy layer the others still read', () => {
+  // The pair used to be dropped on save, when there was one scope for the whole
+  // timeline. Now every presentation without an entry of its own falls back to it,
+  // so dropping it would reset the ones nobody has visited yet.
   const store = parseViewPrefsStore(
     JSON.stringify({ a: { filterDim: 'status', filterValues: ['Open'] } }),
   );
-  const saved = withViewPrefs(store, 'a', viewPrefsFor(store, 'a'));
-  assert.deepEqual(saved.a, { filters: { status: ['Open'] } });
+  const saved = withViewPrefs(store, 'a', { ...viewPrefsFor(store, 'a'), mode: 'list' });
+  assert.deepEqual(saved.a, {
+    mode: 'list',
+    presentations: { list: { filters: { status: ['Open'] } } },
+    filterDim: 'status',
+    filterValues: ['Open'],
+  });
+  // …and the timeline, untouched, still reads the fallback.
+  assert.deepEqual(presentationPrefsFor(saved, 'a', 'timeline').filters, { status: ['Open'] });
+});
+
+test('each presentation keeps its own grouping and filter', () => {
+  // The point of the whole change: lanes and list sections are different
+  // mechanisms, so one value for both could not express „group by Gruppe on the
+  // timeline, by Status in the list".
+  let store: ViewPrefsStore = {};
+  store = withViewPrefs(store, 'a', {
+    mode: 'timeline',
+    groupBy: 'group',
+    filters: { status: ['Open'] },
+  });
+  store = withViewPrefs(store, 'a', { mode: 'list', groupBy: 'status', filters: { tag: ['x'] } });
+
+  assert.deepEqual(presentationPrefsFor(store, 'a', 'timeline'), {
+    groupBy: 'group',
+    filters: { status: ['Open'] },
+  });
+  assert.deepEqual(presentationPrefsFor(store, 'a', 'list'), {
+    groupBy: 'status',
+    filters: { tag: ['x'] },
+  });
+  assert.equal(storedMode(store, 'a'), 'list');
+});
+
+test('saving one presentation leaves the others alone', () => {
+  // Rewriting the map instead would erase the grouping somebody set in a
+  // presentation they are not currently in.
+  let store: ViewPrefsStore = {};
+  store = withViewPrefs(store, 'a', { mode: 'list', groupBy: 'status', filters: {} });
+  store = withViewPrefs(store, 'a', { mode: 'timeline', groupBy: 'tag', filters: {} });
+  assert.equal(presentationPrefsFor(store, 'a', 'list').groupBy, 'status');
+  assert.equal(presentationPrefsFor(store, 'a', 'timeline').groupBy, 'tag');
+});
+
+test('a plugin view gets a slot of its own, keyed by its mode', () => {
+  const mode = 'plugin:dev.zeitlines.sprints:board';
+  const store = withViewPrefs({}, 'a', { mode, groupBy: 'cf:sprint', filters: {} });
+  assert.equal(presentationPrefsFor(store, 'a', mode).groupBy, 'cf:sprint');
+  // …and does not borrow the item list's dimension, which is the hole this closes.
+  assert.equal(presentationPrefsFor(store, 'a', 'timeline').groupBy, DEFAULT_VIEW_PREFS.groupBy);
+});
+
+test('a presentation nobody visited inherits the timeline’s legacy values', () => {
+  const store = parseViewPrefsStore(
+    JSON.stringify({ a: { groupBy: 'tag', filters: { status: ['Done'] } } }),
+  );
+  for (const mode of ['timeline', 'list', 'plugin:x:y']) {
+    assert.deepEqual(presentationPrefsFor(store, 'a', mode), {
+      groupBy: 'tag',
+      filters: { status: ['Done'] },
+    });
+  }
+});
+
+test('an entry of its own wins over the legacy values', () => {
+  const store = parseViewPrefsStore(
+    JSON.stringify({
+      a: {
+        groupBy: 'tag',
+        filters: { status: ['Done'] },
+        presentations: { list: { groupBy: 'status' } },
+      },
+    }),
+  );
+  const list = presentationPrefsFor(store, 'a', 'list');
+  assert.equal(list.groupBy, 'status');
+  // An entry that names no filter means „no filter here", not „fall back": the
+  // presentation has been configured, so its silence is a statement. Otherwise
+  // clearing a filter in one presentation could never stick.
+  assert.deepEqual(list.filters, {});
+});
+
+test('a presentation back at its default loses its entry, not the timeline', () => {
+  let store = withViewPrefs({}, 'a', { mode: 'list', groupBy: 'status', filters: {} });
+  store = withViewPrefs(store, 'a', {
+    mode: 'list',
+    groupBy: DEFAULT_VIEW_PREFS.groupBy,
+    filters: {},
+  });
+  assert.equal(store.a?.presentations?.list, undefined);
+  assert.equal(store.a?.mode, 'list', 'which presentation is open is still worth storing');
+});
+
+test('a timeline loses its entry only when no presentation has settings left', () => {
+  let store = withViewPrefs({}, 'a', { mode: 'list', groupBy: 'status', filters: {} });
+  // Going back to the timeline does NOT drop the list's grouping — that is the
+  // whole point of the per-presentation scope.
+  store = withViewPrefs(store, 'a', {
+    mode: DEFAULT_VIEW_PREFS.mode,
+    groupBy: DEFAULT_VIEW_PREFS.groupBy,
+    filters: {},
+  });
+  assert.equal(presentationPrefsFor(store, 'a', 'list').groupBy, 'status');
+
+  assert.deepEqual(Object.keys(store), ['a'], 'the entry stays while the list has settings');
+
+  // Only clearing it in the list itself leaves nothing worth storing.
+  let again = withViewPrefs({}, 'a', { mode: 'list', groupBy: 'status', filters: {} });
+  again = withViewPrefs(again, 'a', {
+    mode: 'list',
+    groupBy: DEFAULT_VIEW_PREFS.groupBy,
+    filters: {},
+  });
+  again = withViewPrefs(again, 'a', {
+    mode: DEFAULT_VIEW_PREFS.mode,
+    groupBy: DEFAULT_VIEW_PREFS.groupBy,
+    filters: {},
+  });
+  assert.deepEqual(again, {});
+});
+
+test('the instance-wide keys land in the fallback, not in one presentation', () => {
+  // They never were about a presentation: they applied to everything, so every
+  // presentation of that timeline has to inherit them.
+  const store = withLegacyFallback({}, 'a', {
+    mode: 'list',
+    groupBy: 'tag',
+    filters: { status: ['Open'] },
+  });
+  assert.deepEqual(store.a, { mode: 'list', groupBy: 'tag', filters: { status: ['Open'] } });
+  assert.equal(presentationPrefsFor(store, 'a', 'timeline').groupBy, 'tag');
+  assert.equal(presentationPrefsFor(store, 'a', 'list').groupBy, 'tag');
 });
 
 test('the instance-wide keys carry over', () => {
@@ -138,10 +274,12 @@ test('an explicit type selection wins over a stored milestonesOnly', () => {
   assert.deepEqual(viewPrefsFor(store, 'a').filters, { type: ['range'] });
 });
 
-test('saving drops milestonesOnly rather than carrying it along', () => {
+test('milestonesOnly survives a save for the same reason', () => {
   const store = parseViewPrefsStore(JSON.stringify({ a: { milestonesOnly: true } }));
-  const saved = withViewPrefs(store, 'a', viewPrefsFor(store, 'a'));
-  assert.deepEqual(saved.a, { filters: { type: ['point'] } });
+  const saved = withViewPrefs(store, 'a', { ...viewPrefsFor(store, 'a'), mode: 'list' });
+  assert.deepEqual(saved.a?.presentations?.list, { filters: { type: ['point'] } });
+  assert.equal(saved.a?.milestonesOnly, true);
+  assert.deepEqual(presentationPrefsFor(saved, 'a', 'timeline').filters, { type: ['point'] });
 });
 
 test('nothing stored instance-wide carries nothing over', () => {

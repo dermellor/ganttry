@@ -64,6 +64,41 @@ describe('createDataApi', () => {
     assert.ok(!('If-Match' in (calls[0].init!.headers as Record<string, string>)));
   });
 
+  test('patch sends only the fields it was given, to the row it names', async () => {
+    // The method exists because `put` replaces the whole `data` object: a form
+    // editing two fields of six would otherwise have to read the row first and hope
+    // nothing else changed in between.
+    const { api, calls } = harness();
+    await api.patch('entries', 'e1', { label: 'Sprint 2' });
+    assert.equal(calls[0].url, '/api/source/wt/plan/plugin/com.example.sprints/entries/e1');
+    assert.equal(calls[0].init!.method, 'PATCH');
+    assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { data: { label: 'Sprint 2' } });
+  });
+
+  test('patch carries a null through, because null is how a field is cleared', async () => {
+    // An omitted key leaves the stored value standing, so „the user emptied this
+    // input" has to be expressible. Dropping the null would make an emptied field
+    // reappear on the next reload — the bug this semantics exists for.
+    const { api, calls } = harness();
+    await api.patch('entries', 'e1', { note: null });
+    assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { data: { note: null } });
+  });
+
+  test('patch puts the lock counter in If-Match, like put does', async () => {
+    const { api, calls } = harness();
+    await api.patch('entries', 'e1', { label: 'x' }, 4);
+    assert.equal((calls[0].init!.headers as Record<string, string>)['If-Match'], '4');
+    // And never inside the payload, where the next plugin declaring a `version`
+    // field of its own would have its value read as the counter.
+    assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { data: { label: 'x' } });
+  });
+
+  test('patch encodes a composite row id as one segment', async () => {
+    const { api, calls } = harness();
+    await api.patch('tier-values', 'pro:calls', { value: true });
+    assert.equal(calls[0].url, '/api/source/wt/plan/plugin/com.example.sprints/tier-values/pro%3Acalls');
+  });
+
   test('a composite row id is encoded, so it arrives as one segment', async () => {
     const { api, calls } = harness();
     await api.remove('tier-values', 'pro:calls');

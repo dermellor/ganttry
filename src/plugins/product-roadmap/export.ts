@@ -13,30 +13,38 @@
 // Usage:
 //   npm run export:pricing -- <id>       # timeline id (or set PRICING_TIMELINE_ID)
 //
-// Config (read through the shared cascade in ./db/env.ts: process.env →
-// <repo>/.env.local → files named by TIMELINES_ENV_FILE):
+// Config, from the environment of the process:
 //   MCP_API_TOKEN       — required; matches the Netlify env var of the same name
 //   TIMELINES_LIVE_URL  — required; base URL of the deployed site
 //   PRICING_TIMELINE_ID — optional; used when no <id> arg is given
 //   PRICING_MD_OUT      — optional; output path (default: <repo>/export/pricing.md)
+//
+// **Read straight from `process.env`, not through the repo's env cascade.** It used
+// to import `scripts/db/env.ts`, and that was the plugin's last reach into the app
+// (#117). Unlike the others it is not a gap in the plugin contract to close, because
+// there is nothing to close it with: a plugin has no server-side half at all, so a
+// third-party plugin shipping a CLI has exactly `process.env` and its own arguments.
+// Matching that is what keeps this script honest about what a plugin can do.
+//
+// The practical cost is that `.env.local` is not picked up automatically. Prefix the
+// command, or export the two variables in the shell.
 
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TimelineFile } from '../../types.ts';
 import { PRODUCT_ROADMAP_PLUGIN } from './plugin.ts';
-import { hasPlugin } from '../../pluginHost/plugins.ts';
+import { hasPlugin } from '../../pluginHost/api.ts';
 import { pricingToMarkdown } from './pricing.ts';
 import { currentPricing } from './compose.ts';
-import { envSourcesHint, envValue } from '../../../scripts/db/env.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..', '..', '..');
 
 const DEFAULT_OUT = resolve(REPO_ROOT, 'export', 'pricing.md');
 
-const BASE_URL = envValue('TIMELINES_LIVE_URL').replace(/\/+$/, '');
-const API_TOKEN = envValue('MCP_API_TOKEN');
+const BASE_URL = (process.env.TIMELINES_LIVE_URL ?? '').replace(/\/+$/, '');
+const API_TOKEN = process.env.MCP_API_TOKEN ?? '';
 
 function encodeId(id: string): string {
   return id.split('/').map(encodeURIComponent).join('/');
@@ -44,7 +52,7 @@ function encodeId(id: string): string {
 
 async function getTimeline(id: string): Promise<TimelineFile> {
   if (!API_TOKEN) {
-    throw new Error(`MCP_API_TOKEN is not set. Add it to ${envSourcesHint()} (matching the Netlify env var).`);
+    throw new Error('MCP_API_TOKEN is not set. Export it, or prefix the command with it (it matches the Netlify env var of the same name).');
   }
   const res = await fetch(`${BASE_URL}/api/source/${encodeId(id)}`, {
     headers: { 'X-MCP-Token': API_TOKEN, Accept: 'application/json' },
@@ -66,11 +74,11 @@ async function main(): Promise<void> {
   if (!BASE_URL) {
     throw new Error('TIMELINES_LIVE_URL is not set — point it at the deployed site.');
   }
-  const timelineId = process.argv[2] || envValue('PRICING_TIMELINE_ID');
+  const timelineId = process.argv[2] || process.env.PRICING_TIMELINE_ID || '';
   if (!timelineId) {
     throw new Error('No timeline id. Pass one as an argument or set PRICING_TIMELINE_ID.');
   }
-  const outPath = envValue('PRICING_MD_OUT') || DEFAULT_OUT;
+  const outPath = process.env.PRICING_MD_OUT || DEFAULT_OUT;
 
   const file = await getTimeline(timelineId);
 

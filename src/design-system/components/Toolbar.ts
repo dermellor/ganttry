@@ -1,4 +1,5 @@
 import './Toolbar.css';
+import zeitlinesLogo from '../assets/zeitlines-logo.svg?raw';
 import { classes, data, el, type Attrs, type Child } from './dom';
 import { Label } from './Text';
 
@@ -44,13 +45,23 @@ export type ToolbarGroupOptions = {
   children?: Child;
   /** Pushed to the trailing edge of the bar. */
   end?: boolean;
+  /**
+   * `tight` for controls that are one object rather than neighbours — the open
+   * timeline's name and the gear that opens its settings. At the default spacing
+   * those two read as two separate things.
+   */
+  spacing?: 'tight';
   className?: string;
   attrs?: Attrs;
 };
 
 export function ToolbarGroup(options: ToolbarGroupOptions = {}): HTMLDivElement {
-  const { children, end, className, attrs } = options;
-  return el('div', { class: classes('ds-ToolbarGroup', className), ...data({ end }), ...attrs }, children);
+  const { children, end, spacing, className, attrs } = options;
+  return el(
+    'div',
+    { class: classes('ds-ToolbarGroup', className), ...data({ end, spacing }), ...attrs },
+    children,
+  );
 }
 
 export type ToolbarControlOptions = {
@@ -100,7 +111,9 @@ export type AppMarkOptions = {
   className?: string;
 };
 
-/** The accent square beside the app title. Shape follows `--mark-radius`. */
+/** The product logo beside the timeline identity. */
 export function AppMark(options: AppMarkOptions = {}): HTMLSpanElement {
-  return el('span', { class: classes('ds-AppMark', options.className), 'aria-hidden': 'true' });
+  const mark = el('span', { class: classes('ds-AppMark', options.className), 'aria-hidden': 'true' });
+  mark.innerHTML = zeitlinesLogo;
+  return mark;
 }

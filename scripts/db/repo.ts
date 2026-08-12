@@ -22,6 +22,7 @@ import type {
   Member,
   PluginData,
   PluginDataRow,
+  SavedView,
   TimelineFile,
   TimelineFileItem,
   TimelinePhase,
@@ -313,4 +314,31 @@ export interface TimelineRepo {
    */
   purgeItemMetadata(keys: string[], timelineId?: string | null): Promise<number>;
 
+  // ---- saved views --------------------------------------------------------
+  // Four methods, and no `patch` among them: a saved view is five small fields a
+  // caller always holds in full, so a partial write is resolved above the repo
+  // (read → merge → put, guarded by the same `expectedVersion`) rather than
+  // implemented three times. The same reasoning kept `updateMeta` down to one.
+  //
+  // **None of them filters by visibility.** That rule decides what leaves the
+  // building and therefore lives in exactly one place, above the seam
+  // (`src/savedViews.ts`, applied in the dispatcher) — a per-driver filter is how
+  // one of the three ends up serving somebody else's private view.
+
+  /** Every saved view on a timeline, unfiltered. Ordered by name. */
+  listSavedViews(timelineId: string): Promise<SavedView[]>;
+  /** One saved view, or null. Needed to resolve a patch and to authorize a write. */
+  getSavedView(timelineId: string, viewId: string): Promise<SavedView | null>;
+  /**
+   * Create or replace one saved view wholesale. Upsert rather than insert plus
+   * update, because the client's „save" is the same act either way and a 404 on
+   * „it was deleted while you had it open" is not something the caller can act on.
+   */
+  putSavedView(
+    timelineId: string,
+    view: SavedView,
+    expectedVersion?: number,
+    updatedBy?: string,
+  ): Promise<SavedView>;
+  deleteSavedView(timelineId: string, viewId: string): Promise<void>;
 }

@@ -1,5 +1,5 @@
 import type { TimelineFile, TimelineFileItem, View } from './types';
-import { htmlAll, Tag } from './design-system';
+import { escapeHtml, htmlAll, Tag } from './design-system';
 import { normalizeIcon } from './icons';
 import { isOverdue, normalizeStatus } from './status';
 import type { StatusKey } from './status';
@@ -292,11 +292,11 @@ export type DetailNote = {
   body: string;
 };
 
-export function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!;
-  });
-}
+// `escapeHtml` moved into the design system's `dom` module, which is where the
+// string path is documented and the only place a plugin can reach. Re-exported
+// from this path because four core modules import it from here, and rewriting
+// those imports belongs in its own change rather than inside this one.
+export { escapeHtml };
 
 /**
  * Inverse of `escapeHtml`, for the places that need an item's title as plain

@@ -23,7 +23,9 @@ import { z } from 'zod';
 import type { TimelineFile, TimelineFileItem } from '../../src/types.js';
 import { envSourcesHint, envValue } from '../db/env.js';
 import { enforceExtentExclusivity, type TimelineGroupDecl } from '../db/timeline-repo.js';
-import { resolveItemPatch } from './patch.js';
+import { appendItemTo, applyItemPatchTo, type ItemPatch } from './patch.js';
+import { mcpPluginTools, splitChanges, toolResult } from './pluginTools.js';
+import { NO_BUCKET, SAVED_VIEW_HELP, savedViewDimensions } from './savedViewTools.js';
 
 // ---------- config / env ----------
 
@@ -131,6 +133,12 @@ async function apiSub(
     ...(ifMatch != null ? { headers: { 'If-Match': String(ifMatch) } } : {}),
   });
 }
+
+/** The two item writes, with the extent rule this server's repo layer supplies. */
+const applyItemPatch = (file: TimelineFile, itemId: string, patch: ItemPatch): void =>
+  applyItemPatchTo(file, itemId, patch);
+const appendItem = (file: TimelineFile, item: TimelineFileItem): void =>
+  appendItemTo(file, item, enforceExtentExclusivity);
 
 /** Read-modify-write helper: fetch, mutate in memory, push back. Returns the new file. */
 async function mutate(
@@ -479,17 +487,7 @@ server.registerTool(
     inputSchema: { id: z.string().describe('Timeline id.'), item: z.object(itemFields) },
   },
   async ({ id, item }) => {
-    const file = await mutate(id, (f) => {
-      if (item.id && f.items.some((i) => i.id === item.id)) {
-        throw new Error(`Item id "${item.id}" already exists in "${id}".`);
-      }
-      // Extent fields are mutually exclusive (end wins); never store both.
-      enforceExtentExclusivity(item);
-      // `metadata` is nullable so update_item can clear it; on a create there is
-      // nothing to clear, and writing the null through would put it in the file.
-      if (item.metadata == null) delete (item as { metadata?: unknown }).metadata;
-      f.items.push(item as TimelineFileItem);
-    });
+    const file = await mutate(id, (f) => appendItem(f, item as TimelineFileItem));
     return ok({ ok: true, id, itemId: item.id, items: file.items.length });
   },
 );
@@ -509,23 +507,8 @@ server.registerTool(
     },
   },
   async ({ id, itemId, patch }) => {
-    let found = false;
-    await mutate(id, (f) => {
-      const it = f.items.find((i) => i.id === itemId);
-      if (!it) throw new Error(`Item "${itemId}" not found in "${id}".`);
-      found = true;
-      const rest = resolveItemPatch(it, patch);
-      Object.assign(it, rest);
-      // An emptied metadata object is dropped rather than written as `{}`: that is
-      // the shape a read returns (rowToItem omits it) and what the form leaves
-      // behind, so a round-trip through this tool does not add a key to the file.
-      if (it.metadata && Object.keys(it.metadata).length === 0) delete it.metadata;
-      // Extent fields are mutually exclusive: whichever the patch set wins and
-      // clears the counterpart, so switching end↔duration never leaves both.
-      if (rest.end != null) delete it.duration;
-      else if (rest.duration != null) delete it.end;
-    });
-    return ok({ ok: true, id, itemId, updated: found });
+    await mutate(id, (f) => applyItemPatch(f, itemId, patch));
+    return ok({ ok: true, id, itemId, updated: true });
   },
 );
 
@@ -614,6 +597,163 @@ server.registerTool(
   },
 );
 
+// ---------- saved views ----------
+//
+// The one surface here that writes something a PERSON sees rather than something
+// the timeline holds: a saved view is a named combination of presentation,
+// grouping and filter, and `owner` decides whose list it lands in. That is why
+// these tools take an owner at all — "set up the views for the new team member" is
+// the case they exist for, and it needs the row to belong to them rather than to
+// the token.
+//
+// Owning a saved view grants nothing, which is what makes writing another person's
+// address here ordinary rather than impersonation: it is the same statement
+// `metadata.owner` already makes about an item.
+
+const savedViewFields = {
+  name: z.string().optional().describe('What the view is called. Required when creating one.'),
+  mode: z
+    .string()
+    .optional()
+    .describe(
+      'Presentation to open in: "timeline", "list", "graph", or "plugin:<pluginId>:<viewId>". ' +
+        'Leave it out and applying the view keeps whatever presentation is showing.',
+    ),
+  groupBy: z
+    .string()
+    .optional()
+    .describe('Grouping dimension, e.g. "group", "status", "cf:tier" — a key from describe_view_dimensions.'),
+  filters: z
+    .record(z.array(z.string()))
+    .optional()
+    .describe(
+      'Selected values per dimension, e.g. { "status": ["Open"], "cf:tier": ["Pro"] }. AND across ' +
+        'dimensions, OR within one; an empty object narrows nothing. Values come from ' +
+        'describe_view_dimensions.',
+    ),
+  owner: z
+    .string()
+    .optional()
+    .describe('E-mail of the person this view is for, from list_users. Defaults to the calling identity.'),
+  visibility: z
+    .enum(['private', 'instance'])
+    .optional()
+    .describe('"instance" shows it to every member of the deployment; "private" (the default) to its owner alone.'),
+};
+
+server.registerTool(
+  'describe_view_dimensions',
+  {
+    title: 'Describe view dimensions',
+    description:
+      'The grouping dimensions and filter values a timeline actually offers, as `groupBy` keys and ' +
+      '`filters` values for the saved-view tools. Call this before writing a filter: the keys ' +
+      '(`group`, `tag`, `status`, `type`, `cf:<field>`) and their values are properties of this ' +
+      'timeline, and one that does not exist narrows nothing rather than failing. ' +
+      `The value "${NO_BUCKET}" is the "Ohne …" bucket: items with no value for that dimension.`,
+    inputSchema: { id: z.string().describe('Timeline id from list_timelines.') },
+  },
+  async ({ id }) => ok({ id, dimensions: savedViewDimensions(await getTimeline(id)) }),
+);
+
+server.registerTool(
+  'list_saved_views',
+  {
+    title: 'List saved views',
+    description: `The saved views on a timeline that this identity may see. ${SAVED_VIEW_HELP}`,
+    inputSchema: { id: z.string().describe('Timeline id.') },
+  },
+  async ({ id }) => ok(await api(`/api/source/${encodeId(id)}/saved-view`)),
+);
+
+server.registerTool(
+  'create_saved_view',
+  {
+    title: 'Create saved view',
+    description: `Store a new saved view on a timeline. ${SAVED_VIEW_HELP}`,
+    inputSchema: { id: z.string().describe('Timeline id.'), ...savedViewFields },
+  },
+  async ({ id, ...view }) =>
+    ok(
+      await api(`/api/source/${encodeId(id)}/saved-view`, {
+        method: 'POST',
+        body: JSON.stringify(view),
+      }),
+    ),
+);
+
+server.registerTool(
+  'update_saved_view',
+  {
+    title: 'Update saved view',
+    description:
+      'Patch one saved view: only the fields given change. Send null for `mode`, `groupBy` or ' +
+      '`filters` to clear one. The id is fixed — every link carrying `sv=<id>` depends on it.',
+    inputSchema: {
+      id: z.string().describe('Timeline id.'),
+      viewId: z.string().describe('Saved view id from list_saved_views.'),
+      ...savedViewFields,
+    },
+  },
+  async ({ id, viewId, ...patch }) =>
+    ok(
+      await api(`/api/source/${encodeId(id)}/saved-view/${encodeURIComponent(viewId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }),
+    ),
+);
+
+server.registerTool(
+  'delete_saved_view',
+  {
+    title: 'Delete saved view',
+    description:
+      'Remove a saved view. A shared one disappears for everybody, so check `visibility` before ' +
+      'deleting somebody else\'s.',
+    inputSchema: {
+      id: z.string().describe('Timeline id.'),
+      viewId: z.string().describe('Saved view id from list_saved_views.'),
+    },
+  },
+  async ({ id, viewId }) =>
+    ok(
+      await api(`/api/source/${encodeId(id)}/saved-view/${encodeURIComponent(viewId)}`, {
+        method: 'DELETE',
+      }),
+    ),
+);
+
+// ---------- tools contributed by plugins ----------
+
+// One registration per declared verb, so a plugin's domain rule is a tool an
+// agent picks like any other. The list is assembled from the registered plugins
+// rather than written here: a core file that spelled out one plugin's verbs would
+// be the privilege no third-party plugin can have (see #10).
+const contributed = mcpPluginTools();
+for (const tool of contributed.tools) {
+  server.registerTool(
+    tool.decl.name,
+    {
+      title: tool.decl.title,
+      description: tool.decl.description,
+      inputSchema: tool.shape,
+    },
+    async ({ id, ...args }) => {
+      // Fetch once and plan against exactly the file that gets written back. A
+      // second read between planning and writing would let the rule compute from
+      // dates that are no longer there.
+      const file = await getTimeline(id as string);
+      const plan = tool.plan(file, args as Record<string, unknown>);
+      const { updates, adds } = splitChanges(plan);
+      for (const { itemId, patch } of updates) applyItemPatch(file, itemId, patch as ItemPatch);
+      for (const item of adds) appendItem(file, item as TimelineFileItem);
+      if (updates.length || adds.length) await putTimeline(id as string, file);
+      return ok(toolResult(plan, { updated: updates.length, added: adds.length }));
+    },
+  );
+}
+
 // ---------- boot ----------
 
 async function main(): Promise<void> {
@@ -629,6 +769,15 @@ async function main(): Promise<void> {
   await server.connect(transport);
   // stderr is safe for logs (stdout is the MCP channel).
   console.error(`[timelines-mcp] connected — base ${BASE_URL}${API_TOKEN ? '' : ' (no MCP_API_TOKEN!)'}`);
+  if (contributed.tools.length) {
+    console.error(`[timelines-mcp] plugin tools: ${contributed.tools.map((t) => t.decl.name).join(', ')}`);
+  }
+  // A verb that is declared and not callable has to be said out loud. Silence
+  // makes it indistinguishable from a plugin that was never installed, which is
+  // the wrong thing to go looking for.
+  for (const p of contributed.problems) {
+    console.error(`[timelines-mcp] plugin tool unavailable — ${p.pluginId}: ${p.problem}`);
+  }
 }
 
 main().catch((err) => {

@@ -32,6 +32,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`src/plugins/*/README.md`](src/plugins/) | Each plugin documents itself: what it does, its fields, its model, and an `AGENTS.md` with the conventions for changing it. No core chapter is the home of a plugin fact. |
 | [`docs/design-system.md`](docs/design-system.md) | Tokens, components, the playground, and the contract for using them. Read before changing anything the viewer draws. |
 | [`docs/plugin-playbook.md`](docs/plugin-playbook.md) | How a new plugin gets built: the gate, the reach research, implementation, verification, publication. |
+| [`PLUGINS.md`](PLUGINS.md) | The plugin catalogue, generated from the manifests. What exists, and what each one is for. |
 | [`openapi.yaml`](openapi.yaml) | The HTTP API, generated. Read this before writing a client. |
 | [`schema/`](schema/) | JSON Schemas for the data files, generated from `src/types.ts`. |
 
@@ -184,7 +185,7 @@ working tree.
 
 Either way, the done-gate (rule 2) applies. If a change is too risky for `main`,
 gate it with a feature flag, not a long-lived branch. Issues live in this repo's
-own tracker (<https://github.com/dermellor/zeitlines/issues>); reference them from
+own tracker (<https://github.com/zeitlines/zeitlines/issues>); reference them from
 the closing commit with `Closes #NN`.
 
 ### 4. Everything written into the history is English
@@ -349,6 +350,9 @@ npm run schema       # regenerate the JSON Schemas from src/types.ts
 npm run schema:check # verify they match the types + the examples validate (CI)
 npm run openapi      # regenerate openapi.yaml
 npm run openapi:check # verify the committed spec matches routes + types (CI)
+npm run plugins:catalogue       # regenerate PLUGINS.md from the plugin manifests
+npm run plugins:catalogue:check # verify it matches, and that every plugin is publishable (CI)
+npm run plugins:preview -- <folder>  # render a plugin's preview.png (needs a running app + Chrome)
 ```
 
 ### Generated schemas (`schema/`)
@@ -374,6 +378,30 @@ hand.
 The same step validates the committed examples, which turns
 `data/example-projektplan.json` and `data/launch-roadmap.json` into tests: a
 change to the item shape that forgets them fails loudly.
+
+### The plugin catalogue (`PLUGINS.md`)
+
+Generated from the plugin manifests by
+[`scripts/plugins/catalogue.ts`](scripts/plugins/catalogue.ts), for the same reason
+the schemas are generated: a hand-kept list is fine at three plugins and a wall of
+links at fifty, and the copy in the list is the one that goes stale. Each plugin's
+`catalogue` entry (summary, domain, keywords, example) lives in its own manifest,
+so publishing one stays inside its folder.
+
+`plugins:catalogue:check` fails on two different things, and reporting only one
+would turn it into a silent pass: a page that no longer matches the manifests, and
+a plugin that is not publishable (no entry, no README, no `preview.png`).
+
+**The preview image is the one generated artefact CI does not regenerate.** It
+needs a browser, so `plugins:preview` drives a Chrome that is already on the
+machine rather than pinning one into `npm ci` for everybody. The check therefore
+requires the committed file to exist, not to match — a stale preview is caught by
+a human looking at the catalogue. Regenerate it when the view changes.
+
+The plugin folders are **found**, not listed: `src/plugins/*/manifest.ts`, skipping
+`_`-prefixed directories, which is what keeps the template out and makes a new
+plugin appear without anyone editing the generator. The same reasoning made the
+schema check glob `data/*.json` instead of naming the examples.
 
 ### The HTTP API: `openapi.yaml`
 

@@ -13,7 +13,7 @@
 // manifest, so a rename happens in one place.
 
 import { PRICING_COLLECTIONS } from './manifest';
-import { PRODUCT_ROADMAP_PLUGIN, versionsFromConfig } from './plugin.ts';
+import { PRODUCT_ROADMAP_PLUGIN, versionLabelsFromConfig, versionsFromConfig } from './plugin.ts';
 import type { PluginCollectionData, PluginDataRow } from '../../types';
 import type { Pricing, PricingFeature, PricingHighlight, PricingTier } from './types';
 
@@ -67,6 +67,7 @@ function compact<T extends Record<string, unknown>>(obj: T): T {
 export function pricingFromCollections(
   data: PluginCollectionData | undefined,
   versions: string[] = [],
+  versionLabels: Record<string, string> = {},
 ): Pricing {
   const valuesByTier = new Map<string, Record<string, string | boolean>>();
   const versionsByTier = new Map<string, Record<string, string>>();
@@ -106,6 +107,13 @@ export function pricingFromCollections(
   const highlights = rows(data, HIGHLIGHTS).map((row) => entity<PricingHighlight>(row));
   if (highlights.length) pricing.highlights = highlights;
   if (versions.length) pricing.versions = versions;
+  // Only labels for declared versions travel into the model — a stale entry for a
+  // dropped version is dead weight the renderer would never reach anyway.
+  if (versions.length) {
+    const labels: Record<string, string> = {};
+    for (const id of versions) if (versionLabels[id] != null) labels[id] = versionLabels[id];
+    if (Object.keys(labels).length) pricing.versionLabels = labels;
+  }
   return pricing;
 }
 
@@ -121,8 +129,9 @@ export function pricingFromCollections(
  * pricing field, and a plugin reading one would be the plugin still being special.
  */
 export function currentPricing(file: { pluginData?: Record<string, PluginCollectionData>; plugins?: { id: string; config?: Record<string, unknown> }[] } | null | undefined): Pricing {
-  const versions = versionsFromConfig(file?.plugins?.find((p) => p.id === PRODUCT_ROADMAP_PLUGIN)?.config);
-  return pricingFromCollections(file?.pluginData?.[PRODUCT_ROADMAP_PLUGIN], versions);
+  const config = file?.plugins?.find((p) => p.id === PRODUCT_ROADMAP_PLUGIN)?.config;
+  const versions = versionsFromConfig(config);
+  return pricingFromCollections(file?.pluginData?.[PRODUCT_ROADMAP_PLUGIN], versions, versionLabelsFromConfig(config));
 }
 
 /** Does this timeline carry a model worth showing a view for? */

@@ -26,17 +26,39 @@ plugin whose domain model is thin has failed even when every test is green.
 A plugin is also a public page, a catalogue entry and an invitation to the next
 contributor. Phases 1.2, 5.1 and 5.3 carry that and are not documentation chores.
 
-## Before anything: four things the code does not have yet
+## Before anything: what exists, and the two boundaries
 
-The playbook's „What this playbook presupposes" section lists them. Agent tools
-contributed by a plugin, catalogue metadata in the manifest, catalogue generation and
-preview rendering are **not built**. Do not fake any of them, and do not work around
-them by touching core files.
+Everything the playbook asks for is built: `manifest.tools` with pure-function
+handlers, catalogue metadata, `npm run plugins:catalogue`, and
+`npm run plugins:preview`. Do not describe any of them as missing.
 
-If a plugin needs agent tools, say so and stop: that is the load-bearing gap, and the
-seam has to exist before a plugin can carry the half of its value that lives in
-domain rules. Where a requirement cannot be met yet, name it in the report rather
-than silently dropping it from the checklist.
+Two boundaries remain, both about *where* a tool runs and neither a reason to skip
+phase 0's fourth question:
+
+- an installed **artifact's** tools do not run (only in-tree plugins are wired in);
+- the **remote** MCP server carries no plugin tools
+  ([#108](https://github.com/zeitlines/zeitlines/issues/108)).
+
+Build in-tree unless the user asked otherwise, and the boundaries do not apply.
+Where a requirement genuinely cannot be met, name it in the report rather than
+silently dropping it from the checklist.
+
+## Constraints that bite in the first ten minutes
+
+- **The id is reverse-DNS** from a domain the author owns: `com.acme.sprints`, at
+  least two lowercase labels. `sprints` is refused, and `register()` throws on an
+  invalid manifest at module load — which takes the app down rather than skipping
+  the plugin.
+- **`apiVersion` is `"^1"`, or `"^1.3"` if the plugin declares `tools`.**
+- **Copy [`src/plugins/_template/`](../../../src/plugins/_template/)**, which
+  carries the manifest, the descriptor, `fields.ts`, `tools.ts` and their tests in
+  the shape the host expects. Delete what the plugin does not have; do not
+  reverse-engineer the wiring from `product-roadmap`.
+- **There is no interface for enabling a plugin**
+  ([#85](https://github.com/zeitlines/zeitlines/issues/85)). On a database timeline
+  use the `configure_plugin` MCP tool; in a local example file, the `plugins` array
+  — and there it needs `"public": true`, or the build strips the plugin's rows and
+  the example renders as a plain timeline.
 
 ## Single plugin: stop points
 
@@ -45,8 +67,8 @@ Do not run these phases together. Each ends with something the user has to see.
 - **After phase 0**, report which of the four shapes the plugin has (fields, data,
   view, tools) and whether any core file would have to change. If one would, stop and
   say so: that is a finding for
-  [#10](https://github.com/dermellor/zeitlines/issues/10) or
-  [#11](https://github.com/dermellor/zeitlines/issues/11), not something to work
+  [#10](https://github.com/zeitlines/zeitlines/issues/10) or
+  [#11](https://github.com/zeitlines/zeitlines/issues/11), not something to work
   around.
 - **After phase 1**, show the domain model, the confidence statement with its open
   questions, the target questions, the baseline and the terminology table. Get
@@ -65,13 +87,14 @@ level.
 
 **Before starting the batch:**
 
-- Check whether [#14](https://github.com/dermellor/zeitlines/issues/14) has landed. If
-  the loader reads manifests from the plugin folders, a plugin touches no shared file
-  and subagents can run fully in parallel. If it has not, the single
-  `register()` line in
+- **The orchestrator writes every registry line itself, after the subagents
+  finish.** The single `register()` line in
   [`src/pluginHost/registry.ts`](../../../src/pluginHost/registry.ts) is the only
-  collision point: **the orchestrator writes every registry line itself, after the
-  subagents finish.** Never let subagents edit that file concurrently.
+  collision point for an in-tree plugin, and the runtime loader did not remove it
+  (it reads an installed *artifact's* manifest). Never let subagents edit that file
+  concurrently.
+- **Regenerate `PLUGINS.md` once, at the end.** It is derived from the manifests, so
+  a subagent has no reason to touch it and two that do will conflict.
 - Assemble the core vocabulary („Core vocabulary" in the playbook) and hand it to
   every subagent verbatim. Without it, each subagent optimises terminology locally
   and the same concept ends up with a different name in every plugin.
@@ -135,15 +158,18 @@ meaningless.
 A plugin is not publishable until all of these exist. They are what turns a correct
 plugin into a findable one.
 
-| Requirement | Where |
-| --- | --- |
-| Catalogue entry: name, one-sentence summary, domain category, keywords | `manifest.ts` |
-| Preview image rendered from the example timeline | `preview.png` |
-| Link to the example timeline on the public instance | plugin `README.md` |
-| Agent tool reference | plugin `README.md` |
-| Domain confidence and open questions | plugin `README.md` |
-| Contribution call naming the open questions | plugin `README.md` |
-| `plugins:catalogue:check` green | CI |
+| Requirement | Where | How it is checked |
+| --- | --- | --- |
+| Catalogue entry: summary, domain, keywords, example | `manifest.ts` → `catalogue` | `plugins:catalogue:check` |
+| Example timeline, with `"public": true` on the plugin entry | `data/<slug>.json` | `schema:check` validates it; without the flag the rows are stripped |
+| Preview image from that timeline | `preview.png` | `plugins:catalogue:check` requires the file; `npm run plugins:preview -- <folder>` makes it |
+| Regenerated catalogue page | `PLUGINS.md` | `plugins:catalogue:check` compares it |
+| Agent tool reference | plugin `README.md` | review |
+| Domain confidence and open questions | plugin `README.md` | review |
+| Contribution call naming the open questions | plugin `README.md` | review |
+
+The preview image is the one generated artefact CI cannot regenerate (it needs a
+browser), so a stale one passes the check. Re-render it whenever the view changes.
 
 ## Done
 

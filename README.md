@@ -244,7 +244,7 @@ server.
 ## Contributing
 
 Issues and pull requests are welcome at
-<https://github.com/dermellor/zeitlines/issues>. See
+<https://github.com/zeitlines/zeitlines/issues>. See
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, the checks CI runs, and the
 conventions worth knowing. Contributing needs **no database**: local sources run
 on a plain `npm install && npm run dev`. Requires Node 22 or newer.

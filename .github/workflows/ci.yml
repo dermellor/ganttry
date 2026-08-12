@@ -51,6 +51,15 @@ jobs:
       - name: openapi.yaml matches the routes and types
         run: npm run openapi:check
 
+      # PLUGINS.md is generated from the plugin manifests. Two failures in one
+      # step, and reporting only one would make it a silent pass: a stale page
+      # (a manifest changed without a regeneration) and a plugin that is not
+      # publishable (no catalogue entry, no README, no preview image). The
+      # preview itself is NOT regenerated here — it needs a browser, so the check
+      # requires the committed file to exist rather than to match.
+      - name: Plugin catalogue matches the manifests
+        run: npm run plugins:catalogue:check
+
       # tokens.css and tokens/index.ts are generated from tokens.json. Committed,
       # because a stylesheet cannot import JSON — so a token added to the source
       # without a regeneration would otherwise ship as a name nothing defines,

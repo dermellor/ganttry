@@ -492,16 +492,24 @@ module. **Adding a value picker** needs no menu change at all — flag the field
 
 When the active view points to a **DB-backed** source (the timeline exists in Supabase, so `GET /api/source/<id>` returns it), the viewer is editable. A **local** source (a `data/*.json` file, or a directory of Markdown notes) is editable when a process with filesystem access serves it, which means the dev server; editing a directory patches the individual notes' frontmatter and moves a deleted one to `.trash/` rather than removing it; on a static deploy the same file loads read-only, because there is nothing there to write with. Whether the running build is one or the other was decided when it was built (see „Source kinds" (docs/architecture.md)).
 
-**The header says which of the two you are looking at**, in a badge beside the
-timeline's name: „Datenbank" or „Lokal", and „· nur lesend" when nothing here can
-be changed. That badge is the answer to „why can I not drag this bar", and before it
-existed the only answer was an *absence*: no „+ Eintrag" button, no drag, no „×" —
-which reads as a broken app rather than as a read-only source. The wording lives in
-[`src/sourceOrigin.ts`](../src/sourceOrigin.ts), DOM-free and unit-tested, because
-the wording is the feature; `render.ts` only puts it on screen and takes it down
-again when a load fails, for the same reason the loading placeholder comes down
-there. „Lokal" deliberately does not say „Datei": a local source is a JSON file *or*
-a directory of notes, and the client is not told which (see
+**The header says so when nothing here can be changed**, in a „Nur lesend" badge
+beside the timeline's name. That badge is the answer to „why can I not drag this
+bar", and before it existed the only answer was an *absence*: no „+ Eintrag" button,
+no drag, no „×" — which reads as a broken app rather than as a read-only source. The
+wording lives in [`src/sourceOrigin.ts`](../src/sourceOrigin.ts), DOM-free and
+unit-tested, because the wording is the feature; `render.ts` only puts it on screen
+and takes it down again when a load fails, for the same reason the loading
+placeholder comes down there.
+
+**An editable source gets no badge**, and that is the correction of a first version
+which showed „Datenbank" or „Lokal" on every source. Those two words are the
+switcher's own group headings ([`src/switcherRows.ts`](../src/switcherRows.ts)), so
+the badge permanently repeated the heading of the group the open timeline sits
+under, while wedging itself between that name and the gear that opens the timeline's
+settings. Where a source writes to is still carried on the badge's `title` for the
+caller to place; the origin itself is one click away in the switcher, under a
+heading that deliberately does not say „Datei" for a local source (a JSON file *or*
+a directory of notes, and the client is not told which, see
 [`local-sources.md`](local-sources.md)).
 
 - **Drag** an item left/right to move start, drag either edge to resize, drag vertically to switch group. Persists on drop. Both handles sit on the bar's edge; the right one is the narrower of the two because it shares that edge with the rail's „×" (see „Item rail"). Dragging an item that has children onto another track takes its subtree along, and so does the form's **Group** control — see „Parent and children" (docs/items.md) for what „its subtree" covers.
@@ -987,6 +995,20 @@ reading never said what a click would change. The header now identifies the inst
 and which timeline is open, and the footer holds the item count plus the plugin
 diagnostic.
 
+**A plugin's views sit in that plugin's own control**, its name inside on the left,
+rather than as loose segments in the built-in switch (see „One control per plugin"
+(docs/architecture.md)). The built-in switch keeps only what the core draws from the
+item list. While one of a plugin's views is active, its control says so too — border
+and caption take the accent — because „some segment is dark" does not tell you whose
+view you are in once several plugins are enabled.
+
+Two consequences of that at five plugins, both measured rather than assumed: the bar
+becomes **two rows** (which presentation on the first, how it is bundled and narrowed
+on the second, actions at that row's far end), and the controls have **unequal
+widths**, since a caption like „Abwesenheiten" is 230px against 174px for „Budget".
+Forcing a uniform grid would mean truncating names, which would put the row back where
+it started.
+
 **Which controls a presentation gets is declared by that presentation** (see
 „Accessories" (docs/architecture.md)). The timeline and the list are two renderings
 of the item list and take all four; the graph takes three of them (no „Export HTML",
@@ -1109,6 +1131,52 @@ timelines carried a filter into a timeline it was never meant for. The shape
 follows the fold store (`COLLAPSED_ITEMS_KEY`), which had already solved this for
 folded items.
 
+**Within a timeline the scope goes one level further: grouping and filter belong to
+the presentation, not to the timeline.** Which presentation is open is a property of
+the timeline; how that presentation groups and narrows is a property of the
+presentation:
+
+```
+timelines.viewPrefs = {
+  "<viewId>": {
+    mode: "list",                                   // which presentation is open
+    presentations: {
+      "timeline":                   { groupBy: "group" },
+      "list":                       { groupBy: "status", filters: { status: ["Open"] } },
+      "plugin:dev.x.sprints:board": { groupBy: "cf:sprint" }
+    }
+  }
+}
+```
+
+Lanes and list sections are different mechanisms, so „group by Gruppe on the
+timeline, by Status in the list" is an ordinary wish, and one shared value made it
+impossible: setting it in one presentation set it in the other. It also left a hole
+in the plugin contract, since a view declaring `grouping` or `filter` inherited
+whatever the item list happened to be using, which for a view over other data means
+nothing. Each presentation now has a slot keyed by its addressable mode, plugin
+views included.
+
+Switching presentation therefore swaps the perspective and the extent with it, in
+one step: `applyViewMode` loads that presentation's prefs before it repaints, so
+there is no frame showing the previous one's grouping.
+
+**The reservation this was decided against.** The extent says *which subset* is
+being looked at, the presentation how that subset is drawn („Level 4 has two
+halves", docs/information-architecture.md). With the filter per presentation,
+switching from timeline to list can show a different set of items without anybody
+touching a filter. The decision was made knowing that: the freedom is worth more
+than the guarantee. If it bites, the smaller version is available — perspective per
+presentation, extent per timeline.
+
+**A timeline's own `groupBy` / `filters` are a fallback layer, read and never
+written.** A presentation with no entry of its own uses them, so a store written
+before this change keeps working and nothing has to be rewritten to migrate. Copying
+those values into per-mode keys instead would mean guessing which presentations
+exist, and a plugin's views are not knowable at migration time. An entry that does
+exist wins field by field: naming no filter means „no filter here", because
+otherwise clearing a filter in one presentation could never stick.
+
 Three consequences worth knowing:
 
 - **The guards stay, and their reason changed.** A stored dimension that no longer
@@ -1138,7 +1206,178 @@ The five instance-wide keys this replaces (`timelines.viewMode`,
 `timelines.milestonesOnly`) are read once, to seed the first timeline opened after
 the update, and then removed. Dropping them without that read resets every user's
 saved view, grouping and filter, which is the trap
-[`AGENTS.md`](../AGENTS.md) names for the `timelines.*` prefix.
+[`AGENTS.md`](../AGENTS.md) names for the `timelines.*` prefix. They seed that
+timeline's **fallback layer** rather than one presentation (`withLegacyFallback`):
+they applied to everything, so every presentation of the timeline has to inherit
+them.
+
+## Gespeicherte Ansichten
+
+Setting a grouping dimension and a filter selection is a handful of clicks, and
+before this the result lived nowhere: it was the current state of one person's
+browser. Every recurring way of looking at a timeline — „nur was überfällig ist,
+nach Owner gruppiert", „die Releases dieses Quartals" — had to be rebuilt by hand
+each time, and there was no way to hand one to somebody else except by describing
+the clicks.
+
+An **Ansicht** is that combination under a name, stored with the timeline: the
+presentation, the grouping dimension and the filter selection, plus who it belongs
+to and whether the instance may see it. The control is the first one in the
+presentation bar ([`src/savedViewsControl.ts`](../src/savedViewsControl.ts)), at
+the head of the two controls it is a shortcut over.
+
+**It is a mark, not a labelled control, and that was decided against a
+measurement.** With a plugin contributing a control of its own, the bar already
+wraps onto a second row below ~1000px; a third „LABEL [Wert ▾]" pair moved that to
+~1200px, which is an ordinary 13" window. Resting, the control is one 30px box
+carrying the bookmark glyph; it grows the applied view's name — and with it the
+caret — only while a view is applied, which is the state where the name is the
+information rather than a caption repeating the obvious. The caption it gave up
+moves into the panel, so opening an unlabelled box still says „Ansichten" before
+anything else is read. What this costs is honest: a mark tells you less about what
+it opens than a word does, and it was taken knowingly, because a bar that wraps
+costs every reader a row on every screen.
+
+**The word was free, and taking it back is deliberate.** „Ansicht" stopped being
+spent on the presentation switch when that became „Darstellung" (see
+„Darstellungen" above), and it is what comparable products call this in German. In
+the code it stays `SavedView`, because `View` is the timeline document — the
+collision is in the vocabulary, not in the types (see „What this leaves alone"
+([`information-architecture.md`](information-architecture.md))).
+
+### What it carries, and what it deliberately does not
+
+| Stored | Not stored |
+| --- | --- |
+| the presentation (`mode`), optional | the visible time window |
+| the grouping dimension (`groupBy`), optional | which item is selected |
+| the filter selection (`filters`), always | anything about the timeline's content |
+
+**The time window is the notable absence.** An absolute window ages into something
+nobody wants to see within a quarter, and „die nächsten drei Monate" is a *relative*
+window — a different feature, which this one would smuggle in under the same name if
+the field existed.
+
+**A view may say nothing about `mode` or `groupBy`, and that is a state rather than a
+gap.** A view that states no `mode` leaves the presentation alone when applied, which
+is what makes „nur diese Einschränkung, egal wo ich bin" expressible. It is also what
+the drift marker keys on: those two are compared only when stated, so switching to the
+list does not mark a view drifted that never had an opinion about the presentation.
+
+**The filter is the exception, and storage is the reason.** Its column is
+`NOT NULL DEFAULT '{}'`, so „states no filter" and „states the empty selection" are
+one value there and cannot be told apart on the way back. An empty selection is
+therefore a statement — „keine Einschränkung" — which is also what somebody saving an
+unfiltered view means: applying such a view clears whatever narrowing was in force.
+
+### Who sees one, who may change it
+
+Two questions, deliberately answered differently, with the rules DOM-free and shared
+with the server in [`src/savedViews.ts`](../src/savedViews.ts):
+
+- **Seeing.** `private` (the default) means its owner alone, `instance` means every
+  member. An admin is *not* an exception on the reading side: administering the
+  instance is not a reason to be shown what somebody kept to themselves.
+- **Changing.** The owner always may; anybody else needs `manage`. Not `write` —
+  „everybody who may edit items may rewrite everybody's saved views" is a wider door
+  than sharing one asks for.
+- **Publishing** (`visibility: 'instance'`) needs `write`, so a `viewer` keeps
+  private views without being able to put one in front of everybody. Creating and
+  keeping one otherwise needs only `read`, or a read-only member could save nothing
+  at all — see „Roles" ([`users.md`](users.md)).
+
+Private by default because a half-built narrowing is the normal state of one:
+somebody sets a filter, keeps it, and refines it over a week.
+
+### Where they live
+
+Behind `TimelineRepo`, so this is not a Postgres capability — the same split
+`pluginData` makes ([`plugin-storage.md`](plugin-storage.md)): a `saved_views` table
+on a `db` source, a `savedViews` section in the file on a local one. Copying a local
+timeline's file copies its views with it, and a hand-written file can ship one.
+
+Three consequences worth knowing:
+
+- **The repo never filters, the dispatcher always does.** `getTimeline` returns every
+  saved view and `handleTimelineApi` removes what the caller may not see
+  ([`scripts/db/saved-views-api.ts`](../scripts/db/saved-views-api.ts)). One gate
+  rather than one per driver, for the same reason `publicRead` is one projection: this
+  is code that decides what leaves the building.
+- **A bulk `PUT` ignores `savedViews` in its body**, unlike `pluginData`. What a
+  caller holds is what *they* were allowed to see, so honouring it would let a
+  `GET` → `PUT` round trip delete every private view of everybody else on the
+  timeline.
+- **A static deploy publishes the shared ones and strips the rest.** The build
+  materializes a local source under `public/`, so `stripSavedViewsForPublication`
+  drops every private view and the `owner` of the ones that stay — an address in a
+  world-readable file is the same leak `publicRead` strips from a plugin row.
+
+On a local source the `version` every view reports is the **file's** mtime, like an
+item's and a plugin row's: `If-Match` there means „the file has not changed since you
+read it". Two people editing two different views of one timeline at once therefore
+succeeds on a DB source and is a `409` on a local one.
+
+### The control
+
+A trigger carrying the bookmark mark — plus the applied view's name once there is
+one — opening a panel with the views this person may see, then the actions on them.
+
+- **An asterisk marks drift.** „Nur Offene *" says what is on screen is no longer what
+  that view stores, which is the difference between „ich sehe Q3 an" and „ich bin von
+  Q3 ausgegangen". Without it, saving over a view is a guess about what is in it.
+  „Aktualisieren" is offered only while it is drifted. The mark alone has no drift
+  state, and it needs none: nothing is applied to drift from.
+- **The glyph is a chrome icon, not one of the item set.** `--ui-icon-view` in
+  [`icons.css`](../src/design-system/tokens/icons.css), a bookmark in the same weight
+  as the delete „×" and the fold caret. Borrowing an `--icon-<key>` would tie a
+  control's mark to a key the user can reassign to any item.
+- **The panel holds two actions, and both are about the current display**: capture
+  it as a new view, or write it over the applied one (offered only while that one
+  has drifted — it is „what I have on screen replaces it", not „edit this view").
+  Everything that is a property of a *stored* view hangs off that view's own row
+  instead, behind a gear: name, visibility, deletion, and whatever comes next. The
+  three rows those replaced acted on whichever view happened to be applied, so
+  administering one meant entering it first, and the panel grew a row per property
+  as more of them arrived.
+- **The gear opens a `Dialog`, not a second popover.** A popover over a popover has
+  no sane dismissal order, and this asks for a decision rather than offering a
+  choice. Nothing is written until „Speichern": a name being typed is not a rename,
+  and a visibility toggle that published on click would put a half-named view in
+  front of the instance. A view the caller may not change carries no gear — the
+  dialog would be disabled fields, which is a promise the API then refuses.
+- **The name of a NEW view is typed in the panel, not in a `prompt()`.** A native
+  dialog is suppressed outright in an embedded browser — the call returns null and
+  the action silently does nothing — and naming a view is the primary flow here
+  rather than a corner like the body editor's link URL. It is also what the design
+  system asks for.
+- **A repaint must not pull that field away**, so the panel keeps its DOM while the
+  input has focus. Keyed on the input itself rather than on „focus is somewhere in the
+  panel": the click that *opens* the field leaves focus on the menu row it came from,
+  and the wider test skipped the very render that was supposed to draw the field.
+- **Dismissal is tested against the event's path, not `contains(e.target)`.** A row
+  here rebuilds the panel, so by the time the document listener runs the clicked
+  button has been replaced and is a descendant of nothing — `contains` reads that as a
+  click outside and closes the panel the click just opened a field in.
+- **The order is by name** and there is deliberately no way to change it. An explicit
+  order needs a move endpoint, a `sort` column and a rule for what reordering a shared
+  list does to everybody else's position; a list of names sorted by name is findable,
+  which is the only job the order has here.
+- **The control hides itself** when the timeline has no view to offer and none can be
+  made — a static local timeline carrying none — rather than opening an empty panel.
+  Same rule the filter follows when a timeline offers no dimension.
+
+### The address
+
+`sv=<id>` in the hash, written only while a view is applied, so a plain link stays
+plain. It is what makes „sieh dir das so an wie ich" a link rather than a description,
+and it carries the whole extent under one short key — which the filter itself has
+never done (see „URL state" below and issue #99).
+
+An incoming `sv` is **authoritative and re-applied even when that view is already the
+active one**, because the interesting case is exactly that: somebody drifted away from
+it and opened the link again. An id the timeline does not carry is dropped rather than
+reported — a link outlives the view it names, and it still has to open the timeline.
+Deleting a view clears the parameter with it.
 
 ## The timeline switcher
 
@@ -1212,10 +1451,11 @@ the location hash so links can be shared and back/forward navigation works.
 Format:
 
 ```
-#view=<id>&item=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&mode=list
+#view=<id>&item=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&mode=list&sv=<saved view>
 ```
 
-Only non-default values are written (`mode` only when it is not `timeline`).
+Only non-default values are written (`mode` only when it is not `timeline`, `sv`
+only while a saved view is applied — see „Gespeicherte Ansichten").
 
 **`m=1` is read and never written.** It carried „nur Meilensteine" while that was a
 control of its own; it now means „narrow the type dimension to Meilenstein", and it
