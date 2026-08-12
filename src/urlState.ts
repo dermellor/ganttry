@@ -17,9 +17,15 @@ export type UrlState = {
   // The rest of the state stays in the hash while the area is open, so closing
   // it returns to the timeline the operator left rather than to the default view.
   settings?: string;
+  // Which section of the OPEN TIMELINE's settings is showing. A second key rather
+  // than a value of `settings`, because the two are different levels: one is the
+  // deployment, one is this document (see docs/information-architecture.md). Only
+  // one of them is ever set — both areas replace the content, so opening one closes
+  // the other.
+  timelineSettings?: string;
 };
 
-const ORDER = ['view', 'item', 'from', 'to', 'm', 'mode', 'settings'] as const;
+const ORDER = ['view', 'item', 'from', 'to', 'm', 'mode', 'settings', 'timeline-settings'] as const;
 
 function parseHash(hash: string): URLSearchParams {
   const h = hash.startsWith('#') ? hash.slice(1) : hash;
@@ -45,6 +51,8 @@ export function readUrlState(): UrlState {
   // reads that as an empty string, which is a *present* key — distinguishing it
   // from an absent one is what makes the short link work.
   if (settings != null) state.settings = settings;
+  const tlSettings = p.get('timeline-settings');
+  if (tlSettings != null) state.timelineSettings = tlSettings;
   return state;
 }
 
@@ -91,6 +99,7 @@ function buildHash(state: UrlState): string {
   // looking plain. Everything else (list, or a plugin view) is written verbatim.
   if (state.mode && state.mode !== 'timeline') map.mode = state.mode;
   if (state.settings) map.settings = state.settings;
+  if (state.timelineSettings) map['timeline-settings'] = state.timelineSettings;
   return ORDER.flatMap((k) =>
     map[k] != null ? [`${encodeURIComponent(k)}=${encodeURIComponent(map[k])}`] : [],
   ).join('&');

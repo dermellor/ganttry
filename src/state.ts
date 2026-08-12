@@ -20,6 +20,9 @@ import type { MemberRole } from './access';
 // Type-only, so it is erased: a value import would make the cycle with
 // settingsArea.ts (which reads `els` and `state` from here) a real one.
 import type { SettingsSection } from './settingsArea';
+// Type-only for the same reason as the line above: a value import would make the
+// cycle with timelineSettings.ts (which reads `els` and `state`) a real one.
+import type { TimelineSection } from './timelineSettings';
 import type { PresenceHandle } from './realtime';
 import { mountAppShell } from './appShell';
 import { isoDateOnly } from './editor';
@@ -152,6 +155,13 @@ export interface AppState {
   // here rather than in the area's own module because `syncUrl` writes it into
   // the hash alongside the view, and the view is what the area is closed back to.
   settingsSection: SettingsSection | null;
+  /**
+   * Which section of the OPEN TIMELINE's settings is showing; null means closed.
+   * Held here for the same reason `settingsSection` is: `syncUrl` writes it into
+   * the hash beside the view. Only one of the two is ever non-null — both areas
+   * replace the content.
+   */
+  tlSection: TimelineSection | null;
   realtimeRefreshTimer: ReturnType<typeof setTimeout> | null;
   // Debounce for reactive form edits: coalesces rapid keystrokes into one
   // model update + live rebuild (see scheduleLiveEdit).
@@ -219,6 +229,7 @@ export const state: AppState = {
   currentUser: null,
   currentRole: null,
   settingsSection: null,
+  tlSection: null,
   realtimeRefreshTimer: null,
   liveEditTimer: null,
   selectedItemId: null,
@@ -430,5 +441,6 @@ export function syncUrl(): void {
   // hash while the area is open, so closing it returns to the timeline the
   // operator left rather than to the default view.
   if (state.settingsSection) urlState.settings = state.settingsSection;
+  if (state.tlSection) urlState.timelineSettings = state.tlSection;
   writeUrlState(urlState);
 }

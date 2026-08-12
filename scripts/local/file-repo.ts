@@ -764,14 +764,26 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
 
     async updateMeta(
       id: string,
-      meta: { name?: string; description?: string; groupBy?: string; customFields?: CustomFieldDef[] },
+      meta: {
+        name?: string | null;
+        description?: string | null;
+        groupBy?: string | null;
+        customFields?: CustomFieldDef[] | null;
+      },
     ): Promise<void> {
       const loaded = await loadForWrite(dirs, id);
       const next = { ...loaded.file };
       // Only keys actually present in the patch are applied, so a PATCH that
       // carries `name` alone cannot blank out `description`.
       for (const key of ['name', 'description', 'groupBy', 'customFields'] as const) {
-        if (key in meta && meta[key] !== undefined) (next as any)[key] = meta[key];
+        if (!(key in meta) || meta[key] === undefined) continue;
+        // In a file, „cleared" is an ABSENT key, not a null. The database columns
+        // take `null` and that is right for them, but `TimelineFile` types these as
+        // optional, so a written `null` makes the file invalid against
+        // `schema/timeline.schema.json` — the app would hand the user a file their
+        // own editor then flags.
+        if (meta[key] === null) delete (next as any)[key];
+        else (next as any)[key] = meta[key];
       }
       await persist(loaded, next);
     },

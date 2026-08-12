@@ -59,7 +59,7 @@ flowchart TD
 | --- | --- | --- | --- |
 | 1 Instance | the deployment | server, env, database | `#settings`, `#settings=<section>` |
 | 2 Inventory | the deployment | the discovered sources | none |
-| 3 Timeline | one timeline | the timeline record | `#view=<id>` |
+| 3 Timeline | one timeline | the timeline record | `#view=<id>`, `#timeline-settings=<section>` |
 | 4 Presentation | one timeline, per person | per person and timeline | `#mode=`, `#m=`, `#from=`/`#to=` |
 | 5 Object | one object | the object record | `#item=<id>` |
 | 6 Tools | varies | nothing | `playground.html` |
@@ -100,10 +100,10 @@ are deliberately not part of this.
 | „Plugins" panel | footer | 1 + 3 | the catalog belongs in the instance area; the per-timeline half belongs to level 3. The footer entry stays reachable from a timeline, because that is where „why is this view missing" gets asked |
 | View picker | header | 2 | an inventory with search and origin, replacing the flat `<select>` |
 | Creating a timeline | nowhere | 2 | needs a create route before it can have an interface |
-| Name, origin, read-only state | header, left | 3 | done: the open timeline says which one it is and where it comes from. Editing its name belongs to the settings route |
-| Custom field definitions | file or database | 3 | timeline settings |
+| Name, origin, read-only state | header, left | 3 | done: the open timeline says which one it is and where it comes from |
+| Custom field definitions | file or database | 3 | a section of the timeline settings route |
 | Enabled plugins and their config | a `timeline_plugins` row | 3 | timeline settings; stays an INSERT |
-| Default grouping, `colorBy` | config file | 3 | timeline settings, as the default for level 4 |
+| Name, description, default grouping | the timeline settings route | 3 | done: `#timeline-settings=general`, written through `PATCH /api/source/<id>` |
 | Phases as a set | only the ribbon | 3 | the set is structure of the timeline; one phase is level 5 |
 | Presence avatars | header, with the timeline | 3 | done: moved out of the instance group, because a session joins per timeline |
 | Timeline / list switch | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
@@ -164,7 +164,9 @@ Not a layout, just the set of places the levels demand. One each.
 - **Level 3** needs a header for the open timeline: name, origin, who else is
   looking, the way into its settings. The first three are there — the name, an origin
   badge that also carries the read-only state, and the presence avatars beside them.
-  The way into its settings arrives with the settings route.
+  The way into its settings is the gear beside them, opening
+  `#timeline-settings=<section>` — the same section pattern the instance area uses,
+  from one shared frame (`src/areaFrame.ts`).
 - **Level 4** gets one bar: the presentation switch, the perspective, the extent,
   then the actions on the presentation (create an entry, export). That replaces
   today's split across the header and the view toolbar.

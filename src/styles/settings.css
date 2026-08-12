@@ -25,6 +25,12 @@ body.settings-open .ds-ContentArea,
 body.settings-open .ds-Panel,
 body.settings-open .app-timeline-controls,
 body.settings-open #presence,
+/* The timeline's own area hides the same things and keeps the timeline's identity
+   visible: you are looking at settings OF the timeline named up there, so hiding
+   its name would leave the page without a subject. Only the presentation controls
+   and the content go. */
+body.tl-settings-open .ds-ContentArea,
+body.tl-settings-open .ds-Panel,
 /* The footer counts the active timeline's items, which is a true statement about
    something that is not on screen: „8 items in Beispiel: Projektplan" under a page
    of instance settings reads as a claim about the settings. */
@@ -176,4 +182,22 @@ body.settings-open .ds-Toolbar[data-tone='footer'] {
   .settings > .settings-nav {
     width: auto;
   }
+}
+
+/* ---- the form a section can hold -------------------------------------------- */
+
+/* A column rather than the two-column FormGrid the item form uses: these fields are
+   sentences („wie diese Timeline überall heißt"), and a name beside a description
+   at half width wraps both. */
+.settings .settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  max-width: 34rem;
+}
+
+.settings .settings-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
 }

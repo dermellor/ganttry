@@ -182,6 +182,30 @@ though the labels beside them are German). A section builds its own body on
 mount and drops it on unmount, so nothing a section needs is in the document for
 the visitors who never open it.
 
+## The second area, and what the two share
+
+The open timeline has an area of the same shape
+([`src/timelineSettings.ts`](../src/timelineSettings.ts), `#timeline-settings=<section>`),
+because a timeline's name, its description and the dimension it opens with are the
+same kind of thing one level down. What both areas are made of lives once, in
+[`src/areaFrame.ts`](../src/areaFrame.ts) and in one `settingsFrame()` in
+[`src/appShell.ts`](../src/appShell.ts): the section list, mounting exactly one
+section, the class on `<body>` that hides what is behind it. The second area first
+arrived as a copy of the first, and the copies had already drifted by a heading
+level before either shipped.
+
+**Two keys rather than one**, because they are two levels: `settings` is the
+deployment, `timeline-settings` is this document (see
+[`information-architecture.md`](information-architecture.md)). Only one is ever set
+— both replace the content, so opening one closes the other, and that is enforced in
+code rather than left to the URL.
+
+**What each area hides differs by one thing.** The instance area hides the
+timeline's identity too, since „8 items in Beispiel: Projektplan" under a page of
+instance settings reads as a claim about the settings. The timeline's own area keeps
+the name, the origin badge and the item count: that page is *about* that timeline, so
+its subject has to stay visible.
+
 ## What is deliberately not here
 
 - **An `instance_settings` table.** No setting is `home: 'db'` yet. One

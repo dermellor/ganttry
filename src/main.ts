@@ -47,6 +47,11 @@ import type { PresenceUser } from './presence';
 import { loadUserDirectory } from './users';
 import { normalizeMemberRole, roleAllows } from './access';
 import { settingsSection, showSettings, wireSettingsArea } from './settingsArea';
+import {
+  showTimelineSettings,
+  timelineSection,
+  wireTimelineSettings,
+} from './timelineSettings';
 import { deleteItem } from './itemForm';
 import { hideDetail, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
@@ -362,6 +367,8 @@ async function bootstrap() {
   // out of the URL it arrived in, and the next reload would land on the timeline.
   // Mounting still happens further down — this is only the state.
   state.settingsSection = urlState.settings != null ? settingsSection(urlState.settings) : null;
+  state.tlSection =
+    urlState.timelineSettings != null ? timelineSection(urlState.timelineSettings) : null;
 
   state.suppressUrlSync = true;
   // applyView loads that timeline's display state and applies the mode itself.
@@ -373,9 +380,16 @@ async function bootstrap() {
   // permission: /api/settings and /api/members refuse anybody else regardless of
   // what is on screen.
   wireSettingsArea();
+  wireTimelineSettings();
   if (state.currentRole && roleAllows(state.currentRole, 'manage')) {
     els.settingsBtn.hidden = false;
   }
+  // The timeline's own settings are offered wherever a timeline is: the area states
+  // for itself that a read-only source cannot be changed, and reading its name and
+  // default grouping is useful to anybody who can read the timeline. Access control
+  // off leaves `currentRole` null, which is exactly the instance where everybody
+  // past the gate may write anyway.
+  els.tlSettingsBtn.hidden = false;
 
   // …but the deep link opens it for anybody who follows one, and the sections
   // then show whatever the server answers. That is deliberate: `#settings` on an
@@ -383,6 +397,10 @@ async function bootstrap() {
   // variable", which is the exact question somebody follows that link to ask. A
   // silently ignored link would leave them with a timeline and no explanation.
   if (state.settingsSection) await showSettings(state.settingsSection);
+  // Mounted after the first view, because this area reads the loaded timeline: a
+  // deep link to it would otherwise render „keine Timeline geladen" and stay that
+  // way.
+  if (state.tlSection) await showTimelineSettings(state.tlSection);
 
   // Safety net: flush + persist an open item form if the tab closes mid-edit.
   window.addEventListener('beforeunload', () => commitItemForm());
@@ -468,6 +486,11 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
     if (wantSettings !== state.settingsSection) {
       state.settingsSection = wantSettings;
       await showSettings(wantSettings);
+    }
+    const wantTl = incoming.timelineSettings != null ? timelineSection(incoming.timelineSettings) : null;
+    if (wantTl !== state.tlSection) {
+      state.tlSection = wantTl;
+      await showTimelineSettings(wantTl);
     }
 
     // An incoming hash is authoritative about what it carries: no `mode` means the

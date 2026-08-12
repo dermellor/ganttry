@@ -1029,6 +1029,40 @@ the update, and then removed. Dropping them without that read resets every user'
 saved view, grouping and filter, which is the trap
 [`AGENTS.md`](../AGENTS.md) names for the `timelines.*` prefix.
 
+## The timeline's own settings
+
+What is true of the timeline as a whole — its name, its description, the dimension it
+opens with — is edited in its own area, `#timeline-settings=<section>`, reached from
+the gear beside the name ([`src/timelineSettings.ts`](../src/timelineSettings.ts)).
+It shares its frame and its section mechanics with the instance area (see „The second
+area" (docs/settings.md)); field definitions and per-timeline plugins become further
+sections of it.
+
+Three rules the form follows, each of them a trap avoided:
+
+- **Only changed keys are sent.** `timelineMetaPatch`
+  ([`src/timelineMeta.ts`](../src/timelineMeta.ts), DOM-free and unit-tested) diffs
+  the draft against what was loaded, because `PATCH /api/source/<id>` touches exactly
+  the keys in the body. Sending all of them would make every save a write to every
+  field, which on a DB source bumps the row version and re-attributes it — the same
+  no-op-edit trap as „Opening an item's form is a read".
+- **A cleared field goes as an explicit `null`**, since an absent key means „leave it
+  alone". The database stores that as NULL; a **file** drops the key instead, because
+  `TimelineFile` types these as optional and a written `null` would make the file
+  invalid against its own schema — the app would hand the user a file their editor
+  then flags.
+- **An emptied name is a no-op, not a clear.** A timeline with no name shows as its
+  id, so „" would replace a readable label with a slug, which is never what emptying
+  the field meant.
+
+**The name exists twice, and the open timeline's source wins.** `TimelineFile.name` is
+live and writable; `View.name` is what the build wrote into `config.json` when it
+discovered the source, which for a DB timeline is a deploy-time snapshot. So the
+header, the picker's own entry and the status line read the loaded source's name
+(`timelineName`), while every other entry in the picker keeps the built one — nothing
+has loaded those. Without that split a rename would appear to work and then come back
+after a reload.
+
 ## URL state
 
 Selected view, opened item, visible time window and the view mode are encoded in

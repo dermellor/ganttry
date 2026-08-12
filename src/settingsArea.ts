@@ -29,9 +29,16 @@ import {
   TableCell,
   TableHead,
   TableRow,
-  Tab,
   Text,
 } from './design-system';
+import {
+  areaSection,
+  createAreaHandle,
+  showArea,
+  wireAreaNav,
+  type AreaNodes,
+  type AreaSection,
+} from './areaFrame';
 import './styles/settings.css';
 import { mountMemberAdmin, unmountMemberAdmin } from './memberAdmin';
 import { ACCESS_CONTROL_OFF_TEXT } from './settings';
@@ -48,12 +55,7 @@ import type { DeclaredSetting } from './types';
  */
 export type SettingsSection = 'instance' | 'members';
 
-type SectionDef = {
-  id: SettingsSection;
-  label: string;
-  mount: (root: HTMLElement) => void | Promise<void>;
-  unmount?: () => void;
-};
+type SectionDef = AreaSection<SettingsSection>;
 
 /** Where a value lives, in the words an operator would use. */
 const HOME_LABEL: Record<DeclaredSetting['home'], string> = {
@@ -205,37 +207,20 @@ const SECTIONS: readonly SectionDef[] = [
   { id: 'members', label: 'Benutzer', mount: mountMemberAdmin, unmount: unmountMemberAdmin },
 ];
 
-/**
- * The section a hash value names, defaulting to the first.
- *
- * A bare `#settings` and an unknown section both land on the first one rather
- * than closing the area: somebody following a link to a section that was renamed
- * asked to be here, and an empty page would answer a question they did not ask.
- */
+/** The section a hash value names, defaulting to the first (see `areaSection`). */
 export function settingsSection(raw: string | undefined | null): SettingsSection {
-  return SECTIONS.find((s) => s.id === raw?.trim().toLowerCase())?.id ?? SECTIONS[0].id;
+  return areaSection(SECTIONS, raw);
 }
 
-let mounted: SectionDef | null = null;
+const handle = createAreaHandle<SettingsSection>();
 
-function renderNav(active: SettingsSection): void {
-  els.settingsNav.replaceChildren(
-    ...SECTIONS.map((s) =>
-      Tab({
-        label: s.label,
-        selected: s.id === active,
-        controls: 'settings-body',
-        attrs: { 'data-section': s.id },
-      }),
-    ),
-  );
-}
-
-/** Tear the current section down before another one is mounted over it. */
-function unmountCurrent(): void {
-  mounted?.unmount?.();
-  mounted = null;
-  els.settingsBody.replaceChildren();
+function nodes(): AreaNodes {
+  return {
+    root: els.settings,
+    nav: els.settingsNav,
+    heading: els.settingsHeading,
+    body: els.settingsBody,
+  };
 }
 
 /**
@@ -254,22 +239,7 @@ function unmountCurrent(): void {
  * timeline that cannot be edited.
  */
 export async function showSettings(section: SettingsSection | null): Promise<void> {
-  const open = section != null;
-  els.settings.hidden = !open;
-  document.body.classList.toggle('settings-open', open);
-
-  if (!open) {
-    unmountCurrent();
-    return;
-  }
-
-  const def = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0];
-  if (mounted?.id === def.id) return;
-  unmountCurrent();
-  mounted = def;
-  renderNav(def.id);
-  els.settingsHeading.textContent = def.label;
-  await def.mount(els.settingsBody);
+  await showArea(handle, nodes(), SECTIONS, section, 'settings-open');
 }
 
 /**
@@ -295,10 +265,7 @@ export function closeSettings(): void {
 }
 
 export function wireSettingsArea(): void {
-  els.settingsNav.addEventListener('click', (ev) => {
-    const tab = (ev.target as HTMLElement).closest('[data-section]') as HTMLElement | null;
-    if (tab) openSettings(tab.dataset.section as SettingsSection);
-  });
+  wireAreaNav<SettingsSection>(els.settingsNav, openSettings);
   els.settingsClose.addEventListener('click', () => closeSettings());
   els.settingsBtn.addEventListener('click', () => openSettings(SECTIONS[0].id));
 }

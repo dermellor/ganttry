@@ -52,6 +52,7 @@ import {
 } from './editor';
 import type { SourceKind, SourceLive, TimelineFile, TimelineFileItem, View } from './types';
 import { sourceOriginBadge } from './sourceOrigin';
+import { timelineName } from './timelineMeta';
 import { durationToMs, parseLocalDay } from './date';
 import { firstAssignableGroup, resolveAssignableGroup } from './groupHierarchy';
 import { hiddenByCollapse, regroupSubtree } from './itemHierarchy';
@@ -509,7 +510,10 @@ export function statusFor(view: View, build: BuildResult): string {
   // surface the count so they aren't silently missing from the timeline view.
   const dateless = filtered.items.length - timelineItems(filtered.items).length;
   const datelessHint = dateless > 0 ? ` · ${dateless} ohne Start (nur Liste)` : '';
-  return `${filtered.items.length} items in „${view.name}" · ${filtered.groups.length} groups${datelessHint}`;
+  // The live name, not the built one: a rename reaches the source at once while
+  // `config.json` keeps the name the build discovered (see src/timelineMeta.ts).
+  const name = timelineName(view, state.activeSourceFile);
+  return `${filtered.items.length} items in „${name}" · ${filtered.groups.length} groups${datelessHint}`;
 }
 
 /**
@@ -606,6 +610,11 @@ export async function renderTimeline(view: View) {
   // Where this timeline comes from, and whether it can be edited, stated in the
   // header instead of being inferred from which affordances are missing.
   showSourceOrigin(view.source.kind, sourceEditable, sourceLive);
+  // The picker lists every timeline by its built name; the one that is OPEN has its
+  // source loaded, so it can carry the live one. The others stay as built, which is
+  // the honest split: nothing has read them.
+  const option = els.viewSelect.querySelector<HTMLOptionElement>(`option[value="${CSS.escape(view.id)}"]`);
+  if (option) option.textContent = timelineName(view, sourceFile);
   // Before the first computeDisplay: the folds are per source, and the previous
   // view's set would otherwise hide items that happen to share an id here.
   loadCollapsedItems(sourceId);

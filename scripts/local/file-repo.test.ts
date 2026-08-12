@@ -171,6 +171,18 @@ describe('makeFileRepo: writes', () => {
     assert.equal(file.name, 'Anders');
     assert.equal(file.description, 'bleibt', 'a name-only patch must not blank the description');
   });
+
+  test('a cleared field loses its key rather than being written as null', async () => {
+    // In a file „cleared" is an absent key: `TimelineFile` types these as optional
+    // strings, so a written `null` would make the file invalid against its own
+    // schema — the app would hand the user a file their editor then flags.
+    await seed('meta-2', { ...BASE, description: 'weg damit', groupBy: 'tag' });
+    const repo = makeFileRepo(dirs);
+    await repo.updateMeta('meta-2', { description: null, groupBy: null });
+    const file = await raw('meta-2');
+    assert.equal('description' in file, false);
+    assert.equal('groupBy' in file, false);
+  });
 });
 
 describe('makeFileRepo: the shared validations apply', () => {

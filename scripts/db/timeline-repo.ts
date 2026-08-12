@@ -627,10 +627,10 @@ export async function updateMeta(
   sql: Sql,
   id: string,
   meta: {
-    name?: string;
-    description?: string;
-    groupBy?: string;
-    customFields?: CustomFieldDef[];
+    name?: string | null;
+    description?: string | null;
+    groupBy?: string | null;
+    customFields?: CustomFieldDef[] | null;
   },
 ): Promise<void> {
   const set: Record<string, any> = { updated_at: new Date().toISOString() };

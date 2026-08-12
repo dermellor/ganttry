@@ -88,6 +88,29 @@ export async function apiDeleteItem(sourceId: string, itemId: string): Promise<v
   await apiJson(await fetch(`/api/source/${sourceId}/item/${itemId}`, { method: 'DELETE' }));
 }
 
+/**
+ * Patch the timeline's own metadata: name, description, groupBy, customFields.
+ *
+ * Only the keys present are touched, and an explicit `null` clears one
+ * (`'name' in meta` plus `?? null` in the repo), which is why the caller sends a
+ * cleared field as null rather than as an empty string. No `If-Match`: this route
+ * has none, unlike an item PATCH — the fields are independent scalars rather than a
+ * row two people edit in the same second, and inventing a version for them would
+ * mean inventing one in three repositories.
+ */
+export async function apiUpdateMeta(
+  sourceId: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  await apiJson(
+    await fetch(`/api/source/${sourceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }),
+  );
+}
+
 export async function apiPutPhases(sourceId: string, phases: TimelinePhase[]): Promise<void> {
   await apiJson(
     await fetch(`/api/source/${sourceId}/phases`, {
