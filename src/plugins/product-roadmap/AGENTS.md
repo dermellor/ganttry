@@ -63,7 +63,13 @@ reference: [`docs/model.md`](docs/model.md).
   point, so losing one of five features must not remove it.
 
 - **The version list is config**, not a collection: a short ordered list that is
-  always replaced wholesale, which is what config is for.
+  always replaced wholesale, which is what config is for. It is two structures:
+  `versions` (ordered stable **ids**) and `versionLabels` (`id → label`).
+  Everything references a version by id — `feature.version`, `valueVersions`,
+  `nameByVersion`, `descriptionByVersion`, `labelByVersion`, an item's
+  `featureVersion` — so renaming is a `versionLabels` edit and breaks nothing
+  (issue #110). Slug an id from its label with `versionConfigFromEntries`
+  ([`pricing.ts`](pricing.ts)); never key any of the above by the label.
 
 - **Three metadata keys on items**, and they must not be renamed:
   `featureIds`, `featureVersion`, `tier`. They are declared in the manifest so an

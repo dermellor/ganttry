@@ -23,6 +23,7 @@ import {
   readItemFeatureIds,
   resolveFeatureName,
   resolveFeatureDescriptionParts,
+  versionLabel,
 } from './pricing';
 import { state, els, isEditableView } from '../../state';
 import { showDetailForId } from '../../detailPanel';
@@ -74,7 +75,7 @@ export function hasPricing(file: TimelineFile | null | undefined): file is Timel
 
 // Build the full matrix table HTML (tiers × features + work column).
 function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): string {
-  const { tiers, features } = currentPricing(file);
+  const { tiers, features, versionLabels } = currentPricing(file);
   const items = file.items ?? [];
   // Show the work column when any item is linked to any feature at all (regardless
   // of the current version filter — otherwise the column would flicker in/out), or
@@ -151,7 +152,7 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
           } else {
             const chip =
               !selectedVersion && af
-                ? ` <span class="pricing-badge-version pm-cell-ver">ab ${escapeHtml(af)}</span>`
+                ? ` <span class="pricing-badge-version pm-cell-ver">ab ${escapeHtml(versionLabel(versionLabels, af))}</span>`
                 : '';
             if (v === true) {
               cls = 'pm-cell is-on';
@@ -191,7 +192,7 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
         : isModifiedFeature(f, items, versions, selectedVersion)
           ? '<span class="pricing-badge-modified">Modified</span>'
           : !selectedVersion && f.version
-            ? `<span class="pricing-badge-version">ab ${escapeHtml(f.version)}</span>`
+            ? `<span class="pricing-badge-version">ab ${escapeHtml(versionLabel(versionLabels, f.version))}</span>`
             : '';
       const name = escapeHtml(resolveFeatureName(f, versions, selectedVersion));
       const featureThClass = editable ? 'pm-feature pm-feature-editable' : 'pm-feature';
@@ -315,11 +316,11 @@ function ensureTip() {
 // Structured description → styled tooltip HTML: availability line, base
 // description, then per-version notes laid out underneath each other. '' when
 // there is nothing to show (so the caller can skip opening the tooltip).
-function featureTipHtml(f: PricingFeature, versions: string[]): string {
+function featureTipHtml(f: PricingFeature, versions: string[], labels?: Record<string, string>): string {
   const { base, notes } = resolveFeatureDescriptionParts(f, versions);
   if (!f.version && !base && !notes.length) return '';
   const parts: string[] = [];
-  if (f.version) parts.push(`<div class="pm-tip-avail">ab Version ${escapeHtml(f.version)}</div>`);
+  if (f.version) parts.push(`<div class="pm-tip-avail">ab Version ${escapeHtml(versionLabel(labels, f.version))}</div>`);
   if (base) parts.push(`<p class="pm-tip-desc">${escapeHtml(base)}</p>`);
   if (notes.length) {
     parts.push(
@@ -327,7 +328,7 @@ function featureTipHtml(f: PricingFeature, versions: string[]): string {
         notes
           .map(
             (n) =>
-              `<li><span class="pm-tip-ver">ab ${escapeHtml(n.version)}</span>` +
+              `<li><span class="pm-tip-ver">ab ${escapeHtml(versionLabel(labels, n.version))}</span>` +
               `<span class="pm-tip-note">${escapeHtml(n.text)}</span></li>`,
           )
           .join('') +
@@ -346,7 +347,7 @@ function wireFeatureTooltips(host: HTMLElement): void {
     const pricing = currentPricing(state.activeSourceFile);
     const f = pricing?.features.find((x) => x.id === featureId);
     if (!f) return;
-    const html = featureTipHtml(f, pricing?.versions ?? []);
+    const html = featureTipHtml(f, pricing?.versions ?? [], pricing?.versionLabels);
     if (!html) return;
     tip.element.innerHTML = html;
     tip.showAt(anchorRect(icon));
@@ -483,7 +484,11 @@ export function renderPricingView(host: HTMLElement): void {
             block: false,
             options: [
               { value: '', label: 'Alle', selected: !selectedVersion },
-              ...versions.map((v) => ({ value: v, label: v, selected: v === selectedVersion })),
+              ...versions.map((v) => ({
+                value: v,
+                label: versionLabel(model.versionLabels, v),
+                selected: v === selectedVersion,
+              })),
             ],
           }),
         }),

@@ -22,15 +22,29 @@ source both read from.
 
 ## How do you enable it?
 
-One row on the timeline, with the ordered version labels as its config:
+One row on the timeline, with the ordered version list as its config. A version
+has two parts: a stable **id** everything references, and a display **label** the
+switcher shows. `versions` is the ordered id list; `versionLabels` maps id →
+label:
 
 ```json
-{ "id": "product-roadmap", "config": { "versions": ["1.0", "2.0", "3.0"] } }
+{
+  "id": "product-roadmap",
+  "config": {
+    "versions": ["1-0", "2-0", "3-0"],
+    "versionLabels": { "1-0": "1.0", "2-0": "2.0", "3-0": "3.0" }
+  }
+}
 ```
 
-Through MCP that is `configure_plugin`. A bulk seed of the model itself goes
+Through MCP that is `enable_plugin` (it validates the config against the manifest's
+`configSchema`). **Renaming a version is a config write that changes only its
+`versionLabels` entry** — the id stays, so every feature, roadmap item and matrix
+cell that references it keeps its link. A bulk seed of the model itself goes
 through `replace_timeline` with `pluginData`, or row by row with
-`write_plugin_data` — see „Tools" (docs/mcp.md).
+`write_plugin_data` — see „Tools" (docs/mcp.md). `versionConfigFromEntries` in
+[`pricing.ts`](pricing.ts) builds both structures from `{label, id?}` entries,
+minting ids for new versions and keeping ids for existing ones.
 
 Publishing the model to external pages is a second, separate decision: set
 `public` on the same row, and the rows become readable at
@@ -41,7 +55,7 @@ reasoning is in „Publishing a plugin's data" (docs/plugin-public-read.md).
 
 | Field | `metadata` key | Options come from | Context menu |
 | --- | --- | --- | --- |
-| Version | `featureVersion` | the plugin's `config.versions` | yes |
+| Version | `featureVersion` | the plugin's `config.versions` (ids; labels via `versionLabels`) | yes |
 | Tier | `tier` | the tier rows | yes |
 | Features | `featureIds` | the feature rows | no |
 
@@ -72,10 +86,15 @@ a pricing model yet.
   a typed money field would model neither.
 - **No per-tier unit prices or volume tiers.** A graduated package can only be
   expressed as an ordinary feature value today.
-- **No version editor in the interface.** Renaming a version has to migrate every
-  gate that names it (`feature.version`, `valueVersions`, `descriptionByVersion`,
-  `nameByVersion`, `labelByVersion`); until that migration exists, a rename would
-  silently unhide gated features rather than fail.
+- **No version editor in the interface.** Adding, reordering or removing a version
+  is a config write (`enable_plugin`), not an in-app action yet. Renaming, though,
+  is safe by construction: a version is a stable id plus a renamable label
+  (`versionLabels`), so changing a label touches no reference. This was not always
+  true — before issue #110 a version was only its label, and renaming silently
+  orphaned every gate that named it (`feature.version`, `valueVersions`,
+  `descriptionByVersion`, `nameByVersion`, `labelByVersion`, an item's
+  `featureVersion`). `scripts/db/migrate-version-ids.ts` moved existing timelines
+  onto the id model.
 - **No highlight editor in the interface.** The card tiles are authored through
   MCP.
 - **It is not a billing system.** It describes what a tier contains, never what a

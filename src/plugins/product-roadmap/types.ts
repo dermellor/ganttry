@@ -115,9 +115,23 @@ export type Pricing = {
   // Curated tiles for the card view (bundle features). Absent/empty = card view
   // shows nothing (fall back to the matrix).
   highlights?: PricingHighlight[];
-  // Ordered list of version labels (e.g. ["1.0", "2.0", "3.0"]). Defines both the
-  // ordering used for the cumulative version filter and the options of the
-  // version switcher in the matrix view. A feature's `version` references one of
-  // these. Absent/empty = no versioning (switcher hidden).
+  // Ordered list of stable version IDs (e.g. ["1-0", "2-0", "3-0"]). Defines both
+  // the ordering used for the cumulative version filter and the options of the
+  // version switcher in the matrix view. Everything that references a version does
+  // so by ID: a feature's `version`, the keys of `nameByVersion` /
+  // `descriptionByVersion` / `labelByVersion`, a tier's `valueVersions` values,
+  // and an item's `featureVersion` metadata. Absent/empty = no versioning
+  // (switcher hidden).
+  //
+  // The ID is decoupled from the display label ON PURPOSE (issue #110): the ID is
+  // a stable handle slugged from the label at creation, the label is
+  // free-renamable. Before this split a version was only its label, so renaming
+  // "1.0" → "MVP" left every reference pointing at the dead string "1.0" with no
+  // cascade. Now a rename touches `versionLabels` alone and breaks nothing.
   versions?: string[];
+  // Display label per version ID (id → "1.0", "MVP", …). The switcher, the
+  // "ab <version>" chips and the version dropdowns render this; an ID with no
+  // entry falls back to showing the ID (see `versionLabel` in ./pricing.ts).
+  // Absent = every version shows its raw ID.
+  versionLabels?: Record<string, string>;
 };
