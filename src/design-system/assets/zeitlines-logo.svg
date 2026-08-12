@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Zeitlines</title>
+  <desc id="desc">Ein stilisiertes Z aus zwei horizontalen Zeitleisten und einem diagonalen Verbindungsbalken auf einer abgerundeten violetten Kachel.</desc>
+
+  <defs>
+    <linearGradient id="tile-gradient" x1="128" y1="96" x2="896" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2F0D5B"/>
+      <stop offset="0.56" stop-color="#5C176F"/>
+      <stop offset="1" stop-color="#A01B7A"/>
+    </linearGradient>
+
+    <linearGradient id="connector-gradient" x1="382" y1="766" x2="727" y2="294" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F4B34B"/>
+      <stop offset="0.48" stop-color="#FF9757"/>
+      <stop offset="1" stop-color="#F27779"/>
+    </linearGradient>
+
+    <mask id="milestone-cutouts">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <circle cx="662" cy="272" r="29" fill="#000"/>
+      <circle cx="548" cy="756" r="29" fill="#000"/>
+    </mask>
+  </defs>
+
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#tile-gradient)"/>
+
+  <g mask="url(#milestone-cutouts)">
+    <path
+      d="M 737 272 L 321 756"
+      fill="none"
+      stroke="url(#connector-gradient)"
+      stroke-width="104"
+      stroke-linecap="round"
+    />
+
+    <g fill="#FBFBFB">
+      <rect x="200" y="216" width="624" height="112" rx="56"/>
+      <rect x="218" y="700" width="556" height="112" rx="56"/>
+    </g>
+  </g>
+</svg>
