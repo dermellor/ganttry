@@ -141,6 +141,12 @@ export type BadgeOptions = {
   label: string;
   /** `accent` for the state that is working, `muted` for one that is not. */
   tone?: BadgeTone;
+  /**
+   * For a badge whose state is not known yet — the open timeline's origin before
+   * its source has loaded. An empty pill reads as a value that failed to arrive,
+   * so it is absent instead.
+   */
+  hidden?: boolean;
   className?: string;
   attrs?: Attrs;
 };
@@ -153,8 +159,12 @@ export type BadgeOptions = {
  * colour from the theme.
  */
 export function Badge(options: BadgeOptions): HTMLSpanElement {
-  const { label, tone = 'neutral', className, attrs } = options;
-  return el('span', { class: classes('ds-Badge', className), ...data({ tone }), ...attrs }, label);
+  const { label, tone = 'neutral', hidden, className, attrs } = options;
+  return el(
+    'span',
+    { class: classes('ds-Badge', className), hidden, ...data({ tone }), ...attrs },
+    label,
+  );
 }
 
 export type AvatarStackOptions = {

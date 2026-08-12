@@ -99,6 +99,13 @@
   color: var(--fg-muted);
 }
 
+/* `display` beats the `hidden` attribute, so a component that sets one has to say
+   this or `hidden` does nothing at all — the same bug `.ds-Button` had (see
+   Button.css). */
+.ds-Badge[hidden] {
+  display: none;
+}
+
 /* ---- AvatarStack ------------------------------------------------------------ */
 
 .ds-AvatarStack {

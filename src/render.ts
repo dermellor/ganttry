@@ -50,7 +50,8 @@ import {
   isoDateOnly,
   loadSource,
 } from './editor';
-import type { TimelineFile, TimelineFileItem, View } from './types';
+import type { SourceKind, SourceLive, TimelineFile, TimelineFileItem, View } from './types';
+import { sourceOriginBadge } from './sourceOrigin';
 import { durationToMs, parseLocalDay } from './date';
 import { firstAssignableGroup, resolveAssignableGroup } from './groupHierarchy';
 import { hiddenByCollapse, regroupSubtree } from './itemHierarchy';
@@ -527,6 +528,23 @@ function clearLoadFailure(): void {
   els.timeline.querySelector('.load-failure')?.remove();
 }
 
+/**
+ * The origin badge beside the open timeline's name. The wording lives in
+ * [`src/sourceOrigin.ts`](./sourceOrigin.ts) (DOM-free, unit-tested); this is only
+ * the two lines that put it on screen.
+ */
+function showSourceOrigin(kind: SourceKind, editable: boolean, live: SourceLive): void {
+  const badge = sourceOriginBadge(kind, editable, live);
+  els.sourceOrigin.textContent = badge.label;
+  els.sourceOrigin.dataset.tone = badge.tone;
+  els.sourceOrigin.title = badge.title;
+  els.sourceOrigin.hidden = false;
+}
+
+function hideSourceOrigin(): void {
+  els.sourceOrigin.hidden = true;
+}
+
 export async function renderTimeline(view: View) {
   if (!state.config) return;
 
@@ -545,7 +563,7 @@ export async function renderTimeline(view: View) {
   let sourceId: string | null = null;
 
   let sourceEditable = false;
-  let sourceLive: import('./types').SourceLive = 'none';
+  let sourceLive: SourceLive = 'none';
 
   // Cover the area for the duration of the fetch — a DB-backed source takes long
   // enough that an untouched timeline area reads as "this view is empty".
@@ -567,6 +585,9 @@ export async function renderTimeline(view: View) {
       // And say it where the eye actually is. The status line alone leaves a
       // blank content area, which reads as „the app is broken" rather than as
       // „this did not load" — the failure looked silent even though it was not.
+      // Nothing loaded, so the origin badge would describe the timeline the user
+      // was looking at before — same reason the placeholder comes down here.
+      hideSourceOrigin();
       showLoadFailure(message);
       return;
     }
@@ -582,6 +603,9 @@ export async function renderTimeline(view: View) {
   state.activeSourceId = sourceId;
   state.activeSourceEditable = sourceEditable;
   state.activeSourceLive = sourceLive;
+  // Where this timeline comes from, and whether it can be edited, stated in the
+  // header instead of being inferred from which affordances are missing.
+  showSourceOrigin(view.source.kind, sourceEditable, sourceLive);
   // Before the first computeDisplay: the folds are per source, and the previous
   // view's set would otherwise hide items that happen to share an id here.
   loadCollapsedItems(sourceId);
