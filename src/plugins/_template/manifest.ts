@@ -17,9 +17,9 @@ export const exampleManifest: PluginManifest = {
   name: 'Example',
   version: '0.1.0',
   // The host contract range this was built against. "^1" = any 1.x. Declare
-  // "^1.2" or later if you use `tools` below, or a 1.0 host will load the plugin
+  // "^1.3" or later if you use `tools` below, or an older host will load the plugin
   // and list your verbs nowhere.
-  apiVersion: '^1.2',
+  apiVersion: '^1.3',
 
   // Keep this list short and true. It is shown to whoever installs the plugin, and
   // every declaration below has to be covered by it.

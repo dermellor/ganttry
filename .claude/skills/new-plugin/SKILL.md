@@ -49,7 +49,7 @@ silently dropping it from the checklist.
   least two lowercase labels. `sprints` is refused, and `register()` throws on an
   invalid manifest at module load — which takes the app down rather than skipping
   the plugin.
-- **`apiVersion` is `"^1"`, or `"^1.2"` if the plugin declares `tools`.**
+- **`apiVersion` is `"^1"`, or `"^1.3"` if the plugin declares `tools`.**
 - **Copy [`src/plugins/_template/`](../../../src/plugins/_template/)**, which
   carries the manifest, the descriptor, `fields.ts`, `tools.ts` and their tests in
   the shape the host expects. Delete what the plugin does not have; do not

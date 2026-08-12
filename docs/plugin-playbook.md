@@ -242,7 +242,7 @@ collision in somebody's data. It is permanent in practice, so pick it in phase 1
 rather than here.
 
 **`apiVersion` is `"^1"`** unless the plugin declares `tools`, which arrived in
-1.2 and needs `"^1.2"`. A plugin using a newer section while claiming `^1` loads on
+1.3 and needs `"^1.3"`. A plugin using a newer section while claiming `^1` loads on
 an older host with its verbs listed nowhere, and no host can warn about that on the
 older one's behalf.
 
@@ -525,7 +525,7 @@ research, the spec, the verification and the publication — is unaffected by ei
        baseline recording, terminology table (core vocabulary respected)
 [ ] 2  Spec written: fields, tools, view, config, data, catalogue entry,
        and what it does not do
-[ ] 3  Reverse-DNS id, apiVersion (^1.2 with tools); manifest, descriptor,
+[ ] 3  Reverse-DNS id, apiVersion (^1.3 with tools); manifest, descriptor,
        fields.ts, tools.ts, tests, README, AGENTS.md; one registry line
 [ ] 4  Tests incl. domain rules; typecheck, schema check, catalogue check,
        build, bundle split, design system; example with "public": true;
