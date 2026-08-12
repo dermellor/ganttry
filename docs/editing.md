@@ -925,6 +925,18 @@ down: the order was right, and the picture read as if the two were unrelated
 because the edge between them crossed three other nodes. It costs vertical space,
 which is the trade: the graph is taller and its edges are short.
 
+**An edge picks its sides from the direction it runs.** Forward: out of the
+source's right edge, into the target's left. **Backward** — a plan pointing back at
+its own tasks — is mirrored: out of the left, into the right. Always leaving on the
+right was the first cut and it draws the wrong picture, sending the line out to the
+right, across the whole column it points into, and back in from the far left. Six
+of those over one node is a fan of long diagonals over the boxes they connect,
+unreadable in exactly the case where the relation matters most. An edge inside one
+column is the third case and gets neither: both ends on the right, bulging out and
+back, because mirroring it would loop it around the whole column. `edgePath` lives
+with the layout rather than the view — it is geometry over placed nodes, and that
+is where it can be tested.
+
 The heights are computed rather than measured (`estimateLines`, `nodeHeight` in
 [`src/graphLayout.ts`](../src/graphLayout.ts)). Measuring means laying the graph
 out once to learn the heights and again to use them, and the intermediate state is

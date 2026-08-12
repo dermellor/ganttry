@@ -32,12 +32,12 @@ import { syncFilterControl } from './filterControl';
 import { displayIdsFor, filterBuildForDisplay } from './render';
 import { els, state, syncUrl } from './state';
 import {
+  edgePath,
   estimateLines,
   layoutGraph,
   MARGIN,
   NODE_W,
   type EdgeKind,
-  type PlacedNode,
 } from './graphLayout';
 import type { GraphConfig } from './types';
 
@@ -115,35 +115,6 @@ function edgesOf(
   }
   for (const [child, parent] of parents) out.push({ from: parent, to: child, kind: 'parent' });
   return out;
-}
-
-/**
- * The path from one node's right edge to another's left edge.
- *
- * A backward or same-column edge gets the same shape with a fixed control-point
- * offset, which makes it bulge out to the right and come back: it reads as „this
- * one points against the reading direction" instead of as a straight line hidden
- * under the boxes it crosses.
- *
- * Both control points are clamped into the canvas the layout computed. Unclamped,
- * a backward edge in the leftmost column pulls its control point to a negative x
- * and the loop is drawn outside the viewport — the arrowhead then sits flat
- * against the left edge with the curve that explains it cut off, which reads as a
- * rendering fault rather than as an edge pointing backwards.
- */
-function edgePath(from: PlacedNode, to: PlacedNode, width: number): string {
-  const sx = from.x + NODE_W;
-  // Each end's own middle: the boxes are not a grid any more, so a shared constant
-  // would attach the line above or below the box it belongs to.
-  const sy = from.y + from.height / 2;
-  const tx = to.x;
-  const ty = to.y + to.height / 2;
-  const forward = tx - sx;
-  const pull = forward > 0 ? Math.max(28, forward / 2) : 64;
-  const edge = 4;
-  const cp1 = Math.min(width - edge, sx + pull);
-  const cp2 = Math.max(edge, tx - pull);
-  return `M ${sx} ${sy} C ${cp1} ${sy}, ${cp2} ${ty}, ${tx} ${ty}`;
 }
 
 /** The one `<defs>` block: the arrowheads, in both treatments. */

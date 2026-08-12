@@ -125,6 +125,11 @@ const COL_PITCH = NODE_W + COL_GAP;
  * more is measurable in time and not in the picture. */
 const SWEEPS = 4;
 
+/** Least horizontal lead-out an edge gets, so a near-vertical one still curves. */
+const MIN_PULL = 28;
+/** How far an edge inside one column bulges out past its own column. */
+const SAME_COLUMN_PULL = 64;
+
 /** How much of a node is available to its title, in characters per line. */
 const CHARS_PER_LINE = 34;
 /** Beyond this the title is clipped by CSS instead of growing the box further. */
@@ -148,6 +153,52 @@ export function nodeHeight(node: { lines?: number; meta?: boolean; reference?: b
   const lines = node.lines ?? 1;
   const subs = (node.meta ? 1 : 0) + (node.reference ? 1 : 0);
   return 2 * NODE_PAD_Y + lines * LINE_H + subs * SUB_LINE_H;
+}
+
+/**
+ * The SVG path of one edge, between two placed nodes.
+ *
+ * **Which side it leaves and enters depends on the direction it runs.** A forward
+ * edge leaves the source's right edge and enters the target's left; a **backward**
+ * one is mirrored — left edge out, right edge in. Always leaving on the right was
+ * the obvious first cut and it draws the wrong picture: an edge from a plan back to
+ * its tasks went out to the right, swept across the whole column it was pointing
+ * into, and came back in from the far left. Six of those over one node is a fan of
+ * long diagonals over the boxes they connect, which is unreadable in exactly the
+ * case where the relation matters most.
+ *
+ * An edge inside one column is the third case and gets neither: both ends sit on
+ * the right, so it bulges out and comes back. Mirroring it would loop it around the
+ * entire column instead.
+ *
+ * Control points are clamped into the canvas. Unclamped, an edge near either border
+ * pulls its control point outside and the curve that explains the arrowhead is cut
+ * off — which reads as a rendering fault rather than as an edge pointing backwards.
+ */
+export function edgePath(
+  from: { x: number; y: number; height: number },
+  to: { x: number; y: number; height: number },
+  width: number,
+): string {
+  // Each end's own middle: the boxes are not a grid, so a shared constant would
+  // attach the line above or below the box it belongs to.
+  const sy = from.y + from.height / 2;
+  const ty = to.y + to.height / 2;
+  const edge = 4;
+  const clamp = (x: number) => Math.min(width - edge, Math.max(edge, x));
+
+  if (to.x === from.x) {
+    const x = from.x + NODE_W;
+    return `M ${x} ${sy} C ${clamp(x + SAME_COLUMN_PULL)} ${sy}, ${clamp(x + SAME_COLUMN_PULL)} ${ty}, ${x} ${ty}`;
+  }
+
+  const forward = to.x > from.x;
+  const sx = forward ? from.x + NODE_W : from.x;
+  const tx = forward ? to.x : to.x + NODE_W;
+  // Signed, so the mirrored case bends the same way relative to its own direction.
+  const span = tx - sx;
+  const pull = Math.sign(span) * Math.max(MIN_PULL, Math.abs(span) / 2);
+  return `M ${sx} ${sy} C ${clamp(sx + pull)} ${sy}, ${clamp(tx - pull)} ${ty}, ${tx} ${ty}`;
 }
 
 /**

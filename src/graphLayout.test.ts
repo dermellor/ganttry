@@ -2,6 +2,7 @@ import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  edgePath,
   layoutGraph,
   BAND_GAP,
   BAND_PAD,
@@ -542,4 +543,72 @@ test('a titled band reserves room for its heading', () => {
   const firstY = (l: ReturnType<typeof layoutGraph>) => Math.min(...l.nodes.map((n) => n.y));
   assert.equal(firstY(titled) - firstY(plain), BAND_TITLE_H);
   assert.equal(titled.bands[0].height - plain.bands[0].height, BAND_TITLE_H);
+});
+
+describe('edgePath: which side an edge leaves and enters', () => {
+  const node = (x: number, y = 0, height = 40) => ({ x, y, height });
+  // "M sx sy C c1x sy, c2x ty, tx ty" → the four x values that matter.
+  const xs = (d: string) => {
+    const n = d.match(/-?[\d.]+/g)!.map(Number);
+    return { sx: n[0], c1: n[2], c2: n[4], tx: n[6] };
+  };
+  const WIDTH = 2000;
+
+  test('a forward edge goes right edge → left edge', () => {
+    const { sx, tx } = xs(edgePath(node(100), node(500), WIDTH));
+    assert.equal(sx, 100 + NODE_W, 'leaves the source’s right edge');
+    assert.equal(tx, 500, 'enters the target’s left edge');
+  });
+
+  // Always leaving on the right sent an edge from a plan back to its tasks out to
+  // the right, across the whole column it pointed into, and back in from the far
+  // left. Six of those over one node is a fan of diagonals over the boxes they
+  // connect.
+  test('a backward edge is mirrored: left edge → right edge', () => {
+    const { sx, tx } = xs(edgePath(node(500), node(100), WIDTH));
+    assert.equal(sx, 500, 'leaves the source’s left edge');
+    assert.equal(tx, 100 + NODE_W, 'enters the target’s right edge');
+  });
+
+  test('a backward edge stays between its two ends, taking the short way', () => {
+    const { sx, c1, c2, tx } = xs(edgePath(node(500), node(100), WIDTH));
+    for (const [name, x] of [['c1', c1], ['c2', c2]] as const) {
+      assert.ok(x <= sx && x >= tx, `${name} (${x}) should sit between ${tx} and ${sx}`);
+    }
+  });
+
+  test('a forward edge does the same, in its own direction', () => {
+    const { sx, c1, c2, tx } = xs(edgePath(node(100), node(900), WIDTH));
+    for (const x of [c1, c2]) assert.ok(x >= sx && x <= tx);
+  });
+
+  // Mirroring a same-column edge would loop it around the entire column.
+  test('an edge inside one column leaves and enters on the right, bulging out', () => {
+    const { sx, c1, c2, tx } = xs(edgePath(node(100, 0), node(100, 200), WIDTH));
+    assert.equal(sx, 100 + NODE_W);
+    assert.equal(tx, 100 + NODE_W);
+    assert.ok(c1 > sx && c2 > tx, 'both control points push out past the column');
+  });
+
+  test('each end is attached at its own vertical middle, not a shared constant', () => {
+    const d = edgePath(node(100, 0, 40), node(500, 300, 90), WIDTH);
+    const n = d.match(/-?[\d.]+/g)!.map(Number);
+    assert.equal(n[1], 20, 'source: 0 + 40/2');
+    assert.equal(n[7], 345, 'target: 300 + 90/2');
+  });
+
+  // An unclamped control point puts the curve that explains the arrowhead outside
+  // the viewport, which reads as a rendering fault.
+  test('control points stay inside the canvas at either border', () => {
+    const narrow = 400;
+    for (const d of [
+      edgePath(node(0, 0), node(0, 200), narrow),
+      edgePath(node(150), node(0), narrow),
+    ]) {
+      const { c1, c2 } = xs(d);
+      for (const x of [c1, c2]) {
+        assert.ok(x >= 0 && x <= narrow, `control point ${x} outside 0..${narrow}`);
+      }
+    }
+  });
 });
