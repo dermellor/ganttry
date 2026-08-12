@@ -282,13 +282,35 @@ A definition is:
 [`scripts/db/timeline-repo.ts`](../scripts/db/timeline-repo.ts) (`getTimeline`,
 `replaceTimeline`, `updateMeta`) and flow to the viewer as `file.customFields`.
 
-**Configuration is backend-side for now** — there is no in-app editor for the
-definitions themselves. Seed / change them via:
+**The definitions are edited in the timeline's own settings**, section „Felder"
+([`src/fieldsSection.ts`](../src/fieldsSection.ts), `#timeline-settings=fields`):
+one card per definition with its label, key, type, option list, section and the
+context-menu flag, plus add, remove and reorder. The order is what the item form and
+the dimension lists read, so moving a card is the only ordering there is.
 
-- the MCP tool `set_custom_fields(id, customFields)` (patches the definitions as
-  a unit; items are untouched), or `replace_timeline`'s optional `customFields`;
-- a direct `PATCH /api/source/<id>` with `{ "customFields": [...] }`;
-- SQL on the `timelines.custom_fields` column.
+The rules live in [`src/fieldDefs.ts`](../src/fieldDefs.ts), DOM-free and
+unit-tested, because they are what keeps an edit from destroying data:
+
+- **A key is fixed once items use it.** The key *is* the metadata key, so changing it
+  on a field that carries values orphans every one of them: the field reads empty
+  everywhere and the values sit in the file under a key nothing offers. The input is
+  disabled with that reason, and clearing the last value makes it editable again.
+- **A key a plugin contributes is refused.** A contributed definition wins over a
+  stored one (`mergeFieldDefs`), so storing one on the same key would never appear —
+  an edit that looks like it did not take.
+- **A reserved key is refused** (`owner`, `tags`, `parent`, …): the item form already
+  renders its own control for those.
+- **Every problem is reported at once**, at the card it belongs to, and the save stays
+  disabled while any remains. Somebody fixing four problems one save at a time gives
+  up.
+- **Removing a definition removes no values.** They stay in the items and reappear if
+  the key is declared again — said once above the list, because the opposite
+  assumption is the dangerous one.
+
+Still available, and unchanged: the MCP tool `set_custom_fields(id, customFields)`
+(patches the definitions as a unit; items are untouched), `replace_timeline`'s
+optional `customFields`, a direct `PATCH /api/source/<id>`, or SQL on the
+`timelines.custom_fields` column.
 
 **Editing values:** for a DB-backed (editable) timeline the item form renders one
 control per custom field ([`src/customFields.ts`](../src/customFields.ts), wired
@@ -296,6 +318,15 @@ into [`src/itemForm.ts`](../src/itemForm.ts)) — a chip editor with a fixed-opt
 dropdown for `multi-select`, a `<select>` for `select`, a text input for `text`.
 Custom-field keys are treated as managed metadata (like `tags` / `dependsOn`),
 so they never leak into the free-form "Other metadata (JSON)" box.
+
+**A stored value the definition no longer offers keeps its own row** in the
+`<select>`, marked „(nicht in der Liste)" (`selectRowsFor` in
+[`src/fieldDefs.ts`](../src/fieldDefs.ts)). Without it the control renders empty, and
+because leaving the panel commits the form (see „Opening an item's form is a read"
+(docs/editing.md)) that empty was written straight over the stored value: removing one
+option cleared the field on every item that carried it, in a single click and with no
+message. That was reproduced against the running form, which is why the rule now sits
+in a tested module rather than in the renderer.
 
 ### Quick-editable from the context menu (`contextMenu`)
 

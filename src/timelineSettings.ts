@@ -36,6 +36,7 @@ import {
 import { els, state, syncUrl } from './state';
 import { groupByChoices, timelineMetaDraft, timelineMetaPatch } from './timelineMeta';
 import { apiUpdateMeta } from './editor';
+import { mountFieldsSection, unmountFields } from './fieldsSection';
 import { renderTimeline } from './render';
 
 /**
@@ -43,7 +44,7 @@ import { renderTimeline } from './render';
  * English like every other key in the hash, though the labels beside them are
  * German.
  */
-export type TimelineSection = 'general';
+export type TimelineSection = 'general' | 'fields';
 
 const handle = createAreaHandle<TimelineSection>();
 
@@ -179,6 +180,7 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
 
 const SECTIONS: readonly AreaSection<TimelineSection>[] = [
   { id: 'general', label: 'Allgemein', mount: mountGeneral },
+  { id: 'fields', label: 'Felder', mount: mountFieldsSection, unmount: unmountFields },
 ];
 
 /** The section a hash value names, defaulting to the first. */

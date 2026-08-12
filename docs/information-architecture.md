@@ -101,7 +101,7 @@ are deliberately not part of this.
 | View picker | header | 2 | an inventory with search and origin, replacing the flat `<select>` |
 | Creating a timeline | nowhere | 2 | needs a create route before it can have an interface |
 | Name, origin, read-only state | header, left | 3 | done: the open timeline says which one it is and where it comes from |
-| Custom field definitions | file or database | 3 | a section of the timeline settings route |
+| Custom field definitions | the timeline settings route | 3 | done: `#timeline-settings=fields` |
 | Enabled plugins and their config | a `timeline_plugins` row | 3 | timeline settings; stays an INSERT |
 | Name, description, default grouping | the timeline settings route | 3 | done: `#timeline-settings=general`, written through `PATCH /api/source/<id>` |
 | Phases as a set | only the ribbon | 3 | the set is structure of the timeline; one phase is level 5 |
