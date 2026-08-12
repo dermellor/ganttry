@@ -1066,6 +1066,18 @@ to and whether the instance may see it. The control is the first one in the
 presentation bar ([`src/savedViewsControl.ts`](../src/savedViewsControl.ts)), at
 the head of the two controls it is a shortcut over.
 
+**It is a mark, not a labelled control, and that was decided against a
+measurement.** With a plugin contributing a control of its own, the bar already
+wraps onto a second row below ~1000px; a third „LABEL [Wert ▾]" pair moved that to
+~1200px, which is an ordinary 13" window. Resting, the control is one 30px box
+carrying the bookmark glyph; it grows the applied view's name — and with it the
+caret — only while a view is applied, which is the state where the name is the
+information rather than a caption repeating the obvious. The caption it gave up
+moves into the panel, so opening an unlabelled box still says „Ansichten" before
+anything else is read. What this costs is honest: a mark tells you less about what
+it opens than a word does, and it was taken knowingly, because a bar that wraps
+costs every reader a row on every screen.
+
 **The word was free, and taking it back is deliberate.** „Ansicht" stopped being
 spent on the presentation switch when that became „Darstellung" (see
 „Darstellungen" above), and it is what comparable products call this in German. In
@@ -1147,13 +1159,18 @@ succeeds on a DB source and is a `409` on a local one.
 
 ### The control
 
-A trigger carrying the applied view's name (or „Keine Ansicht"), opening a panel with
-the views this person may see, then the actions on them.
+A trigger carrying the bookmark mark — plus the applied view's name once there is
+one — opening a panel with the views this person may see, then the actions on them.
 
 - **An asterisk marks drift.** „Nur Offene *" says what is on screen is no longer what
   that view stores, which is the difference between „ich sehe Q3 an" and „ich bin von
   Q3 ausgegangen". Without it, saving over a view is a guess about what is in it.
-  „Aktualisieren" is offered only while it is drifted.
+  „Aktualisieren" is offered only while it is drifted. The mark alone has no drift
+  state, and it needs none: nothing is applied to drift from.
+- **The glyph is a chrome icon, not one of the item set.** `--ui-icon-view` in
+  [`icons.css`](../src/design-system/tokens/icons.css), a bookmark in the same weight
+  as the delete „×" and the fold caret. Borrowing an `--icon-<key>` would tie a
+  control's mark to a key the user can reassign to any item.
 - **The name is typed in the panel, not in a `prompt()`.** A native dialog is
   suppressed outright in an embedded browser — the call returns null and the action
   silently does nothing — and naming a view is the primary flow here rather than a

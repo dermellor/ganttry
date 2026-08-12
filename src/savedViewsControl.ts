@@ -6,6 +6,15 @@
 // when the view states one, the presentation) in a single click — so it reads left
 // to right as „this whole look, then the parts of it".
 //
+// **It is a mark rather than a labelled control, and that is a space decision made
+// against measurement.** With a plugin contributing a control of its own, the bar
+// wraps onto a second row below ~1000px as it is; a third „LABEL [Wert ▾]" pair
+// pushed that to ~1200px, which is a 13" window. Resting, this is one 30px box; it
+// grows the applied view's name and the caret only while a view is applied — see
+// `setTrigger`. The cost is honest and was accepted with the shape: a mark says
+// less about what it opens than a caption does, and „Ansicht" is a word the panel
+// has to carry instead.
+//
 // The word is deliberate. „Ansicht" became free when the presentation switch was
 // renamed to „Darstellung" (see „Darstellungen" in docs/editing.md), and it is what
 // comparable products call this in German. In the code it stays `SavedView`,
@@ -15,7 +24,7 @@
 // The rules — who may see one, who may change it, has the current state drifted —
 // are in src/savedViews.ts, shared with the server. This module only draws them.
 
-import { Button, MenuItem, MenuSection, Separator, TextInput, el } from './design-system';
+import { Button, el, Icon, MenuItem, MenuSection, Separator, TextInput } from './design-system';
 import { els, state, saveViewPrefs, setStatus, syncUrl } from './state';
 import { apiCreateSavedView, apiDeleteSavedView, apiUpdateSavedView } from './editor';
 import {
@@ -250,6 +259,44 @@ async function deleteActive(): Promise<void> {
   }, `Ansicht „${view.name}" gelöscht.`);
 }
 
+/**
+ * The trigger's two shapes: a bare mark, and the mark plus the applied view's name.
+ *
+ * The mark alone is the resting state because this bar has no room for a third
+ * labelled control — it already wraps on a 13" window once a plugin contributes
+ * one of its own. A name appears only while a view is applied, which is the state
+ * where the name is the information rather than a caption repeating the obvious.
+ *
+ * `data-icon-only` is kept in step with the label, because the variant hangs the
+ * caret off its absence: a mark with a caret beside it reads as a control with a
+ * missing value.
+ *
+ * The accessible name is set in both shapes, and it CONTAINS the visible one when
+ * there is a visible one — an `aria-label` that replaces the text on screen leaves
+ * a keyboard user and a sighted user talking about different buttons.
+ */
+function setTrigger(active: SavedView | undefined, isDrifted: boolean): void {
+  const toggle = els.savedViewsToggle;
+  const mark = el('span', { class: 'ds-Button-icon', 'aria-hidden': 'true' }, [
+    Icon({ name: 'view', chrome: true, size: 'sm', standalone: true }),
+  ]);
+  if (!active) {
+    toggle.replaceChildren(mark);
+    toggle.dataset.iconOnly = 'true';
+    toggle.setAttribute('aria-label', 'Gespeicherte Ansichten');
+    toggle.title = 'Gespeicherte Ansichten';
+    return;
+  }
+  // The asterisk says „what you see is no longer what this view stores", which is
+  // the difference between „I am looking at Q3" and „I started from Q3". Without
+  // it, saving over a view is a guess about what is in it.
+  const label = `${active.name}${isDrifted ? ' *' : ''}`;
+  toggle.replaceChildren(mark, el('span', { class: 'ds-Button-label' }, label));
+  delete toggle.dataset.iconOnly;
+  toggle.setAttribute('aria-label', `Gespeicherte Ansichten: ${label}`);
+  toggle.title = isDrifted ? `„${active.name}" mit ungespeicherten Änderungen` : active.name;
+}
+
 /** The row for one saved view: its name, whether it is shared, whether it is on. */
 function viewRow(view: SavedView): HTMLButtonElement {
   return MenuItem({
@@ -303,17 +350,12 @@ export function syncSavedViewsControl(): void {
   }
 
   const isDrifted = !!active && drifted(active);
-  els.savedViewsToggle.textContent = active
-    ? `${active.name}${isDrifted ? ' *' : ''}`
-    : 'Keine Ansicht';
-  // The asterisk says „what you see is no longer what this view stores", which is
-  // the difference between „I am looking at Q3" and „I started from Q3". Without
-  // it, saving over a view is a guess about what is in it.
-  els.savedViewsToggle.title = isDrifted
-    ? `„${active!.name}" mit ungespeicherten Änderungen`
-    : '';
+  setTrigger(active, isDrifted);
 
   const children: Element[] = [];
+  // The caption the trigger gave up when it became a mark. With views it heads the
+  // list; with none it heads the actions, so a panel opened from an unlabelled
+  // 30px box still says what it is about before anything is read.
   if (all.length) {
     children.push(MenuSection({ label: 'Ansichten', children: all.map(viewRow) }));
   }
@@ -405,7 +447,7 @@ export function syncSavedViewsControl(): void {
   }
   if (actions.length) {
     if (children.length) children.push(Separator({}));
-    children.push(MenuSection({ children: actions }));
+    children.push(MenuSection({ label: all.length ? undefined : 'Ansichten', children: actions }));
   }
   if (naming) {
     children.push(Separator({}));

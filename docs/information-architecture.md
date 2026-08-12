@@ -117,7 +117,7 @@ for a different part of the screen to set the same thing.
 | Plugin views | the bar, one control per plugin | 4 | done: each plugin's views sit in its own control, its name inside on the left; the control marks itself while one of its views is active |
 | „Gruppieren" | the bar | 4, perspective | done |
 | „Filter" | the bar | 4, extent | done: beside the switch, holding every narrowing |
-| „Ansicht" (saved views) | the bar, first of its group | 3 | done: a named bundle of the presentation, the perspective and the extent, stored with the timeline and shareable with the instance |
+| „Ansicht" (saved views) | the bar, first of its group | 3 | done: a named bundle of the presentation, the perspective and the extent, stored with the timeline and shareable with the instance. A **mark** rather than a labelled control: the bar wraps below ~1000px with a plugin present, and a third caption moved that to ~1200px |
 | „Nur Meilensteine" | gone | 4, extent | done: a value of the type dimension in the filter |
 | Time window (zoom, pan) | the chart | 4, extent | stays a gesture, counts as extent, travels with it |
 | „+ Eintrag" | the bar, right | 5 | done: an action of the presentation the object appears in, offered only where it can appear |
