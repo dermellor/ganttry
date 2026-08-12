@@ -62,6 +62,13 @@ export type PlacedNode = {
   y: number;
   /** Its own box height: nodes are not a grid, see `placeBand`. */
   height: number;
+  /** Its own width, narrowed by `indent`. */
+  width: number;
+  /**
+   * How far it is indented inside its column, because something in the same column
+   * relates to it. See `buildUnits`.
+   */
+  indent: number;
 };
 
 export type PlacedBand = {
@@ -123,7 +130,25 @@ const COL_PITCH = NODE_W + COL_GAP;
 
 /** How often the barycenter sweep runs. Four passes settle the cases this draws;
  * more is measurable in time and not in the picture. */
-const SWEEPS = 4;
+/** One-sided passes: each column settles against the side already laid out. */
+const SIDED_PASSES = 6;
+/** Then both sides at once, which pulls a unit with neighbours either way to the middle. */
+const BOTH_SIDED_PASSES = 4;
+
+/** One step of indentation for a same-column child. */
+export const INDENT_STEP = 18;
+/** Deeper than this and the box has no width left; the tree keeps nesting flat. */
+const MAX_INDENT_DEPTH = 4;
+/** Vertical distance between a parent and its indented child. */
+const SUBTREE_GAP = 8;
+
+/**
+ * Two things whose y intervals come within this of each other are read as one
+ * cluster; anything more is a gap between clusters.
+ */
+const CLUSTER_SLACK = 40;
+/** What a gap between two clusters is shrunk to. */
+const CLUSTER_GAP = 24;
 
 /** Least horizontal lead-out an edge gets, so a near-vertical one still curves. */
 const MIN_PULL = 28;
@@ -176,10 +201,14 @@ export function nodeHeight(node: { lines?: number; meta?: boolean; reference?: b
  * off — which reads as a rendering fault rather than as an edge pointing backwards.
  */
 export function edgePath(
-  from: { x: number; y: number; height: number },
-  to: { x: number; y: number; height: number },
+  from: { x: number; y: number; height: number; width?: number },
+  to: { x: number; y: number; height: number; width?: number },
   width: number,
 ): string {
+  // Each node's own width, because an indented one is narrower: using the column
+  // constant attaches the line a few pixels past the box it leaves.
+  const fromW = from.width ?? NODE_W;
+  const toW = to.width ?? NODE_W;
   // Each end's own middle: the boxes are not a grid, so a shared constant would
   // attach the line above or below the box it belongs to.
   const sy = from.y + from.height / 2;
@@ -188,13 +217,13 @@ export function edgePath(
   const clamp = (x: number) => Math.min(width - edge, Math.max(edge, x));
 
   if (to.x === from.x) {
-    const x = from.x + NODE_W;
+    const x = Math.max(from.x + fromW, to.x + toW);
     return `M ${x} ${sy} C ${clamp(x + SAME_COLUMN_PULL)} ${sy}, ${clamp(x + SAME_COLUMN_PULL)} ${ty}, ${x} ${ty}`;
   }
 
   const forward = to.x > from.x;
-  const sx = forward ? from.x + NODE_W : from.x;
-  const tx = forward ? to.x : to.x + NODE_W;
+  const sx = forward ? from.x + fromW : from.x;
+  const tx = forward ? to.x : to.x + toW;
   // Signed, so the mirrored case bends the same way relative to its own direction.
   const span = tx - sx;
   const pull = Math.sign(span) * Math.max(MIN_PULL, Math.abs(span) / 2);
@@ -227,39 +256,66 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   const bands = findBands(order, input.edges, input.roots ?? [], columnOf);
 
   const heightOf = new Map<string, number>();
+  const linesOf = new Map<string, { lines: number; meta: boolean; reference: boolean }>();
   for (const node of input.nodes) {
     if (!columnOf.has(node.id) || heightOf.has(node.id)) continue;
     heightOf.set(node.id, nodeHeight(node));
+    linesOf.set(node.id, {
+      lines: node.lines ?? 1,
+      meta: !!node.meta,
+      reference: !!node.reference,
+    });
   }
 
   const placed: PlacedNode[] = [];
   const placedBands: PlacedBand[] = [];
+  /** Relations expressed by nesting, so they are not drawn as lines as well. */
+  const nested = new Set<string>();
   let top = MARGIN + HEADER_H;
 
   for (const [index, band] of bands.entries()) {
-    const rows = band.loose
-      ? packLoose(band.nodeIds, columnOf, input.columns.length)
-      : orderBand(band.nodeIds, columnOf, edges, order, input.columns.length);
-
     const titleRoom = band.title ? BAND_TITLE_H : 0;
     const baseY = top + BAND_PAD + titleRoom;
-    const y = band.loose
-      ? stackRows(rows, baseY, heightOf)
-      : placeBand(rows, baseY, heightOf, edges, columnOf);
+
+    // The loose band has no relations by definition, so nothing to relax against
+    // and no same-column tree to build: its nodes just stack.
+    const cols = band.loose
+      ? stackedUnits(band.nodeIds, columnOf, heightOf, input.columns.length, baseY)
+      : buildUnits(band.nodeIds, columnOf, heightOf, linesOf, edges, input.columns.length, nested);
+
+    const flat = cols.flat();
+    if (!band.loose) {
+      const unitOf = new Map<string, Unit>();
+      for (const unit of flat) for (const member of unit.members) unitOf.set(member.id, unit);
+      relaxBand(cols, baseY, edges, unitOf);
+      collapseClusterGaps(flat);
+      // Every pass can only push down, and the collapse only pulls up by whole
+      // clusters, so the band may have drifted off its own top edge in either
+      // direction. Its position is the caller's business, not the relaxation's.
+      const highest = Math.min(...flat.map((u) => u.y));
+      if (Number.isFinite(highest) && highest !== baseY) {
+        for (const unit of flat) unit.y -= highest - baseY;
+      }
+    }
 
     let height = 0;
-    for (const [column, ids] of rows.entries()) {
-      for (const [row, id] of ids.entries()) {
-        placed.push({
-          id,
-          column,
-          row,
-          band: index,
-          x: MARGIN + column * COL_PITCH,
-          y: y.get(id)!,
-          height: heightOf.get(id)!,
-        });
-        height = Math.max(height, y.get(id)! + heightOf.get(id)! - baseY);
+    for (const col of cols) {
+      for (const [row, unit] of col.entries()) {
+        for (const member of unit.members) {
+          const y = unit.y + member.dy;
+          placed.push({
+            id: member.id,
+            column: unit.column,
+            row,
+            band: index,
+            x: MARGIN + unit.column * COL_PITCH + member.indent,
+            y,
+            height: member.height,
+            width: member.width,
+            indent: member.indent,
+          });
+          height = Math.max(height, y + member.height - baseY);
+        }
       }
     }
 
@@ -280,7 +336,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     columns,
     nodes: placed,
     bands: placedBands,
-    edges,
+    edges: edges.filter((e) => !nested.has(`${e.from}␟${e.to}`) && !nested.has(`${e.to}␟${e.from}`)),
     width: columns.length ? MARGIN + columns.length * COL_PITCH - COL_GAP + MARGIN : 0,
     // No band means no content; the empty state is the view's business, but a
     // height of `top` would still reserve the header strip for headers that have
@@ -421,124 +477,170 @@ function findBands(
 }
 
 /** Column buckets of one band, each a list of node ids in row order. */
-type Rows = string[][];
-
-function emptyRows(columns: number): Rows {
-  return Array.from({ length: columns }, () => []);
-}
-
-/**
- * Row order inside a connected band, by barycenter relaxation: a node moves
- * towards the mean row of the nodes it is linked to. Sweeping both directions is
- * what keeps an edge that skips a column from being ignored — a single left-to-
- * right pass only ever looks backwards, so the last column never influences
- * anything.
- */
-function orderBand(
+/** The loose band: one unit per node, stacked down each column. */
+function stackedUnits(
   nodeIds: string[],
   columnOf: Map<string, number>,
-  edges: PlacedEdge[],
-  order: string[],
-  columns: number,
-): Rows {
-  const rank = new Map(order.map((id, i) => [id, i]));
-  const rows = emptyRows(columns);
-  for (const id of nodeIds) rows[columnOf.get(id)!].push(id);
-  for (const column of rows) column.sort((a, b) => rank.get(a)! - rank.get(b)!);
-
-  const neighbours = new Map<string, string[]>();
-  const link = (a: string, b: string) => {
-    (neighbours.get(a) ?? neighbours.set(a, []).get(a)!).push(b);
-  };
-  for (const edge of edges) {
-    link(edge.from, edge.to);
-    link(edge.to, edge.from);
-  }
-
-  const rowOf = new Map<string, number>();
-  const reindex = () => {
-    for (const column of rows) for (const [row, id] of column.entries()) rowOf.set(id, row);
-  };
-  reindex();
-
-  for (let sweep = 0; sweep < SWEEPS; sweep++) {
-    const forward = sweep % 2 === 0;
-    const indices = forward
-      ? [...rows.keys()]
-      : [...rows.keys()].reverse();
-    for (const column of indices) {
-      const bucket = rows[column];
-      if (bucket.length < 2) continue;
-      const key = new Map<string, number>();
-      for (const id of bucket) {
-        // Only neighbours on the side the sweep has already settled count. A node
-        // with none keeps its place: pulling it to row 0 instead would let an
-        // unconnected-in-this-direction node shove the settled ones around.
-        const relevant = (neighbours.get(id) ?? []).filter((other) => {
-          const c = columnOf.get(other);
-          return c !== undefined && (forward ? c < column : c > column);
-        });
-        if (!relevant.length) {
-          key.set(id, rowOf.get(id)!);
-          continue;
-        }
-        const sum = relevant.reduce((acc, other) => acc + (rowOf.get(other) ?? 0), 0);
-        key.set(id, sum / relevant.length);
-      }
-      // Ties keep the incoming order, so a sweep that learns nothing changes
-      // nothing (Array.prototype.sort is stable).
-      bucket.sort((a, b) => key.get(a)! - key.get(b)!);
-    }
-    reindex();
-  }
-
-  return rows;
-}
-
-/**
- * Stack a band's columns from the top, each node directly under the previous one.
- *
- * What the loose band wants: its nodes have no edges, so there is nothing to line
- * them up with and any air between them would be air for no reason.
- */
-function stackRows(rows: Rows, baseY: number, heightOf: Map<string, number>): Map<string, number> {
-  const y = new Map<string, number>();
-  for (const column of rows) {
-    let cursor = baseY;
-    for (const id of column) {
-      y.set(id, cursor);
-      cursor += heightOf.get(id)! + ROW_GAP;
-    }
-  }
-  return y;
-}
-
-/**
- * Where the nodes of a connected band actually sit.
- *
- * `orderBand` decided the order within each column; this decides the position, and
- * the two are genuinely different jobs. Ordering alone, with the rows then packed
- * from the top, is what made a lone hint sit at the top of its band while the
- * revelation it feeds sat four rows down — the order was right and the picture read
- * as if the two had nothing to do with each other, because the edge between them
- * was a long diagonal across three other nodes.
- *
- * So a node is pulled towards the mean centre of what it is linked to, and only
- * pushed down far enough to clear its own predecessor in the column. Sweeping both
- * directions matters more here than in the ordering pass: the leftmost column has
- * no left neighbours at all, so a single left-to-right pass leaves exactly the
- * lone-hint case unfixed.
- */
-function placeBand(
-  rows: Rows,
-  baseY: number,
   heightOf: Map<string, number>,
+  columns: number,
+  baseY: number,
+): Unit[][] {
+  const cols: Unit[][] = Array.from({ length: columns }, () => []);
+  const cursor = new Array(columns).fill(baseY);
+  for (const id of nodeIds) {
+    const column = columnOf.get(id)!;
+    const height = heightOf.get(id)!;
+    cols[column].push({
+      members: [{ id, indent: 0, height, width: NODE_W, dy: 0 }],
+      height,
+      column,
+      y: cursor[column],
+    });
+    cursor[column] += height + ROW_GAP;
+  }
+  return cols;
+}
+
+/**
+ * A node with its own box, plus how deep inside a unit it sits.
+ *
+ * `indent` narrows the box rather than pushing it out of the column: a column is a
+ * fixed lane, and an indented box that kept its width would hang into the next one.
+ */
+type Member = { id: string; indent: number; height: number; width: number; dy: number };
+
+/**
+ * A unit: one node plus everything in the same column that relates to it,
+ * indented beneath it, positioned as one block.
+ *
+ * This is what a same-column relation should look like. Drawn as an edge it has to
+ * leave the column and come back — a bulge past its own lane that says nothing,
+ * repeated for every pair. Drawn as indentation it says the same thing in the
+ * place the reader is already looking, and it matches how the list view renders a
+ * parent and its children.
+ */
+type Unit = { members: Member[]; height: number; column: number; y: number };
+
+/**
+ * Who hangs under whom, for the relations that stay inside one column.
+ *
+ * Direction is decided per edge kind rather than by one rule for both, because the
+ * two mean different things:
+ *
+ *   - **containment** (`parent`) puts the parent on top, exactly as the list view
+ *     indents a child under its parent;
+ *   - **dependency** (`depends`) puts the *dependent* on top and what it rests on
+ *     beneath it, so a column reads as a conclusion followed by its basis.
+ *
+ * One parent per child, first edge winning, and cycles are broken — a child that
+ * can reach itself through its ancestors would make the walk below never return.
+ */
+function sameColumnParents(
   edges: PlacedEdge[],
   columnOf: Map<string, number>,
-): Map<string, number> {
-  const y = stackRows(rows, baseY, heightOf);
-  const centre = (id: string) => y.get(id)! + heightOf.get(id)! / 2;
+  inBand: Set<string>,
+): { parentOf: Map<string, string>; childrenOf: Map<string, string[]> } {
+  const parentOf = new Map<string, string>();
+  const childrenOf = new Map<string, string[]>();
 
+  for (const edge of edges) {
+    if (!inBand.has(edge.from) || !inBand.has(edge.to)) continue;
+    if (columnOf.get(edge.from) !== columnOf.get(edge.to)) continue;
+    const [parent, child] = edge.kind === 'parent' ? [edge.from, edge.to] : [edge.to, edge.from];
+    if (parentOf.has(child) || parent === child) continue;
+    parentOf.set(child, parent);
+    (childrenOf.get(parent) ?? childrenOf.set(parent, []).get(parent)!).push(child);
+  }
+
+  for (const [child, parent] of [...parentOf]) {
+    const seen = new Set([child]);
+    let cursor: string | undefined = parent;
+    while (cursor && !seen.has(cursor)) {
+      seen.add(cursor);
+      cursor = parentOf.get(cursor);
+    }
+    if (!cursor) continue; // reached a root, no cycle
+    // Detach from the parent this child actually had. Removing it from wherever the
+    // walk *stopped* leaves the original link in place, and `buildUnits` then walks
+    // the cycle it was told had been broken — straight into a stack overflow.
+    parentOf.delete(child);
+    const siblings = childrenOf.get(parent);
+    if (siblings) childrenOf.set(parent, siblings.filter((id) => id !== child));
+  }
+  return { parentOf, childrenOf };
+}
+
+/** The units of one band, per column, in the order the sections listed their roots. */
+function buildUnits(
+  nodeIds: string[],
+  columnOf: Map<string, number>,
+  heightOf: Map<string, number>,
+  linesOf: Map<string, { lines: number; meta: boolean; reference: boolean }>,
+  edges: PlacedEdge[],
+  columns: number,
+  nested: Set<string>,
+): Unit[][] {
+  const inBand = new Set(nodeIds);
+  const { parentOf, childrenOf } = sameColumnParents(edges, columnOf, inBand);
+  // A relation drawn as nesting must not also be drawn as a line: the reader would
+  // see one statement twice, once as a box inside a box and once as a bulge past the
+  // column. `nested` is what the caller filters the drawn set with.
+  for (const [child, parent] of parentOf) nested.add(`${parent}␟${child}`);
+
+  const cols: Unit[][] = Array.from({ length: columns }, () => []);
+  for (const id of nodeIds) {
+    if (parentOf.has(id)) continue; // it belongs to somebody else's unit
+    const members: Member[] = [];
+    let dy = 0;
+    const walk = (current: string, depth: number) => {
+      const indent = Math.min(depth, MAX_INDENT_DEPTH) * INDENT_STEP;
+      // A narrower box fits fewer characters per line, so the height has to be
+      // recomputed rather than reused — otherwise a deeply indented title is
+      // clipped by a box measured at full width.
+      const shape = linesOf.get(current);
+      const width = NODE_W - indent;
+      const height = shape
+        ? nodeHeight({
+            lines: Math.min(MAX_TITLE_LINES, Math.ceil((shape.lines * NODE_W) / width)),
+            meta: shape.meta,
+            reference: shape.reference,
+          })
+        : heightOf.get(current)!;
+      members.push({ id: current, indent, height, width, dy });
+      dy += height + SUBTREE_GAP;
+      for (const child of childrenOf.get(current) ?? []) walk(child, depth + 1);
+    };
+    walk(id, 0);
+    cols[columnOf.get(id)!].push({
+      members,
+      height: dy - SUBTREE_GAP,
+      column: columnOf.get(id)!,
+      y: 0,
+    });
+  }
+  return cols;
+}
+
+/**
+ * Where a band's units sit.
+ *
+ * Each pass computes what every unit *wants* — the mean centre of what its members
+ * link to, on the side being settled — then **sorts by that** and lays the column
+ * out in the new order. Sorting is the part that matters: with a fixed order and
+ * only a clamp, a unit that wants to be third stays first and drags its edge across
+ * everything above it. Letting the order fall out of the relaxation is what makes
+ * a strand line up.
+ *
+ * Left and right first, so each side settles against something; then both together,
+ * which is what pulls a unit with neighbours on either side into the middle instead
+ * of leaving it wherever the last one-sided pass put it.
+ */
+function relaxBand(
+  cols: Unit[][],
+  baseY: number,
+  edges: PlacedEdge[],
+  unitOf: Map<string, Unit>,
+): void {
   const neighbours = new Map<string, string[]>();
   const link = (a: string, b: string) => {
     (neighbours.get(a) ?? neighbours.set(a, []).get(a)!).push(b);
@@ -547,50 +649,102 @@ function placeBand(
     link(edge.from, edge.to);
     link(edge.to, edge.from);
   }
-
-  // One pass over one column: walk it in order, put each node where its links want
-  // it, and never let it overlap the one above. `cursor` is what makes the result
-  // overlap-free by construction rather than by a repair afterwards.
-  const pass = (column: number, side: 'left' | 'right') => {
-    let cursor = baseY;
-    for (const id of rows[column]) {
-      const relevant = (neighbours.get(id) ?? []).filter((other) => {
-        const c = columnOf.get(other);
-        if (c === undefined || !y.has(other)) return false;
-        return side === 'left' ? c < column : c > column;
-      });
-      let wanted = cursor;
-      if (relevant.length) {
-        const mean = relevant.reduce((acc, other) => acc + centre(other), 0) / relevant.length;
-        wanted = mean - heightOf.get(id)! / 2;
-      }
-      const at = Math.max(cursor, wanted);
-      y.set(id, at);
-      cursor = at + heightOf.get(id)! + ROW_GAP;
-    }
+  const centreOf = (id: string): number | undefined => {
+    const unit = unitOf.get(id);
+    if (!unit) return undefined;
+    const member = unit.members.find((m) => m.id === id)!;
+    return unit.y + member.dy + member.height / 2;
   };
 
-  for (let sweep = 0; sweep < SWEEPS; sweep++) {
-    const forward = sweep % 2 === 0;
-    const indices = forward ? [...rows.keys()] : [...rows.keys()].reverse();
-    for (const column of indices) pass(column, forward ? 'left' : 'right');
+  const desired = (unit: Unit, side: 'left' | 'right' | 'both'): number => {
+    const wants: number[] = [];
+    for (const member of unit.members) {
+      for (const other of neighbours.get(member.id) ?? []) {
+        const otherUnit = unitOf.get(other);
+        if (!otherUnit || otherUnit === unit) continue;
+        if (side === 'left' && otherUnit.column >= unit.column) continue;
+        if (side === 'right' && otherUnit.column <= unit.column) continue;
+        // Where the unit would have to sit for *this* member to line up with its
+        // neighbour, not where the neighbour is: a member deep in a unit is offset
+        // from the unit's own top by `dy`.
+        const centre = centreOf(other)!;
+        wants.push(centre - (member.dy + member.height / 2) + unit.height / 2);
+      }
+    }
+    if (!wants.length) return unit.y + unit.height / 2;
+    return wants.reduce((a, b) => a + b, 0) / wants.length;
+  };
+
+  const relax = (col: Unit[], side: 'left' | 'right' | 'both') => {
+    if (col.length < 1) return;
+    const wanted = col.map((unit) => ({ unit, want: desired(unit, side) }));
+    wanted.sort((a, b) => a.want - b.want);
+    let cursor = -Infinity;
+    for (const { unit, want } of wanted) {
+      const top = Math.max(cursor === -Infinity ? want - unit.height / 2 : cursor, want - unit.height / 2);
+      unit.y = top;
+      cursor = top + unit.height + ROW_GAP;
+    }
+    col.splice(0, col.length, ...wanted.map((w) => w.unit));
+  };
+
+  // Stack every column first, so the first pass has something to relax against.
+  for (const col of cols) {
+    let cursor = baseY;
+    for (const unit of col) {
+      unit.y = cursor;
+      cursor += unit.height + ROW_GAP;
+    }
   }
 
-  // Every sweep can only push down, so the last one may have left the whole band
-  // floating below its frame. Pull it back up as a block: the relative positions are
-  // what the sweeps were for, the absolute offset is not.
-  let highest = Infinity;
-  for (const id of y.keys()) highest = Math.min(highest, y.get(id)!);
-  if (highest > baseY && Number.isFinite(highest)) {
-    const lift = highest - baseY;
-    for (const id of y.keys()) y.set(id, y.get(id)! - lift);
+  for (let pass = 0; pass < SIDED_PASSES; pass++) {
+    for (let c = 1; c < cols.length; c++) relax(cols[c], 'left');
+    for (let c = cols.length - 2; c >= 0; c--) relax(cols[c], 'right');
   }
-  return y;
+  for (let pass = 0; pass < BOTH_SIDED_PASSES; pass++) {
+    for (const col of cols) relax(col, 'both');
+  }
 }
 
-/** Edgeless nodes: nothing to relax, so they just fill their column in order. */
-function packLoose(nodeIds: string[], columnOf: Map<string, number>, columns: number): Rows {
-  const rows = emptyRows(columns);
-  for (const id of nodeIds) rows[columnOf.get(id)!].push(id);
-  return rows;
+/**
+ * Shrink the vertical gaps that run clear across every column.
+ *
+ * The relaxation pulls related units together and lets unrelated ones drift apart,
+ * which is what produces readable clusters — and also what makes a band four times
+ * taller than its content. A gap that no node in any column reaches into carries no
+ * information: it is space the relaxation happened to leave. Collapsing each to the
+ * same small distance keeps the clusters and their separation while removing the
+ * emptiness between them.
+ *
+ * Only gaps *across all columns* count. Shrinking a gap that one column fills would
+ * move that column's node relative to its neighbours, which is exactly the alignment
+ * the relaxation just bought.
+ */
+export function collapseClusterGaps(units: { y: number; height: number }[]): void {
+  const spans = units
+    .map((u) => [u.y, u.y + u.height] as [number, number])
+    .sort((a, b) => a[0] - b[0]);
+  if (!spans.length) return;
+
+  const clusters: [number, number][] = [];
+  for (const span of spans) {
+    const last = clusters[clusters.length - 1];
+    if (last && span[0] <= last[1] + CLUSTER_SLACK) last[1] = Math.max(last[1], span[1]);
+    else clusters.push([...span]);
+  }
+  if (clusters.length < 2) return;
+
+  let shift = 0;
+  const shifts: [number, number][] = clusters.map((cluster, i) => {
+    if (i > 0) shift += clusters[i][0] - clusters[i - 1][1] - CLUSTER_GAP;
+    return [cluster[0], shift];
+  });
+  for (const unit of units) {
+    for (let i = shifts.length - 1; i >= 0; i--) {
+      if (unit.y >= shifts[i][0] - 0.5) {
+        unit.y -= shifts[i][1];
+        break;
+      }
+    }
+  }
 }

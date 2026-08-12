@@ -466,7 +466,11 @@ export function renderGraphView(): void {
       icon: item.icon,
       selected: state.selectedItemId === item.id,
       attrs: {
-        style: `left:${placed.x}px;top:${placed.y}px;--ds-graph-node-h:${placed.height}px`,
+        // Width per node too: an indented one is narrower so it stays inside its
+        // column, and the layout already reserved exactly that much.
+        style:
+          `left:${placed.x}px;top:${placed.y}px` +
+          `;--ds-graph-node-h:${placed.height}px;--ds-graph-node-w:${placed.width}px`,
         'data-id': item.id,
       },
       on: { click: () => selectNode(item.id) },

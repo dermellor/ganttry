@@ -916,14 +916,37 @@ explains rather than in a legend at the other end of the picture — and only wh
 the column really is one colour, since a dimension whose values cut across groups
 would make a single dot a lie.
 
+**A relation inside one column becomes nesting, not a line.** Drawn as an edge it
+has to leave the column and come back — a bulge past its own lane that says
+nothing, repeated for every pair. Drawn as indentation it says the same thing where
+the reader is already looking, and it matches how the list view indents a child
+under its parent. The nested node is *narrower* rather than pushed right, so it
+stays inside its lane, and the whole sub-tree moves as one block through the
+relaxation. Which end goes on top depends on the edge kind: containment puts the
+parent above, a dependency puts the *dependent* above and what it rests on beneath,
+so a column reads as a conclusion followed by its basis. A relation shown this way
+is removed from the drawn set, because one statement drawn twice is worse than
+either form alone.
+
 **Nodes are not on a grid.** Each box is as tall as what is in it (title lines plus
 the optional dates and references lines), and its position comes from the mean
 centre of what it is linked to, pushed down only far enough to clear the node above
 it in its column. Ordering alone — the rows then packed from the top — is what made
 a lone hint sit at the top of its band while the revelation it feeds sat four rows
 down: the order was right, and the picture read as if the two were unrelated
-because the edge between them crossed three other nodes. It costs vertical space,
-which is the trade: the graph is taller and its edges are short.
+because the edge between them crossed three other nodes. The relaxation sorts each column by where its units *want* to be and lays it out in
+that order, rather than keeping an order decided beforehand and clamping: with a
+fixed order a unit that wants to be third stays first and drags its edge across
+everything above it. Left and right settle first, then both together, which is what
+pulls a unit with neighbours either way into the middle.
+
+**Then the gaps that run clear across every column are shrunk to one small
+distance.** Pulling related units together and letting unrelated ones drift is what
+produces readable clusters, and also what makes a band several times taller than
+its content. A gap no column reaches into is space the relaxation happened to
+leave, not information. Only cross-column gaps count: shrinking one that a single
+column fills would move that column's nodes relative to their neighbours, which is
+exactly the alignment the relaxation just bought.
 
 **An edge picks its sides from the direction it runs.** Forward: out of the
 source's right edge, into the target's left. **Backward** — a plan pointing back at
