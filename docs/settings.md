@@ -174,6 +174,8 @@ which is exactly when the sentence carries information.
 | --- | --- |
 | `#settings=instance` | The declared settings, grouped, read-only today. |
 | `#settings=members` | The membership screen — see [`users.md`](users.md). |
+| `#timeline-settings=general` | The open timeline's name, description and default grouping. |
+| `#timeline-settings=fields` | Its own field definitions — see „Custom fields" ([`items.md`](items.md)). |
 
 Adding a section is an entry in `SECTIONS` in
 [`src/settingsArea.ts`](../src/settingsArea.ts) with a `mount`, and the id is

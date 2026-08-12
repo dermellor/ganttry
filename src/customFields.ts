@@ -25,6 +25,7 @@ import { writeListMeta } from './fieldValue';
 import { state } from './state';
 import { scheduleLiveEdit } from './persistence';
 import { mergeFieldDefs, pluginFieldDefs } from './pluginHost/registry';
+import { selectRowsFor } from './fieldDefs';
 import { type CustomFieldDef, type CustomFieldOption } from './types';
 
 // metadata keys managed by their own dedicated form control (the reserved
@@ -169,18 +170,14 @@ function fieldNode(def: CustomFieldDef, meta: Record<string, unknown>): HTMLElem
   const current = readFieldValues(meta, def.key)[0] ?? '';
 
   if (def.type === 'select') {
+    // The rows, including the one a stored-but-undeclared value needs, come from
+    // `selectRowsFor` — DOM-free and unit-tested, because that rule is what keeps
+    // opening an item form from clearing the field (see the note there).
     return Field({
       ...shared,
       control: Select({
         attrs: { 'data-cf-control': def.key },
-        options: [
-          { value: '', label: '— —', selected: !current },
-          ...(def.options ?? []).map((o) => ({
-            value: o.value,
-            label: o.label ?? o.value,
-            selected: o.value === current,
-          })),
-        ],
+        options: selectRowsFor(def, current),
       }),
     });
   }

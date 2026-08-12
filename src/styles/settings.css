@@ -201,3 +201,35 @@ body.settings-open .ds-Toolbar[data-tone='footer'] {
   align-items: center;
   gap: var(--space-md);
 }
+
+/* ---- one card per field definition ------------------------------------------ */
+
+/* A card rather than a table row: a definition has a label, a key, a type, an
+   option list and two flags, and that does not fit a row without either scrolling
+   sideways or hiding half of it behind a detail view. */
+.settings .field-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.settings .field-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.settings .field-card-title {
+  font-weight: 600;
+}
+
+.settings .field-card-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+}
