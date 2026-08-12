@@ -28,6 +28,7 @@ import { cellId } from './compose';
 import { anchorRect, layerFor } from './popover';
 import type { PricingTier } from './types';
 import { currentPricing } from './compose';
+import { versionLabel } from './pricing';
 
 const LAYER_ID = 'pm-cell-editor';
 
@@ -96,7 +97,11 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
               className: 'pm-ce-version',
               options: [
                 { value: '', label: '— von Anfang an —', selected: !availableFrom },
-                ...versions.map((v) => ({ value: v, label: v, selected: v === availableFrom })),
+                ...versions.map((v) => ({
+                  value: v,
+                  label: versionLabel(pricing.versionLabels, v),
+                  selected: v === availableFrom,
+                })),
               ],
             }),
           })

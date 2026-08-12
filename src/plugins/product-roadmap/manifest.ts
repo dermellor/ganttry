@@ -63,7 +63,14 @@ export const productRoadmapManifest: PluginManifest = {
   configSchema: {
     type: 'object',
     properties: {
+      // Ordered list of stable version IDs. Everything references a version by ID
+      // (see `Pricing.versions` in ./types.ts); the label is separate so a rename
+      // touches nothing else (issue #110).
       versions: { type: 'array', items: { type: 'string' } },
+      // Display label per version ID. `additionalProperties: {type: string}` is the
+      // JSON-Schema way to say „a string-valued map with arbitrary keys" — the keys
+      // are version ids, which are data, not a fixed set.
+      versionLabels: { type: 'object', additionalProperties: { type: 'string' } },
     },
     additionalProperties: false,
   },

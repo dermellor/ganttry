@@ -46,6 +46,7 @@ const IMPORT_ALLOWLIST = new Map([
   ['scripts/db/plugin-manifests.ts', 'the server-side registry of built-in manifests'],
   ['scripts/db/legacy-pricing.ts', 'dated: reads the pre-#17 tables for the migration, deleted with them'],
   ['scripts/db/migrate-pricing-to-plugin-data.ts', 'dated: the migration itself'],
+  ['scripts/db/migrate-version-ids.ts', 'dated: the version label→id migration (#110)'],
 ]);
 
 /** Same idea for a bare id literal. A registry entry is an id by definition. */

@@ -12,7 +12,7 @@ import { state, els, setStatus, clearFormSlots } from '../../state';
 import { apiAddFeature, apiUpdateFeature, apiDeleteFeature, apiMoveFeature, ConflictError } from './api';
 import { applyRow, dropRow, dropRowsWhere, orderRows, patchRows } from './store';
 import { PRICING_COLLECTIONS } from './manifest';
-import { slugId } from './pricing';
+import { slugId, versionLabel } from './pricing';
 import { hideDetail, setDetailTitle } from '../../detailPanel';
 import { repaintPricingView } from './pricingMatrix';
 import { renderTimeline } from '../../render';
@@ -26,13 +26,24 @@ function findFeature(featureId: string): PricingFeature | undefined {
 // and a remove button. Rows are added/removed dynamically via the "+ " button,
 // so they carry no `name` — save reads them straight off the DOM (see
 // saveFeatureFromForm).
-function vdescRow(versions: string[], selectedVersion: string, text: string): HTMLElement {
+function vdescRow(
+  versions: string[],
+  labels: Record<string, string> | undefined,
+  selectedVersion: string,
+  text: string,
+): HTMLElement {
   return el('div', { class: 'version-desc-row' }, [
     Select({
       className: 'version-desc-select',
       block: false,
       attrs: { 'aria-label': 'Version' },
-      options: versions.map((v) => ({ value: v, label: `ab ${v}`, selected: v === selectedVersion })),
+      // value is the version id (what save writes as a descriptionByVersion key);
+      // only the label shown to the user resolves through versionLabel.
+      options: versions.map((v) => ({
+        value: v,
+        label: `ab ${versionLabel(labels, v)}`,
+        selected: v === selectedVersion,
+      })),
     }),
     el('div', { class: 'version-desc-editor', 'data-role': 'vdesc-editor' }),
     TextArea({ className: 'version-desc-text', value: text, attrs: { hidden: true } }),
@@ -85,7 +96,9 @@ export function showFeatureForm(featureId: string): void {
   setDetailTitle(feature.name || '(unbenanntes Feature)');
   els.detailMeta.replaceChildren();
 
-  const versions = currentPricing(state.activeSourceFile).versions ?? [];
+  const pricing = currentPricing(state.activeSourceFile);
+  const versions = pricing.versions ?? [];
+  const versionLabels = pricing.versionLabels;
 
   // Additive, per-version description notes as a dynamic list: add a row via the
   // "+" button, link it to a version, type the note. Existing notes are seeded as
@@ -103,7 +116,7 @@ export function showFeatureForm(featureId: string): void {
             { class: 'version-desc-list' },
             versions
               .filter((v) => feature.descriptionByVersion?.[v]?.trim())
-              .map((v) => vdescRow(versions, v, feature.descriptionByVersion![v])),
+              .map((v) => vdescRow(versions, versionLabels, v, feature.descriptionByVersion![v])),
           ),
           Button({
             label: '+ Versionsbeschreibung',
@@ -150,7 +163,7 @@ export function showFeatureForm(featureId: string): void {
         name: 'version',
         options: [
           { value: '', label: '— von Anfang an —', selected: !feature.version },
-          ...versions.map((v) => ({ value: v, label: v, selected: feature.version === v })),
+          ...versions.map((v) => ({ value: v, label: versionLabel(versionLabels, v), selected: feature.version === v })),
         ],
       }),
     }),
@@ -208,7 +221,7 @@ export function showFeatureForm(featureId: string): void {
         [...vdescList.querySelectorAll<HTMLSelectElement>('.version-desc-select')].map((s) => s.value),
       );
       const next = versions.find((v) => !used.has(v)) ?? versions[0];
-      const row = vdescRow(versions, next, '');
+      const row = vdescRow(versions, versionLabels, next, '');
       vdescList.appendChild(row);
       wireVdescRow(row);
       row.querySelector<HTMLElement>('.version-desc-editor .wysiwyg-surface')?.focus();
