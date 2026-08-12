@@ -24,14 +24,21 @@
 import './styles/graph.css';
 
 import { laneClassOf, type TimelineItem } from './buildItems';
-import { GraphNode, Text, el } from './design-system';
+import { classes, GraphNode, Text, el } from './design-system';
 import { showDetailForId } from './detailPanel';
 import { computeSections } from './listGrouping';
 import { metaOf, resolveGrouping, sectionContext, syncGroupByControl } from './grouping';
 import { syncFilterControl } from './filterControl';
 import { displayIdsFor, filterBuildForDisplay } from './render';
 import { els, state, syncUrl } from './state';
-import { layoutGraph, MARGIN, NODE_H, NODE_W, type EdgeKind } from './graphLayout';
+import {
+  estimateLines,
+  layoutGraph,
+  MARGIN,
+  NODE_W,
+  type EdgeKind,
+  type PlacedNode,
+} from './graphLayout';
 import type { GraphConfig } from './types';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -124,15 +131,13 @@ function edgesOf(
  * against the left edge with the curve that explains it cut off, which reads as a
  * rendering fault rather than as an edge pointing backwards.
  */
-function edgePath(
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-  width: number,
-): string {
+function edgePath(from: PlacedNode, to: PlacedNode, width: number): string {
   const sx = from.x + NODE_W;
-  const sy = from.y + NODE_H / 2;
+  // Each end's own middle: the boxes are not a grid any more, so a shared constant
+  // would attach the line above or below the box it belongs to.
+  const sy = from.y + from.height / 2;
   const tx = to.x;
-  const ty = to.y + NODE_H / 2;
+  const ty = to.y + to.height / 2;
   const forward = tx - sx;
   const pull = forward > 0 ? Math.max(28, forward / 2) : 64;
   const edge = 4;
@@ -382,14 +387,25 @@ export function renderGraphView(): void {
   const { sections } = computeSections(entries, dim, options, sectionContext(groups));
   const layout = layoutGraph({
     columns: sections.map((s) => ({ id: s.id, label: s.label })),
+    // The size hints travel with the node, because the layout's y positions depend
+    // on them: a box whose height the layout guessed wrong overlaps its neighbour.
     nodes: sections.flatMap((s) =>
-      s.items.filter((it) => !rootIds.has(it.id)).map((it) => ({ id: it.id, column: s.id })),
+      s.items
+        .filter((it) => !rootIds.has(it.id))
+        .map((it) => ({
+          id: it.id,
+          column: s.id,
+          lines: estimateLines(it.label ?? ''),
+          meta: !!it.start,
+          reference: !!references.get(it.id)?.length,
+        })),
     ),
     edges: edgesOf(build.dependencies, build.parents),
     roots: roots.filter((r) => byIdVisible.has(r.id)),
   });
 
   const positions = new Map(layout.nodes.map((n) => [n.id, n]));
+  const groupById = new Map(build.groups.map((g) => [g.id, g]));
 
   // The node box size travels to CSS as two custom properties rather than being
   // repeated in the stylesheet: `layoutGraph` computes every position from these
@@ -397,7 +413,7 @@ export function renderGraphView(): void {
   // row the layout reserved for the next one.
   const canvas = el('div', {
     class: 'graph-canvas',
-    style: `width:${layout.width}px;height:${layout.height}px;--ds-graph-node-w:${NODE_W}px;--ds-graph-node-h:${NODE_H}px`,
+    style: `width:${layout.width}px;height:${layout.height}px;--ds-graph-node-w:${NODE_W}px`,
   });
 
   // Painting order, and it is load-bearing: band frames, then edges, then boxes.
@@ -430,12 +446,34 @@ export function renderGraphView(): void {
   }
   canvas.appendChild(lines);
 
-  for (const column of layout.columns) {
+  for (const [index, column] of layout.columns.entries()) {
+    // The colour key belongs on the column rather than in a legend of its own: the
+    // column *is* what the colour stands for, and a key at the other end of the
+    // picture is a key nobody reads. Only drawn when the column really is one
+    // colour — a dimension whose values cut across groups would make a single dot a
+    // lie, so the check is „do all its nodes agree" rather than „is this the group
+    // dimension".
+    const swatches = new Set(
+      layout.nodes
+        .filter((n) => n.column === index)
+        .map((n) => {
+          const item = byId.get(n.id);
+          const group = item?.group ? groupById.get(item.group) : undefined;
+          return group?.color ?? laneClassOf(item?.className) ?? '';
+        }),
+    );
+    const swatch = swatches.size === 1 ? [...swatches][0] : '';
+    const dot = swatch
+      ? el('span', {
+          class: classes('graph-column-dot', swatch.startsWith('lane-') ? swatch : undefined),
+          style: swatch.startsWith('lane-') ? undefined : `--graph-dot:${swatch}`,
+        })
+      : null;
     canvas.appendChild(
       el(
         'div',
         { class: 'graph-column-head', style: `left:${column.x}px;top:${MARGIN}px;width:${NODE_W}px` },
-        column.label,
+        [dot, column.label],
       ),
     );
   }
@@ -446,6 +484,7 @@ export function renderGraphView(): void {
     if (!item) continue;
     const scenes = references.get(item.id);
     const node = GraphNode({
+      color: item.group ? groupById.get(item.group)?.color : undefined,
       label: item.label ?? '',
       // Undated is the normal case for a relation graph, and a column of em-dashes
       // is a line of noise rather than information.
@@ -455,7 +494,10 @@ export function renderGraphView(): void {
       status: statusOf(item.id),
       icon: item.icon,
       selected: state.selectedItemId === item.id,
-      attrs: { style: `left:${placed.x}px;top:${placed.y}px`, 'data-id': item.id },
+      attrs: {
+        style: `left:${placed.x}px;top:${placed.y}px;--ds-graph-node-h:${placed.height}px`,
+        'data-id': item.id,
+      },
       on: { click: () => selectNode(item.id) },
     });
     canvas.appendChild(node);

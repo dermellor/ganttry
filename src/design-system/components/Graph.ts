@@ -31,6 +31,11 @@ export type GraphNodeOptions = {
    * mapping from group to lane lives in `assignLanes` and must not exist twice.
    */
   lane?: string;
+  /**
+   * The group's own colour, when its author set one. Wins over `lane`, which is a
+   * position in a palette rather than a statement about meaning.
+   */
+  color?: string;
   /** An `ITEM_STATUSES` value, shown as the same dot the list and the form use. */
   status?: string;
   /** A key from `src/icons.ts`. */
@@ -45,16 +50,25 @@ export type GraphNodeOptions = {
 };
 
 export function GraphNode(options: GraphNodeOptions): HTMLButtonElement {
-  const { label, meta, reference, status, icon, selected, dimmed, lane, className, attrs, on } =
+  const { label, meta, reference, status, icon, selected, dimmed, lane, color, className, attrs, on } =
     options;
   const node = el(
     'button',
     {
       type: 'button',
-      class: classes('ds-GraphNode', lane, className),
+      // An explicit colour replaces the lane class rather than sitting beside it:
+      // both write the same two custom properties, and which one won would then
+      // depend on stylesheet order.
+      class: classes('ds-GraphNode', color ? undefined : lane, className),
       'aria-pressed': selected ? 'true' : undefined,
-      ...data({ selected, dimmed }),
+      ...data({ selected, dimmed, colored: !!color }),
       ...attrs,
+      // After the spread and merged with what the caller passed: the graph sets the
+      // node's position and height there, and a second `style` attribute would
+      // silently replace one of the two.
+      style: [color ? `--ds-graph-node-color:${color}` : '', attrs?.style ?? '']
+        .filter(Boolean)
+        .join(';'),
     },
     [
       el('span', { class: 'ds-GraphNode-head' }, [

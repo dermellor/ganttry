@@ -154,3 +154,22 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* The colour key, on the column it explains. `--graph-dot` is set inline for an
+   author-declared colour; the lane classes carry theirs from the token set. */
+.graph-column-dot {
+  display: inline-block;
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+  margin-right: var(--space-3xs);
+  border-radius: var(--mark-radius);
+  background: var(--graph-dot, var(--border));
+  vertical-align: baseline;
+}
+
+.graph-column-dot.lane-0 { background: var(--lane-0-border); }
+.graph-column-dot.lane-1 { background: var(--lane-1-border); }
+.graph-column-dot.lane-2 { background: var(--lane-2-border); }
+.graph-column-dot.lane-3 { background: var(--lane-3-border); }
+.graph-column-dot.lane-4 { background: var(--lane-4-border); }
+.graph-column-dot.lane-5 { background: var(--lane-5-border); }

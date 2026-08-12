@@ -49,6 +49,8 @@ export type TimelineItemWithStart = TimelineItem & { start: string };
 
 export type TimelineGroup = {
   id: string;
+  /** The author's own colour for this group, if they set one. See `TimelineFile`. */
+  color?: string;
   /**
    * The group's name as **markup**, because vis-timeline renders a group label
    * from an HTML string. Escaped here, so the escaping cannot move to a consumer.
@@ -836,6 +838,7 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
       content: escapeHtml(declared.content),
       label: declared.content,
     };
+    if (typeof declared.color === 'string' && declared.color.trim()) g.color = declared.color.trim();
     if (declared.nestedGroups && declared.nestedGroups.length > 0) g.nestedGroups = [...declared.nestedGroups];
     if (typeof declared.showNested === 'boolean') g.showNested = declared.showNested;
     groupSet.set(declared.id, g);

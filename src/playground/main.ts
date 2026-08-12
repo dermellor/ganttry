@@ -785,6 +785,12 @@ const graphSection = section(
       dimmed: true,
       attrs: { style: 'left:460px;top:0' },
     }),
+    GraphNode({
+      label: 'Eigene Gruppenfarbe, plus eine Bezugszeile',
+      reference: 'Szenen: Das Angebot – Setup',
+      color: '#198754',
+      attrs: { style: 'left:690px;top:0;--ds-graph-node-h:62px' },
+    }),
   ]),
 );
 

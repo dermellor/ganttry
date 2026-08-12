@@ -76,6 +76,10 @@
               },
               "showNested": {
                 "type": "boolean"
+              },
+              "color": {
+                "type": "string",
+                "description": "The group's own colour, any CSS colour. Unset falls back to the positional lane palette, so no existing timeline changes appearance.\n\nIt exists because the lane palette answers „which track is this\" and some timelines need „what kind of thing is this\": a hint is green and an antagonist's move is red because of what they mean, not because of which column they landed in. That mapping is the author's to make, which is why it is a value in the data rather than a rule in the code — the same reasoning behind `phases[].color` and `customFields[].options[].color`.\n\n**Honoured by the relation graph only, for now.** The chart's lane colouring runs through `.lane-N` selectors on the item elements, and widening that to arbitrary per-group colours is its own change to the drawing path; claiming this field is global while half the app ignored it would be worse than the documented limit."
               }
             },
             "required": [

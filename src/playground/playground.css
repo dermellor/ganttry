@@ -257,8 +257,8 @@
 /* GraphNode is positioned by the graph layout, so the specimens need a
    positioning context and the two size properties the box reads from outside. */
 .pg-GraphStage {
-  --ds-graph-node-w: 210px;
-  --ds-graph-node-h: 62px;
+  --ds-graph-node-w: 240px;
+  --ds-graph-node-h: 44px;
 
   position: relative;
   height: 62px;

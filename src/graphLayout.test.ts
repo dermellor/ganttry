@@ -4,10 +4,12 @@ import assert from 'node:assert/strict';
 import {
   layoutGraph,
   BAND_GAP,
+  BAND_PAD,
   BAND_TITLE_H,
   HEADER_H,
   MARGIN,
-  NODE_H,
+  nodeHeight,
+  estimateLines,
   NODE_W,
   ROW_GAP,
   COL_GAP,
@@ -245,7 +247,7 @@ test('a chain across three columns keeps its rows aligned', () => {
   }
 });
 
-test('rows inside a column are one node pitch apart', () => {
+test('edgeless nodes in a column stack directly under each other', () => {
   const out = layoutGraph(
     graph({
       columns: columns('a'),
@@ -255,7 +257,104 @@ test('rows inside a column are one node pitch apart', () => {
       ],
     }),
   );
-  assert.equal(nodeById(out, '2').y - nodeById(out, '1').y, NODE_H + ROW_GAP);
+  const first = nodeById(out, '1');
+  assert.equal(nodeById(out, '2').y - first.y, first.height + ROW_GAP);
+});
+
+test('a node’s height follows what is in it', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a'),
+      nodes: [
+        { id: 'plain', column: 'a' },
+        { id: 'tall', column: 'a', lines: 3, meta: true, reference: true },
+      ],
+    }),
+  );
+  assert.equal(nodeById(out, 'plain').height, nodeHeight({}));
+  assert.equal(nodeById(out, 'tall').height, nodeHeight({ lines: 3, meta: true, reference: true }));
+  assert.ok(nodeById(out, 'tall').height > nodeById(out, 'plain').height);
+});
+
+test('estimateLines rounds up and stops at four', () => {
+  assert.equal(estimateLines(''), 1);
+  assert.equal(estimateLines('kurz'), 1);
+  assert.equal(estimateLines('x'.repeat(35)), 2);
+  assert.equal(estimateLines('x'.repeat(1000)), 4);
+});
+
+// Ordering alone put a lone hint at the top of its band while the revelation it
+// feeds sat four rows down: the order was right and the picture read as if the two
+// were unrelated, because the edge between them crossed three other nodes.
+test('a node with one neighbour is placed level with it, not at the top', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('hint', 'rev'),
+      nodes: [
+        { id: 'h', column: 'hint' },
+        { id: 'r1', column: 'rev' },
+        { id: 'r2', column: 'rev' },
+        { id: 'r3', column: 'rev' },
+        { id: 'r4', column: 'rev' },
+      ],
+      // The hint feeds the *last* revelation in its column.
+      edges: [{ from: 'h', to: 'r4', kind: 'depends' }],
+    }),
+  );
+  const h = nodeById(out, 'h');
+  const r4 = nodeById(out, 'r4');
+  const centre = (n: { y: number; height: number }) => n.y + n.height / 2;
+  assert.ok(
+    Math.abs(centre(h) - centre(r4)) < 1,
+    `hint at ${centre(h)} should sit level with its only neighbour at ${centre(r4)}`,
+  );
+});
+
+test('placement never overlaps two nodes of one column', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: 'a1', column: 'a', lines: 3 },
+        { id: 'a2', column: 'a' },
+        { id: 'a3', column: 'a', lines: 2, reference: true },
+        { id: 'b1', column: 'b' },
+      ],
+      edges: [
+        { from: 'a1', to: 'b1', kind: 'depends' },
+        { from: 'a2', to: 'b1', kind: 'depends' },
+        { from: 'a3', to: 'b1', kind: 'depends' },
+      ],
+    }),
+  );
+  const inA = out.nodes.filter((n) => n.column === 0).sort((x, z) => x.y - z.y);
+  for (let i = 1; i < inA.length; i++) {
+    assert.ok(
+      inA[i].y >= inA[i - 1].y + inA[i - 1].height,
+      `${inA[i].id} overlaps ${inA[i - 1].id}`,
+    );
+  }
+});
+
+// Every sweep can only push down, so without the lift the whole band floats below
+// the frame that is supposed to contain it.
+test('a band starts at its own top edge, however far the sweeps pushed', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: 'a1', column: 'a' },
+        { id: 'a2', column: 'a' },
+        { id: 'b1', column: 'b' },
+      ],
+      edges: [
+        { from: 'a2', to: 'b1', kind: 'depends' },
+        { from: 'a1', to: 'b1', kind: 'depends' },
+      ],
+    }),
+  );
+  const top = Math.min(...out.nodes.map((n) => n.y));
+  assert.equal(top, out.bands[0].top + BAND_PAD);
 });
 
 // A cycle is malformed data (dependsOn can express one), and a layout that

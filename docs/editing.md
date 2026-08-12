@@ -893,9 +893,35 @@ story („Szene 2.1.2") would be more useful and is not in the data — deriving
 needs an order and a level per item, which is
 <https://github.com/zeitlines/zeitlines/issues/119>.
 
-**One colour per column**, from the `--lane-*` tokens the timeline's tracks use:
-`assignLanes` stamps the class per group, so a group is the same colour in both
-presentations and the mapping exists once.
+**One colour per column.** By default the `--lane-*` tokens the timeline's tracks
+use, so a group is the same colour in both presentations and the mapping exists
+once (`assignLanes`). A group may also declare `color` — any CSS colour — and then
+that wins. The lane palette answers „which track is this"; some timelines need
+„what kind of thing is this", and *which* kind is which colour is the author's
+statement, not a rule the code can hold. Same reasoning as `phases[].color` and
+`customFields[].options[].color`. It is honoured **by the graph only** for now: the
+chart colours its lanes through `.lane-N` selectors, and widening that path is its
+own change.
+
+The column head carries the colour as a dot, so the key sits on the thing it
+explains rather than in a legend at the other end of the picture — and only when
+the column really is one colour, since a dimension whose values cut across groups
+would make a single dot a lie.
+
+**Nodes are not on a grid.** Each box is as tall as what is in it (title lines plus
+the optional dates and references lines), and its position comes from the mean
+centre of what it is linked to, pushed down only far enough to clear the node above
+it in its column. Ordering alone — the rows then packed from the top — is what made
+a lone hint sit at the top of its band while the revelation it feeds sat four rows
+down: the order was right, and the picture read as if the two were unrelated
+because the edge between them crossed three other nodes. It costs vertical space,
+which is the trade: the graph is taller and its edges are short.
+
+The heights are computed rather than measured (`estimateLines`, `nodeHeight` in
+[`src/graphLayout.ts`](../src/graphLayout.ts)). Measuring means laying the graph
+out once to learn the heights and again to use them, and the intermediate state is
+a screen of overlapping boxes. The estimate rounds up, so a title costs a few
+pixels of air rather than a clipped last line.
 
 The layout is pure and unit-tested ([`src/graphLayout.ts`](../src/graphLayout.ts),
 `src/graphLayout.test.ts`); the view turns its output into one transformed canvas

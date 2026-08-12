@@ -11,11 +11,12 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: var(--space-3xs);
   box-sizing: border-box;
   width: var(--ds-graph-node-w);
+  /* Per node, set inline from the layout: the y positions were computed from these
+     heights, so a box that sized itself would overlap the one beneath it. */
   height: var(--ds-graph-node-h);
-  padding: var(--space-2xs) var(--space-xs);
+  padding: 0 var(--space-xs);
   border: 1px solid var(--item-border);
   border-left: 3px solid var(--ds-graph-node-accent);
   border-radius: var(--radius-sm);
@@ -57,16 +58,18 @@
 
 .ds-GraphNode-label {
   overflow: hidden;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-weight: var(--weight-medium);
-  line-height: var(--leading-tight);
+  /* Unitless, and it has to match LINE_H / --text-xs in graphLayout.ts: the layout
+     reserved that many pixels per title line. */
+  line-height: calc(16 / 12);
   /* Two lines, then an ellipsis. `-webkit-` prefixed and unprefixed both: the
      unprefixed property is not yet what browsers implement, and dropping the
      prefixed one clamps nothing anywhere. */
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
 }
 
 .ds-GraphNode-meta {
@@ -106,4 +109,20 @@
   font-size: var(--text-2xs);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* An author-set group colour. It writes the same two properties the lane classes
+   do, from one value: the border takes it, the fill takes a wash of it. Mixed
+   rather than given a second value, so declaring a colour is one decision and not
+   a pair that can disagree. */
+.ds-GraphNode[data-colored] {
+  --ds-graph-node-accent: var(--ds-graph-node-color);
+
+  border-color: color-mix(in srgb, var(--ds-graph-node-color) 45%, var(--item-border));
+  background: color-mix(in srgb, var(--ds-graph-node-color) 12%, var(--item-bg));
+}
+
+.ds-GraphNode[data-colored]:hover,
+.ds-GraphNode[data-colored][data-selected] {
+  border-color: var(--accent);
 }
