@@ -262,7 +262,11 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   });
 
   const modeToggle = SegmentedControl({
-    ariaLabel: 'Ansicht',
+    // „Darstellung", not „Ansicht": in the code a `View` is a registered timeline
+    // (`config.views[]`, `?view=`), so the interface must not spend the same word on
+    // the way one is drawn. See „What this leaves alone" in
+    // docs/information-architecture.md.
+    ariaLabel: 'Darstellung',
     attrs: { id: 'mode-toggle' },
     segments: [
       { value: 'timeline', label: 'Timeline', icon: fromHtml(TIMELINE_ICON), selected: true },

@@ -106,7 +106,7 @@ are deliberately not part of this.
 | Name, description, default grouping | the timeline settings route | 3 | done: `#timeline-settings=general`, written through `PATCH /api/source/<id>` |
 | Phases as a set | only the ribbon | 3 | the set is structure of the timeline; one phase is level 5 |
 | Presence avatars | header, with the timeline | 3 | done: moved out of the instance group, because a session joins per timeline |
-| Timeline / list switch | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
+| Darstellung switch (Timeline / Liste) | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
 | Plugin views | the same switch | 4 | done: also presentations, each declaring its own accessories |
 | „Gruppieren" | the bar | 4, perspective | done |
 | „Filter" | the bar | 4, extent | done: beside the switch, holding every narrowing |
@@ -190,13 +190,16 @@ affordance, with every route enforcing for itself (see [`users.md`](users.md)).
 
 ## What this leaves alone
 
-- **The `View` type keeps its name.** In the code a `View` is a registered timeline
-  with a source (`config.views[]`, `?view=`, `state.activeView`), while the
-  interface calls a presentation „Ansicht". The interface gets the clean split
-  („Timeline" for the document, „Darstellung" for the presentation); renaming the
-  type means migrating the built config, the hash parameter and every stored
-  preference, and it earns its own change. Same reasoning as „The name covers the
-  product, not its vocabulary or its instances" ([`AGENTS.md`](../AGENTS.md)).
+- **The `View` type keeps its name, the interface does not.** In the code a `View` is
+  a registered timeline with a source (`config.views[]`, `?view=`,
+  `state.activeView`); the interface now says **Timeline** for that document and
+  **Darstellung** for the way it is drawn, and no longer spends „Ansicht" on the
+  second while the code spends `View` on the first. Renaming the type would mean
+  migrating the built config, the hash parameter and every stored preference, so it
+  earns its own change — same reasoning as „The name covers the product, not its
+  vocabulary or its instances" ([`AGENTS.md`](../AGENTS.md)). The mapping, for
+  whoever reads both: interface „Timeline" = `View` + its `TimelineFile`; interface
+  „Darstellung" = `ViewMode` (`timeline`, `list`, `plugin:<id>:<view>`).
 - **Named, shared extents**, per-timeline access rules, and creating a timeline
   from the interface (which needs a create route first).
 - **The published hash format.** A new address form is added beside it; the old one

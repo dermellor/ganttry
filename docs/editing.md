@@ -1,6 +1,6 @@
 # Editing and views
 
-How a timeline is edited in the interface, and the two view modes.
+How a timeline is edited in the interface, and the presentations it is drawn in.
 
 Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
@@ -788,12 +788,20 @@ amount of horizontal travel re-centres it and the only trigger left is zoom. All
 three committed examples are under a year, which is why judging it needs a
 multi-year timeline.
 
-## View modes: Timeline / Liste
+## Darstellungen: Timeline / Liste
 
-The header **Ansicht** icon toggle (a segmented two-button control, styled in
-[`src/styles/base.css`](../src/styles/base.css) as `.mode-toggle` / `.mode-btn`,
-active state driven by `aria-pressed`) switches between two renderings of the
-*same* active build:
+**Two words, and they are not interchangeable.** A **Timeline** is the document —
+what the switcher picks, what `?view=` addresses, what the code calls a `View`. A
+**Darstellung** is a way of drawing that document: the vis-timeline, the list, a
+plugin's own view. The interface used to call the second one „Ansicht", which is the
+same word the code spends on the first, and every conversation about the chrome had
+to disambiguate it first. See „What this leaves alone"
+([`information-architecture.md`](information-architecture.md)) for why the *type* keeps
+its name.
+
+The **Darstellung** switch (a segmented control, first in the presentation bar,
+active state driven by `aria-pressed`) picks between two renderings of the *same*
+active build:
 
 - **Timeline** — the vis-timeline (default).
 - **Liste** — a scrollable, grouped table ([`src/listView.ts`](../src/listView.ts)):
@@ -1096,7 +1104,7 @@ after a reload.
 
 ## URL state
 
-Selected view, opened item, visible time window and the view mode are encoded in
+Selected timeline, opened item, visible time window and the presentation are encoded in
 the location hash so links can be shared and back/forward navigation works.
 Format:
 

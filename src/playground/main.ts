@@ -618,7 +618,7 @@ const selectorSection = section(
       specimen(
         'SegmentedControl',
         SegmentedControl({
-          ariaLabel: 'Ansicht',
+          ariaLabel: 'Darstellung',
           segments: [
             { value: 'timeline', label: 'Timeline', icon: fromHtml(TIMELINE_GLYPH), selected: true },
             { value: 'list', label: 'Liste', icon: fromHtml(LIST_GLYPH) },
@@ -764,7 +764,7 @@ const SKELETON_ROWS = [
 const frameSection = section(
   'frame',
   'Toolbar · TimelineSkeleton',
-  'Kopf-, Ansichts- und Fußleiste sind ein Component mit drei Tönen: drei Definitionen sind der Weg, auf dem eine davon 2px höher wird.',
+  'Kopfzeile, Darstellungsleiste und Fußzeile sind ein Component mit drei Tönen: drei Definitionen sind der Weg, auf dem eine davon 2px höher wird.',
   el('div', { class: 'pg-Stack' }, [
     stage(
       Toolbar({
@@ -773,7 +773,7 @@ const frameSection = section(
           ToolbarGroup({
             children: [
               el('span', { class: 'ds-AppMark' }),
-              ToolbarControl({ label: 'View', children: Select({ wide: true, options: [{ value: 'v', label: 'Produkt-Roadmap' }] }) }),
+              ToolbarControl({ label: 'Timeline', children: Select({ wide: true, options: [{ value: 'v', label: 'Produkt-Roadmap' }] }) }),
               Checkbox({ label: 'Nur Meilensteine', className: 'ds-ToolbarControl' }),
             ],
           }),
@@ -829,7 +829,7 @@ const messageSection = section(
   'Der Callout steht dort, wo der Inhalt gewesen wäre: die Fußzeile allein lässt eine leere Fläche zurück, und leer liest sich als „kaputt" statt als „abgelehnt".',
   el('div', { class: 'pg-Stack' }, [
     Callout({ text: 'Diese Quelle konnte nicht geladen werden: 403 Forbidden.', tone: 'danger' }),
-    Callout({ text: 'Diese Ansicht ist schreibgeschützt.', tone: 'warning' }),
+    Callout({ text: 'Diese Timeline ist schreibgeschützt.', tone: 'warning' }),
     Callout({ text: 'Drei Einträge liegen außerhalb des sichtbaren Zeitraums.', tone: 'info' }),
     el('div', { class: 'pg-DialogHost' }, dialogDemo),
   ]),
