@@ -236,6 +236,33 @@ test('the tools section is additive: a plugin declaring "^1" still validates', (
   );
 });
 
+// The catalogue entry is a publication requirement, not a boot requirement: a
+// plugin without one still runs, and `plugins:catalogue:check` is what insists.
+// What is checked here is the entry that IS there, because a blank card and a
+// two-paragraph summary both make the catalogue useless in different ways.
+test('a catalogue entry is optional, and checked when present', () => {
+  assert.deepEqual(problems(base()), [], 'no entry is not an error');
+  assert.deepEqual(
+    problems(base({ catalogue: { summary: 'Plans court deadlines.', domain: 'legal', keywords: ['fristen'] } })),
+    [],
+  );
+  assert.match(problems(base({ catalogue: {} as never }))[0], /summary is required/);
+});
+
+test('what a catalogue entry may not be', () => {
+  const entry = (over: Record<string, unknown>) =>
+    problems(base({ catalogue: { summary: 'S.', domain: 'legal', keywords: ['fristen'], ...over } as never }));
+
+  assert.match(entry({ summary: 'a'.repeat(201) })[0], /card subtitle stops at 200/);
+  assert.match(entry({ summary: 'Two\nlines' })[0], /single line/);
+  assert.match(entry({ domain: 'Legal Tech' })[0], /lowercase slug/);
+  assert.match(entry({ keywords: [] })[0], /at least one entry/);
+  // Case-insensitive, because a catalogue that lists "Fristen, fristen" reads as
+  // sloppy to exactly the reader it is trying to convince.
+  assert.match(entry({ keywords: ['Fristen', 'fristen'] })[0], /repeats/);
+  assert.match(entry({ example: '  ' })[0], /must be a view id/);
+});
+
 test('legacyModeIds must point at a declared view', () => {
   assert.match(
     problems(base({ capabilities: ['views'], views: [{ id: 'board', label: 'B', icon: 'i' }], legacyModeIds: { old: 'gone' } }))[0],
