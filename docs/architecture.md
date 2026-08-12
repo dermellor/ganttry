@@ -207,9 +207,19 @@ bar with nothing inert on it. `create` and `export` joined the list when those t
 actions moved into the presentation's own bar (`HOST_API_VERSION` 1.2): standing in
 a view's bar, „+ Eintrag" would create an item that view cannot show.
 `viewAccessories(view)` ([`src/pluginHost/manifest.ts`](../src/pluginHost/manifest.ts))
-answers for a declared view and, with no argument, for the built-in timeline and
-list — which is why `main.ts` no longer asks „is this a plugin view?" and a second
-plugin view needs no change there.
+answers for a declared view and, given a built-in mode, for that presentation —
+which is why `main.ts` no longer asks „is this a plugin view?" and a second plugin
+view needs no change there.
+
+It takes the built-in mode by name because „built-in" stopped being one answer.
+Timeline and list are two renderings of the item list and take all four; the
+**graph** takes the perspective (its columns *are* the grouping dimension), the
+extent and „+ Eintrag" (an item with no date is what it can show and the other two
+cannot), but not „Export HTML", because nothing renders a graph to HTML yet. Had
+the function kept answering „all four" for anything built in, the graph's bar would
+have carried an export that exports the timeline instead — the same failure the
+per-accessory declaration was introduced to stop, one level up from where it was
+first fixed.
 
 It replaces a single `toolbar` boolean that could only say „all of them" or „none",
 and that boolean was the host deciding on the view's behalf. The two are different
@@ -224,7 +234,7 @@ makes the manifest invalid rather than being silently ignored, for the reason ev
 declaration here is checked: one the host quietly dropped surfaces far from its
 cause, as a control that is missing with no explanation.
 
-**A view is addressable.** `ViewMode` is `timeline`, `list`, or
+**A view is addressable.** `ViewMode` is `timeline`, `list`, `graph`, or
 `plugin:<pluginId>:<viewId>`, and that one scalar is what `state.viewMode`, the
 `?mode=` hash parameter and the mode persisted per timeline all carry
 ([`src/pluginHost/viewMode.ts`](../src/pluginHost/viewMode.ts)). Modes from before

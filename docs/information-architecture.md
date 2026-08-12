@@ -106,7 +106,7 @@ are deliberately not part of this.
 | Name, description, default grouping | the timeline settings route | 3 | done: `#timeline-settings=general`, written through `PATCH /api/source/<id>` |
 | Phases as a set | only the ribbon | 3 | the set is structure of the timeline; one phase is level 5 |
 | Presence avatars | header, with the timeline | 3 | done: moved out of the instance group, because a session joins per timeline |
-| Darstellung switch (Timeline / Liste) | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
+| Darstellung switch (Timeline / Liste / Graph) | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
 | Plugin views | the same switch | 4 | done: also presentations, each declaring its own accessories |
 | „Gruppieren" | the bar | 4, perspective | done |
 | „Filter" | the bar | 4, extent | done: beside the switch, holding every narrowing |
@@ -149,6 +149,10 @@ control goes, so the argument is had once.
   whole bar off for a plugin view, each presentation states which perspectives and
   extent dimensions apply to it. Otherwise every further plugin view adds another
   special case to the host, and the host is the part that must not know plugin ids.
+  This holds for the **built-in** presentations too, and the graph is what proved
+  it: „built-in" had been shorthand for „a rendering of the item list, so all four
+  apply", and the first built-in presentation that is not one would otherwise have
+  inherited an export action it cannot perform.
 - **Every level you can link to is in the address.** Levels 3 to 5 are in the hash
   and level 1 has its route; level 2 has no address because it has no surface yet.
   A level without an address cannot be handed to somebody else, which is what

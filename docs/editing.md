@@ -788,22 +788,24 @@ amount of horizontal travel re-centres it and the only trigger left is zoom. All
 three committed examples are under a year, which is why judging it needs a
 multi-year timeline.
 
-## Darstellungen: Timeline / Liste
+## Darstellungen: Timeline / Liste / Graph
 
 **Two words, and they are not interchangeable.** A **Timeline** is the document —
 what the switcher picks, what `?view=` addresses, what the code calls a `View`. A
-**Darstellung** is a way of drawing that document: the vis-timeline, the list, a
-plugin's own view. The interface used to call the second one „Ansicht", which is the
-same word the code spends on the first, and every conversation about the chrome had
-to disambiguate it first. See „What this leaves alone"
-([`information-architecture.md`](information-architecture.md)) for why the *type* keeps
-its name.
+**Darstellung** is a way of drawing that document: the vis-timeline, the list, the
+relation graph, a plugin's own view. The interface used to call the second one
+„Ansicht", which is the same word the code spends on the first, and every
+conversation about the chrome had to disambiguate it first. See „What this leaves
+alone" ([`information-architecture.md`](information-architecture.md)) for why the
+*type* keeps its name.
 
 The **Darstellung** switch (a segmented control, first in the presentation bar,
-active state driven by `aria-pressed`) picks between two renderings of the *same*
+active state driven by `aria-pressed`) picks between three renderings of the *same*
 active build:
 
 - **Timeline** — the vis-timeline (default).
+- **Graph** — the relations, without the time axis
+  ([`src/graphView.ts`](../src/graphView.ts)); see „Graph" below.
 - **Liste** — a scrollable, grouped table ([`src/listView.ts`](../src/listView.ts)):
   sections along the active **grouping dimension** (items sorted by start),
   with columns Eintrag (icon + tag pills + content), Start, Ende, Typ, Status,
@@ -838,6 +840,50 @@ range bar, the title stays clipped to its own date span. The label-derived
 group-height floor includes both the header and item rows, so it does not
 reintroduce the vertical jumping described in „Why a track reserves its height"
 above.
+
+### Graph
+
+What the other two cannot show. The timeline needs a start to place a box, so it
+hides a start-less item outright; a timeline whose point is its structure — what
+depends on what, what contains what — could only be read as a Gantt chart with
+arrows, and an item with no date yet lived in the list and nowhere else.
+
+- **Nodes** are every item that passes the extent, start-less ones included. Each
+  is a `GraphNode` component, absolutely positioned. Clicking one selects it and
+  opens the detail panel, exactly as a list row does — the same three steps in the
+  same order, because the URL, the hidden timeline's selection and the panel all
+  have to agree about what is selected.
+- **Edges** are what the model already carries, and nothing new:
+  `metadata.dependsOn` (predecessor → dependent, the same map that feeds the Gantt
+  arrows in [`src/arrows.ts`](../src/arrows.ts)) drawn solid, and `metadata.parent`
+  (parent → child) drawn dashed. An edge whose other end the extent removed is not
+  drawn at all: a line into empty space reads as „depends on something invisible"
+  rather than as „you filtered it out".
+- **Columns** are the buckets of the active **grouping dimension**, in reading
+  order left to right — so the perspective control chooses what the columns mean.
+  They come from `computeSections`, the function the list sections with, which is
+  what keeps the column order from drifting away from the list's sections. A
+  multi-valued dimension lists one item under every value it carries; here the
+  first bucket wins, because two boxes for one item would draw its edges twice.
+- **Vertically**, connected nodes form a band ordered by barycenter relaxation, so
+  a chain lands on one row. Everything with no edge at all goes into a separate,
+  dashed band at the end: on a timeline where three items depend on each other and
+  forty do not, mixing them in loses the three.
+
+The layout is pure and unit-tested ([`src/graphLayout.ts`](../src/graphLayout.ts),
+`src/graphLayout.test.ts`); the view turns its output into one transformed canvas
+carrying an SVG edge layer under the HTML boxes. Nodes stay HTML so a long title
+wraps and truncates by CSS and a box is reachable by keyboard — drawing them into
+the SVG would mean re-implementing text layout and focus handling for one
+presentation. Pan and zoom are a pointer drag and the wheel, kept per timeline for
+the session but deliberately **not** persisted: the picture's shape changes with
+the grouping and the extent, so a restored offset would drop the reader somewhere
+the graph no longer has anything.
+
+It is read-only in this first cut. Edges are created where they already were, in
+the item form's `dependsOn` field. Typed edges and wikilinks between items are
+[#73](https://github.com/zeitlines/zeitlines/issues/73); drawing an edge by
+dragging in the graph is not built.
 
 ### Loading placeholder
 
@@ -890,8 +936,9 @@ diagnostic.
 
 **Which controls a presentation gets is declared by that presentation** (see
 „Accessories" (docs/architecture.md)). The timeline and the list are two renderings
-of the item list and take all four; a plugin view takes what it declares and nothing
-else. A control that does not apply is hidden rather than shown inert, because an
+of the item list and take all four; the graph takes three of them (no „Export HTML",
+because nothing renders a graph to HTML yet); a plugin view takes what it declares
+and nothing else. A control that does not apply is hidden rather than shown inert, because an
 inert control claims the view supports something it does not — „+ Eintrag" in a view
 that cannot show the item is the clearest case. Nothing in `main.ts` branches on „is
 this a plugin view" for any of it.
@@ -985,14 +1032,17 @@ lives in [`src/grouping.ts`](../src/grouping.ts), the pure sectioning stays in
 The per-section "+ Eintrag" button (list) shows only in the Gruppe dimension (it
 pins the new item to that group).
 
-Both modes share all state and machinery: the timeline instance stays alive
-(just hidden) in list mode, so drags, the detail/edit form, and persistence keep
-working. Clicking a row opens the same detail panel (or edit form on editable
-sources), tracks the selection, and highlights the row — identical to selecting
-a timeline item. Edits (form, add, delete) repaint the list live via
-`applyBuildToDataSets`. The mode persists per timeline (see „Where the display
-state lives") and in the URL hash (`mode=list`), so list views can be
-deep-linked and survive reload.
+All three modes share all state and machinery: the timeline instance stays alive
+(just hidden) in the other two, so drags, the detail/edit form, and persistence keep
+working. Clicking a row or a node opens the same detail panel (or edit form on
+editable sources), tracks the selection, and marks what was clicked — identical to
+selecting a timeline item. Edits (form, add, delete) repaint the active
+presentation live through `repaintActiveView`
+([`src/render.ts`](../src/render.ts)), one function rather than the same branch at
+each of its four call sites: a presentation wired into three of the four is one
+that silently shows yesterday's data on the fourth path. The mode persists per
+timeline (see „Where the display state lives") and in the URL hash (`mode=list`,
+`mode=graph`), so either can be deep-linked and survives reload.
 
 ### Where the display state lives
 
@@ -1112,7 +1162,7 @@ Format:
 #view=<id>&item=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&mode=list
 ```
 
-Only non-default values are written (`mode` only when `list`).
+Only non-default values are written (`mode` only when it is not `timeline`).
 
 **`m=1` is read and never written.** It carried „nur Meilensteine" while that was a
 control of its own; it now means „narrow the type dimension to Meilenstein", and it

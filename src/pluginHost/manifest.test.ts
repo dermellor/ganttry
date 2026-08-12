@@ -104,14 +104,16 @@ test('a view declares its accessories, and an unknown one is refused', () => {
 });
 
 test('viewAccessories answers for built-in and declared views alike', () => {
-  // No view = a built-in presentation: everything applies, because the timeline and
-  // the list are two renderings of the item list.
+  // No view = the timeline, the presentation everything falls back to.
   assert.deepEqual(viewAccessories(), {
     grouping: true,
     filter: true,
     create: true,
     export: true,
   });
+  // Timeline and list are two renderings of the item list, so both take all four.
+  assert.deepEqual(viewAccessories('timeline'), viewAccessories());
+  assert.deepEqual(viewAccessories('list'), viewAccessories());
   // A declared view gets nothing it did not ask for.
   assert.deepEqual(viewAccessories({ id: 'a', label: 'x', icon: 'i' }), {
     grouping: false,
@@ -219,4 +221,20 @@ test('product-roadmap declares itself completely and validly', () => {
   assert.equal(bundle.onDelete, 'unlink');
   // The item metadata keys it owns, so an uninstall can clean them off items.
   assert.deepEqual(productRoadmapManifest.metadataKeys, ['featureIds', 'featureVersion', 'tier']);
+});
+
+// The graph is the first built-in presentation that is not a rendering of the item
+// list, so "built-in" stopped being one answer. Handing it the export action
+// because it happens to be built in would put a control in its bar that exports
+// the timeline instead of what is on screen.
+test('the graph declares its own accessories rather than inheriting the list’s', () => {
+  assert.deepEqual(viewAccessories('graph'), {
+    // The grouping dimension is what the columns are.
+    grouping: true,
+    filter: true,
+    // An item with no date is exactly what this presentation can show.
+    create: true,
+    // Nothing renders a graph to HTML yet.
+    export: false,
+  });
 });

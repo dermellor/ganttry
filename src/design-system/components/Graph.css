@@ -1,0 +1,78 @@
+/* GraphNode: one item as a box in the relation graph. */
+
+/* The box is sized by the graph, not by its content: `layoutGraph` computes every
+   position from one node width and one node height, and a box that grew with its
+   title would overlap the row beneath it. So the size comes in as two custom
+   properties and the label truncates inside it. */
+.ds-GraphNode {
+  --ds-graph-node-accent: var(--item-border);
+
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-3xs);
+  box-sizing: border-box;
+  width: var(--ds-graph-node-w);
+  height: var(--ds-graph-node-h);
+  padding: var(--space-2xs) var(--space-xs);
+  border: 1px solid var(--item-border);
+  border-left: 3px solid var(--ds-graph-node-accent);
+  border-radius: var(--radius-sm);
+  background: var(--item-bg);
+  color: var(--item-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity var(--motion-fast), border-color var(--motion-fast);
+}
+
+.ds-GraphNode:hover {
+  border-color: var(--accent);
+}
+
+.ds-GraphNode:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.ds-GraphNode[data-selected] {
+  border-color: var(--accent);
+  background: var(--item-bg-active);
+}
+
+/* Dimmed rather than hidden while a neighbour is hovered: the graph is about
+   which boxes are connected, and removing the others would also remove the shape
+   the reader is comparing against. */
+.ds-GraphNode[data-dimmed] {
+  opacity: 0.25;
+}
+
+.ds-GraphNode-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  min-width: 0;
+}
+
+.ds-GraphNode-label {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-tight);
+  /* Two lines, then an ellipsis. `-webkit-` prefixed and unprefixed both: the
+     unprefixed property is not yet what browsers implement, and dropping the
+     prefixed one clamps nothing anywhere. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.ds-GraphNode-meta {
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

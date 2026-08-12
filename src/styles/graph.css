@@ -1,0 +1,140 @@
+/* The „Graph" presentation.
+ *
+ * The chart furniture only — the node box itself is a design-system component
+ * (GraphNode). What is here is the canvas it sits on: the pan/zoom viewport, the
+ * band frames, the column heads and the edges. Same split as timeline.css, which
+ * scopes vis-timeline's furniture and leaves the components alone. */
+
+#graph {
+  position: relative;
+  overflow: hidden;
+}
+
+/* The window onto the canvas. `touch-action: none` because the pan is a pointer
+   drag: without it the browser claims the gesture and the canvas never moves. */
+.graph-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.graph-viewport[data-panning] {
+  cursor: grabbing;
+}
+
+/* Transformed as a whole, so the nodes and the edges cannot drift apart under
+   zoom — they are one coordinate system, not two that agree by convention. */
+.graph-canvas {
+  position: absolute;
+  transform-origin: 0 0;
+}
+
+.graph-edges {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.graph-edge {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1.5;
+  marker-end: url('#graph-arrow');
+  transition: stroke var(--motion-fast), opacity var(--motion-fast);
+}
+
+/* Containment is a different statement from a dependency, so it gets a different
+   line rather than a different colour: the graph already spends colour on status,
+   and a second colour scale competing with it makes both harder to read. */
+.graph-edge[data-kind='parent'] {
+  stroke-dasharray: 5 4;
+}
+
+.graph-edge[data-hl] {
+  stroke: var(--accent);
+  stroke-width: 2;
+  marker-end: url('#graph-arrow-hl');
+}
+
+/* Everything not touching the hovered node recedes, the lines like the boxes. */
+.graph-canvas[data-highlighting] .graph-edge:not([data-hl]) {
+  opacity: 0.15;
+}
+
+.graph-arrowhead {
+  fill: var(--border);
+}
+
+.graph-arrowhead.is-hl {
+  fill: var(--accent);
+}
+
+/* A connected group of nodes. The frame is the only thing that says „these belong
+   together" once two chains sit above each other with no edge between them. */
+.graph-band {
+  position: absolute;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+/* The nodes with no relation at all, kept apart so the connected structure stays
+   visible: on a timeline where three items depend on each other and forty do not,
+   mixing them in loses the three. Dashed, because the frame groups by absence. */
+.graph-band[data-loose] {
+  border: 1px dashed var(--border);
+  background: none;
+}
+
+.graph-column-head {
+  position: absolute;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.graph-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: var(--space-xl);
+}
+
+/* Sits over the canvas rather than in the bar: it describes what the picture is
+   made of, and the bar is for controls. */
+.graph-legend {
+  position: absolute;
+  right: var(--space-md);
+  bottom: var(--space-md);
+  display: flex;
+  gap: var(--space-md);
+  padding: var(--space-2xs) var(--space-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-size: var(--text-2xs);
+  pointer-events: none;
+}
+
+.graph-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3xs);
+}
+
+.graph-legend-line {
+  width: var(--icon-size-md);
+  border-top: 1.5px solid var(--border);
+}
+
+.graph-legend-line[data-kind='parent'] {
+  border-top-style: dashed;
+}

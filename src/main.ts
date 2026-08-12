@@ -37,6 +37,7 @@ import {
   repackLanes,
   applyGrouping,
   displayIdsFor,
+  repaintActiveView,
 } from './render';
 import { GROUP_DIM } from './listGrouping';
 import { loadPluginStatuses, renderPluginList } from './pluginPanel';
@@ -54,6 +55,7 @@ import {
 import { deleteItem } from './itemForm';
 import { hideDetail, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
+import { renderGraphView, syncGraphSelection } from './graphView';
 import { setupFilterControl } from './filterControl';
 import {
   activePlugins,
@@ -64,7 +66,12 @@ import {
   resolveViewMode,
   type PluginView,
 } from './pluginHost/registry';
-import { parsePluginViewMode, pluginViewMode, readViewMode } from './pluginHost/viewMode';
+import {
+  parsePluginViewMode,
+  pluginViewMode,
+  readViewMode,
+  type BuiltinViewMode,
+} from './pluginHost/viewMode';
 import { viewAccessories } from './pluginHost/manifest';
 import {
   pluginViewButton,
@@ -160,6 +167,7 @@ async function applyView(viewId: string) {
 function setModeButtons(mode: ViewMode) {
   els.modeTimelineBtn.setAttribute('aria-pressed', String(mode === 'timeline'));
   els.modeListBtn.setAttribute('aria-pressed', String(mode === 'list'));
+  els.modeGraphBtn.setAttribute('aria-pressed', String(mode === 'graph'));
   for (const [btnMode, btn] of pluginViewButtons()) {
     btn.setAttribute('aria-pressed', String(mode === btnMode));
   }
@@ -230,16 +238,21 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   state.viewMode = mode;
   setModeButtons(mode);
   const list = mode === 'list';
+  const graph = mode === 'graph';
   const plugin = target ? mode : null;
-  els.timeline.hidden = list || !!plugin;
+  els.timeline.hidden = list || graph || !!plugin;
   els.list.hidden = !list;
+  els.graph.hidden = !graph;
   showOnlyPluginSection(plugin);
   // The bar is built from what the presentation declares, per control. Nothing
   // here asks „is this a plugin view?" any more: `viewAccessories` answers for
   // built-in and declared views alike, so a second plugin view needs no change in
   // this file. A control that does not apply is hidden rather than left inert,
   // because an inert control claims the view supports something it does not.
-  const accessories = viewAccessories(target?.view);
+  // A built-in presentation names itself; only a plugin view hands over its
+  // declaration. Both answers come out of the same function, which is what keeps
+  // „which controls apply" from being decided twice.
+  const accessories = viewAccessories(target?.view ?? (plugin ? null : (mode as BuiltinViewMode)));
   els.groupByControl.hidden = !accessories.grouping;
   els.filterControl.hidden = !accessories.filter;
   els.exportBtn.hidden = !accessories.export;
@@ -248,6 +261,8 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   els.addBtn.hidden = !accessories.create || !isEditableView();
   if (list) {
     renderListView();
+  } else if (graph) {
+    renderGraphView();
   } else if (target && parsed) {
     // Lazy-load the plugin's chunk, then render — but only if we're still in that
     // mode by the time it resolves (the user may have switched away).
@@ -418,20 +433,27 @@ async function bootstrap() {
   });
   els.modeTimelineBtn.addEventListener('click', () => applyViewMode('timeline'));
   els.modeListBtn.addEventListener('click', () => applyViewMode('list'));
+  els.modeGraphBtn.addEventListener('click', () => applyViewMode('graph'));
   // Shared grouping dropdown: drives both the timeline lanes and the list
   // sections. Persist the choice, then repaint whichever view is active.
   els.groupBy.addEventListener('change', () => {
     state.groupBy = els.groupBy.value || GROUP_DIM;
     saveViewPrefs();
-    if (state.viewMode === 'list') renderListView();
-    else applyGrouping();
+    // The timeline turns the dimension into lanes; every other presentation
+    // rebuilds from it (the graph's columns *are* the dimension).
+    if (state.viewMode === 'timeline') applyGrouping();
+    else repaintActiveView();
   });
   els.detailClose.addEventListener('click', () => {
     commitItemForm();
     state.selectedItemId = null;
     state.timeline?.setSelection([]);
     hideDetail();
+    // Un-mark the node/row the panel belonged to. The graph re-marks in place
+    // rather than redrawing: a full repaint would drop the hover highlight and
+    // re-run the layout for a change that moves nothing.
     if (state.viewMode === 'list') renderListView();
+    else if (state.viewMode === 'graph') syncGraphSelection();
     syncUrl();
   });
   els.addBtn.addEventListener('click', () => addNewItem());

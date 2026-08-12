@@ -8,7 +8,14 @@
 // This module is pure: no DOM, no registry import, so both the state module and the
 // URL parser can use it without pulling the plugin layer along.
 
-export type BuiltinViewMode = 'timeline' | 'list';
+export type BuiltinViewMode = 'timeline' | 'list' | 'graph';
+
+/** The built-in modes, for the readers that have to recognise one at runtime. */
+export const BUILTIN_VIEW_MODES: readonly BuiltinViewMode[] = ['timeline', 'list', 'graph'];
+
+export function isBuiltinViewMode(mode: string): mode is BuiltinViewMode {
+  return (BUILTIN_VIEW_MODES as readonly string[]).includes(mode);
+}
 export type PluginViewMode = `plugin:${string}:${string}`;
 export type ViewMode = BuiltinViewMode | PluginViewMode;
 
@@ -51,7 +58,7 @@ export function readViewMode(
   resolveLegacy: (legacyId: string) => PluginViewMode | null,
 ): ViewMode {
   if (!raw) return 'timeline';
-  if (raw === 'timeline' || raw === 'list') return raw;
+  if (isBuiltinViewMode(raw)) return raw;
   if (isPluginViewMode(raw)) return raw as PluginViewMode;
   return resolveLegacy(raw) ?? 'timeline';
 }

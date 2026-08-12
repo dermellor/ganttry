@@ -84,6 +84,7 @@ import { attachOverrunLines } from './overrun';
 import { deleteItem, setItemFieldValue, setItemStatus, showItemForm } from './itemForm';
 import { showDetailForId, hideDetail } from './detailPanel';
 import { renderListView } from './listView';
+import { renderGraphView } from './graphView';
 import { repaintPluginView } from './pluginHost/views';
 import { notifyTimelineChanged } from './pluginHost/changes';
 import { showPhaseFormByIndex, handlePhaseEdit } from './phaseForm';
@@ -481,14 +482,28 @@ export function applyBuildToDataSets(): void {
   // grouping dimension without a second derivation of "what is visible".
   milestoneRail?.setItems(display.items);
   hierarchyFolders?.setHierarchy(display.items, displayParents());
-  // Keep the list view in sync when it's the active display (edits, drags,
-  // milestones-only toggle all funnel through here).
+  // Keep the active presentation in sync (edits, drags, a filter change all
+  // funnel through here). A plugin view needs it too — the pricing matrix's
+  // roadmap counts, say, depend on item metadata.
+  repaintActiveView();
+}
+
+/**
+ * Repaint whichever presentation is active, after the data behind it changed.
+ *
+ * One function rather than the same three-way branch at every call site: there
+ * are four of them, and a presentation added to three of the four is a view that
+ * silently shows yesterday's data on the fourth path. The timeline is absent on
+ * purpose — it holds live vis DataSets and is reconciled rather than redrawn.
+ */
+export function repaintActiveView(): void {
   if (state.viewMode === 'list') renderListView();
-  // Same for a plugin view (the pricing matrix's roadmap counts, say, depend on
-  // item metadata). A plugin's chunk is loaded lazily; once entered it is cached,
-  // so this repaint no-ops during the brief pre-load window.
+  else if (state.viewMode === 'graph') renderGraphView();
+  // A plugin view is loaded lazily; once entered it is cached, so this repaint
+  // no-ops during the brief pre-load window.
   else repaintPluginView(state.viewMode);
 }
+
 
 // Reconcile a vis DataSet to `next` without ever emptying it: drop rows that are
 // gone, then add/update the rest. Avoids the content-height collapse a clear()
@@ -509,8 +524,12 @@ export function statusFor(view: View, build: BuildResult): string {
   //
   // Start-less items exist in the data but can't be placed on the timeline —
   // surface the count so they aren't silently missing from the timeline view.
+  // The hint names the timeline rather than the presentations that *do* show
+  // them: it used to say „nur Liste", and the graph made that a false statement
+  // the moment it shipped. Naming what is missing where survives the next
+  // presentation; listing the others does not.
   const dateless = filtered.items.length - timelineItems(filtered.items).length;
-  const datelessHint = dateless > 0 ? ` · ${dateless} ohne Start (nur Liste)` : '';
+  const datelessHint = dateless > 0 ? ` · ${dateless} ohne Start (nicht in der Timeline)` : '';
   // The live name, not the built one: a rename reaches the source at once while
   // `config.json` keeps the name the build discovered (see src/timelineMeta.ts).
   const name = timelineName(view, state.activeSourceFile);
@@ -956,12 +975,9 @@ export async function renderTimeline(view: View) {
 
   setStatus(statusFor(view, built));
 
-  // Fresh build → repaint the list too, so switching to it (or reloading a
-  // deep-linked list URL) shows the current data without an extra edit.
-  if (state.viewMode === 'list') renderListView();
-  // A plugin view is loaded lazily; once entered it is cached, so this repaint
-  // no-ops during the brief pre-load window.
-  else repaintPluginView(state.viewMode);
+  // Fresh build → repaint the active presentation too, so switching to it (or
+  // reloading a deep-linked URL) shows the current data without an extra edit.
+  repaintActiveView();
 
   // „The timeline changed", for any plugin holding derived state
   // (src/pluginHost/changes.ts). Fired here rather than per write because this
