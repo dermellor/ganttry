@@ -23,12 +23,34 @@
 import { filterSelectionFromPair, isFilterSelectionActive, type FilterSelection } from './filterRule';
 import { GROUP_DIM, TYPE_DIM } from './listGrouping';
 
+/** What one presentation of one timeline remembers. */
+export type StoredPresentationPrefs = {
+  groupBy?: string;
+  /** Selected values per filter dimension. */
+  filters?: FilterSelection;
+};
+
 /** What one timeline remembers, as it sits in storage. */
 export type StoredViewPrefs = {
   /** A `ViewMode`, unparsed: see the module comment. */
   mode?: string;
+  /**
+   * Perspective and extent, per presentation, keyed by its addressable mode.
+   *
+   * One entry per timeline was a scope too coarse: lanes and list sections are
+   * different mechanisms, so „group by Gruppe on the timeline, by Status in the
+   * list" is an ordinary wish that setting one value cannot express. A plugin view
+   * would also have inherited whatever the item list happened to use, which for a
+   * view over other data means nothing.
+   */
+  presentations?: Record<string, StoredPresentationPrefs>;
+  /**
+   * The timeline-wide values `presentations` replaced. Read as the **fallback** for
+   * any presentation without an entry of its own, never written. Copying them into
+   * one entry per mode instead would mean guessing which presentations exist, and a
+   * plugin's views are not knowable while migrating.
+   */
   groupBy?: string;
-  /** Selected values per filter dimension. */
   filters?: FilterSelection;
   /**
    * The shape `filters` replaced: one dimension plus its values. Still read,
@@ -45,12 +67,14 @@ export type StoredViewPrefs = {
   milestonesOnly?: boolean;
 };
 
-/** The same thing resolved, which is what the app works with. */
-export type ViewPrefs = {
-  mode: string;
+/** Perspective and extent resolved for one presentation. */
+export type PresentationPrefs = {
   groupBy: string;
   filters: FilterSelection;
 };
+
+/** What the app works with: which presentation, and its own two settings. */
+export type ViewPrefs = PresentationPrefs & { mode: string };
 
 export type ViewPrefsStore = Record<string, StoredViewPrefs>;
 
@@ -105,6 +129,21 @@ function selection(raw: unknown): FilterSelection | undefined {
   return out;
 }
 
+function presentationMap(raw: unknown): Record<string, StoredPresentationPrefs> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<string, StoredPresentationPrefs> = {};
+  for (const [mode, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!mode || !value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const rec = value as Record<string, unknown>;
+    const entry: StoredPresentationPrefs = {};
+    if (typeof rec.groupBy === 'string') entry.groupBy = rec.groupBy;
+    const filters = selection(rec.filters);
+    if (filters && Object.keys(filters).length) entry.filters = filters;
+    if (Object.keys(entry).length) out[mode] = entry;
+  }
+  return out;
+}
+
 /**
  * Keep only well-typed fields. A stored value of the wrong type reads as absent
  * rather than throwing: a display preference must never keep a timeline from
@@ -115,6 +154,8 @@ function sanitize(raw: unknown): StoredViewPrefs {
   const rec = raw as Record<string, unknown>;
   const out: StoredViewPrefs = {};
   if (typeof rec.mode === 'string') out.mode = rec.mode;
+  const presentations = presentationMap(rec.presentations);
+  if (presentations) out.presentations = presentations;
   if (typeof rec.groupBy === 'string') out.groupBy = rec.groupBy;
   const filters = selection(rec.filters);
   if (filters) out.filters = filters;
@@ -162,25 +203,47 @@ function storedSelection(stored: StoredViewPrefs | undefined): FilterSelection {
   return base;
 }
 
-/** What `viewId` remembers, filled up with the defaults. */
-export function viewPrefsFor(
+/** Which presentation a timeline was last looked at in. */
+export function storedMode(store: ViewPrefsStore, viewId: string | null | undefined): string {
+  const stored = viewId ? store[viewId] : undefined;
+  return stored?.mode ?? DEFAULT_VIEW_PREFS.mode;
+}
+
+/**
+ * Perspective and extent for one presentation: its own entry, else the timeline's
+ * legacy values, else the defaults.
+ *
+ * The fallback is what keeps the change from resetting anybody: a timeline saved
+ * before this had one grouping and one filter for all of its presentations, and
+ * every presentation that has not been touched since still reads them.
+ */
+export function presentationPrefsFor(
   store: ViewPrefsStore,
   viewId: string | null | undefined,
-): ViewPrefs {
+  mode: string,
+): PresentationPrefs {
   const stored = viewId ? store[viewId] : undefined;
+  const own = stored?.presentations?.[mode];
   return {
-    mode: stored?.mode ?? DEFAULT_VIEW_PREFS.mode,
-    groupBy: stored?.groupBy ?? DEFAULT_VIEW_PREFS.groupBy,
-    filters: storedSelection(stored),
+    groupBy: own?.groupBy ?? stored?.groupBy ?? DEFAULT_VIEW_PREFS.groupBy,
+    filters: own
+      ? copySelection(own.filters ?? {})
+      : storedSelection(stored),
   };
 }
 
-function isDefault(prefs: ViewPrefs): boolean {
-  return (
-    prefs.mode === DEFAULT_VIEW_PREFS.mode &&
-    prefs.groupBy === DEFAULT_VIEW_PREFS.groupBy &&
-    !isFilterSelectionActive(prefs.filters)
-  );
+/** What `viewId` remembers: its presentation, and that presentation's own settings. */
+export function viewPrefsFor(
+  store: ViewPrefsStore,
+  viewId: string | null | undefined,
+  mode?: string,
+): ViewPrefs {
+  const active = mode ?? storedMode(store, viewId);
+  return { mode: active, ...presentationPrefsFor(store, viewId, active) };
+}
+
+function isDefaultPresentation(prefs: PresentationPrefs): boolean {
+  return prefs.groupBy === DEFAULT_VIEW_PREFS.groupBy && !isFilterSelectionActive(prefs.filters);
 }
 
 /**
@@ -199,16 +262,61 @@ export function withViewPrefs(
   prefs: ViewPrefs,
 ): ViewPrefsStore {
   const next: ViewPrefsStore = { ...store };
-  if (isDefault(prefs)) {
+  const previous = store[viewId];
+
+  // Every other presentation's entry is carried over untouched: a save is about the
+  // one that is on screen, and rewriting the map would erase the grouping somebody
+  // set in a presentation they are not in.
+  const presentations: Record<string, StoredPresentationPrefs> = { ...previous?.presentations };
+  if (isDefaultPresentation(prefs)) delete presentations[prefs.mode];
+  else {
+    const own: StoredPresentationPrefs = {};
+    if (prefs.groupBy !== DEFAULT_VIEW_PREFS.groupBy) own.groupBy = prefs.groupBy;
+    if (isFilterSelectionActive(prefs.filters)) own.filters = copySelection(prefs.filters);
+    presentations[prefs.mode] = own;
+  }
+
+  const entry: StoredViewPrefs = {};
+  if (prefs.mode !== DEFAULT_VIEW_PREFS.mode) entry.mode = prefs.mode;
+  if (Object.keys(presentations).length) entry.presentations = presentations;
+  // The legacy fallback is kept as long as some presentation still relies on it,
+  // which is any presentation without an entry of its own. Dropping it on the first
+  // save would silently reset the ones nobody has visited yet.
+  if (previous?.groupBy != null) entry.groupBy = previous.groupBy;
+  if (previous?.filters) entry.filters = copySelection(previous.filters);
+  if (previous?.filterDim != null) entry.filterDim = previous.filterDim;
+  if (previous?.filterValues) entry.filterValues = [...previous.filterValues];
+  if (previous?.milestonesOnly) entry.milestonesOnly = true;
+
+  if (!Object.keys(entry).length) {
     delete next[viewId];
     return next;
   }
-  const entry: StoredViewPrefs = {};
-  if (prefs.mode !== DEFAULT_VIEW_PREFS.mode) entry.mode = prefs.mode;
-  if (prefs.groupBy !== DEFAULT_VIEW_PREFS.groupBy) entry.groupBy = prefs.groupBy;
-  if (isFilterSelectionActive(prefs.filters)) entry.filters = copySelection(prefs.filters);
   next[viewId] = entry;
   return next;
+}
+
+/**
+ * Seed a timeline's **fallback layer** from the instance-wide keys.
+ *
+ * Not through `withViewPrefs`: that writes one presentation's entry, and these
+ * values were never about a presentation — they applied to everything. Written as
+ * the fallback, every presentation of that timeline inherits them until it is given
+ * settings of its own, which is exactly what „carry the old state over" means.
+ */
+export function withLegacyFallback(
+  store: ViewPrefsStore,
+  viewId: string,
+  legacy: Partial<ViewPrefs>,
+): ViewPrefsStore {
+  const entry: StoredViewPrefs = { ...store[viewId] };
+  if (legacy.mode && legacy.mode !== DEFAULT_VIEW_PREFS.mode) entry.mode = legacy.mode;
+  if (legacy.groupBy && legacy.groupBy !== DEFAULT_VIEW_PREFS.groupBy) entry.groupBy = legacy.groupBy;
+  if (legacy.filters && isFilterSelectionActive(legacy.filters)) {
+    entry.filters = copySelection(legacy.filters);
+  }
+  if (!Object.keys(entry).length) return store;
+  return { ...store, [viewId]: entry };
 }
 
 /**

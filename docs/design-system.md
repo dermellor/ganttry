@@ -129,6 +129,15 @@ category: a pricing card is not a generic component, and it should not become
 one to satisfy a rule. What the contract asks of it is that its colours are named
 and its spacing comes from the scale.
 
+**One thing belongs here and is not here yet: the Markdown editor.**
+[`src/wysiwyg.ts`](../src/wysiwyg.ts) is a control the item form uses and plugins
+need — it is re-exported from the plugin contract barrel rather than being reached
+for, which was the immediate fix (#117). Making it a component is the real one, and
+it is a change of its own: it carries a stylesheet and two npm dependencies, and it
+would need a playground entry with its empty and error states like everything else
+here. Until then, treat its presence on the barrel as a documented exception rather
+than as a precedent for exporting app code.
+
 ## Plugins
 
 [`src/pluginHost/api.ts`](../src/pluginHost/api.ts) re-exports the whole design

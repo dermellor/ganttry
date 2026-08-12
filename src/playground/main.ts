@@ -18,6 +18,7 @@ import '../design-system';
 import './playground.css';
 import {
   AppMain,
+  AppMark,
   Avatar,
   Badge,
   AvatarStack,
@@ -786,7 +787,7 @@ const frameSection = section(
         children: [
           ToolbarGroup({
             children: [
-              el('span', { class: 'ds-AppMark' }),
+              AppMark(),
               ToolbarControl({ label: 'Timeline', children: Select({ wide: true, options: [{ value: 'v', label: 'Produkt-Roadmap' }] }) }),
               Checkbox({ label: 'Nur Meilensteine', className: 'ds-ToolbarControl' }),
             ],

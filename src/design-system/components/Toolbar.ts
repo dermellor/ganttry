@@ -1,4 +1,5 @@
 import './Toolbar.css';
+import zeitlinesLogo from '../assets/zeitlines-logo.svg?raw';
 import { classes, data, el, type Attrs, type Child } from './dom';
 import { Label } from './Text';
 
@@ -110,7 +111,9 @@ export type AppMarkOptions = {
   className?: string;
 };
 
-/** The accent square beside the app title. Shape follows `--mark-radius`. */
+/** The product logo beside the timeline identity. */
 export function AppMark(options: AppMarkOptions = {}): HTMLSpanElement {
-  return el('span', { class: classes('ds-AppMark', options.className), 'aria-hidden': 'true' });
+  const mark = el('span', { class: classes('ds-AppMark', options.className), 'aria-hidden': 'true' });
+  mark.innerHTML = zeitlinesLogo;
+  return mark;
 }

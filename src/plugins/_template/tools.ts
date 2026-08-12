@@ -25,7 +25,7 @@
 // calculation gets caught, and a plausible-looking wrong rule is worse than a
 // missing one because it gets trusted.
 
-import type { ToolHandler, ToolPlan } from '../../pluginHost/tools';
+import type { ToolHandler, ToolPlan } from '../../pluginHost/api';
 
 /**
  * The rule behind one declared verb.

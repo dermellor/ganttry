@@ -35,6 +35,25 @@ export type Child = Node | string | number | false | null | undefined | Child[];
 export type AttrValue = string | number | boolean | null | undefined;
 export type Attrs = Record<string, AttrValue>;
 
+/**
+ * Escape a value for interpolation into an HTML string.
+ *
+ * It lives here because this module is where the string path is documented: two
+ * thirds of the call sites assemble markup rather than nodes, and every one of
+ * them that interpolates user data needs this. It used to sit in `buildItems.ts`,
+ * four lines inside 870 of item-rendering logic — which meant a plugin could not
+ * reach it without importing the app's item builder, and wrote its own instead.
+ *
+ * The DOM path does not need it: `append` sets text through `createTextNode`,
+ * which cannot inject markup by construction. Reaching for this while building
+ * nodes is a sign the call site should be building nodes.
+ */
+export function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!;
+  });
+}
+
 /** Listeners, keyed by event name — `{ click: … }`, not `{ onClick: … }`. */
 export type Listeners = Partial<{
   [K in keyof HTMLElementEventMap]: (event: HTMLElementEventMap[K]) => void;

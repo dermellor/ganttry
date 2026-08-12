@@ -9,6 +9,24 @@ reference: [`docs/model.md`](docs/model.md).
 
 ## Invariants
 
+- **This plugin reaches the app only through
+  [`pluginHost/api.ts`](../../pluginHost/api.ts).** Not through `state`, not through
+  `render`, not through `detailPanel`, not through `editor`. It imported all four
+  once, and the cost was not coupling: it was that this plugin never *met* a gap in
+  the plugin API, so four missing methods survived for a year while everything
+  looked fine (#117). Reaching for something that is not on the contract is a
+  finding to file, never an import to add — and CI refuses the import anyway
+  (`check-plugin-isolation.mjs`, check 5).
+- **`file()` from [`./host.ts`](host.ts) is a snapshot, not the app's state.**
+  Writing through it changes nothing on the server. A write goes through
+  [`./api.ts`](api.ts) and is mirrored into the snapshot by [`./store.ts`](store.ts);
+  that mirror is what makes the next repaint show it. The snapshot is taken once per
+  render in [`./index.ts`](index.ts), which is why every reader below it can stay
+  synchronous while the host API is async.
+- **[`./export.ts`](export.ts) is outside the plugin contract.** It is a CLI, and a
+  third-party plugin has no server-side half at all, so it reads `process.env`
+  directly rather than the repo's env cascade. That means `.env.local` is not picked
+  up: prefix the command or export the two variables.
 - **`version` and `rowVersion` are different things, and one word.** On a
   feature, `version` is the domain label „ab Version" that a user typed;
   `rowVersion` is the host's optimistic-lock counter, which lives in the row

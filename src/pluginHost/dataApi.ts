@@ -58,6 +58,21 @@ export function createDataApi(pluginId: string, ctx: DataApiContext): DataApi {
       );
     },
 
+    async patch(collection, id, data, version) {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      // Same rule as `put`: the lock counter is a header, never a field inside
+      // `data`, or the next plugin declaring a `version` of its own would have its
+      // value read as the counter.
+      if (version != null) headers['If-Match'] = String(version);
+      return ctx.json(
+        await send(`${base(collection)}/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ data }),
+        }),
+      );
+    },
+
     async remove(collection, id) {
       await ctx.json(await send(`${base(collection)}/${encodeURIComponent(id)}`, { method: 'DELETE' }));
     },

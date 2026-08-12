@@ -10,7 +10,7 @@
 // rows can be added/reordered in place. Each writes only the row or cell it edits.
 // Highlights and the version list are still authored via MCP.
 
-import { escapeHtml } from '../../buildItems';
+import { escapeHtml } from '../../pluginHost/api';
 import { Button, html, IconButton, SegmentedControl, Select, ToolbarControl } from '../../pluginHost/api';
 import {
   groupFeatures,
@@ -25,8 +25,9 @@ import {
   resolveFeatureDescriptionParts,
   versionLabel,
 } from './pricing';
-import { state, els, isEditableView } from '../../state';
-import { showDetailForId } from '../../detailPanel';
+// Aliased: this module has a local `file` for the snapshot it renders from, and
+// shadowing the accessor would be a trap for the next reader.
+import { file as currentFile, canWrite, hostApi } from './host';
 import { showFeatureForm, addFeature, moveFeature } from './featureForm';
 import { showTierForm, addTier } from './tierForm';
 import { openCellEditor, closeCellEditor } from './cellEditor';
@@ -39,7 +40,7 @@ import {
 import {
   type PricingFeature,
 } from './types';
-import { hasPlugin } from '../../pluginHost/plugins';
+import { hasPlugin } from '../../pluginHost/api';
 import { PRODUCT_ROADMAP_PLUGIN } from './plugin';
 import { currentPricing, hasPricingModel } from './compose';
 
@@ -344,7 +345,7 @@ function wireFeatureTooltips(host: HTMLElement): void {
   const hide = () => tip.hide();
   const show = (icon: HTMLElement) => {
     const featureId = icon.closest<HTMLElement>('[data-feature-id]')?.dataset.featureId;
-    const pricing = currentPricing(state.activeSourceFile);
+    const pricing = currentPricing(currentFile());
     const f = pricing?.features.find((x) => x.id === featureId);
     if (!f) return;
     const html = featureTipHtml(f, pricing?.versions ?? [], pricing?.versionLabels);
@@ -396,7 +397,9 @@ function wireWork(host: HTMLElement): void {
   host.querySelectorAll<HTMLButtonElement>('.pm-work-item').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.itemId;
-      if (id) showDetailForId(id);
+      // Handing the drawer back to the app: a work item belongs to the timeline,
+      // and the app's own detail view is what should open for it.
+      if (id) hostApi().panel?.showItem(id);
     });
   });
   host.querySelectorAll<HTMLDetailsElement>('details.pm-work').forEach((d) => {
@@ -423,7 +426,7 @@ export function repaintPricingView(): void {
 }
 
 export function renderPricingView(host: HTMLElement): void {
-  const file = state.activeSourceFile;
+  const file = currentFile();
   if (!host) return;
   hostSection = host;
   // A repaint replaces the cell the editor is anchored to, so a still-open popover
@@ -442,7 +445,7 @@ export function renderPricingView(host: HTMLElement): void {
   // Cards need highlights; fall back to matrix when none are defined.
   if (subView === 'cards' && !hasHighlights) subView = 'matrix';
 
-  const editable = isEditableView();
+  const editable = canWrite();
   const body =
     subView === 'cards' ? renderCardsHtml(file, versions, selectedVersion) : matrixHtml(file, versions, editable);
 

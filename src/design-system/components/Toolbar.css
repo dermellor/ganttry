@@ -76,10 +76,14 @@
 }
 
 .ds-AppMark {
-  width: 14px;
-  height: 14px;
-  background: var(--accent);
-  border-radius: var(--mark-radius);
-  display: inline-block;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
   flex: none;
+}
+
+.ds-AppMark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }

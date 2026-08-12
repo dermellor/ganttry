@@ -1028,6 +1028,52 @@ timelines carried a filter into a timeline it was never meant for. The shape
 follows the fold store (`COLLAPSED_ITEMS_KEY`), which had already solved this for
 folded items.
 
+**Within a timeline the scope goes one level further: grouping and filter belong to
+the presentation, not to the timeline.** Which presentation is open is a property of
+the timeline; how that presentation groups and narrows is a property of the
+presentation:
+
+```
+timelines.viewPrefs = {
+  "<viewId>": {
+    mode: "list",                                   // which presentation is open
+    presentations: {
+      "timeline":                   { groupBy: "group" },
+      "list":                       { groupBy: "status", filters: { status: ["Open"] } },
+      "plugin:dev.x.sprints:board": { groupBy: "cf:sprint" }
+    }
+  }
+}
+```
+
+Lanes and list sections are different mechanisms, so „group by Gruppe on the
+timeline, by Status in the list" is an ordinary wish, and one shared value made it
+impossible: setting it in one presentation set it in the other. It also left a hole
+in the plugin contract, since a view declaring `grouping` or `filter` inherited
+whatever the item list happened to be using, which for a view over other data means
+nothing. Each presentation now has a slot keyed by its addressable mode, plugin
+views included.
+
+Switching presentation therefore swaps the perspective and the extent with it, in
+one step: `applyViewMode` loads that presentation's prefs before it repaints, so
+there is no frame showing the previous one's grouping.
+
+**The reservation this was decided against.** The extent says *which subset* is
+being looked at, the presentation how that subset is drawn („Level 4 has two
+halves", docs/information-architecture.md). With the filter per presentation,
+switching from timeline to list can show a different set of items without anybody
+touching a filter. The decision was made knowing that: the freedom is worth more
+than the guarantee. If it bites, the smaller version is available — perspective per
+presentation, extent per timeline.
+
+**A timeline's own `groupBy` / `filters` are a fallback layer, read and never
+written.** A presentation with no entry of its own uses them, so a store written
+before this change keeps working and nothing has to be rewritten to migrate. Copying
+those values into per-mode keys instead would mean guessing which presentations
+exist, and a plugin's views are not knowable at migration time. An entry that does
+exist wins field by field: naming no filter means „no filter here", because
+otherwise clearing a filter in one presentation could never stick.
+
 Three consequences worth knowing:
 
 - **The guards stay, and their reason changed.** A stored dimension that no longer
@@ -1057,7 +1103,10 @@ The five instance-wide keys this replaces (`timelines.viewMode`,
 `timelines.milestonesOnly`) are read once, to seed the first timeline opened after
 the update, and then removed. Dropping them without that read resets every user's
 saved view, grouping and filter, which is the trap
-[`AGENTS.md`](../AGENTS.md) names for the `timelines.*` prefix.
+[`AGENTS.md`](../AGENTS.md) names for the `timelines.*` prefix. They seed that
+timeline's **fallback layer** rather than one presentation (`withLegacyFallback`):
+they applied to everything, so every presentation of the timeline has to inherit
+them.
 
 ## The timeline switcher
 

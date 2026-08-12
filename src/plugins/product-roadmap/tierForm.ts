@@ -7,30 +7,23 @@
 // matrix itself (cellEditor.ts), which keeps two people editing different cells
 // of the same column from colliding.
 
-import { Button, el, Field, FormActions, TextArea, TextInput } from '../../pluginHost/api';
+import { Button, ConflictError, el, Field, FormActions, TextArea, TextInput } from '../../pluginHost/api';
 import type { PricingTier } from './types';
-import { state, els, setStatus, clearFormSlots } from '../../state';
-import { apiAddTier, apiUpdateTier, apiDeleteTier, ConflictError } from './api';
+import { apiAddTier, apiUpdateTier, apiDeleteTier } from './api';
 import { applyRow, dropRow, dropRowsWhere } from './store';
 import { PRICING_COLLECTIONS } from './manifest';
-import { hideDetail, setDetailTitle } from '../../detailPanel';
+import { file, hostApi, status } from './host';
 import { repaintPricingView } from './pricingMatrix';
 import { slugId } from './pricing';
-import { renderTimeline } from '../../render';
 import { currentPricing } from './compose';
 
 function findTier(tierId: string): PricingTier | undefined {
-  return currentPricing(state.activeSourceFile)?.tiers.find((t) => t.id === tierId);
+  return currentPricing(file())?.tiers.find((t) => t.id === tierId);
 }
 
 export function showTierForm(tierId: string): void {
   const tier = findTier(tierId);
   if (!tier) return;
-  clearFormSlots();
-  state.activeFormTierId = tierId;
-
-  setDetailTitle(tier.name || '(unbenannter Tarif)');
-  els.detailMeta.replaceChildren();
 
   const form = el('form', { class: 'ds-FormGrid tier-form', 'data-id': tierId }, [
     Field({
@@ -95,7 +88,13 @@ export function showTierForm(tierId: string): void {
     }),
   ]);
 
-  els.detailBody.replaceChildren(form);
+  // The host owns the drawer, records that a plugin form is open and hands over a
+  // container. Wiring follows on the element we still hold.
+  hostApi().panel?.open({
+    title: tier.name || '(unbenannter Tarif)',
+    render: (container) => container.replaceChildren(form),
+  });
+
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     void saveTierFromForm(tierId, form);
@@ -103,15 +102,11 @@ export function showTierForm(tierId: string): void {
   form.querySelector<HTMLButtonElement>('[data-action="delete"]')!.addEventListener('click', () => {
     void deleteTier(tierId);
   });
-
-  // Pricing view has no timeline behind the overlay, so just show the panel.
-  els.detail.hidden = false;
 }
 
 async function saveTierFromForm(tierId: string, form: HTMLFormElement): Promise<void> {
   const tier = findTier(tierId);
-  const sourceId = state.activeSourceId;
-  if (!tier || !sourceId) return;
+  if (!tier) return;
   const fd = new FormData(form);
   const get = (name: string) => String(fd.get(name) ?? '').trim();
 
@@ -128,49 +123,49 @@ async function saveTierFromForm(tierId: string, form: HTMLFormElement): Promise<
   } as Partial<PricingTier>;
 
   try {
-    const saved = await apiUpdateTier(sourceId, tierId, patch, tier.rowVersion);
+    const saved = await apiUpdateTier(tierId, patch, tier.rowVersion);
     // Replace the stored ROW rather than merging into the composed model, which
     // is recomposed on every read (see ./store.ts). The cells are untouched by
     // design — they are their own rows, so a rename cannot disturb a column.
-    applyRow(state.activeSourceFile, PRICING_COLLECTIONS.tiers, saved);
+    applyRow(file(), PRICING_COLLECTIONS.tiers, saved);
     repaintPricingView();
-    setStatus(`Tarif „${patch.name ?? tier.name}" aktualisiert`);
+    status(`Tarif „${patch.name ?? tier.name}" aktualisiert`);
     showTierForm(tierId);
   } catch (err) {
     if (err instanceof ConflictError) {
-      setStatus('Tarif wurde extern geändert — lade neu…');
-      if (state.activeView) await renderTimeline(state.activeView);
+      // The row moved under us. The host's reload brings the new one in;
+      // repainting from the stale snapshot would show the value we failed to write
+      // as if it had been saved.
+      status('Tarif wurde extern geändert — lade neu…');
       return;
     }
-    setStatus(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
 async function deleteTier(tierId: string): Promise<void> {
-  const pricing = currentPricing(state.activeSourceFile);
-  const sourceId = state.activeSourceId;
+  const pricing = currentPricing(file());
   const tier = pricing && findTier(tierId);
-  if (!pricing || !tier || !sourceId) return;
+  if (!pricing || !tier) return;
   // A tier owns a whole column of cells, so say so — this is not a one-field undo.
   const cellCount = Object.keys(tier.values ?? {}).length;
   const extra = cellCount ? ` Damit verschwinden auch ${cellCount} Matrix-Werte.` : '';
   if (!confirm(`Tarif „${tier.name}" wirklich löschen?${extra}`)) return;
 
   try {
-    await apiDeleteTier(sourceId, tierId);
+    await apiDeleteTier(tierId);
   } catch (err) {
-    setStatus(`Löschen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(`Löschen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
 
   // The host applied the declared cascade and took the column's cells with the
   // tier; mirror both so the matrix repaints without a reload.
-  dropRow(state.activeSourceFile, PRICING_COLLECTIONS.tiers, tierId);
-  dropRowsWhere(state.activeSourceFile, PRICING_COLLECTIONS.tierValues, (d) => d.tierId === tierId);
-  state.activeFormTierId = null;
+  dropRow(file(), PRICING_COLLECTIONS.tiers, tierId);
+  dropRowsWhere(file(), PRICING_COLLECTIONS.tierValues, (d) => d.tierId === tierId);
   repaintPricingView();
-  hideDetail();
-  setStatus(`Tarif „${tier.name}" gelöscht`);
+  hostApi().panel?.close();
+  status(`Tarif „${tier.name}" gelöscht`);
 }
 
 /**
@@ -179,9 +174,8 @@ async function deleteTier(tierId: string): Promise<void> {
  * starts filling cells — the same "create then edit" flow items use.
  */
 export async function addTier(): Promise<void> {
-  const pricing = currentPricing(state.activeSourceFile);
-  const sourceId = state.activeSourceId;
-  if (!pricing || !sourceId) return;
+  const pricing = currentPricing(file());
+  if (!pricing) return;
 
   const name = prompt('Name des neuen Tarifs?')?.trim();
   if (!name) return;
@@ -194,12 +188,12 @@ export async function addTier(): Promise<void> {
   try {
     // A new column starts empty: no price, no cells. Both are filled from the UI
     // afterwards — the form for the price, the matrix cells one click each.
-    const saved = await apiAddTier(sourceId, { id, name, price: '', values: {} });
-    applyRow(state.activeSourceFile, PRICING_COLLECTIONS.tiers, saved);
+    const saved = await apiAddTier({ id, name, price: '', values: {} });
+    applyRow(file(), PRICING_COLLECTIONS.tiers, saved);
     repaintPricingView();
     showTierForm(saved.id);
-    setStatus(`Tarif „${name}" angelegt`);
+    status(`Tarif „${name}" angelegt`);
   } catch (err) {
-    setStatus(`Tarif anlegen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(`Tarif anlegen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

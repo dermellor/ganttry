@@ -4,7 +4,7 @@
 // document. Pure and deterministic (no Date / IO) so it's unit-testable and the
 // caller stamps the date.
 
-import { statusOrDefault, type StatusKey } from '../../status';
+import { statusOrDefault, type StatusKey } from '../../pluginHost/api';
 import { PRICING_FEATURE_META_KEY, PRICING_ITEM_VERSION_META_KEY } from './plugin';
 import {
   type TimelineFileItem,
