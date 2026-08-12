@@ -24,7 +24,24 @@
 // The rules — who may see one, who may change it, has the current state drifted —
 // are in src/savedViews.ts, shared with the server. This module only draws them.
 
-import { Button, el, Icon, MenuItem, MenuSection, Separator, TextInput } from './design-system';
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  el,
+  Field,
+  FieldNote,
+  FormActions,
+  FormGrid,
+  fromHtml,
+  Icon,
+  IconButton,
+  MenuItem,
+  MenuSection,
+  Separator,
+  TextInput,
+} from './design-system';
+import { GEAR_ICON } from './appShell';
 import { els, state, saveViewPrefs, setStatus, syncUrl } from './state';
 import { apiCreateSavedView, apiDeleteSavedView, apiUpdateSavedView } from './editor';
 import {
@@ -97,7 +114,7 @@ function closeMenu(): void {
   els.savedViewsToggle.setAttribute('aria-expanded', 'false');
   // A half-typed name does not survive the panel: reopening it should offer the
   // list, not a field somebody left behind three clicks ago.
-  naming = null;
+  naming = false;
 }
 
 /**
@@ -166,16 +183,18 @@ function removeLocal(viewId: string): void {
 }
 
 /**
- * Which name is being typed, if any: `create` for a new view, `rename` for the
- * active one.
+ * Is a name for a NEW view being typed?
  *
  * A field in the panel rather than `window.prompt`, which is what this started as.
  * A native dialog is suppressed outright in an embedded browser — the call
  * returns null and the action silently does nothing — and naming a view is the
  * primary flow here, not a corner like the body editor's link URL. It is also
  * what the design system asks for: interface is built from the components.
+ *
+ * Only for creating. Renaming an existing one is a property of that view and
+ * lives in its dialog, next to its visibility — see `openViewDialog`.
  */
-let naming: 'create' | 'rename' | null = null;
+let naming = false;
 
 async function saveAsNew(name: string): Promise<void> {
   const sourceId = state.activeSourceId;
@@ -190,28 +209,26 @@ async function saveAsNew(name: string): Promise<void> {
 }
 
 /**
- * The name field, plus the two ways out of it.
+ * The name field for a new view, plus the two ways out of it.
  *
  * Enter commits and Escape cancels, because a one-field form in a popover is a
  * keyboard interaction before it is a button one — and the button is there anyway
  * for whoever reaches for the pointer.
  */
-function nameForm(kind: 'create' | 'rename', current?: SavedView): HTMLElement {
+function nameForm(): HTMLElement {
   const input = TextInput({
-    value: kind === 'rename' ? (current?.name ?? '') : '',
     placeholder: 'Name der Ansicht',
-    attrs: { 'aria-label': kind === 'rename' ? 'Neuer Name' : 'Name der neuen Ansicht' },
+    attrs: { 'aria-label': 'Name der neuen Ansicht' },
   });
   const commit = () => {
     const name = input.value.trim();
     if (!name) return;
-    naming = null;
+    naming = false;
     closeMenu();
-    if (kind === 'create') void saveAsNew(name);
-    else void updateActive({ name }, `Ansicht heißt jetzt „${name}".`);
+    void saveAsNew(name);
   };
   const cancel = () => {
-    naming = null;
+    naming = false;
     syncSavedViewsControl();
   };
   input.addEventListener('keydown', (e) => {
@@ -232,10 +249,17 @@ function nameForm(kind: 'create' | 'rename', current?: SavedView): HTMLElement {
   return el('div', { class: 'saved-view-name' }, [input, save]);
 }
 
-async function updateActive(patch: Record<string, unknown>, done: string): Promise<void> {
+// Both take the view they act on rather than reading the active one: the dialog
+// hangs off a ROW, and the row is often not the applied view. „Aktualisieren" in
+// the panel passes the active one explicitly for the same reason.
+
+async function updateView(
+  view: SavedView,
+  patch: Record<string, unknown>,
+  done: string,
+): Promise<void> {
   const sourceId = state.activeSourceId;
-  const view = activeView();
-  if (!sourceId || !view) return;
+  if (!sourceId) return;
   await write(async () => {
     const stored = (await apiUpdateSavedView(sourceId, view.id, patch, view.version)) as SavedView;
     upsertLocal(stored);
@@ -243,20 +267,129 @@ async function updateActive(patch: Record<string, unknown>, done: string): Promi
   }, done);
 }
 
-async function deleteActive(): Promise<void> {
+async function deleteView(view: SavedView): Promise<void> {
   const sourceId = state.activeSourceId;
-  const view = activeView();
-  if (!sourceId || !view) return;
-  if (!confirm(`Ansicht „${view.name}" wirklich löschen?`)) return;
+  if (!sourceId) return;
   await write(async () => {
     await apiDeleteSavedView(sourceId, view.id);
     removeLocal(view.id);
-    state.activeSavedViewId = null;
-    // The hash goes with it: a link left naming a deleted view is one that opens
-    // the timeline and quietly does nothing, which reads as the link being broken.
-    syncUrl();
+    // Only when the deleted one was the applied one. Deleting somebody else's row
+    // from the list must not silently drop the view the user is looking at.
+    if (state.activeSavedViewId === view.id) {
+      state.activeSavedViewId = null;
+      // The hash goes with it: a link left naming a deleted view is one that opens
+      // the timeline and quietly does nothing, which reads as the link being broken.
+      syncUrl();
+    }
     syncSavedViewsControl();
   }, `Ansicht „${view.name}" gelöscht.`);
+}
+
+/**
+ * Everything that is a property of ONE saved view, in a dialog of its own.
+ *
+ * It replaces three rows that used to sit in the panel („Umbenennen…",
+ * „Teilen", „Löschen"). Those rows had a flaw the panel could not fix: they acted
+ * on whichever view happened to be *applied*, so administering a view meant
+ * entering it first, and the panel grew a row per property as more of them
+ * arrived. Hanging the properties off the row they belong to gets both back — the
+ * list stays a list, and the next property (a description, an owner, a default)
+ * is a field here rather than a fourth row there.
+ *
+ * A `Dialog` rather than a second popover: a popover over a popover has no sane
+ * dismissal order, and this asks for a decision rather than offering a choice
+ * (see the component's own note). The native `<dialog>` brings the focus trap and
+ * Escape with it, which a hand-rolled one reliably gets wrong.
+ *
+ * Nothing is written until „Speichern": a name being typed is not a rename, and a
+ * visibility toggle that published on click would put a half-named view in front
+ * of the instance.
+ */
+function openViewDialog(view: SavedView): void {
+  const caller = currentCaller();
+  const mayPublish = canPublishSavedView(caller);
+  const name = TextInput({
+    value: view.name,
+    id: 'saved-view-name',
+    attrs: { 'aria-label': 'Name der Ansicht' },
+  });
+  const shared = Checkbox({
+    label: 'Für alle Mitglieder dieser Instanz sichtbar',
+    checked: visibilityOf(view) === 'instance',
+    disabled: !mayPublish,
+  });
+  const sharedBox = shared.querySelector('input') as HTMLInputElement;
+
+  const dialog = Dialog({
+    title: view.name,
+    ariaLabel: `Einstellungen der Ansicht „${view.name}"`,
+    closeLabel: 'Ansicht-Einstellungen schließen',
+    onClose: () => dialog.close(),
+  });
+  // Removed on close rather than kept around: the dialog is built from the view as
+  // it is now, and a hidden stale copy is the thing that later shows yesterday's
+  // name. `close` fires for Escape and the backdrop too, so this is the one hook.
+  dialog.addEventListener('close', () => dialog.remove());
+
+  const save = Button({
+    label: 'Speichern',
+    variant: 'primary',
+    on: {
+      click: () => {
+        const next = name.value.trim();
+        if (!next) return;
+        const patch: Record<string, unknown> = {};
+        if (next !== view.name) patch.name = next;
+        const wantShared = sharedBox.checked;
+        if (wantShared !== (visibilityOf(view) === 'instance')) {
+          patch.visibility = wantShared ? 'instance' : 'private';
+        }
+        dialog.close();
+        // Nothing changed is not an error and not a write: the same rule
+        // `timelineMetaPatch` follows, and for the same reason — an empty PATCH
+        // would still bump the row's version and re-attribute it.
+        if (!Object.keys(patch).length) return;
+        void updateView(view, patch, `Ansicht „${next}" gespeichert.`);
+      },
+    },
+  });
+  const remove = Button({
+    label: 'Löschen',
+    variant: 'danger',
+    on: {
+      click: () => {
+        if (!confirm(`Ansicht „${view.name}" wirklich löschen?`)) return;
+        dialog.close();
+        void deleteView(view);
+      },
+    },
+  });
+
+  dialog.append(
+    FormGrid({
+      children: [
+        Field({ label: 'Name', htmlFor: 'saved-view-name', full: true, control: name }),
+        Field({
+          label: 'Sichtbarkeit',
+          full: true,
+          control: mayPublish
+            ? shared
+            : // Shown disabled with the reason rather than hidden: „why can I not
+              // share this" is a question an absent control answers with silence.
+              el('div', {}, [
+                shared,
+                FieldNote({ text: 'Teilen setzt Schreibrechte auf dieser Instanz voraus.' }),
+              ]),
+        }),
+      ],
+    }),
+    FormActions({ children: [save, remove] }),
+  );
+
+  document.body.append(dialog);
+  dialog.showModal();
+  name.focus();
+  name.select();
 }
 
 /**
@@ -297,14 +430,27 @@ function setTrigger(active: SavedView | undefined, isDrifted: boolean): void {
   toggle.title = isDrifted ? `„${active.name}" mit ungespeicherten Änderungen` : active.name;
 }
 
-/** The row for one saved view: its name, whether it is shared, whether it is on. */
-function viewRow(view: SavedView): HTMLButtonElement {
-  return MenuItem({
+/**
+ * One saved view: the row that applies it, and the gear that administers it.
+ *
+ * Two buttons side by side rather than one row with two behaviours, because they
+ * are two different verbs — „show me this" and „change this" — and a row that does
+ * one thing at its left end and another at its right is the shape people click
+ * wrong. The gear is a real sibling rather than a child of the row: a button
+ * inside a button is invalid markup, and it is what would make the whole row
+ * ambiguous to a screen reader.
+ *
+ * A view this caller may not change carries no gear at all. The dialog would have
+ * nothing but disabled fields, and offering it is a promise the API then refuses.
+ */
+function viewRow(view: SavedView): HTMLElement {
+  const row = MenuItem({
     label: view.name,
     checked: view.id === state.activeSavedViewId,
     // „geteilt" rather than an icon: the list is read as text, and this is the one
     // fact about a view that changes who else is affected by editing it.
     detail: visibilityOf(view) === 'instance' ? 'geteilt' : undefined,
+    className: 'saved-view-apply',
     on: {
       click: () => {
         closeMenu();
@@ -312,6 +458,26 @@ function viewRow(view: SavedView): HTMLButtonElement {
       },
     },
   });
+  if (!writable() || !canEditSavedView(view, currentCaller())) return row;
+  const gear = IconButton({
+    icon: fromHtml(GEAR_ICON),
+    ariaLabel: `Einstellungen der Ansicht „${view.name}"`,
+    boxSize: 'sm',
+    // The component's own „quiet until you are on the row" treatment, the same one
+    // the list's per-group „+ Eintrag" uses: five views should read as five names,
+    // not as a column of gears. It stays at 0.55 rather than 0, so it is visible to
+    // somebody who never hovers and reachable by keyboard either way.
+    reveal: true,
+    on: {
+      click: () => {
+        // The panel goes first: a dialog says „nothing else until this is dealt
+        // with", and a popover left open underneath it contradicts that.
+        closeMenu();
+        openViewDialog(view);
+      },
+    },
+  });
+  return el('div', { class: 'saved-view-row' }, [row, gear]);
 }
 
 /**
@@ -376,6 +542,11 @@ export function syncSavedViewsControl(): void {
     );
   }
 
+  // Two actions, and both are about the CURRENT DISPLAY rather than about a stored
+  // view: capture it as a new one, or write it over the one that is applied.
+  // Everything that is a property of a stored view — its name, who may see it,
+  // whether it should exist at all — hangs off that view's own row (see
+  // `openViewDialog`), so this list does not grow a row per property.
   const actions: Element[] = [];
   if (canSave) {
     actions.push(
@@ -383,63 +554,24 @@ export function syncSavedViewsControl(): void {
         label: 'Aktuelle Einstellung speichern…',
         on: {
           click: () => {
-            naming = 'create';
+            naming = true;
             syncSavedViewsControl();
           },
         },
       }),
     );
   }
-  if (active && canSave && canEditSavedView(active, caller)) {
-    if (isDrifted) {
-      actions.push(
-        MenuItem({
-          label: `„${active.name}" aktualisieren`,
-          on: {
-            click: () => {
-              closeMenu();
-              void updateActive(currentAsView(active.name), `Ansicht „${active.name}" aktualisiert.`);
-            },
-          },
-        }),
-      );
-    }
+  // Only while it has drifted, and that is what keeps it out of the dialog: it is
+  // not „edit this view", it is „the thing I have on screen replaces it", which is
+  // the one action worth reaching in a click while working.
+  if (active && isDrifted && canSave && canEditSavedView(active, caller)) {
     actions.push(
       MenuItem({
-        label: 'Umbenennen…',
-        on: {
-          click: () => {
-            naming = 'rename';
-            syncSavedViewsControl();
-          },
-        },
-      }),
-    );
-    if (canPublishSavedView(caller)) {
-      const shared = visibilityOf(active) === 'instance';
-      actions.push(
-        MenuItem({
-          label: shared ? 'Nicht mehr teilen' : 'Mit allen teilen',
-          on: {
-            click: () => {
-              closeMenu();
-              void updateActive(
-                { visibility: shared ? 'private' : 'instance' },
-                shared ? 'Ansicht ist wieder privat.' : 'Ansicht ist für alle sichtbar.',
-              );
-            },
-          },
-        }),
-      );
-    }
-    actions.push(
-      MenuItem({
-        label: 'Löschen',
-        danger: true,
+        label: `„${active.name}" aktualisieren`,
         on: {
           click: () => {
             closeMenu();
-            void deleteActive();
+            void updateView(active, currentAsView(active.name), `Ansicht „${active.name}" aktualisiert.`);
           },
         },
       }),
@@ -451,7 +583,7 @@ export function syncSavedViewsControl(): void {
   }
   if (naming) {
     children.push(Separator({}));
-    children.push(nameForm(naming, active));
+    children.push(nameForm());
   }
   els.savedViewsMenu.replaceChildren(...children);
 }
@@ -469,7 +601,7 @@ export function setupSavedViewsControl(onMode: (mode: ViewMode) => void): void {
       closeMenu();
       return;
     }
-    naming = null;
+    naming = false;
     syncSavedViewsControl();
     els.savedViewsMenu.hidden = false;
     els.savedViewsToggle.setAttribute('aria-expanded', 'true');

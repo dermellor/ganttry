@@ -113,7 +113,13 @@ const TIMELINE_ICON = `
   <line x1="4" y1="18" x2="12" y2="18" />
 </svg>`;
 
-const GEAR_ICON = `
+/**
+ * The gear, exported because two controls open „the settings of this thing": the
+ * open timeline's, in the header, and one saved view's, from its row in the panel
+ * (src/savedViewsControl.ts). One constant rather than two drawings, so the two
+ * cannot end up as visibly different gears meaning the same thing.
+ */
+export const GEAR_ICON = `
 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <circle cx="12" cy="12" r="3" />
   <path d="M12 3.5v2M12 18.5v2M4.9 7.5l1.8 1M17.3 15.5l1.8 1M4.9 16.5l1.8-1M17.3 8.5l1.8-1" />

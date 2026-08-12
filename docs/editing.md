@@ -1171,10 +1171,25 @@ one — opening a panel with the views this person may see, then the actions on 
   [`icons.css`](../src/design-system/tokens/icons.css), a bookmark in the same weight
   as the delete „×" and the fold caret. Borrowing an `--icon-<key>` would tie a
   control's mark to a key the user can reassign to any item.
-- **The name is typed in the panel, not in a `prompt()`.** A native dialog is
-  suppressed outright in an embedded browser — the call returns null and the action
-  silently does nothing — and naming a view is the primary flow here rather than a
-  corner like the body editor's link URL. It is also what the design system asks for.
+- **The panel holds two actions, and both are about the current display**: capture
+  it as a new view, or write it over the applied one (offered only while that one
+  has drifted — it is „what I have on screen replaces it", not „edit this view").
+  Everything that is a property of a *stored* view hangs off that view's own row
+  instead, behind a gear: name, visibility, deletion, and whatever comes next. The
+  three rows those replaced acted on whichever view happened to be applied, so
+  administering one meant entering it first, and the panel grew a row per property
+  as more of them arrived.
+- **The gear opens a `Dialog`, not a second popover.** A popover over a popover has
+  no sane dismissal order, and this asks for a decision rather than offering a
+  choice. Nothing is written until „Speichern": a name being typed is not a rename,
+  and a visibility toggle that published on click would put a half-named view in
+  front of the instance. A view the caller may not change carries no gear — the
+  dialog would be disabled fields, which is a promise the API then refuses.
+- **The name of a NEW view is typed in the panel, not in a `prompt()`.** A native
+  dialog is suppressed outright in an embedded browser — the call returns null and
+  the action silently does nothing — and naming a view is the primary flow here
+  rather than a corner like the body editor's link URL. It is also what the design
+  system asks for.
 - **A repaint must not pull that field away**, so the panel keeps its DOM while the
   input has focus. Keyed on the input itself rather than on „focus is somewhere in the
   panel": the click that *opens* the field leaves focus on the menu row it came from,
