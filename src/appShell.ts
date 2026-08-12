@@ -25,6 +25,7 @@ import {
   AppMain,
   AppMark,
   AvatarStack,
+  Badge,
   Button,
   Checkbox,
   ContentArea,
@@ -68,6 +69,7 @@ export type AppShellElements = {
   modeTimelineBtn: HTMLButtonElement;
   modeListBtn: HTMLButtonElement;
   presence: HTMLElement;
+  sourceOrigin: HTMLElement;
   settingsBtn: HTMLButtonElement;
   settings: HTMLElement;
   settingsNav: HTMLElement;
@@ -163,6 +165,10 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   modeTimelineBtn.id = 'mode-timeline';
   modeListBtn.id = 'mode-list';
 
+  // Filled by `showSourceOrigin` once a source has loaded, because until then
+  // „Datenbank" or „Lokal" would be a claim about nothing. Hidden rather than
+  // empty: an empty pill reads as a value that failed to arrive.
+  const sourceOrigin = Badge({ label: '', hidden: true, attrs: { id: 'source-origin' } });
   const presence = AvatarStack({ ariaLabel: 'Online', hidden: true, attrs: { id: 'presence' } });
   // Only an admin is offered the area (main.ts unhides it). Hiding it is an
   // affordance, never the permission: /api/settings and /api/members refuse
@@ -194,12 +200,19 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
           // timeline is open. Everything about *how* it is drawn moved into the
           // bar below (see „Where every control belongs" in
           // docs/information-architecture.md).
+          // The open timeline, as one group: which one it is, where it comes
+          // from, and who else is looking at it. Presence used to sit on the
+          // right among the instance controls, which said it was about the
+          // deployment; a session joins per timeline (see „Where every control
+          // belongs" in docs/information-architecture.md).
           el('div', { class: 'app-timeline-controls' }, [
             ToolbarControl({ label: 'View', children: viewSelect }),
+            sourceOrigin,
+            presence,
           ]),
         ],
       }),
-      ToolbarGroup({ end: true, children: [presence, settingsBtn] }),
+      ToolbarGroup({ end: true, children: [settingsBtn] }),
     ],
   });
 
@@ -377,6 +390,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       modeTimelineBtn,
       modeListBtn,
       presence,
+      sourceOrigin,
       settingsBtn,
       settings,
       settingsNav,

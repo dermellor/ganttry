@@ -100,12 +100,12 @@ are deliberately not part of this.
 | „Plugins" panel | footer | 1 + 3 | the catalog belongs in the instance area; the per-timeline half belongs to level 3. The footer entry stays reachable from a timeline, because that is where „why is this view missing" gets asked |
 | View picker | header | 2 | an inventory with search and origin, replacing the flat `<select>` |
 | Creating a timeline | nowhere | 2 | needs a create route before it can have an interface |
-| Name, description | file or database | 3 | the timeline header and its settings route |
+| Name, origin, read-only state | header, left | 3 | done: the open timeline says which one it is and where it comes from. Editing its name belongs to the settings route |
 | Custom field definitions | file or database | 3 | timeline settings |
 | Enabled plugins and their config | a `timeline_plugins` row | 3 | timeline settings; stays an INSERT |
 | Default grouping, `colorBy` | config file | 3 | timeline settings, as the default for level 4 |
 | Phases as a set | only the ribbon | 3 | the set is structure of the timeline; one phase is level 5 |
-| Presence avatars | header, right | 3 | they belong with the timeline: a session joins per timeline |
+| Presence avatars | header, with the timeline | 3 | done: moved out of the instance group, because a session joins per timeline |
 | Timeline / list switch | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
 | Plugin views | the same switch | 4 | done: also presentations, each declaring its own accessories |
 | „Gruppieren" | the bar | 4, perspective | done |
@@ -162,7 +162,9 @@ Not a layout, just the set of places the levels demand. One each.
   opens a timeline, so level 2 is a switcher over the open timeline and level 1 is
   a route behind the same entry.
 - **Level 3** needs a header for the open timeline: name, origin, who else is
-  looking, the way into its settings. This is the place that does not exist today.
+  looking, the way into its settings. The first three are there — the name, an origin
+  badge that also carries the read-only state, and the presence avatars beside them.
+  The way into its settings arrives with the settings route.
 - **Level 4** gets one bar: the presentation switch, the perspective, the extent,
   then the actions on the presentation (create an entry, export). That replaces
   today's split across the header and the view toolbar.
