@@ -21,7 +21,7 @@ import {
 // measured label width (px) into a time width via the current px/day, so the
 // layout follows the zoom: wide-apart when zoomed out, tight when zoomed in.
 
-const GROUPS: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+const GROUPS: TimelineGroup[] = [{ id: 'g', content: 'g', label: 'g' }];
 
 function point(id: string, start: string): TimelineItem {
   return { id, group: 'g', start, content: id, label: id, title: '', type: 'point' };
@@ -215,7 +215,7 @@ test('no hierarchy at all leaves the list untouched', () => {
 // label height as a floor, so the lane count travels to CSS as `--lanes` on the
 // group and the label reserves `--lanes × lane pitch`. See LANE_COUNT_PROPERTY.
 test('a track publishes the number of lanes it needs', () => {
-  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g', label: 'g' }];
   // Three bars all overlapping Feb 3 → three lanes.
   const items = [
     range('a', '2026-02-01', '2026-02-10'),
@@ -227,7 +227,7 @@ test('a track publishes the number of lanes it needs', () => {
 });
 
 test('stored background labels reserve rows above ordinary item lanes', () => {
-  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g', label: 'g' }];
   const source: TimelineItem[] = [
     { ...range('absence-a', '2026-02-01', '2026-02-10'), type: 'background' },
     { ...range('absence-b', '2026-02-02', '2026-02-05'), type: 'background' },
@@ -270,8 +270,8 @@ test('stored background labels reserve rows above ordinary item lanes', () => {
 
 test('a track with no items reserves no room', () => {
   const groups: TimelineGroup[] = [
-    { id: 'g', content: 'g' },
-    { id: 'empty', content: 'empty' },
+    { id: 'g', content: 'g', label: 'g' },
+    { id: 'empty', content: 'empty', label: 'empty' },
   ];
   assignLaneSubgroups([range('a', '2026-02-01', '2026-02-05')], groups, new Map(), new Map());
   assert.equal(groups[0].style, laneCountStyle(1));
@@ -279,7 +279,7 @@ test('a track with no items reserves no room', () => {
 });
 
 test('a stale reservation is dropped when the track loses its last item', () => {
-  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g', label: 'g' }];
   assignLaneSubgroups([range('a', '2026-02-01', '2026-02-05')], groups, new Map(), new Map());
   assert.equal(groups[0].style, laneCountStyle(1));
   // The same call with the item filtered away (milestones-only, a value filter).
@@ -291,7 +291,7 @@ test('a stale reservation is dropped when the track loses its last item', () => 
 // track. Every item that could stay where it was has to stay there, or the whole
 // track reshuffles vertically over a change that concerned one label.
 test('a re-pack leaves an item in its lane when the lane is still free', () => {
-  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g', label: 'g' }];
   const items = [
     range('a', '2026-02-01', '2026-02-10'),
     range('b', '2026-02-02', '2026-02-04'),
@@ -317,7 +317,7 @@ test('a re-pack leaves an item in its lane when the lane is still free', () => {
 });
 
 test('remembering a lane never costs the track an extra lane', () => {
-  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g', label: 'g' }];
   const items = [
     range('a', '2026-02-01', '2026-02-20'),
     range('b', '2026-02-02', '2026-02-04'),

@@ -10,6 +10,7 @@ import { accessControlEnabled, handleApiRequest, liveOverride } from './scripts/
 import { resolveRepo } from './scripts/db/api';
 import { toRequest, writeResponse } from './scripts/node-http';
 import { hasLocalTimeline, isLocalWritable, makeFileRepo } from './scripts/local/file-repo';
+import { localReadOnly, localRoots } from './scripts/local/roots';
 import { parseOperators } from './scripts/db/operator';
 import { buildCsp, parseOrigins } from './src/pluginHost/csp';
 
@@ -48,8 +49,11 @@ const VITE_CACHE_DIR = resolve(__dirname, 'node_modules', '.vite', String(CACHE_
 // it, so they match across environments and against a DB timeline id);
 // TIMELINES_SOURCES_SUBDIR bounds the scan the same way build-data.ts does.
 const localDirs = {
-  root: resolve(__dirname, 'data'),
-  scope: resolve(__dirname, 'data', (process.env.TIMELINES_SOURCES_SUBDIR ?? '').replace(/^\/+|\/+$/g, '')),
+  // From the same function `build-data.ts` uses, so the ids the build registers
+  // and the ids this adapter resolves cannot disagree. TIMELINES_LOCAL_ROOT is
+  // what lets both point at a folder the user already owns.
+  ...localRoots(),
+  readOnly: localReadOnly(),
   // The same directory the raw-artifact middleware serves from and the build
   // registers from. Without it `GET /api/plugins` answers `[]` and shadows what
   // the build registered, because the client prefers the live answer.

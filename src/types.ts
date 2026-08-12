@@ -367,6 +367,22 @@ export type TimelineFile = {
   name?: string;
   description?: string;
   groupBy?: string;
+  /**
+   * In what order the groups are laid out: alphabetically by id (the default and
+   * the behaviour every existing timeline has), or in the order `groups` declares.
+   *
+   * `alpha` is the default rather than the obvious `declared` because it is what
+   * shipped: the committed examples number their group ids (`1-strategy`,
+   * `2-design`) precisely to steer the alphabetical sort, and flipping the default
+   * would silently reorder the lanes of every timeline in existence — including
+   * ones whose declared order was never meant to be read.
+   *
+   * `declared` is for the case the workaround cannot reach: group ids that carry
+   * meaning of their own and cannot be renumbered, such as the folder names a
+   * directory source derives its groups from. Groups that only appear on items,
+   * with no declaration, follow the declared ones alphabetically either way.
+   */
+  groupOrder?: 'alpha' | 'declared';
   // Plugins enabled on this timeline (e.g. 'dev.zeitlines.product-roadmap' → pricing matrix).
   // Replaces the former `type: 'product'` gate; see ./plugins.
   plugins?: PluginRef[];
@@ -396,7 +412,50 @@ export type TimelineFile = {
  * result, which always has items. The cost is one more generated schema; the
  * benefit is that `file.items` stays something you can use without a guard.
  */
-export type TimelineContainer = Omit<TimelineFile, 'items'>;
+/**
+ * How a directory's Markdown files are read into items.
+ *
+ * It sits on the container rather than in an env var or in `timelines.config.json`
+ * because it is a property of *that* folder: which frontmatter key holds a date,
+ * whether the subfolder means something, whether wikilinks are relations. A folder
+ * of meeting notes and a folder holding a novel answer differently, and the answer
+ * has to travel with the folder — otherwise moving or copying it changes what it
+ * means (the same reasoning that put `groups` and `phases` here, see
+ * docs/local-sources.md).
+ */
+export type ScanConfig = {
+  /**
+   * Frontmatter keys tried in order for an item's start. Defaults to
+   * `["date", "scheduled", "created"]`.
+   *
+   * An **empty array** is the meaningful setting rather than a degenerate one: it
+   * says none of this folder's dates are the item's date. A vault stamps `created`
+   * on every note, and reading that as the start puts a hundred items on the day
+   * they were typed — a timeline that looks like data and is an artefact of the
+   * editor.
+   */
+  dateFields?: string[];
+  /** Regexes tried against the filename when no frontmatter date is found. */
+  filenameDatePatterns?: string[];
+  /**
+   * Take the item's group from the subfolder it sits in, when its frontmatter
+   * names none. Off by default: a flat folder has nothing to derive, and a folder
+   * whose subdirectories are storage rather than meaning would gain groups that
+   * say nothing.
+   */
+  groupFromFolder?: boolean;
+  /**
+   * Read `[[wikilinks]]` as relations between items, recorded on
+   * `metadata.dependsOn`. Off by default, because in most folders a link is a
+   * reference and not a dependency.
+   */
+  linkEdges?: boolean;
+};
+
+export type TimelineContainer = Omit<TimelineFile, 'items'> & {
+  /** Directory sources only: how the Markdown files are read. */
+  scan?: ScanConfig;
+};
 
 export type Config = {
   /** Points editors at schema/config.schema.json for completion + validation. */

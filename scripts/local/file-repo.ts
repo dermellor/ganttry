@@ -68,6 +68,18 @@ export type FileRepoDirs = {
   scope?: string;
   scanOptions?: ScanOptions;
   /**
+   * Refuse every write, even though this runtime has a filesystem.
+   *
+   * „Can write" and „should write" are different questions once `root` can point
+   * outside the checkout: an instance reading a directory the user owns for other
+   * reasons — a vault they write prose in — must not turn a mis-click into an
+   * edit of a note. Set from `TIMELINES_LOCAL_READONLY` (see ./roots.ts).
+   *
+   * It is enforced here rather than by hiding the affordance in the client,
+   * because an affordance is not a permission: the API is reachable without it.
+   */
+  readOnly?: boolean;
+  /**
    * Where vendored plugin artifacts live. Supplied, not defaulted: this repo is
    * constructed from several places and a silent default would make one of them
    * answer from a directory nobody meant. Absent means „no registry", which is
@@ -187,7 +199,20 @@ async function load(dirs: FileRepoDirs, id: string): Promise<Loaded> {
 }
 
 /** Load for a write. Kept separate from `load` so the intent reads at the call site. */
+/**
+ * The one funnel every write goes through, which is why the read-only refusal sits
+ * here and not on each of the twenty-odd mutation methods: a check repeated that
+ * many times is a check one of them is eventually added without.
+ *
+ * `NotSupportedError` → 501, the same answer this repo already gives for an
+ * operation the backing store cannot perform. It is deliberately not a 400: the
+ * request is well-formed and the caller is entitled to make it, this source just
+ * does not accept writes.
+ */
 async function loadForWrite(dirs: FileRepoDirs, id: string): Promise<Loaded> {
+  if (dirs.readOnly) {
+    throw new NotSupportedError(`source „${id}" is read-only (TIMELINES_LOCAL_READONLY)`);
+  }
   return load(dirs, id);
 }
 
@@ -632,6 +657,12 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
           `„${id}" is a Markdown directory: replacing it wholesale is refused; edit its items individually`,
         );
       }
+      // The one write that does not start from an existing file, so it is also the
+      // one place `loadForWrite`'s read-only check would be skipped. Creating a
+      // timeline is still a write.
+      if (dirs.readOnly) {
+        throw new NotSupportedError(`source „${id}" is read-only (TIMELINES_LOCAL_READONLY)`);
+      }
       const loaded: Loaded = existsSync(target.path)
         ? await loadForWrite(dirs, id)
         : { file: { items: [] }, version: 0, path: target.path };
@@ -1070,6 +1101,7 @@ export function hasLocalTimeline(dirs: FileRepoDirs, id: string): boolean {
  * one that was never offered.
  */
 export function isLocalWritable(dirs: FileRepoDirs, id: string): boolean {
+  if (dirs.readOnly) return false;
   try {
     const target = targetFor(dirs, id);
     return target.kind === 'dir' || existsSync(target.path);

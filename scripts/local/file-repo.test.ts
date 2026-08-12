@@ -722,3 +722,44 @@ describe('plugin enablement on a local timeline', () => {
     await assert.rejects(() => repo.removeInstalledPlugin('x'), NotSupportedError);
   });
 });
+
+describe('makeFileRepo: a read-only runtime', () => {
+  // „Can write" and „should write" are different questions once the root can point
+  // outside the checkout. An instance pointed at a folder the user writes prose in
+  // must not turn a mis-click into an edit of a note.
+  test('reads still work', async () => {
+    await seed('ro-read');
+    const repo = makeFileRepo({ ...dirs, readOnly: true });
+    const file = await repo.getTimeline('ro-read');
+    assert.equal(file?.items.length, 2);
+  });
+
+  test('every write is refused, and the affordance says so too', async () => {
+    await seed('ro-write');
+    const ro = { ...dirs, readOnly: true };
+    const repo = makeFileRepo(ro);
+    // 501 rather than 400: the request is well-formed and the caller is entitled
+    // to make it, this source just does not accept writes.
+    await assert.rejects(
+      () => repo.addItem('ro-write', { content: 'Neu', start: '2026-05-01' }),
+      NotSupportedError,
+    );
+    await assert.rejects(() => repo.updateItem('ro-write', 'a', { content: 'X' }), NotSupportedError);
+    await assert.rejects(() => repo.deleteItem('ro-write', 'a'), NotSupportedError);
+    // Creating a timeline is a write too, and it is the one path that does not
+    // start from an existing file.
+    await assert.rejects(
+      () => repo.replaceTimeline('ro-new', { name: 'Neu', items: [] }),
+      NotSupportedError,
+    );
+    // Nothing reached the disk.
+    assert.equal((await raw('ro-write')).items.length, 2);
+  });
+
+  test('isLocalWritable reports it, so the client does not offer editing', async () => {
+    await seed('ro-flag');
+    const { isLocalWritable } = await import('./file-repo.ts');
+    assert.equal(isLocalWritable(dirs, 'ro-flag'), true);
+    assert.equal(isLocalWritable({ ...dirs, readOnly: true }, 'ro-flag'), false);
+  });
+});

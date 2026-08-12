@@ -1895,9 +1895,9 @@ components:
       additionalProperties:
         "$ref": "#/components/schemas/PluginCollectionData"
     PluginCollectionData:
-      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-14245-15421-src_types.ts-0-193121108268078"
+      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-14245-15421-src_types.ts-0-220721108268078"
       description: "A plugin's collections, keyed by the collection id its manifest declares."
-    Recordstringdef-alias-src_types.ts-14245-15421-src_types.ts-0-193121108268078:
+    Recordstringdef-alias-src_types.ts-14245-15421-src_types.ts-0-220721108268078:
       type: object
       additionalProperties:
         type: array
@@ -2061,6 +2061,17 @@ components:
           type: string
         groupBy:
           type: string
+        groupOrder:
+          type: string
+          enum:
+            - alpha
+            - declared
+          description: |-
+              In what order the groups are laid out: alphabetically by id (the default and the behaviour every existing timeline has), or in the order `groups` declares.
+
+              `alpha` is the default rather than the obvious `declared` because it is what shipped: the committed examples number their group ids (`1-strategy`, `2-design`) precisely to steer the alphabetical sort, and flipping the default would silently reorder the lanes of every timeline in existence — including ones whose declared order was never meant to be read.
+
+              `declared` is for the case the workaround cannot reach: group ids that carry meaning of their own and cannot be renumbered, such as the folder names a directory source derives its groups from. Groups that only appear on items, with no declaration, follow the declared ones alphabetically either way.
         plugins:
           type: array
           items:

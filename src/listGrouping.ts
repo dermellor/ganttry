@@ -25,7 +25,12 @@ export type ListSection = { id: string; label: string; empty: boolean; items: Ti
 
 // Context the sectioning needs, decoupled from the module-level app state.
 export type SectionContext = {
-  groups: { id: string; content: string }[];
+  /**
+   * `label` is optional so a caller that only has ids can still section; where it
+   * is present it wins, because `content` is escaped markup for vis-timeline and
+   * every consumer here builds DOM (see `TimelineGroup` in ./buildItems).
+   */
+  groups: { id: string; content: string; label?: string }[];
   customFields: CustomFieldDef[];
   metaOf: (id: string) => Record<string, unknown> | undefined;
 };
@@ -133,7 +138,7 @@ export function computeSections(
   const order: { id: string; label: string }[] = [];
   if (dim === GROUP_DIM) {
     for (const g of ctx.groups) {
-      if (buckets.has(g.id)) order.push({ id: g.id, label: g.content || g.id });
+      if (buckets.has(g.id)) order.push({ id: g.id, label: g.label || g.content || g.id });
     }
   } else {
     const seen = new Set<string>();

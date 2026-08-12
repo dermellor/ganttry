@@ -17,17 +17,18 @@ import { existsSync } from 'node:fs';
 import { basename, extname, join, relative } from 'node:path';
 import matter from 'gray-matter';
 
-import type { TimelineFile, TimelineFileItem } from '../../src/types';
+import type { ScanConfig, TimelineContainer, TimelineFile, TimelineFileItem } from '../../src/types';
 
 /** The container file that carries a directory's timeline-level data. */
 export const CONTAINER_FILE = 'timeline.json';
 
-export type ScanOptions = {
-  /** Frontmatter keys tried in order for an item's start. */
-  dateFields?: string[];
-  /** Regexes tried against the filename when no frontmatter date is found. */
-  filenameDatePatterns?: string[];
-};
+/**
+ * How a directory is read. Identical to the `scan` block a container file may
+ * carry, because the container is where a folder declares this for itself; a
+ * caller's options are the fallback for a folder that does not
+ * (`resolveScan` below decides).
+ */
+export type ScanOptions = ScanConfig;
 
 const DEFAULT_DATE_FIELDS = ['date', 'scheduled', 'created'];
 const DEFAULT_FILENAME_PATTERNS = ['^(\\d{4})-(\\d{2})-(\\d{2})', '^(\\d{4})(\\d{2})(\\d{2})'];
@@ -136,11 +137,16 @@ async function* walkMarkdown(dir: string): AsyncGenerator<string> {
 }
 
 /** Read the directory's container file, if it has one. */
-async function readContainer(dir: string): Promise<Partial<TimelineFile>> {
+async function readContainer(dir: string): Promise<Partial<TimelineContainer>> {
   const path = join(dir, CONTAINER_FILE);
   if (!existsSync(path)) return {};
   try {
-    const parsed = JSON.parse(await readFile(path, 'utf8')) as Partial<TimelineFile>;
+    // Typed as „container plus maybe items" rather than as the container: the type
+    // says a container has none, and this is the runtime that has to cope with a
+    // hand-written file that does.
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as Partial<TimelineContainer> & {
+      items?: unknown;
+    };
     // `items` in a container file is ignored rather than merged: the directory's
     // Markdown files ARE the items, and honouring both would make the same
     // timeline say two different things depending on which half you read.
@@ -198,7 +204,14 @@ function itemFromNote(
   if (start) item.start = start;
   if (end) item.end = end;
   if (typeof fm.duration === 'string' || typeof fm.duration === 'number') item.duration = fm.duration;
+  // An explicit frontmatter group wins. Derived from the folder only when the
+  // note names none, so turning the option on cannot move a note that already
+  // said where it belongs.
   if (typeof fm.group === 'string') item.group = fm.group;
+  else if (opts.groupFromFolder) {
+    const folder = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '';
+    if (folder) item.group = folder;
+  }
   if (typeof fm.icon === 'string') item.icon = fm.icon;
   if (typeof fm.status === 'string') item.status = fm.status as TimelineFileItem['status'];
   if (fm.type === 'point' || fm.type === 'range' || fm.type === 'background' || fm.type === 'box') {
@@ -206,6 +219,139 @@ function itemFromNote(
   }
   if (body.trim()) item.body = body;
   return item;
+}
+
+// ---------------------------------------------------------------------------
+// wikilinks as relations
+//
+// A folder of notes already carries its structure, in the links the author wrote
+// while writing. `linkEdges` reads those as relations so a graph has something to
+// draw without anybody maintaining a second, parallel list of edges by hand — the
+// list that would be wrong within a week.
+
+const WIKILINK = /\[\[([^\]]+)\]\]/g;
+const CODE_FENCE = /```[\s\S]*?```/g;
+
+/**
+ * Normalise a link target or a note title for matching.
+ *
+ * Obsidian is forgiving about the punctuation an author actually typed, and a
+ * vault accumulates both spellings of every quote. Matching the raw strings makes
+ * an edge silently vanish because the link says `Finn's` and the filename says
+ * `Finn’s` — a missing line with no error anywhere, which is the worst shape a bug
+ * can take in a picture.
+ */
+function normalizeLinkKey(value: string): string {
+  return value
+    .trim()
+    .replace(/[\u2018\u2019\u201b]/g, "'")
+    .replace(/[\u201c\u201d\u201e]/g, '"')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+/** Every wikilink target in a string, stripped of alias and anchor. */
+function wikilinkTargets(text: string): string[] {
+  const out: string[] = [];
+  for (const match of text.matchAll(WIKILINK)) {
+    // `[[Path/To/Note#Heading|Alias]]` → `Path/To/Note`
+    const target = match[1].split('|')[0].split('#')[0].trim();
+    if (target) out.push(target);
+  }
+  return out;
+}
+
+/** Wikilinks anywhere in a frontmatter value, however deeply nested. */
+function wikilinksInValue(value: unknown, into: string[]): void {
+  if (typeof value === 'string') {
+    into.push(...wikilinkTargets(value));
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) wikilinksInValue(entry, into);
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const entry of Object.values(value)) wikilinksInValue(entry, into);
+  }
+}
+
+/**
+ * Resolve every note's wikilinks to item ids and record them on
+ * `metadata.dependsOn`.
+ *
+ * Two lookups, because a vault links both ways: by bare title (`[[Angebot von
+ * Talheim]]`, how a note in the same vault is normally referenced) and by path
+ * (`[[Fiction/Book/_Hints/Angebot|Angebot]]`, what Obsidian writes when the title
+ * is ambiguous). The basename of a path is tried too, which is what makes a link
+ * written from elsewhere in the vault still land.
+ *
+ * `dependsOn` and not a key of its own: it is the relation the rest of the app
+ * already understands — the Gantt arrows and the graph both read it — and a second
+ * edge key would have to be taught to each of them.
+ */
+function linkItems(items: TimelineFileItem[], bodies: Map<string, string>): void {
+  const byTitle = new Map<string, string>();
+  const byPath = new Map<string, string>();
+  for (const item of items) {
+    const id = item.id!;
+    const path = String((item.metadata as Record<string, unknown>)?.path ?? id);
+    const stem = path.replace(/\.md$/i, '');
+    byPath.set(normalizeLinkKey(stem), id);
+    // First writer wins for a title, so an ambiguous title resolves to the same
+    // item on every scan rather than to whichever file the walk reached last.
+    const title = stem.includes('/') ? stem.slice(stem.lastIndexOf('/') + 1) : stem;
+    if (!byTitle.has(normalizeLinkKey(title))) byTitle.set(normalizeLinkKey(title), id);
+  }
+
+  const resolveTarget = (raw: string): string | undefined => {
+    const key = normalizeLinkKey(raw.replace(/\.md$/i, ''));
+    const byFullPath = byPath.get(key);
+    if (byFullPath) return byFullPath;
+    const base = key.includes('/') ? key.slice(key.lastIndexOf('/') + 1) : key;
+    return byTitle.get(base);
+  };
+
+  for (const item of items) {
+    const raw: string[] = [];
+    wikilinksInValue(item.metadata, raw);
+    const body = bodies.get(item.id!);
+    // Fenced code is quoted text, not a reference: a snippet showing `[[Foo]]`
+    // would otherwise become an edge.
+    if (body) raw.push(...wikilinkTargets(body.replace(CODE_FENCE, '')));
+
+    const seen = new Set<string>();
+    const targets: string[] = [];
+    for (const link of raw) {
+      const id = resolveTarget(link);
+      // A link to something outside this folder resolves to nothing and is
+      // dropped rather than recorded: a dangling id would draw an edge to a node
+      // that does not exist, and every consumer would have to filter it again.
+      if (!id || id === item.id || seen.has(id)) continue;
+      seen.add(id);
+      targets.push(id);
+    }
+    if (targets.length) {
+      (item.metadata as Record<string, unknown>).dependsOn = targets;
+    }
+  }
+}
+
+/**
+ * The effective scan settings: what the folder declares wins over what the caller
+ * passed. The folder is the more specific statement, and it travels with the data.
+ */
+function resolveScan(container: Partial<TimelineContainer>, opts: ScanOptions): Required<ScanOptions> {
+  const declared = container.scan ?? {};
+  return {
+    // `??` and not `||`: an empty array is the meaningful „this folder has no item
+    // dates" setting, and `||` would quietly replace it with the defaults.
+    dateFields: declared.dateFields ?? opts.dateFields ?? DEFAULT_DATE_FIELDS,
+    filenameDatePatterns:
+      declared.filenameDatePatterns ?? opts.filenameDatePatterns ?? DEFAULT_FILENAME_PATTERNS,
+    groupFromFolder: declared.groupFromFolder ?? opts.groupFromFolder ?? false,
+    linkEdges: declared.linkEdges ?? opts.linkEdges ?? false,
+  };
 }
 
 /** Is this directory a local timeline source? */
@@ -243,12 +389,13 @@ export async function timelineDirectories(root: string): Promise<string[]> {
  * everything above item level from the optional container file.
  */
 export async function scanDirectory(dir: string, opts: ScanOptions = {}): Promise<TimelineFile> {
-  const resolved: Required<ScanOptions> = {
-    dateFields: opts.dateFields ?? DEFAULT_DATE_FIELDS,
-    filenameDatePatterns: opts.filenameDatePatterns ?? DEFAULT_FILENAME_PATTERNS,
-  };
   const container = await readContainer(dir);
+  const resolved = resolveScan(container, opts);
   const items: TimelineFileItem[] = [];
+  // Bodies are kept aside for the linking pass rather than re-read from disk: the
+  // pass needs every note's links *after* every note is known, and reading 250
+  // files twice to save one map is the wrong trade.
+  const bodies = new Map<string, string>();
 
   for await (const path of walkMarkdown(dir)) {
     let raw: string;
@@ -265,8 +412,15 @@ export async function scanDirectory(dir: string, opts: ScanOptions = {}): Promis
     }
     const rel = relative(dir, path).replace(/\\/g, '/');
     const item = itemFromNote(rel, (parsed.data ?? {}) as Record<string, unknown>, parsed.content, resolved);
-    if (item) items.push(item);
+    if (item) {
+      items.push(item);
+      if (resolved.linkEdges) bodies.set(item.id!, parsed.content);
+    }
   }
+
+  // After the walk, because a link can point at a note the walk has not reached
+  // yet: resolving as we go would make an edge depend on directory order.
+  if (resolved.linkEdges) linkItems(items, bodies);
 
   items.sort((a, b) => {
     // Date-less items last, then by start, then by id — a stable order so a
@@ -278,7 +432,11 @@ export async function scanDirectory(dir: string, opts: ScanOptions = {}): Promis
     return a.id! < b.id! ? -1 : 1;
   });
 
-  return { name: basename(dir), ...container, items };
+  // `scan` stays behind: it says how this directory was *read*, which is spent by
+  // the time there are items. Shipping it would put reading config into the client's
+  // TimelineFile, where the generated schema does not allow it.
+  const { scan: _scan, ...timeline } = container;
+  return { name: basename(dir), ...timeline, items };
 }
 
 /** Newest mtime across the directory: the watermark for a directory source. */

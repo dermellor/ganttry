@@ -228,7 +228,15 @@ function withBandSpacer(groups: TimelineGroup[]): TimelineGroup[] {
     .filter(Boolean)
     .join(' ');
   return [
-    { id: BAND_SPACER_GROUP_ID, content: `<div class="${strut}"></div>`, className: 'band-spacer' },
+    // The spacer is furniture, not a group anybody names: its `content` is a
+    // measurable strut for vis and its `label` is empty, because a consumer that
+    // sections by group must not print a name for it.
+    {
+      id: BAND_SPACER_GROUP_ID,
+      content: `<div class="${strut}"></div>`,
+      label: '',
+      className: 'band-spacer',
+    },
     ...groups,
   ];
 }

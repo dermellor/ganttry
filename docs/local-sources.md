@@ -242,6 +242,85 @@ Deleting an item deletes one of the user's files, so it moves the file to
 ignores) instead of unlinking it. An `unlink` here is unrecoverable data loss on
 data the tool did not create.
 
+## A directory the user already owns
+
+`data/` inside the checkout is the default and not the limit.
+`TIMELINES_LOCAL_ROOT` moves the root anywhere on disk, which is what lets a
+source be a folder that exists for its own reasons — a notes directory, an
+Obsidian vault holding a novel — rather than a copy of one inside the repository.
+
+A copy was the obvious alternative and it is the thing this project refuses
+everywhere else: a second version of the truth, indistinguishable from the
+original and stale from the first edit after the export (see „No fallback data,
+ever", [`AGENTS.md`](../AGENTS.md)). The build and the adapter both derive the
+root from one function ([`scripts/local/roots.ts`](../scripts/local/roots.ts)),
+because they used to derive it from the same two variables in two files: a build
+that registers a source the adapter cannot resolve is a `404` with no
+explanation anywhere.
+
+**Reading is not writing.** Editability is a property of the runtime rather than
+of the format, and a process that *can* write is not always one that *should*.
+Pointing an instance at a folder the user writes prose in is exactly that case,
+so `TIMELINES_LOCAL_READONLY` refuses every write for the whole instance. It is
+enforced in `loadForWrite`, the one funnel every mutation passes through, and
+answers `NotSupportedError` → `501`: the request is well-formed and the caller is
+entitled to make it, this source just does not accept writes. Deliberately not
+enforced by hiding the affordance in the client — an affordance is not a
+permission, and the API is reachable without it.
+
+### The folder declares how it is read
+
+Three things about reading a directory cannot be defaults, because a folder of
+meeting notes and a folder holding a novel answer them differently. They live in
+the container's `scan` block (`ScanConfig` in [`src/types.ts`](../src/types.ts)),
+not in an env var and not in `timelines.config.json`, so the answer travels with
+the folder: moving or copying it must not change what it means. That is the same
+reasoning that put `groups` and `phases` there.
+
+| Key | What it decides |
+| --- | --- |
+| `dateFields` | Which frontmatter keys hold the item's start. `[]` is the meaningful setting, not a degenerate one: a vault stamps `created` on every note, and reading that as the start puts every item on the day it was typed — a timeline that looks like data and is an artefact of the editor. |
+| `filenameDatePatterns` | Regexes tried against the filename when no frontmatter date is found. |
+| `groupFromFolder` | Take the group from the subfolder when the frontmatter names none. Off by default: a flat folder has nothing to derive, and subdirectories that are storage rather than meaning would gain groups that say nothing. |
+| `linkEdges` | Read `[[wikilinks]]` as relations. Off by default, because in most folders a link is a reference and not a dependency. |
+
+The block is stripped before the `TimelineFile` reaches the client: it says how
+the directory was *read*, which is spent by the time there are items, and the
+generated schema does not allow the key.
+
+### Wikilinks as relations
+
+A folder of notes already carries its structure, in the links the author wrote
+while writing. `linkEdges` records them on `metadata.dependsOn` — the relation
+the rest of the app already understands, which the Gantt arrows and the graph
+both read. A second edge key would have to be taught to each of them.
+
+Four rules, each of which exists because its absence is invisible rather than
+loud:
+
+- **Resolution happens after the walk**, not during it. A link may point at a
+  note the walk has not reached yet, and resolving as we go would make an edge
+  depend on directory order.
+- **Two lookups**, by full path and by bare title, because a vault links both
+  ways: `[[Angebot von Talheim]]` is how a note is normally referenced, and
+  `[[Fiction/Book/_Hints/Angebot|Angebot]]` is what Obsidian writes when the
+  title is ambiguous. An ambiguous title resolves to the first note in scan
+  order, every time, rather than to whichever file the walk finished on.
+- **Punctuation is normalised** before matching. A vault accumulates both
+  spellings of every quote, and comparing the raw strings makes an edge vanish
+  because the link says `Finn's` and the filename says `Finn’s`. A missing line
+  with no error anywhere is the worst shape a bug can take in a picture.
+- **A link to nothing is dropped**, not recorded. A dangling id would draw an
+  edge to a node that does not exist, and every consumer would have to filter it
+  again. Fenced code is skipped for the same reason a snippet is not a reference.
+
+What this deliberately does **not** do is decide what a link *means*. Every
+wikilink becomes one undirected reference recorded on the linking note, so the
+arrow points from the linked note to the one that mentions it. A vault where the
+direction matters per frontmatter key — „this field lists what leads *to* me" —
+needs typed edges, which is
+<https://github.com/zeitlines/zeitlines/issues/73> and not this.
+
 ## What this removed
 
 Done, and the argument for the change beyond consistency:

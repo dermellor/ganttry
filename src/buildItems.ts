@@ -6,6 +6,7 @@ import type { StatusKey } from './status';
 import { durationToMs } from './date';
 import { childrenByParent, readParentId, resolveParents } from './itemHierarchy';
 import { CLONE_SEP } from './cloneId';
+import { orderGroups } from './groupOrder';
 import { BACKGROUND_LABEL_CLASS } from './backgroundItemDisplay';
 
 export const UNGROUPED = '_ungrouped';
@@ -48,7 +49,22 @@ export type TimelineItemWithStart = TimelineItem & { start: string };
 
 export type TimelineGroup = {
   id: string;
+  /**
+   * The group's name as **markup**, because vis-timeline renders a group label
+   * from an HTML string. Escaped here, so the escaping cannot move to a consumer.
+   */
   content: string;
+  /**
+   * The same name as plain text, for the consumers that build DOM rather than
+   * markup — the list's section rows and the graph's column heads.
+   *
+   * The exact twin of `label` on `TimelineItem`, and it exists for the same reason
+   * that one does: setting `content` as a text node shows the entities. A group
+   * called „Hero's Journey" rendered as `Hero&#39;s Journey` in both the list and
+   * the graph until this existed, and the bug was invisible until a group name
+   * contained punctuation.
+   */
+  label: string;
   className?: string;
   nestedGroups?: string[];
   showNested?: boolean;
@@ -799,7 +815,11 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
   const rawParents = new Map<string, string>();
 
   for (const declared of file.groups ?? []) {
-    const g: TimelineGroup = { id: declared.id, content: escapeHtml(declared.content) };
+    const g: TimelineGroup = {
+      id: declared.id,
+      content: escapeHtml(declared.content),
+      label: declared.content,
+    };
     if (declared.nestedGroups && declared.nestedGroups.length > 0) g.nestedGroups = [...declared.nestedGroups];
     if (typeof declared.showNested === 'boolean') g.showNested = declared.showNested;
     groupSet.set(declared.id, g);
@@ -830,6 +850,7 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
       groupSet.set(groupId, {
         id: groupId,
         content: groupId === UNGROUPED ? '—' : escapeHtml(groupId),
+        label: groupId === UNGROUPED ? '—' : groupId,
       });
     }
 
@@ -850,11 +871,12 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
 
   const hasGroupBy = view.groupBy || file.items.some((i) => i.group);
   const groups = hasGroupBy
-    ? [...groupSet.values()].sort((a, b) => {
-        if (a.id === UNGROUPED) return 1;
-        if (b.id === UNGROUPED) return -1;
-        return a.id.localeCompare(b.id, 'de');
-      })
+    ? orderGroups(
+        [...groupSet.values()],
+        (file.groups ?? []).map((g) => g.id),
+        file.groupOrder,
+        UNGROUPED,
+      )
     : [];
 
   // Resolved against the ids that survived the loop above, so a link to an item
