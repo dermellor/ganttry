@@ -23,6 +23,7 @@ import {
   setStatus,
   syncUrl,
   isEditableView,
+  loadPresentationPrefs,
   loadViewPrefs,
   saveViewPrefs,
   type ViewMode,
@@ -239,7 +240,12 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   const parsed = parsePluginViewMode(mode);
   const target = parsed ? resolveViewMode(state.activeSourceFile, parsed.pluginId, parsed.viewId) : null;
   if (parsed && !target) mode = 'timeline';
+  const switching = state.viewMode !== mode;
   state.viewMode = mode;
+  // Perspective and extent belong to the presentation, so they travel with the
+  // switch. Before the renders below, or the new presentation would paint once with
+  // the previous one's grouping and then again with its own.
+  if (switching) loadPresentationPrefs(mode);
   setModeButtons(mode);
   const list = mode === 'list';
   const plugin = target ? mode : null;
@@ -258,6 +264,10 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   // Editability is the other half and stays where it is (render.ts): a presentation
   // may allow creating an item while this source does not.
   els.addBtn.hidden = !accessories.create || !isEditableView();
+  // A switch changed the grouping and the filter, so the display set has to be
+  // recomputed rather than only redrawn — the lanes and the visible items both
+  // follow from them.
+  if (switching) applyGrouping();
   if (list) {
     renderListView();
   } else if (target && parsed) {
