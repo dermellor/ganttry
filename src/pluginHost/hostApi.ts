@@ -111,8 +111,17 @@ export type HostApi = {
   /** Present only with `data:own`. */
   data?: DataApi;
   /**
-   * The detail drawer. Present only with `items:write`, because everything it is
-   * for is editing: a read-only plugin renders into its view.
+   * The detail drawer, for a plugin's own forms. Present with `views`.
+   *
+   * Gated on `views` rather than on a write capability, and the first attempt got
+   * that wrong: `items:write` looks like the right gate until you notice that the
+   * plugin which needs the drawer most edits its OWN rows (`data:own`) and never
+   * touches an item. The drawer grants no data access at all — it renders DOM the
+   * plugin supplies into a container the host owns, exactly as `renderView` does.
+   *
+   * What `views` does buy: a plugin with no view has no surface a form could have
+   * been opened from, so handing it the drawer would let it take over the panel
+   * with nothing on screen that led there.
    */
   panel?: PanelApi;
 };
@@ -150,13 +159,10 @@ export function createHostApi(
     canWrite: backend.canWrite,
     status: backend.status,
   };
-  if (grants(manifest, 'items:write')) {
-    api.items = backend.items;
-    // The drawer is the app's editing surface, so it follows the write capability
-    // rather than getting one of its own: a plugin that may not write items has
-    // nothing to put in a form, and its own view is where it renders.
-    api.panel = backend.panel;
-  }
+  if (grants(manifest, 'items:write')) api.items = backend.items;
   if (grants(manifest, 'data:own')) api.data = backend.data;
+  // A view is what gives a plugin somewhere to open a form FROM. It is not a data
+  // grant: the drawer renders what the plugin hands it, which its view already does.
+  if (grants(manifest, 'views')) api.panel = backend.panel;
   return api;
 }

@@ -42,9 +42,16 @@ test('without items:write there is no items surface at all', () => {
   const api = createHostApi(manifest(['items:read']), backend(), '1.0');
   assert.equal(api.items, undefined);
   assert.equal(api.data, undefined);
-  // The drawer follows the write capability: it is the app's editing surface, and a
-  // plugin that may not write items has nothing to put in a form.
-  assert.equal(api.panel, undefined);
+});
+
+test('the drawer follows `views`, not a write capability', () => {
+  // The first attempt gated it on `items:write`, which looks right until you notice
+  // that the plugin needing the drawer most edits its own ROWS and never touches an
+  // item — so its forms silently did nothing. The drawer grants no data access; a
+  // view is just what gives a plugin somewhere to open a form from.
+  assert.equal(createHostApi(manifest(['fields']), backend(), '1.0').panel, undefined);
+  assert.ok(createHostApi(manifest(['views', 'data:own']), backend(), '1.0').panel);
+  assert.ok(createHostApi(manifest(['views']), backend(), '1.0').panel);
 });
 
 test('asking about the host is never gated', async () => {
