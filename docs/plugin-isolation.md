@@ -3,7 +3,7 @@
 Where a plugin's code runs, what protects an instance instead of a sandbox, and
 the condition under which this decision gets revisited.
 
-This is the decision half of [issue #14](https://github.com/dermellor/zeitlines/issues/14).
+This is the decision half of [issue #14](https://github.com/zeitlines/zeitlines/issues/14).
 The loader itself is [`src/pluginHost/loader.ts`](../src/pluginHost/loader.ts); for
 installing a plugin read [`plugin-lifecycle.md`](plugin-lifecycle.md), for its data
 [`plugin-storage.md`](plugin-storage.md).
@@ -147,6 +147,6 @@ function. None exists yet.
 - **No network egress control beyond the CSP.** A plugin cannot be prevented from
   trying; it can be prevented from succeeding at the easy routes.
 - **No review of what a plugin does.** A catalog with a review gate is
-  [#15](https://github.com/dermellor/zeitlines/issues/15), and the human gate is the
+  [#15](https://github.com/zeitlines/zeitlines/issues/15), and the human gate is the
   thing the technical measures here are meant to make meaningful rather than
   replace.

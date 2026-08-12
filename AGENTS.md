@@ -185,7 +185,7 @@ working tree.
 
 Either way, the done-gate (rule 2) applies. If a change is too risky for `main`,
 gate it with a feature flag, not a long-lived branch. Issues live in this repo's
-own tracker (<https://github.com/dermellor/zeitlines/issues>); reference them from
+own tracker (<https://github.com/zeitlines/zeitlines/issues>); reference them from
 the closing commit with `Closes #NN`.
 
 ### 4. Everything written into the history is English

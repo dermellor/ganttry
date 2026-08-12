@@ -27,7 +27,7 @@ The contract as TypeScript types is
 [`src/pluginHost/api.ts`](../src/pluginHost/api.ts) — one import for the manifest
 shape, the host API and the version helpers, with no runtime code from the app
 behind it. Packaging it as `@zeitlines/plugin-api` is
-[#15](https://github.com/dermellor/zeitlines/issues/15); until then, that path is
+[#15](https://github.com/zeitlines/zeitlines/issues/15); until then, that path is
 the reference.
 
 ## Choosing an id
@@ -177,7 +177,7 @@ unsubscribe function, but a view plugin has nowhere to call it: `renderView` is
 the only entry point, and it runs again on every repaint. Subscribe behind a
 module-level flag so a repaint cannot add a second listener — and know that this
 is the contract's gap rather than your mistake
-([#11](https://github.com/dermellor/zeitlines/issues/11)).
+([#11](https://github.com/zeitlines/zeitlines/issues/11)).
 
 ```js
 let subscribed = false;

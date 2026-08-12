@@ -177,7 +177,7 @@ plugin attaching one to `document.body`.
 **The host API is async and serializable throughout**
 ([`src/pluginHost/hostApi.ts`](../src/pluginHost/hostApi.ts)), even though plugins
 currently run in the app's own realm where a direct call would be cheaper. The
-isolation decision is still open (<https://github.com/dermellor/zeitlines/issues/14>),
+isolation decision is still open (<https://github.com/zeitlines/zeitlines/issues/14>),
 and an API shaped around shared objects cannot be moved behind an iframe or a
 worker afterwards without rewriting every plugin. `createHostApi` gates by
 capability structurally: without `items:write` there is no item-write method to
@@ -186,7 +186,7 @@ call, rather than a check that refuses at call time.
 The contract is re-exported as one import from
 [`src/pluginHost/api.ts`](../src/pluginHost/api.ts), which pulls in no runtime code
 from the app. Publishing it as a package belongs with distribution
-(<https://github.com/dermellor/zeitlines/issues/15>).
+(<https://github.com/zeitlines/zeitlines/issues/15>).
 
 **Which plugins an instance HAS is a row, not a build.** `installed_plugins`
 records the artifact, its pinned version, the capabilities an operator granted and
@@ -270,7 +270,7 @@ Adding a plugin is a `register()` call plus a `src/plugins/<id>/` folder, and no
 core-file change. The step-by-step is
 [`docs/plugin-playbook.md`](plugin-playbook.md); the endgame, where a plugin is
 installed at runtime instead of registered at build time, is
-<https://github.com/dermellor/zeitlines/issues/9>.
+<https://github.com/zeitlines/zeitlines/issues/9>.
 
 **Enablement is pure data (the plugin registry table).** Which plugins a timeline
 carries is **not** a column on a core table. It lives in the generic

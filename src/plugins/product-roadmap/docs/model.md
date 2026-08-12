@@ -7,7 +7,7 @@ edited.
 This file belongs to the plugin, not to the core documentation, and that is the
 rule rather than a filing preference: uninstall the plugin and every sentence
 here becomes orphaned, which is what makes it plugin documentation
-([#18](https://github.com/dermellor/zeitlines/issues/18)). What the plugin *is*
+([#18](https://github.com/zeitlines/zeitlines/issues/18)). What the plugin *is*
 and how to switch it on is [`../README.md`](../README.md); how to change it is
 [`../AGENTS.md`](../AGENTS.md). The seams it sits on are core chapters: „The
 generic store" (docs/plugin-storage.md), „Publishing a plugin's data"

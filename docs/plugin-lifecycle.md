@@ -2,7 +2,7 @@
 
 How a plugin gets onto an instance, onto a timeline, and off both again.
 
-This chapter covers [issue #13](https://github.com/dermellor/zeitlines/issues/13).
+This chapter covers [issue #13](https://github.com/zeitlines/zeitlines/issues/13).
 For where a plugin's *data* lives, read
 [`plugin-storage.md`](plugin-storage.md); for the seams a plugin plugs into,
 [`architecture.md`](architecture.md).
@@ -81,7 +81,7 @@ operator granted — and a bare data directory has nowhere to record it and no
 loader to act on it. Such an instance can genuinely only run the plugins its build
 shipped with. Reporting success would list a plugin as installed that nothing
 could ever load. The vendored / offline install path is
-[#14](https://github.com/dermellor/zeitlines/issues/14), which is also where the
+[#14](https://github.com/zeitlines/zeitlines/issues/14), which is also where the
 loader that would use it arrives.
 
 **Enablement per timeline is implemented on every source kind**, because it is
@@ -177,7 +177,7 @@ honest automation path — a script the operator runs — with no way in.
 
 **This is where a role model becomes unavoidable.** A multi-tenant instance needs
 per-tenant admins, an audit trail of who granted which capability, and a review
-gate in front of the catalog ([#15](https://github.com/dermellor/zeitlines/issues/15)).
+gate in front of the catalog ([#15](https://github.com/zeitlines/zeitlines/issues/15)).
 A comma-separated env var is enough for one operator running their own deployment
 and is deliberately not enough for anything larger.
 
@@ -287,6 +287,6 @@ which manifest field) for logs and for whoever wrote the plugin.
   [`plugin-isolation.md`](plugin-isolation.md) — including why a plugin runs in the
   app's own realm and what protects an instance instead of a sandbox.
 - **A catalog.** Distribution, an artifact format and version compatibility across
-  a published index are [#15](https://github.com/dermellor/zeitlines/issues/15).
+  a published index are [#15](https://github.com/zeitlines/zeitlines/issues/15).
   Nothing here makes a hosted catalog a precondition: an operator installs by
   posting a manifest, and an air-gapped instance stays possible.
