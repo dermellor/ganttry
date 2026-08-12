@@ -6,7 +6,7 @@
 // host silently ignored means the plugin runs believing it has access it was never
 // granted, and the symptom then shows up far from the cause.
 
-import type { PluginManifest } from '../../pluginHost/manifest';
+import type { PluginManifest } from '../../pluginHost/api';
 
 export const exampleManifest: PluginManifest = {
   // **Reverse-DNS, derived from a domain you own.** At least two labels, no

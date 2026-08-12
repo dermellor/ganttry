@@ -109,12 +109,17 @@ export interface AppState {
   savedPhasesJson: string;
   activeFormItemId: string | null;
   activeFormPhaseIndex: number | null;
-  // Feature id whose Stammdaten form is open in the detail drawer (pricing
-  // matrix), mutually exclusive with activeFormItemId / activeFormPhaseIndex.
-  activeFormFeatureId: string | null;
-  // Tier id whose Stammdaten form is open in the detail drawer (pricing matrix
-  // column head) — mutually exclusive with the other activeForm* slots.
-  activeFormTierId: string | null;
+  // Id of the plugin whose own form is open in the detail drawer, mutually
+  // exclusive with the two slots above.
+  //
+  // One generic slot rather than one per plugin. It used to be two fields named
+  // after `product-roadmap`'s features and tiers — plugin facts in a core file,
+  // which `check-plugin-isolation` missed because the names carry no plugin id, and
+  // which no third-party plugin could ever get. What the core actually needs to
+  // know is only *that* a plugin form is open (`isAnyFormOpen`, which stops
+  // background persistence from writing under an open editor); *which* row it edits
+  // is the plugin's own business and lives in the plugin.
+  activePluginForm: string | null;
   // True while showItemForm is swapping the form's DOM. Removing the old
   // (focused) form fires a focusout → commit; suppress it so the previous
   // form's values aren't written onto the item being switched to.
@@ -216,8 +221,7 @@ export const state: AppState = {
   savedPhasesJson: '[]',
   activeFormItemId: null,
   activeFormPhaseIndex: null,
-  activeFormFeatureId: null,
-  activeFormTierId: null,
+  activePluginForm: null,
   formRebuilding: false,
   formJiraIssues: [],
   formDependsOn: [],
@@ -425,8 +429,7 @@ export function isEditableView(): boolean {
 export function clearFormSlots(): void {
   state.activeFormItemId = null;
   state.activeFormPhaseIndex = null;
-  state.activeFormFeatureId = null;
-  state.activeFormTierId = null;
+  state.activePluginForm = null;
 }
 
 /** True while any detail form is open (an edit in progress). */
@@ -434,8 +437,7 @@ export function isAnyFormOpen(): boolean {
   return (
     state.activeFormItemId != null ||
     state.activeFormPhaseIndex != null ||
-    state.activeFormFeatureId != null ||
-    state.activeFormTierId != null
+    state.activePluginForm != null
   );
 }
 

@@ -17,6 +17,7 @@
 
 import type { PluginDataRow, TimelineFile, TimelineFileItem } from '../types';
 import { grants, type PluginManifest } from './manifest';
+import type { PanelApi } from './panel';
 
 /**
  * The timeline as a plugin sees it. Pinned to the file shape the viewer already
@@ -50,6 +51,29 @@ export type ItemsApi = {
 export type DataApi = {
   list(collection: string): Promise<PluginRow[]>;
   put(collection: string, row: { id: string; data: Record<string, unknown>; version?: number }): Promise<PluginRow>;
+  /**
+   * Change some fields of a row and leave the rest standing. A `null` value
+   * **removes** its key.
+   *
+   * Distinct from `put`, which replaces the whole `data` object, because the two
+   * answer different questions and collapsing them loses one of them: a form that
+   * edits two fields of a six-field row would have to read the row first and hope
+   * nothing else changed in between, and an emptied input could not be told apart
+   * from a field the form does not manage. The `null`-removes rule is the same one
+   * the item patch path uses (`mergeMetadata` in scripts/mcp/patch.ts), so an
+   * emptied field disappears everywhere rather than being stored as a null in one
+   * place and absent in another.
+   *
+   * This method exists because the only plugin that writes rows could not be moved
+   * onto `DataApi` without it (#117) — it had been reaching past the host API to a
+   * route the contract did not expose.
+   */
+  patch(
+    collection: string,
+    id: string,
+    data: Record<string, unknown>,
+    version?: number,
+  ): Promise<PluginRow>;
   remove(collection: string, id: string): Promise<void>;
   move(collection: string, id: string, anchor: { after?: string; before?: string }): Promise<string[]>;
 };
@@ -65,16 +89,48 @@ export type HostApi = {
   config(): Promise<Record<string, unknown>>;
   /** Who is looking, or null when unknown. */
   currentUser(): Promise<{ email?: string; name?: string } | null>;
+  /**
+   * Does this source accept writes at all?
+   *
+   * A plugin needs it before it draws an edit affordance: on a read-only source a
+   * „+ Feature" button is a button that fails on click, and the plugin has no
+   * other way to know — the capability says what the plugin may do, this says what
+   * the timeline allows.
+   */
+  canWrite(): Promise<boolean>;
+  /**
+   * Put a line in the app's status area — what the plugin just did, in the place
+   * the user already looks for it.
+   *
+   * Deliberately not a toast or a log: there is one status line in this product and
+   * a plugin reporting elsewhere would be reporting somewhere nobody reads.
+   */
+  status(text: string): void;
   /** Present only with `items:write`. */
   items?: ItemsApi;
   /** Present only with `data:own`. */
   data?: DataApi;
+  /**
+   * The detail drawer, for a plugin's own forms. Present with `views`.
+   *
+   * Gated on `views` rather than on a write capability, and the first attempt got
+   * that wrong: `items:write` looks like the right gate until you notice that the
+   * plugin which needs the drawer most edits its OWN rows (`data:own`) and never
+   * touches an item. The drawer grants no data access at all — it renders DOM the
+   * plugin supplies into a container the host owns, exactly as `renderView` does.
+   *
+   * What `views` does buy: a plugin with no view has no surface a form could have
+   * been opened from, so handing it the drawer would let it take over the panel
+   * with nothing on screen that led there.
+   */
+  panel?: PanelApi;
 };
 
 /** The raw operations a host implementation supplies, before any gating. */
-export type HostApiBackend = Omit<HostApi, 'apiVersion' | 'items' | 'data'> & {
+export type HostApiBackend = Omit<HostApi, 'apiVersion' | 'items' | 'data' | 'panel'> & {
   items: ItemsApi;
   data: DataApi;
+  panel: PanelApi;
 };
 
 /**
@@ -97,8 +153,16 @@ export function createHostApi(
     subscribe: backend.subscribe,
     config: backend.config,
     currentUser: backend.currentUser,
+    // Ungated on purpose. Both answer questions about the host rather than doing
+    // anything to it, and gating them would mean a plugin that draws its own
+    // affordances has to guess at what a read-only source allows.
+    canWrite: backend.canWrite,
+    status: backend.status,
   };
   if (grants(manifest, 'items:write')) api.items = backend.items;
   if (grants(manifest, 'data:own')) api.data = backend.data;
+  // A view is what gives a plugin somewhere to open a form FROM. It is not a data
+  // grant: the drawer renders what the plugin hands it, which its view already does.
+  if (grants(manifest, 'views')) api.panel = backend.panel;
   return api;
 }

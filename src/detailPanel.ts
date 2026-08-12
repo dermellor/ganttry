@@ -121,6 +121,43 @@ export function showDetail(note: DetailNote) {
   }
 }
 
+/**
+ * The drawer as a plugin uses it (`HostApi.panel`), implemented against the same
+ * elements the app's own forms use.
+ *
+ * Registered into `pluginHost/panel.ts` by `main.ts` rather than imported from
+ * there, because `hostBackend.ts` reaching this module closes a cycle through the
+ * item form.
+ *
+ * `close` and `showItem` are guarded by which plugin owns the drawer: a plugin
+ * closing a panel it did not open is either a bug in that plugin or a way to shut
+ * another one's editor, and neither should be possible through the contract.
+ */
+export const pluginPanelBackend = {
+  open(pluginId: string, form: { title: string; render(container: HTMLElement): void }): void {
+    // Same order the app's own forms use: claim the slot, then paint. Claiming it
+    // first is what stops background persistence from writing between the two.
+    clearFormSlots();
+    state.activePluginForm = pluginId;
+    setDetailTitle(form.title);
+    // The meta list belongs to a note's frontmatter; a plugin form has none, and
+    // leaving the previous one standing shows one row's metadata above another's
+    // editor.
+    els.detailMeta.replaceChildren();
+    const container = el('div', { class: 'plugin-panel-form' });
+    form.render(container);
+    els.detailBody.replaceChildren(container);
+    els.detail.hidden = false;
+  },
+  close(pluginId: string): void {
+    if (state.activePluginForm !== pluginId) return;
+    hideDetail();
+  },
+  showItem(itemId: string): void {
+    showDetailForId(itemId);
+  },
+};
+
 export function hideDetail() {
   if (state.liveEditTimer) {
     clearTimeout(state.liveEditTimer);

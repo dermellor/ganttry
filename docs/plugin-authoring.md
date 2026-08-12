@@ -153,13 +153,45 @@ finds **no** item-write method rather than a method that refuses.
 
 | Method | Needs | What it gives |
 | --- | --- | --- |
-| `apiVersion` | — | the contract version in force, as `"1.0"` |
+| `apiVersion` | — | the contract version in force, as `"1.4"` |
 | `timeline()` | `items:read` | the timeline as a snapshot; a copy, so mutating it changes nothing |
 | `config()` | — | this plugin's config bag on this timeline |
 | `subscribe(fn)` | — | fires after any change; returns an unsubscribe function |
 | `currentUser()` | — | who is looking, or null |
+| `canWrite()` | — | does this timeline accept writes at all |
+| `status(text)` | — | a line in the app's status area |
 | `items` | `items:write` | `add` / `update` / `remove`; the host reloads the view after each |
-| `data` | `data:own` | `list` / `put` / `remove` / `move` over this plugin's own collections |
+| `data` | `data:own` | `list` / `put` / `patch` / `remove` / `move` over this plugin's own collections |
+| `panel` | `items:write` | the detail drawer: `open` / `close` / `showItem` |
+
+**`canWrite` and the capability answer different questions**, and a plugin drawing
+its own edit affordances needs both: the capability says what the plugin may do, and
+this says what the timeline allows. A local JSON source is read-only at runtime, so
+a „+ Feature" button drawn without asking is a button that fails on click.
+
+**`put` replaces a row, `patch` changes part of one**, and in a patch a `null`
+**removes** its key. That is what makes an emptied input actually empty instead of
+leaving the stored value to reappear on the next reload. Reach for `put` when you
+hold the whole row and for `patch` when you hold a form.
+
+**`panel.open` hands you a container**, exactly as `renderView` does, and the host
+keeps the books: it clears whatever the drawer held and records that a plugin form
+is open, which is what stops background persistence from writing underneath an open
+editor. `panel.showItem` is the other direction — handing the drawer back to the app
+for one of its own items, which is what a view linking to the roadmap wants.
+
+```ts
+host.panel?.open({
+  title: 'Feature: CSV-Import',
+  render(container) {
+    container.replaceChildren(buildMyForm());
+  },
+});
+```
+
+A write that sends a lock counter throws `ConflictError` when the row moved
+underneath it. Catch it and reload; presenting stale data as saved is the failure
+that matters here.
 
 Everything is async and everything is JSON. That is insurance rather than
 ceremony: an API shaped around shared live objects cannot be moved behind an
@@ -310,6 +342,31 @@ worth stating because each looked fine from the inside:
   section and appended. A plugin cannot fix that for itself, because the
   interleaving is the host's; the host now renders into a detached element and
   swaps it in.
+
+The second round of findings came from the opposite direction: moving the
+**in-tree** plugin onto this same contract (#117). It had been reaching into
+`src/state.ts`, `src/render.ts`, `src/detailPanel.ts`, `src/editor.ts` and four more
+— so it never met a single one of these gaps, which is precisely why they survived:
+
+- **No partial row update.** `DataApi` had `put`, which replaces a row. A form
+  editing two fields of six had to read the row first and hope nothing changed in
+  between, and an emptied input could not be told from a field the form does not
+  manage. `patch` closes it, `null` removing a key.
+- **Nowhere to put a form.** A plugin's own editor had no surface, so the in-tree
+  one wrote into the app's drawer elements directly and parked two fields in the
+  core's state to mark it open. `panel` is that surface, and the state slot is
+  generic now.
+- **No status line, and no way to ask about writability.** `status` and `canWrite`.
+- **Two helpers were unreachable rather than missing.** `escapeHtml` was four lines
+  inside 870 of item rendering, and `ConflictError` — the one failure `If-Match`
+  exists to produce — lived in the app's editor. Both moved to where the contract
+  can export them.
+
+A fifth CI check now asserts the direction: a plugin may import the contract, the
+shared types and its own folder, and nothing else
+([`check-plugin-isolation.mjs`](../scripts/ci/check-plugin-isolation.mjs)). Its
+allowlist is empty, and an entry in it means a gap to close rather than an exception
+to grant.
 
 A second plugin — Baseline, which remembers each item's planned dates and can put
 an item back — was written for exactly what the first one left untouched, and
