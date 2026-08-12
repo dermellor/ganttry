@@ -44,8 +44,10 @@ import {
   ScrollArea,
   SegmentedControl,
   Select,
+  SuggestList,
   Tabs,
   Text,
+  TextInput,
   Toolbar,
   ToolbarAnchor,
   ToolbarControl,
@@ -65,7 +67,11 @@ export type AppShellElements = {
   filterControl: HTMLElement;
   filterToggle: HTMLButtonElement;
   filterMenu: HTMLElement;
-  viewSelect: HTMLSelectElement;
+  switcherBtn: HTMLButtonElement;
+  switcherControl: HTMLElement;
+  switcherSearch: HTMLInputElement;
+  switcherSearchWrap: HTMLElement;
+  switcherList: HTMLElement;
   modeTimelineBtn: HTMLButtonElement;
   modeListBtn: HTMLButtonElement;
   presence: HTMLElement;
@@ -219,7 +225,41 @@ function settingsFrame(id: string, title: string, closeLabel: string): SettingsF
 
 /** Builds the interactive shell. Returns the frame's nodes; mounts nothing. */
 export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
-  const viewSelect = Select({ id: 'view-select', wide: true });
+  // The open timeline, as a trigger rather than a `<select>`: the list is searched
+  // and grouped by origin, neither of which a select can do, and the trigger doubles
+  // as the statement of which document you are in (see src/timelineSwitcher.ts).
+  const switcherBtn = Button({
+    label: 'Timeline',
+    variant: 'trigger',
+    attrs: {
+      id: 'switcher-btn',
+      'aria-haspopup': 'listbox',
+      'aria-expanded': 'false',
+      'aria-controls': 'switcher-list',
+    },
+  });
+  const switcherSearch = TextInput({
+    id: 'switcher-search',
+    placeholder: 'Suchen…',
+    bare: true,
+    attrs: { autocomplete: 'off', role: 'combobox', 'aria-controls': 'switcher-list', 'aria-expanded': 'true' },
+  });
+  const switcherSearchWrap = el(
+    'div',
+    { class: 'switcher-search', hidden: true },
+    switcherSearch,
+  );
+  const switcherList = SuggestList({
+    hidden: true,
+    ariaLabel: 'Timelines',
+    attrs: { id: 'switcher-list' },
+  });
+  const switcherControl = ToolbarControl({
+    labelled: false,
+    label: 'Timeline',
+    attrs: { id: 'switcher-control' },
+    children: ToolbarAnchor({ children: [switcherBtn, switcherSearchWrap, switcherList] }),
+  });
 
   const modeToggle = SegmentedControl({
     ariaLabel: 'Ansicht',
@@ -285,7 +325,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
           // deployment; a session joins per timeline (see „Where every control
           // belongs" in docs/information-architecture.md).
           el('div', { class: 'app-timeline-controls' }, [
-            ToolbarControl({ label: 'View', children: viewSelect }),
+            switcherControl,
             sourceOrigin,
             tlSettingsBtn,
             presence,
@@ -441,7 +481,11 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       filterControl,
       filterToggle,
       filterMenu,
-      viewSelect,
+      switcherBtn,
+      switcherControl,
+      switcherSearch,
+      switcherSearchWrap,
+      switcherList,
       modeTimelineBtn,
       modeListBtn,
       presence,

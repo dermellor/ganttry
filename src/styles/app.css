@@ -166,3 +166,57 @@
   color: var(--fg-muted);
 }
 
+
+/* ---- the timeline switcher --------------------------------------------------- */
+
+/* The trigger carries the open timeline's name, so it has to be allowed to be long
+   without pushing the rest of the header off. It truncates rather than wraps: the
+   header is one line and the full name sits in the title attribute. */
+#switcher-btn {
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The search sits between the trigger and the list, inside the same anchor, so the
+   list keeps its own offset from the anchor rather than from the trigger. */
+.switcher-search {
+  position: absolute;
+  top: calc(100% + var(--space-2xs));
+  left: 0;
+  right: 0;
+  z-index: var(--z-popover);
+  padding: var(--space-2xs);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  min-width: 18rem;
+}
+
+.switcher-search[hidden] {
+  display: none;
+}
+
+/* Pushed below the search box, which is the row above it in the same stack. */
+#switcher-list {
+  top: calc(100% + var(--space-2xs) + 2.4rem);
+  min-width: 18rem;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+
+/* An origin heading, not an option: quiet, uppercase, and out of the listbox's own
+   children so a screen reader does not count it as a timeline. */
+.switcher-group {
+  padding: var(--space-2xs) var(--space-xs) var(--space-3xs);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.switcher-empty {
+  padding: var(--space-xs);
+}
