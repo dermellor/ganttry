@@ -888,6 +888,20 @@ reading never said what a click would change. The header now identifies the inst
 and which timeline is open, and the footer holds the item count plus the plugin
 diagnostic.
 
+**A plugin's views sit in that plugin's own control**, its name inside on the left,
+rather than as loose segments in the built-in switch (see „One control per plugin"
+(docs/architecture.md)). The built-in switch keeps only what the core draws from the
+item list. While one of a plugin's views is active, its control says so too — border
+and caption take the accent — because „some segment is dark" does not tell you whose
+view you are in once several plugins are enabled.
+
+Two consequences of that at five plugins, both measured rather than assumed: the bar
+becomes **two rows** (which presentation on the first, how it is bundled and narrowed
+on the second, actions at that row's far end), and the controls have **unequal
+widths**, since a caption like „Abwesenheiten" is 230px against 174px for „Budget".
+Forcing a uniform grid would mean truncating names, which would put the row back where
+it started.
+
 **Which controls a presentation gets is declared by that presentation** (see
 „Accessories" (docs/architecture.md)). The timeline and the list are two renderings
 of the item list and take all four; a plugin view takes what it declares and nothing

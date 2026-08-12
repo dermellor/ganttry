@@ -208,11 +208,27 @@ Postgres-only capability, which would undo the symmetry the source adapters just
 achieved.
 
 **A plugin declares its views; the host builds the chrome.** `PluginView` carries
-an id, a label, the icon markup for the header toggle, and the **accessories** the
-view wants. The host creates one button and one `.plugin-view` section per declared
-view ([`src/pluginHost/views.ts`](../src/pluginHost/views.ts)) and hands the section
-to `renderView(container, viewId)`. Nothing plugin-shaped is in `index.html`, which
-is what makes a second view possible without touching the core.
+an id, a label, the icon markup for its segment, and the **accessories** the view
+wants. The host creates one `.plugin-view` section per declared view
+([`src/pluginHost/views.ts`](../src/pluginHost/views.ts)) and hands it to
+`renderView(container, viewId)`. Nothing plugin-shaped is in `index.html`, which is
+what makes a second view possible without touching the core.
+
+**One control per plugin, not one segment per view.** Every declared view used to be
+appended into the built-in switch as a peer of Timeline and Liste. Measured on five
+plugins declaring three views each: 17 segments in a control that divides its width
+rather than asking for more, 34px each for labels needing 90 — and since an icon
+segment renders only its icon, fifteen identical unlabelled squares whose meaning was
+reachable only by hovering one after another. A plugin's views are „matrix, cards,
+board" *of that plugin*, so `pluginViewGroup` gives each plugin its own
+`SegmentedControl` carrying the plugin's name inside it, before its first segment.
+That caption is the only thing explaining the icons, so it is not optional.
+
+The unit that is shown, hidden and marked active is therefore the **plugin**, not the
+view: its views arrive and go together, because enablement is per plugin.
+`setActivePluginGroup` marks the owning control while one of its views is active —
+`aria-pressed` on the segment alone leaves „some square is dark" as the only signal,
+which with five plugins is not an answer.
 
 **Accessories are declared per control, and the host asks every presentation the
 same way.** `accessories: { grouping?, filter?, create?, export? }` says whether the

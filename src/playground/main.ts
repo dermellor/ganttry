@@ -625,6 +625,16 @@ const selectorSection = section(
           ],
         }),
       ),
+      specimen(
+        'SegmentedControl mit Label',
+        SegmentedControl({
+          label: 'Risiken',
+          segments: [
+            { value: 'matrix', label: 'Matrix', icon: fromHtml(TIMELINE_GLYPH) },
+            { value: 'cards', label: 'Karten', icon: fromHtml(LIST_GLYPH), selected: true },
+          ],
+        }),
+      ),
       specimen('Separator, horizontal', el('div', { style: 'width:120px' }, Separator())),
       specimen('Separator, vertikal', el('div', { class: 'pg-VRule' }, Separator({ orientation: 'vertical' }))),
     ),

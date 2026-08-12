@@ -29,35 +29,58 @@ export type Segment = {
 
 export type SegmentedControlOptions = {
   segments: Segment[];
+  /**
+   * A caption inside the control, before the first segment.
+   *
+   * For a control whose segments are icons that mean nothing on their own: a
+   * plugin's views are „matrix, cards, board" of *that plugin*, and three
+   * unexplained squares beside three more from the next plugin are unreadable.
+   * The caption says whose segments these are, and it is inside the border rather
+   * than beside it so the group reads as one control.
+   *
+   * It also becomes the group's accessible name, so `ariaLabel` is not needed
+   * with it.
+   */
+  label?: string;
   ariaLabel?: string;
   className?: string;
   attrs?: Attrs;
 };
 
 export function SegmentedControl(options: SegmentedControlOptions): HTMLDivElement {
-  const { segments, ariaLabel, className, attrs } = options;
+  const { segments, label, ariaLabel, className, attrs } = options;
+  const caption = label
+    ? el('span', { class: 'ds-SegmentedControl-label', 'aria-hidden': 'true' }, label)
+    : undefined;
+  const children = segments.map((segment) => {
+    const node = el(
+      'button',
+      {
+        type: 'button',
+        class: 'ds-Segment',
+        'data-value': segment.value,
+        ...data({ text: !segment.icon }),
+        'aria-pressed': String(!!segment.selected),
+        // An icon segment needs the label as its accessible name; a text one
+        // already has it, and repeating it produces a tooltip on every hover.
+        'aria-label': segment.icon ? segment.label : undefined,
+        title: segment.icon ? segment.label : undefined,
+        ...segment.attrs,
+      },
+      segment.icon ?? segment.label,
+    );
+    on(node, segment.on);
+    return node;
+  });
+
   return el(
     'div',
-    { class: classes('ds-SegmentedControl', className), role: 'group', 'aria-label': ariaLabel, ...attrs },
-    segments.map((segment) => {
-      const node = el(
-        'button',
-        {
-          type: 'button',
-          class: 'ds-Segment',
-          'data-value': segment.value,
-          ...data({ text: !segment.icon }),
-          'aria-pressed': String(!!segment.selected),
-          // An icon segment needs the label as its accessible name; a text one
-          // already has it, and repeating it produces a tooltip on every hover.
-          'aria-label': segment.icon ? segment.label : undefined,
-          title: segment.icon ? segment.label : undefined,
-          ...segment.attrs,
-        },
-        segment.icon ?? segment.label,
-      );
-      on(node, segment.on);
-      return node;
-    }),
+    {
+      class: classes('ds-SegmentedControl', className),
+      role: 'group',
+      'aria-label': ariaLabel ?? label,
+      ...attrs,
+    },
+    caption ? [caption, ...children] : children,
   );
 }

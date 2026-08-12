@@ -62,6 +62,7 @@ export type AppShellElements = {
   listBody: HTMLElement;
   contentArea: HTMLElement;
   modeToggle: HTMLElement;
+  pluginViewBar: HTMLElement;
   groupBy: HTMLSelectElement;
   groupByControl: HTMLElement;
   filterControl: HTMLElement;
@@ -273,6 +274,10 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       { value: 'list', label: 'Liste', icon: fromHtml(LIST_ICON) },
     ],
   });
+  // Where each plugin's own control goes: beside the built-in switch, not inside it.
+  // A plugin's views belong to that plugin, and the host builds one control per
+  // plugin into this row (see src/pluginHost/views.ts).
+  const pluginViewBar = el('div', { class: 'plugin-view-bar', id: 'plugin-views' });
   const [modeTimelineBtn, modeListBtn] = Array.from(modeToggle.querySelectorAll('button'));
   modeTimelineBtn.id = 'mode-timeline';
   modeListBtn.id = 'mode-list';
@@ -397,7 +402,13 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     tone: 'view',
     attrs: { id: 'view-toolbar' },
     children: [
-      ToolbarGroup({ children: [modeToggle, groupByControl, filterControl] }),
+      // Two groups on the left rather than one, because a toolbar wraps by whole
+      // flex items: with everything in one group, five plugin controls pushed
+      // „Gruppieren" onto a second line and the right-aligned actions onto a third.
+      // Split this way the bar is at most two rows — which presentation on the
+      // first, how it is bundled and narrowed on the second.
+      ToolbarGroup({ children: [modeToggle, pluginViewBar] }),
+      ToolbarGroup({ children: [groupByControl, filterControl] }),
       ToolbarGroup({ end: true, children: [addBtn, exportBtn] }),
     ],
   });
@@ -480,6 +491,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       listBody,
       contentArea,
       modeToggle,
+      pluginViewBar,
       groupBy,
       groupByControl,
       filterControl,

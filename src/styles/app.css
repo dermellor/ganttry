@@ -220,3 +220,22 @@
 .switcher-empty {
   padding: var(--space-xs);
 }
+
+/* ---- the plugin controls in the presentation bar ----------------------------- */
+
+/* One control per plugin, side by side. The gap is what keeps five of them from
+   reading as one long row of squares again: the label separates them semantically,
+   this separates them visually. Wrapping is deliberate — at five plugins the row
+   runs out, and a second line beats squeezing the segments. */
+.plugin-view-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+/* Nothing in the row when no plugin applies, so the gap before „Gruppieren" would
+   otherwise be doubled. */
+.plugin-view-bar:empty {
+  display: none;
+}
