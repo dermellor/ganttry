@@ -1029,6 +1029,37 @@ the update, and then removed. Dropping them without that read resets every user'
 saved view, grouping and filter, which is the trap
 [`AGENTS.md`](../AGENTS.md) names for the `timelines.*` prefix.
 
+## The timeline switcher
+
+Which timeline is open, and how to reach another one, is one control in the header
+([`src/timelineSwitcher.ts`](../src/timelineSwitcher.ts)): a trigger carrying the open
+timeline's name, opening a searchable list grouped by origin. It replaced a flat
+`<select>` over every discovered source, which could be neither searched nor grouped
+— on an instance with a few dozen timelines that was the first thing to break.
+
+The trigger is also what makes this level visible: the header now *says* which
+document you are in rather than only offering a control to change it.
+
+Four rules, each with the failure it avoids, all of them DOM-free and unit-tested in
+[`src/switcherRows.ts`](../src/switcherRows.ts):
+
+- **Grouped by origin, not sorted flat.** „Where does this come from" decides what
+  can be done with it: a database timeline is live and editable, a local one is a file
+  on somebody's disk. An empty group is dropped, because a heading over nothing reads
+  as a failed load, and an unknown source kind is listed under its own name rather
+  than hidden — the next one is a new adapter, not a mistake.
+- **The query matches loosely.** Case and accents do not have to be typed, the parts
+  may be scattered („launch road" finds „Launch-Roadmap"), and the id matches too, for
+  somebody who knows it from a link.
+- **The open timeline is never filtered away.** Its absence under a narrow query would
+  read as „it is gone" rather than „it does not match".
+- **The keyboard wraps.** The list is short, so a wrap costs one keypress while
+  stopping at the end leaves somebody holding a key that does nothing. The open
+  timeline starts under the cursor, so Enter without typing is a no-op rather than a
+  jump to whatever happens to be first.
+
+Creating a timeline belongs here too and is not here: there is no create route yet.
+
 ## The timeline's own settings
 
 What is true of the timeline as a whole — its name, its description, the dimension it
@@ -1081,9 +1112,9 @@ stays readable because it sits in every link ever shared. Writing it again would
 claim the hash describes the filter, and the filter as a whole has never been in
 there — so an incoming hash is authoritative about the mode and the window, and
 deliberately says nothing about the filter. Reading an absent `m` as „no type
-filter" would clear a selection made in the panel on every back step. Switching views
-via the dropdown clears `item` and `from`/`to`. Hash changes from outside the
-app (paste, back/forward) re-apply state without reload.
+filter" would clear a selection made in the panel on every back step. Switching
+timelines through the switcher clears `item` and `from`/`to`. Hash changes from
+outside the app (paste, back/forward) re-apply state without reload.
 
 `from`/`to` are calendar days like every other date the app stores, so they are
 read as **local** midnight — via `parseUrlWindow`, which both the initial load and

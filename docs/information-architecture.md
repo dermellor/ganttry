@@ -98,7 +98,7 @@ are deliberately not part of this.
 | „Einstellungen" | header, right | 1 | done: the `#settings` route |
 | Access switch, domains, instance profile | env, shown in `#settings=instance` | 1 | done: origin and reason on every row |
 | „Plugins" panel | footer | 1 + 3 | the catalog belongs in the instance area; the per-timeline half belongs to level 3. The footer entry stays reachable from a timeline, because that is where „why is this view missing" gets asked |
-| View picker | header | 2 | an inventory with search and origin, replacing the flat `<select>` |
+| Timeline switcher | header, left | 2 | done: search, grouped by origin, the open one marked; the trigger doubles as the statement of which timeline is open |
 | Creating a timeline | nowhere | 2 | needs a create route before it can have an interface |
 | Name, origin, read-only state | header, left | 3 | done: the open timeline says which one it is and where it comes from |
 | Custom field definitions | the timeline settings route | 3 | done: `#timeline-settings=fields` |

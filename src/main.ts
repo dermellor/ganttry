@@ -10,7 +10,6 @@ import 'vis-timeline/styles/vis-timeline-graph2d.css';
 // components that use it (see src/design-system/index.ts).
 import './styles/timeline.css';
 import './styles/app.css';
-import { escapeHtml } from './buildItems';
 import type { BuiltConfig } from './types';
 import {
   onExternalUrlStateChange,
@@ -75,6 +74,11 @@ import {
   showOnlyPluginSection,
 } from './pluginHost/views';
 import { dataUrl } from './data-base';
+import {
+  setSwitcherActive,
+  setSwitcherViews,
+  wireTimelineSwitcher,
+} from './timelineSwitcher';
 import { MILESTONES_ONLY_SELECTION } from './viewPrefs';
 import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 import { hostApiFor } from './pluginHost/hostBackend';
@@ -123,7 +127,7 @@ async function applyView(viewId: string) {
   // Switching views leaves any open item form → persist it first.
   commitItemForm();
   localStorage.setItem('timelines.view', viewId);
-  els.viewSelect.value = viewId;
+  setSwitcherActive(viewId);
   hideDetail();
   // Before the render that reads them: presentation, grouping and filter belong to
   // the timeline being opened, and a link may override them (state.pendingPrefs).
@@ -328,9 +332,7 @@ async function bootstrap() {
     (pluginId, error) => console.error(`[plugin ${pluginId}]`, error),
   );
 
-  els.viewSelect.innerHTML = cfg.views
-    .map((v) => `<option value="${v.id}">${escapeHtml(v.name)}</option>`)
-    .join('');
+  setSwitcherViews(cfg.views);
 
   const urlState = readUrlState();
 
@@ -405,14 +407,14 @@ async function bootstrap() {
   // Safety net: flush + persist an open item form if the tab closes mid-edit.
   window.addEventListener('beforeunload', () => commitItemForm());
 
-  els.viewSelect.addEventListener('change', () => {
+  wireTimelineSwitcher((viewId) => {
     // Cleared before the switch so the presence re-join announces no item (the
     // old selection belongs to the view we're leaving).
     state.selectedItemId = null;
     state.userWindow = null;
     state.pendingItem = null;
     state.pendingWindow = null;
-    applyView(els.viewSelect.value);
+    void applyView(viewId);
   });
   els.modeTimelineBtn.addEventListener('click', () => applyViewMode('timeline'));
   els.modeListBtn.addEventListener('click', () => applyViewMode('list'));

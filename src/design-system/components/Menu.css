@@ -12,6 +12,18 @@
   display: none;
 }
 
+/* A popover is a surface of its own, so it does not inherit the micro-type of
+   whatever it is anchored in. `.ds-ToolbarControl` puts its caption in uppercase
+   with letter-spacing, and the filter's value list — anchored inside one — came out
+   entirely in capitals. The exceptions on `.ds-Input` and `.ds-Button` there cover
+   the controls but not a surface. `.ds-SuggestList` says the same for itself, in
+   Suggest.css. */
+.ds-Popover {
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--fg);
+}
+
 .ds-Popover[data-placement='anchored'] {
   position: absolute;
   top: calc(100% + var(--space-2xs));

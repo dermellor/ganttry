@@ -23,6 +23,15 @@
   display: none;
 }
 
+/* Same reason as `.ds-Popover` in Menu.css: a list anchored inside a
+   `.ds-ToolbarControl` (the timeline switcher) inherited that caption's uppercase
+   and letter-spacing, and every timeline name came out in capitals. */
+.ds-SuggestList {
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--fg);
+}
+
 /* A popover may be wider than its trigger. The owner field sits in the grid's
    right column, so anchoring there lets it grow leftwards without overflowing
    the panel — spanning only the field's width clipped both the name and the
