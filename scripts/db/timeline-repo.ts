@@ -352,7 +352,20 @@ export async function getTimeline(sql: Sql, id: string): Promise<TimelineFile | 
   // to serve both kinds of source. What this returns is UNFILTERED — the
   // dispatcher removes the ones this caller may not see, because that rule must
   // exist once rather than once per driver (see src/savedViews.ts).
-  const savedViews = await listSavedViews(sql, id);
+  // Tolerated rather than fatal, and this is the ONE read here that is: a
+  // migration is a deliberate manual step while a deploy happens on merge, so the
+  // two cannot be made atomic and the window between them is real. A timeline that
+  // will not load because a DISPLAY-STATE table is missing spends the whole
+  // window's cost on content that is perfectly fine — the same trade `touchUser`
+  // makes for the user directory. What is pending is reported by `npm run db:check`,
+  // which is where an operator looks for it; nothing here quietly invents data
+  // („no fallback data" is about content, and this returns none).
+  let savedViews: SavedView[] = [];
+  try {
+    savedViews = await listSavedViews(sql, id);
+  } catch {
+    // The saved views are simply absent until the migration lands.
+  }
   if (savedViews.length) file.savedViews = savedViews;
   if (groupRows.length) file.groups = groupRows.map(rowToGroup);
   return file;
