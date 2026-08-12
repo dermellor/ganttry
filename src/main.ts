@@ -254,7 +254,25 @@ export function updatePluginViews(): void {
 // the form, persistence — keeps working; the list is a second view of the same
 // data. `persist` is false during bootstrap/external-URL application where the
 // caller drives localStorage + URL syncing itself.
-function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean } = {}) {
+function applyViewMode(
+  mode: ViewMode,
+  {
+    persist = true,
+    keepPrefs = false,
+  }: {
+    persist?: boolean;
+    /**
+     * Leave perspective and extent alone across the switch, because the caller is
+     * about to set them itself.
+     *
+     * Applying a saved view is the one case: it names a presentation AND what to
+     * group and narrow by, so loading that presentation's stored pair first would
+     * overwrite the view's with the last thing somebody happened to leave there —
+     * and the view would apply everything except its own two values.
+     */
+    keepPrefs?: boolean;
+  } = {},
+) {
   // Guard: a plugin view is only valid while its plugin applies to this timeline.
   // A stale deep link or a stored mode from another timeline lands here.
   const parsed = parsePluginViewMode(mode);
@@ -265,7 +283,7 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   // Perspective and extent belong to the presentation, so they travel with the
   // switch. Before the renders below, or the new presentation would paint once with
   // the previous one's grouping and then again with its own.
-  if (switching) loadPresentationPrefs(mode);
+  if (switching && !keepPrefs) loadPresentationPrefs(mode);
   setModeButtons(mode);
   const list = mode === 'list';
   const plugin = target ? mode : null;
@@ -410,7 +428,7 @@ async function bootstrap() {
   // The presentation switch is handed over rather than reimplemented: applying a
   // view may enter a plugin view, which needs the mode resolved against this
   // timeline's plugins and its chunk loaded.
-  setupSavedViewsControl((mode) => applyViewMode(mode));
+  setupSavedViewsControl((mode) => applyViewMode(mode, { keepPrefs: true }));
 
   state.pendingSavedView = urlState.savedView ?? null;
 

@@ -33,7 +33,6 @@ import {
   FieldNote,
   FormActions,
   FormGrid,
-  fromHtml,
   Icon,
   IconButton,
   MenuItem,
@@ -41,7 +40,6 @@ import {
   Separator,
   TextInput,
 } from './design-system';
-import { GEAR_ICON } from './appShell';
 import { els, state, saveViewPrefs, setStatus, syncUrl } from './state';
 import { apiCreateSavedView, apiDeleteSavedView, apiUpdateSavedView } from './editor';
 import {
@@ -134,6 +132,11 @@ export function applySavedView(view: SavedView): void {
   // so applying a view somebody saved without a narrowing has to clear one.
   state.filters = { ...(view.filters ?? {}) };
   state.activeSavedViewId = view.id;
+  // The two above are set BEFORE the switch, and the switch is told to keep them
+  // (`keepPrefs` in main.ts): perspective and extent are stored per presentation,
+  // so entering one normally loads its own pair — which here would overwrite the
+  // view's with whatever was last left in that presentation, and apply everything
+  // about the view except the two values it is mostly about.
   if (view.mode && view.mode !== state.viewMode && applyMode) applyMode(view.mode as ViewMode);
   else saveViewPrefs();
   if (state.viewMode === 'list') renderListView();
@@ -460,7 +463,10 @@ function viewRow(view: SavedView): HTMLElement {
   });
   if (!writable() || !canEditSavedView(view, currentCaller())) return row;
   const gear = IconButton({
-    icon: fromHtml(GEAR_ICON),
+    // The chrome gear token, the same mark the way into any settings area carries.
+    // Filled rather than stroked, because at 16px a stroked cog's teeth close up
+    // and detached ones read as a sun — see the note on `--ui-icon-gear`.
+    icon: Icon({ name: 'gear', chrome: true, size: 'sm', standalone: true }),
     ariaLabel: `Einstellungen der Ansicht „${view.name}"`,
     boxSize: 'sm',
     // The component's own „quiet until you are on the row" treatment, the same one
