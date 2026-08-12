@@ -178,13 +178,18 @@ export interface TimelineRepo {
 
   // timeline-level meta / phases
   updatePhases(id: string, phases: TimelinePhase[]): Promise<void>;
+  /**
+   * Patch the timeline's own metadata. An absent key is left alone; an explicit
+   * `null` clears the value — which a database stores as NULL and a file source
+   * expresses by dropping the key, since `TimelineFile` types these as optional.
+   */
   updateMeta(
     id: string,
     meta: {
-      name?: string;
-      description?: string;
-      groupBy?: string;
-      customFields?: CustomFieldDef[];
+      name?: string | null;
+      description?: string | null;
+      groupBy?: string | null;
+      customFields?: CustomFieldDef[] | null;
     },
   ): Promise<void>;
 

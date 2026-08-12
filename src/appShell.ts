@@ -76,6 +76,12 @@ export type AppShellElements = {
   settingsHeading: HTMLHeadingElement;
   settingsBody: HTMLElement;
   settingsClose: HTMLButtonElement;
+  tlSettings: HTMLElement;
+  tlSettingsNav: HTMLElement;
+  tlSettingsHeading: HTMLHeadingElement;
+  tlSettingsBody: HTMLElement;
+  tlSettingsClose: HTMLButtonElement;
+  tlSettingsBtn: HTMLButtonElement;
   addBtn: HTMLButtonElement;
   exportBtn: HTMLButtonElement;
   pluginsBtn: HTMLButtonElement;
@@ -94,6 +100,12 @@ const TIMELINE_ICON = `
   <line x1="4" y1="6" x2="14" y2="6" />
   <line x1="9" y1="12" x2="20" y2="12" />
   <line x1="4" y1="18" x2="12" y2="18" />
+</svg>`;
+
+const GEAR_ICON = `
+<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="12" cy="12" r="3" />
+  <path d="M12 3.5v2M12 18.5v2M4.9 7.5l1.8 1M17.3 15.5l1.8 1M4.9 16.5l1.8-1M17.3 8.5l1.8-1" />
 </svg>`;
 
 const LIST_ICON = `
@@ -149,6 +161,62 @@ function detailPanel(interactive: boolean): DetailPanelParts {
   };
 }
 
+/** The nodes one settings area is made of. */
+export type SettingsFrame = {
+  root: HTMLElement;
+  nav: HTMLElement;
+  heading: HTMLHeadingElement;
+  body: HTMLElement;
+  close: HTMLButtonElement;
+};
+
+/**
+ * A settings area: a section list beside a panel, replacing the content rather
+ * than floating over it.
+ *
+ * Beside the content and not inside it, because an area is not a view (a view
+ * names a timeline source); and not a dialog, because a dialog is the wrong size
+ * for a surface that grows a section per concern — the membership screen was one,
+ * and that is what this replaced.
+ *
+ * Only the frame is built here. Each section mounts its own body when opened, so
+ * nothing a section needs is in the document for the visitors who never open it.
+ *
+ * Deliberately not `Panel`: that one is the overlay drawer, positioned over the
+ * chart so opening an item does not resize vis-timeline. `settings.css` arranges
+ * the two columns for both areas, keyed on the shared `.settings` class.
+ */
+function settingsFrame(id: string, title: string, closeLabel: string): SettingsFrame {
+  const nav = Tabs({
+    orientation: 'vertical',
+    ariaLabel: 'Bereiche',
+    className: 'settings-nav',
+    attrs: { id: `${id}-nav` },
+  });
+  const heading = Heading({ level: 2, attrs: { id: `${id}-heading` } });
+  const body = ScrollArea({ attrs: { id: `${id}-body` } });
+  const close = IconButton({
+    icon: '×',
+    ariaLabel: closeLabel,
+    boxSize: 'lg',
+    attrs: { id: `${id}-close` },
+  });
+  const root = ViewSection({
+    ariaLabel: title,
+    hidden: true,
+    className: 'settings',
+    attrs: { id },
+    children: [
+      nav,
+      el('div', { class: 'settings-panel' }, [
+        el('div', { class: 'settings-head' }, [heading, close]),
+        body,
+      ]),
+    ],
+  });
+  return { root, nav, heading, body, close };
+}
+
 /** Builds the interactive shell. Returns the frame's nodes; mounts nothing. */
 export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   const viewSelect = Select({ id: 'view-select', wide: true });
@@ -169,6 +237,17 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // „Datenbank" or „Lokal" would be a claim about nothing. Hidden rather than
   // empty: an empty pill reads as a value that failed to arrive.
   const sourceOrigin = Badge({ label: '', hidden: true, attrs: { id: 'source-origin' } });
+  // The way into what is true of this timeline as a whole. It sits with the
+  // timeline's own identity rather than next to „Einstellungen" on the right:
+  // that one is the instance, and putting the two side by side is what made the
+  // header unreadable in the first place. Unhidden by main.ts for a role that may
+  // write — an affordance, never the permission.
+  const tlSettingsBtn = IconButton({
+    icon: fromHtml(GEAR_ICON),
+    ariaLabel: 'Einstellungen dieser Timeline',
+    boxSize: 'md',
+    attrs: { id: 'tl-settings-btn', hidden: true },
+  });
   const presence = AvatarStack({ ariaLabel: 'Online', hidden: true, attrs: { id: 'presence' } });
   // Only an admin is offered the area (main.ts unhides it). Hiding it is an
   // affordance, never the permission: /api/settings and /api/members refuse
@@ -208,6 +287,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
           el('div', { class: 'app-timeline-controls' }, [
             ToolbarControl({ label: 'View', children: viewSelect }),
             sourceOrigin,
+            tlSettingsBtn,
             presence,
           ]),
         ],
@@ -303,45 +383,20 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
 
   const panel = detailPanel(true);
 
-  // The instance settings area, beside the content rather than inside it: it is
-  // not a view (a view names a timeline source) and not a dialog (the membership
-  // screen was one, and a dialog is the wrong size for a surface that grows a
-  // section per instance-wide concern). Only the frame is built here — each
-  // section mounts its own body when opened, so nothing a section needs is in
-  // the document for the visitors who never open it.
-  const settingsNav = Tabs({
-    orientation: 'vertical',
-    ariaLabel: 'Bereiche',
-    className: 'settings-nav',
-    attrs: { id: 'settings-nav' },
-  });
-  const settingsHeading = Heading({ level: 2, attrs: { id: 'settings-heading' } });
-  const settingsBody = ScrollArea({ attrs: { id: 'settings-body' } });
-  const settingsClose = IconButton({
-    icon: '×',
-    ariaLabel: 'Einstellungen schließen',
-    boxSize: 'lg',
-    attrs: { id: 'settings-close' },
-  });
-  // Deliberately not `Panel`: that one is the overlay drawer, positioned over the
-  // chart so opening an item does not resize vis-timeline. This area replaces the
-  // content instead of floating above it, so it is a view section with a heading
-  // row, and `settings.css` arranges the two columns.
-  const settings = ViewSection({
-    ariaLabel: 'Einstellungen',
-    hidden: true,
-    className: 'settings',
-    attrs: { id: 'settings' },
-    children: [
-      settingsNav,
-      el('div', { class: 'settings-panel' }, [
-        el('div', { class: 'settings-head' }, [settingsHeading, settingsClose]),
-        settingsBody,
-      ]),
-    ],
-  });
+  // Two areas of the same shape: one for what is true of the instance, one for what
+  // is true of the open timeline. Built from one function rather than twice, since
+  // the second one arrived by copying the first in the draft and the copies had
+  // already drifted apart by a heading level.
+  const instanceArea = settingsFrame('settings', 'Einstellungen', 'Einstellungen schließen');
+  const timelineArea = settingsFrame(
+    'timeline-settings',
+    'Timeline-Einstellungen',
+    'Timeline-Einstellungen schließen',
+  );
 
-  const main = AppMain({ children: [contentArea, settings, panel.detail] });
+  const main = AppMain({
+    children: [contentArea, instanceArea.root, timelineArea.root, panel.detail],
+  });
 
   const status = Text({ text: '…', tone: 'muted', attrs: { id: 'status' } });
   // Which plugins this instance has, and why one of them is not running. It sits
@@ -392,11 +447,17 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       presence,
       sourceOrigin,
       settingsBtn,
-      settings,
-      settingsNav,
-      settingsHeading,
-      settingsBody,
-      settingsClose,
+      settings: instanceArea.root,
+      settingsNav: instanceArea.nav,
+      settingsHeading: instanceArea.heading,
+      settingsBody: instanceArea.body,
+      settingsClose: instanceArea.close,
+      tlSettings: timelineArea.root,
+      tlSettingsNav: timelineArea.nav,
+      tlSettingsHeading: timelineArea.heading,
+      tlSettingsBody: timelineArea.body,
+      tlSettingsClose: timelineArea.close,
+      tlSettingsBtn,
       addBtn,
       exportBtn,
       pluginsBtn,
