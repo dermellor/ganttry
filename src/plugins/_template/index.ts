@@ -25,10 +25,17 @@ import type { HostApi } from '../../pluginHost/api';
  * element and swaps it in when the call settles, so two repaints cannot interleave
  * into one section.
  *
- * `host` is the plugin's gated API: the timeline, its own config, its own rows and
- * a change signal. It arrives as an ARGUMENT rather than through an import, which
- * is what lets a plugin be a file fetched from a URL — there is nothing for it to
- * resolve at load time.
+ * `host` is the plugin's gated API and the ONLY way into the app: the timeline, its
+ * own config, its own rows, a change signal, the status line, whether this timeline
+ * accepts writes, and `host.panel` for opening the detail drawer with a form of your
+ * own. It arrives as an ARGUMENT rather than through an import, which is what lets a
+ * plugin be a file fetched from a URL — there is nothing for it to resolve at load
+ * time.
+ *
+ * Reaching past it into `src/state.ts` or `src/render.ts` is refused by CI, and the
+ * reason is not tidiness: a plugin that reaches into the app never meets a gap in
+ * the contract, so the gaps survive. If something is missing, that is a finding to
+ * file (see docs/plugin-authoring.md → „What was found by doing this").
  */
 export async function renderView(container: HTMLElement, viewId: string, host: HostApi): Promise<void> {
   // Use `container.ownerDocument`, never the global `document`. It costs nothing

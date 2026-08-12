@@ -149,6 +149,19 @@ loser rather than shadowing it silently. Which processes run them, and why an
 installed artifact's do not, is in
 [`docs/plugin-isolation.md`](plugin-isolation.md).
 
+**The seam is enforced in both directions, and it took both to make it true.** #17
+removed what the core knew about one plugin: fifteen repo methods, seven API
+sub-resources, thirteen MCP tools, a public endpoint. #117 removed what that plugin
+knew about the core — 22 imports into `state.ts`, `render.ts`, `detailPanel.ts` and
+five more. The second half mattered for a reason the first does not suggest: a
+native plugin reaching into the app never *meets* a gap in the plugin API, so the
+gaps survive while looking like there are none. Closing it produced four contract
+methods (`DataApi.patch`, `panel`, `status`, `canWrite`) and moved two helpers to
+where a plugin can reach them.
+[`check-plugin-isolation.mjs`](../scripts/ci/check-plugin-isolation.mjs) asserts
+both directions, and its plugin-side allowlist is empty on purpose: an entry there
+is a gap to close, not an exception to grant.
+
 `register()` refuses a manifest that does not validate, loudly. Strictness is the
 point: a declaration the host silently ignored leaves the plugin running as if it
 had access it was never granted, and the symptom then surfaces far from the cause.

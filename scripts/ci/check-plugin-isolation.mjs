@@ -8,7 +8,9 @@
 // one will too. So the rules are asserted rather than remembered, the same way
 // `check-bundle-split.sh` asserts the lazy-loading promise.
 //
-// Four checks, each with a failure it prevents:
+// Five checks, each with a failure it prevents. The first four run core → plugin,
+// the fifth runs plugin → core, and both directions are needed: #17 closed the one
+// where core knew about a plugin, #117 the one where a plugin knew about core.
 //
 // 1. **No core file imports from a plugin folder.** That import is how a plugin's
 //    vocabulary reaches code that must not know it — and, in a client file, how
@@ -22,6 +24,12 @@
 //    below, which is the checkpoint.
 // 4. **No plugin stylesheet is linked from `index.html`.** A plugin's CSS belongs
 //    in its chunk; a link in the shell downloads it for everyone.
+// 5. **A plugin imports only the contract, the shared types and its own folder.**
+//    The subtle one. `product-roadmap` reached into `state.ts`, `render.ts`,
+//    `detailPanel.ts` and five more, and nothing broke — but every gap in the
+//    plugin API was invisible, because the plugin that was meant to prove the
+//    contract stepped past each hole into the app. Four methods came out of
+//    closing it.
 //
 // The allowlists below are short on purpose, and each entry says why it is there.
 // A new entry is the thing to argue about in review.
