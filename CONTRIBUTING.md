@@ -90,6 +90,12 @@ bundle-split check (below). What the checks expect:
 - **Never commit credentials.** `.env.local` is gitignored; `TIMELINES_ENV_FILE`
   points at files outside the repo if your keys live elsewhere. Do not commit
   timeline data that is not yours to publish.
+- **Two German words the interface keeps apart.** A **Timeline** is the document
+  (what the switcher picks, what `?view=` addresses, what the code calls a `View`);
+  a **Darstellung** is a way of drawing it (the chart, the list, a plugin's view).
+  „Ansicht" is not used for either, because the code already spends `View` on the
+  first — see „What this leaves alone"
+  ([`docs/information-architecture.md`](docs/information-architecture.md)).
 - **Documentation is English, the UI is German.** That split is deliberate, so
   quoted UI strings stay German in the docs („Neu", „kein Wert", „Gespeichert")
   even in otherwise English prose. Commit messages, branch names, pull request
