@@ -15,7 +15,7 @@
 // extensionless relative import to nothing. A missing extension anywhere in that
 // graph fails the *deploy*, not the build or the tests — see the guard in
 // `netlify/edge-functions/imports.test.ts`.
-import { pluginConfig } from '../../pluginHost/plugins.ts';
+import { pluginConfig } from '../../pluginHost/api';
 import type { PluginRef, TimelineFile } from '../../types.ts';
 
 /** Stable id of the product-roadmap (pricing matrix/cards) plugin. */

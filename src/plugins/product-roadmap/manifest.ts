@@ -11,7 +11,7 @@
 // declared now and enforced by the generic store (#12) and the generic public
 // route (#20); until then they are documentation that the validator keeps honest.
 
-import type { PluginManifest } from '../../pluginHost/manifest';
+import type { PluginManifest } from '../../pluginHost/api';
 
 export const PRICING_COLLECTIONS = {
   features: 'features',

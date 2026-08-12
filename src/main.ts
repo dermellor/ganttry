@@ -53,7 +53,7 @@ import {
   wireTimelineSettings,
 } from './timelineSettings';
 import { deleteItem } from './itemForm';
-import { hideDetail, showDetailForId } from './detailPanel';
+import { hideDetail, pluginPanelBackend, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
 import { setupFilterControl } from './filterControl';
 import {
@@ -86,6 +86,7 @@ import { MILESTONES_ONLY_SELECTION } from './viewPrefs';
 import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 import { hostApiFor } from './pluginHost/hostBackend';
 import { setTimelineRefresh } from './pluginHost/refresh';
+import { setPanelBackend } from './pluginHost/panel';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -347,6 +348,11 @@ async function bootstrap() {
   setTimelineRefresh(() => {
     if (state.activeView) void renderTimeline(state.activeView);
   });
+  // The detail drawer, for the same reason and by the same route: a plugin opens
+  // its form through `HostApi.panel`, and the implementation is registered rather
+  // than imported because hostBackend.ts reaching detailPanel.ts closes a cycle
+  // through the item form. See pluginHost/panel.ts.
+  setPanelBackend(pluginPanelBackend);
 
   state.pluginLoad = await loadInstalledPlugins(
     await loadPluginStatuses(cfg.plugins),

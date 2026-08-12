@@ -11,7 +11,7 @@
 // What is left here is the plugin's own vocabulary: which layers exist, and the
 // one line that turns an element into the rectangle the host wants.
 
-import { overlays, type Overlay, type OverlayRect } from '../../pluginHost/overlay.ts';
+import { overlays, type Overlay, type OverlayRect } from '../../pluginHost/api';
 
 /** A layer, created once per id and reused across repaints. */
 export function layerFor(id: string, className: string, role: string): Overlay {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { shiftExample } from './tools';
 import { exampleManifest } from './manifest';
-import { validateToolPlan } from '../../pluginHost/tools';
+import { validateToolPlan } from '../../pluginHost/api';
 import type { TimelineFile } from '../../types';
 
 // TEMPLATE. **Delete this file with `tools.ts` if the plugin has no rules.**

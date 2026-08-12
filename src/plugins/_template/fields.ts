@@ -16,7 +16,7 @@
 // belongs behind the descriptor's dynamic `load()`, or the plugin's code ends up in
 // the generic bundle and the lazy split is gone.
 
-import { hasPlugin, pluginConfig } from '../../pluginHost/plugins';
+import { hasPlugin, pluginConfig } from '../../pluginHost/api';
 import { exampleManifest } from './manifest';
 import type { CustomFieldDef, TimelineFile } from '../../types';
 

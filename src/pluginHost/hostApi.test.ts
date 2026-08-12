@@ -21,9 +21,13 @@ const backend = (): HostApiBackend => ({
   data: {
     list: async () => [],
     put: async (_c, row) => ({ id: row.id, data: row.data, version: 1 }),
+    patch: async (_c, id, data, version) => ({ id, data, version: (version ?? 0) + 1 }),
     remove: async () => {},
     move: async () => [],
   },
+  canWrite: async () => true,
+  status: () => {},
+  panel: { open: () => {}, close: () => {}, showItem: () => {} },
 });
 
 const manifest = (caps: PluginManifest['capabilities']): PluginManifest => ({
@@ -38,6 +42,29 @@ test('without items:write there is no items surface at all', () => {
   const api = createHostApi(manifest(['items:read']), backend(), '1.0');
   assert.equal(api.items, undefined);
   assert.equal(api.data, undefined);
+  // The drawer follows the write capability: it is the app's editing surface, and a
+  // plugin that may not write items has nothing to put in a form.
+  assert.equal(api.panel, undefined);
+});
+
+test('asking about the host is never gated', async () => {
+  // Both answer questions rather than doing anything, and gating them would leave a
+  // plugin that draws its own affordances guessing at what a read-only source
+  // allows — which is how an edit button that fails on click gets shipped.
+  const api = createHostApi(manifest([]), backend(), '1.0');
+  assert.equal(await api.canWrite(), true);
+  assert.equal(typeof api.status, 'function');
+});
+
+test('a partial row update reaches the backend with its lock counter', async () => {
+  // `patch` exists because `put` replaces the whole row: a form editing two fields
+  // of six would have to read the row first and hope nothing changed in between.
+  const api = createHostApi(manifest(['data:own']), backend(), '1.0');
+  assert.deepEqual(await api.data!.patch('rows', 'r1', { a: 1 }, 3), {
+    id: 'r1',
+    data: { a: 1 },
+    version: 4,
+  });
 });
 
 test('granted capabilities hand through the backend', async () => {

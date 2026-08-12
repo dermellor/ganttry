@@ -11,7 +11,7 @@
 // so it adds NO static edge into the pricing chunk. Everything pricing-heavy
 // stays behind the descriptor's dynamic `load()`.
 
-import { hasPlugin } from '../../pluginHost/plugins';
+import { hasPlugin } from '../../pluginHost/api';
 import {
   PRICING_FEATURE_META_KEY,
   PRICING_ITEM_VERSION_META_KEY,

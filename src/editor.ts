@@ -1,4 +1,5 @@
 import { dataUrl } from './data-base';
+import { ConflictError } from './pluginHost/errors';
 import { assignMissingItemIds, nextItemId } from './itemId';
 import type {
   SourceLive,
@@ -17,13 +18,13 @@ function parseLive(header: string | null): SourceLive {
   return LIVE_MODES.includes(header as SourceLive) ? (header as SourceLive) : 'realtime';
 }
 
-/** Thrown when an item PATCH is rejected because it changed server-side (409). */
-export class ConflictError extends Error {
-  constructor(message = 'version conflict') {
-    super(message);
-    this.name = 'ConflictError';
-  }
-}
+// Thrown when a write is rejected because the row changed server-side (409).
+//
+// The class moved into `pluginHost/errors.ts`, which is part of the plugin
+// contract: a plugin sending `If-Match` through the host API has to be able to
+// catch this, and it cannot import the app's editor. Re-exported from here because
+// this is the path the app's own call sites use.
+export { ConflictError } from './pluginHost/errors';
 
 /**
  * Session expired mid-use: the auth gate answers an /api/* call with 401 once

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { exampleManifest } from './manifest';
 import { exampleTools } from './tools';
-import { validateManifest } from '../../pluginHost/manifest';
+import { validateManifest } from '../../pluginHost/api';
 
 // TEMPLATE. Keep this file when you copy the folder; it is cheap and it catches
 // the one failure that is not local to your plugin.
