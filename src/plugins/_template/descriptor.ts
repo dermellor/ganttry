@@ -14,8 +14,8 @@
 // edge into the plugin's own chunk (`scripts/ci/check-bundle-split.sh` asserts
 // both halves).
 
-import type { PluginDescriptor } from '../../pluginHost/registry';
-import { hasPlugin } from '../../pluginHost/plugins';
+import type { PluginDescriptor } from '../../pluginHost/api';
+import { hasPlugin } from '../../pluginHost/api';
 import { exampleManifest } from './manifest';
 import { EXAMPLE_PLUGIN, exampleFields } from './fields';
 import { exampleTools } from './tools';

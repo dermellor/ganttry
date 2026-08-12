@@ -16,8 +16,8 @@
 // registry imports it STATICALLY, so anything it reaches pulls into the generic
 // bundle and the lazy split is gone (`scripts/ci/check-bundle-split.sh`).
 
-import type { PluginDescriptor } from '../../pluginHost/registry';
-import { hasPlugin } from '../../pluginHost/plugins';
+import type { PluginDescriptor } from '../../pluginHost/api';
+import { hasPlugin } from '../../pluginHost/api';
 import { hasPricingModel } from './compose';
 import { productRoadmapManifest } from './manifest';
 import { productRoadmapFields } from './fields';

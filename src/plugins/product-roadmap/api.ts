@@ -1,91 +1,56 @@
-// This plugin's writes, against the generic plugin-data routes.
+// This plugin's writes, through the host's data API.
 //
-// These functions used to live in `src/editor.ts` — core code carrying one
-// plugin's endpoints, which is the coupling issue #17 removes. They now speak the
-// same API any third-party plugin speaks:
+// They used to live in `src/editor.ts` — core code carrying one plugin's endpoints,
+// which is the coupling #17 removed. #117 removed the other half of it: the routes
+// were already the generic ones, but this module reached them with the app's own
+// fetch wrapper, so `HostApi.data` — the thing every third-party plugin has to use
+// — was untested by the only plugin that existed.
 //
-//   POST   /api/source/<id>/plugin/product-roadmap/<collection>
-//   PATCH  /api/source/<id>/plugin/product-roadmap/<collection>/<rowId>
-//   DELETE /api/source/<id>/plugin/product-roadmap/<collection>/<rowId>
-//   POST   /api/source/<id>/plugin/product-roadmap/<collection>/move
+// The host owns the transport now. What that buys beyond parity:
 //
-// The consequence that matters beyond tidiness: those routes are implemented on
-// the repo seam, so editing a pricing model on a `data/*.json` timeline works
-// instead of answering 501 the way the pricing-specific repo methods did.
+//   - the plugin id and the source id are bound by the host, so no call here can
+//     name another plugin's collections or another timeline;
+//   - the capability gate becomes real: without `data:own` there is no `data`
+//     object, rather than a request that gets refused server-side;
+//   - `DataApi.patch` exists because this module needed it. A partial row update
+//     where `null` clears a key had no method on the contract, which is exactly the
+//     gap that building a plugin in-house is supposed to surface.
 //
 // The entity ↔ row translation is `./compose.ts`, so a write and a read agree on
 // what a row looks like by construction rather than by two people remembering the
 // same thing.
 
-import { apiJson, ConflictError } from '../../editor';
+import { hostApi } from './host';
 import { PRICING_COLLECTIONS } from './manifest';
 import { cellId } from './compose';
-import { PRODUCT_ROADMAP_PLUGIN } from './plugin';
-import type { PluginDataRow } from '../../types';
+import type { DataApi, PluginRow } from '../../pluginHost/api';
 import type { PricingFeature, PricingHighlight, PricingTier } from './types';
-
-export { ConflictError };
 
 const { features: FEATURES, tiers: TIERS, tierValues: CELLS, highlights: HIGHLIGHTS } = PRICING_COLLECTIONS;
 
-const base = (sourceId: string, collection: string) =>
-  `/api/source/${sourceId}/plugin/${PRODUCT_ROADMAP_PLUGIN}/${collection}`;
+/**
+ * The host's data API, or a refusal that names the cause.
+ *
+ * Absent means the manifest did not ask for `data:own` — a declaration mistake, and
+ * one worth failing loudly on rather than turning every write into a silent no-op.
+ */
+function data(): DataApi {
+  const api = hostApi().data;
+  if (!api) throw new Error('product-roadmap: the manifest is missing the "data:own" capability');
+  return api;
+}
 
 /**
- * The lock counter always travels as `If-Match`, never in the body.
+ * Strip what the host owns before sending an entity as a row's `data`.
  *
- * On a feature, `version` is the domain „ab Version" label rather than the lock
- * counter, and putting the two in one object is how they get confused. The store
- * keeps its counter in the row envelope for the same reason, which is where
- * `./compose.ts` reads it from when it hands the model back out as `rowVersion`.
+ * `rowVersion` in particular: on a feature, `version` is the domain „ab Version"
+ * label rather than the lock counter, and putting the two in one object is how they
+ * get confused. The counter travels as an argument instead, and the host puts it in
+ * the `If-Match` header where the store keeps it.
  */
-function headers(rowVersion?: number): Record<string, string> {
-  const out: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (rowVersion != null) out['If-Match'] = String(rowVersion);
-  return out;
-}
-
-/** Strip what the host owns before sending an entity as a row's `data`. */
 function toData<T extends object>(entity: T): Record<string, unknown> {
-  const { id: _id, rowVersion: _rv, ...data } = entity as Record<string, unknown>;
-  return data;
-}
-
-async function put(
-  sourceId: string,
-  collection: string,
-  id: string,
-  data: Record<string, unknown>,
-): Promise<PluginDataRow> {
-  return apiJson(
-    await fetch(base(sourceId, collection), {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ id, data }),
-    }),
-  );
-}
-
-async function patch(
-  sourceId: string,
-  collection: string,
-  id: string,
-  data: Record<string, unknown>,
-  rowVersion?: number,
-): Promise<PluginDataRow> {
-  return apiJson(
-    await fetch(`${base(sourceId, collection)}/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: headers(rowVersion),
-      body: JSON.stringify({ data }),
-    }),
-  );
-}
-
-async function remove(sourceId: string, collection: string, id: string): Promise<void> {
-  await apiJson(
-    await fetch(`${base(sourceId, collection)}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  );
+  const { id: _id, rowVersion: _rv, ...rest } = entity as Record<string, unknown>;
+  return rest;
 }
 
 // ---- features ---------------------------------------------------------------
@@ -99,22 +64,21 @@ async function remove(sourceId: string, collection: string, id: string): Promise
  * caller to merge it into a composed model instead — which is exactly the write
  * that never reached the screen (see the note at the top of ./store.ts).
  */
-export async function apiAddFeature(sourceId: string, feature: PricingFeature): Promise<PluginDataRow> {
-  return put(sourceId, FEATURES, feature.id, toData(feature));
+export async function apiAddFeature(feature: PricingFeature): Promise<PluginRow> {
+  return data().put(FEATURES, { id: feature.id, data: toData(feature) });
 }
 
 /**
- * Patch a feature with optimistic locking. A `null` in the patch clears the field
- * — the generic PATCH deletes a key written as null, which is what the forms rely
- * on to make an emptied input actually empty rather than leaving the old value.
+ * Patch a feature with optimistic locking. A `null` in the patch clears the field —
+ * `DataApi.patch` deletes a key written as null, which is what the forms rely on to
+ * make an emptied input actually empty rather than leaving the old value.
  */
 export async function apiUpdateFeature(
-  sourceId: string,
   featureId: string,
   update: Partial<PricingFeature>,
   rowVersion?: number,
-): Promise<PluginDataRow> {
-  return patch(sourceId, FEATURES, featureId, toData(update), rowVersion);
+): Promise<PluginRow> {
+  return data().patch(FEATURES, featureId, toData(update), rowVersion);
 }
 
 /**
@@ -123,8 +87,8 @@ export async function apiUpdateFeature(
  * `unlink`), applied by the host, where a hand-written loop in the repo used to
  * do it for this plugin alone.
  */
-export async function apiDeleteFeature(sourceId: string, featureId: string): Promise<void> {
-  await remove(sourceId, FEATURES, featureId);
+export async function apiDeleteFeature(featureId: string): Promise<void> {
+  await data().remove(FEATURES, featureId);
 }
 
 /**
@@ -133,25 +97,17 @@ export async function apiDeleteFeature(sourceId: string, featureId: string): Pro
  * guessing at the new order itself.
  */
 export async function apiMoveFeature(
-  sourceId: string,
   featureId: string,
   anchor: { after?: string; before?: string },
 ): Promise<string[]> {
-  const res = await apiJson(
-    await fetch(`${base(sourceId, FEATURES)}/move`, {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ id: featureId, ...anchor }),
-    }),
-  );
-  return (res?.order ?? []) as string[];
+  return data().move(FEATURES, featureId, anchor);
 }
 
 // ---- tiers ------------------------------------------------------------------
 
 /** Create a tier (a matrix column). It starts with no cells: they are their own rows. */
-export async function apiAddTier(sourceId: string, tier: PricingTier): Promise<PluginDataRow> {
-  return put(sourceId, TIERS, tier.id, toData(withoutCells(tier)));
+export async function apiAddTier(tier: PricingTier): Promise<PluginRow> {
+  return data().put(TIERS, { id: tier.id, data: toData(withoutCells(tier)) });
 }
 
 /**
@@ -160,16 +116,15 @@ export async function apiAddTier(sourceId: string, tier: PricingTier): Promise<P
  * without colliding — and what keeps a tier rename from touching a single cell.
  */
 export async function apiUpdateTier(
-  sourceId: string,
   tierId: string,
   update: Partial<PricingTier>,
   rowVersion?: number,
-): Promise<PluginDataRow> {
-  return patch(sourceId, TIERS, tierId, toData(withoutCells(update)), rowVersion);
+): Promise<PluginRow> {
+  return data().patch(TIERS, tierId, toData(withoutCells(update)), rowVersion);
 }
 
-export async function apiDeleteTier(sourceId: string, tierId: string): Promise<void> {
-  await remove(sourceId, TIERS, tierId);
+export async function apiDeleteTier(tierId: string): Promise<void> {
+  await data().remove(TIERS, tierId);
 }
 
 function withoutCells(tier: Partial<PricingTier>): Partial<PricingTier> {
@@ -182,33 +137,35 @@ function withoutCells(tier: Partial<PricingTier>): Partial<PricingTier> {
 /**
  * Write one matrix cell (tier × feature), or clear it.
  *
- * No lock counter, deliberately, and the reason survives the move: a cell is a
- * single atomic value, so two people editing different cells never collide.
- * Clearing DELETES the row rather than storing a falsy value — „not included" is
- * the absence of a cell, which is what `pricingFromCollections` reads.
+ * No lock counter, deliberately, and the reason survives every move this code has
+ * made: a cell is a single atomic value, so two people editing different cells
+ * never collide. Clearing DELETES the row rather than storing a falsy value — „not
+ * included" is the absence of a cell, which is what `pricingFromCollections` reads.
  * `availableFrom` gates from which version the cell counts as included.
  */
 export async function apiSetTierValue(
-  sourceId: string,
   tierId: string,
   featureId: string,
   value: string | boolean | null,
   availableFrom: string | null,
-): Promise<PluginDataRow | null> {
+): Promise<PluginRow | null> {
   const id = cellId(tierId, featureId);
   if (value === null || value === false || value === '') {
-    // Clearing a cell that was never set is not an error: the old endpoint
-    // answered the same either way, and the UI reaches this on every „nicht
-    // enthalten" click regardless of what was there before. `null` back means
-    // „there is no row now", which is what the caller mirrors.
-    await remove(sourceId, CELLS, id).catch(() => {});
+    // Clearing a cell that was never set is not an error: the endpoint answers the
+    // same either way, and the UI reaches this on every „nicht enthalten" click
+    // regardless of what was there before. `null` back means „there is no row now",
+    // which is what the caller mirrors.
+    await data().remove(CELLS, id).catch(() => {});
     return null;
   }
-  return put(sourceId, CELLS, id, {
-    tierId,
-    featureId,
-    value,
-    ...(availableFrom ? { availableFrom } : {}),
+  return data().put(CELLS, {
+    id,
+    data: {
+      tierId,
+      featureId,
+      value,
+      ...(availableFrom ? { availableFrom } : {}),
+    },
   });
 }
 
@@ -218,19 +175,18 @@ export async function apiSetTierValue(
 // plugin's four collections and the route is the same one. Having them here is
 // what keeps the next caller from reaching past this module.
 
-export async function apiAddHighlight(sourceId: string, highlight: PricingHighlight): Promise<PluginDataRow> {
-  return put(sourceId, HIGHLIGHTS, highlight.id, toData(highlight));
+export async function apiAddHighlight(highlight: PricingHighlight): Promise<PluginRow> {
+  return data().put(HIGHLIGHTS, { id: highlight.id, data: toData(highlight) });
 }
 
 export async function apiUpdateHighlight(
-  sourceId: string,
   highlightId: string,
   update: Partial<PricingHighlight>,
   rowVersion?: number,
-): Promise<PluginDataRow> {
-  return patch(sourceId, HIGHLIGHTS, highlightId, toData(update), rowVersion);
+): Promise<PluginRow> {
+  return data().patch(HIGHLIGHTS, highlightId, toData(update), rowVersion);
 }
 
-export async function apiDeleteHighlight(sourceId: string, highlightId: string): Promise<void> {
-  await remove(sourceId, HIGHLIGHTS, highlightId);
+export async function apiDeleteHighlight(highlightId: string): Promise<void> {
+  await data().remove(HIGHLIGHTS, highlightId);
 }

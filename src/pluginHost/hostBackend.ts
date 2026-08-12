@@ -25,7 +25,8 @@
 // there is no call shape in which one plugin can name another's data.
 
 import { apiAddItem, apiDeleteItem, apiJson, apiUpdateItem } from '../editor';
-import { state } from '../state';
+import { isEditableView, setStatus, state } from '../state';
+import { createPanelApi } from './panel';
 import { onTimelineChanged } from './changes';
 import { refreshAfterHostWrite } from './refresh';
 import { createDataApi } from './dataApi';
@@ -103,10 +104,21 @@ export function hostBackend(pluginId: string): HostApiBackend {
       if (!email) return null;
       return { email, ...(state.currentUser?.name ? { name: state.currentUser.name } : {}) };
     },
+    // „May this timeline be written at all" — a different question from „may this
+    // plugin write", which the capability already answers. A plugin needs both
+    // before it draws an edit affordance.
+    async canWrite() {
+      return isEditableView();
+    },
+    status: setStatus,
     items: itemsApi(),
     // Its own module, because it decides which rows a plugin can reach and the
     // rest of this file cannot be imported without the app's state and its DOM.
     data: createDataApi(pluginId, { sourceId, json: apiJson }),
+    // Also its own module, and for the second reason as well: the app registers the
+    // drawer's implementation at startup, because reaching `detailPanel.ts` from
+    // here would close a cycle through the item form (see ./panel.ts).
+    panel: createPanelApi(pluginId),
   };
 }
 

@@ -23,6 +23,7 @@ import {
   setStatus,
   syncUrl,
   isEditableView,
+  loadPresentationPrefs,
   loadViewPrefs,
   saveViewPrefs,
   type ViewMode,
@@ -52,7 +53,7 @@ import {
   wireTimelineSettings,
 } from './timelineSettings';
 import { deleteItem } from './itemForm';
-import { hideDetail, showDetailForId } from './detailPanel';
+import { hideDetail, pluginPanelBackend, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
 import { setupFilterControl } from './filterControl';
 import {
@@ -90,6 +91,7 @@ import { MILESTONES_ONLY_SELECTION } from './viewPrefs';
 import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 import { hostApiFor } from './pluginHost/hostBackend';
 import { setTimelineRefresh } from './pluginHost/refresh';
+import { setPanelBackend } from './pluginHost/panel';
 
 // Is the keyboard focus currently in a place where a keystroke means "type",
 // not "act on the selected item"? Guards the global Delete shortcut so it never
@@ -258,7 +260,12 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   const parsed = parsePluginViewMode(mode);
   const target = parsed ? resolveViewMode(state.activeSourceFile, parsed.pluginId, parsed.viewId) : null;
   if (parsed && !target) mode = 'timeline';
+  const switching = state.viewMode !== mode;
   state.viewMode = mode;
+  // Perspective and extent belong to the presentation, so they travel with the
+  // switch. Before the renders below, or the new presentation would paint once with
+  // the previous one's grouping and then again with its own.
+  if (switching) loadPresentationPrefs(mode);
   setModeButtons(mode);
   const list = mode === 'list';
   const plugin = target ? mode : null;
@@ -277,6 +284,10 @@ function applyViewMode(mode: ViewMode, { persist = true }: { persist?: boolean }
   // Editability is the other half and stays where it is (render.ts): a presentation
   // may allow creating an item while this source does not.
   els.addBtn.hidden = !accessories.create || !isEditableView();
+  // A switch changed the grouping and the filter, so the display set has to be
+  // recomputed rather than only redrawn — the lanes and the visible items both
+  // follow from them.
+  if (switching) applyGrouping();
   if (list) {
     renderListView();
   } else if (target && parsed) {
@@ -356,6 +367,11 @@ async function bootstrap() {
   setTimelineRefresh(() => {
     if (state.activeView) void renderTimeline(state.activeView);
   });
+  // The detail drawer, for the same reason and by the same route: a plugin opens
+  // its form through `HostApi.panel`, and the implementation is registered rather
+  // than imported because hostBackend.ts reaching detailPanel.ts closes a cycle
+  // through the item form. See pluginHost/panel.ts.
+  setPanelBackend(pluginPanelBackend);
 
   state.pluginLoad = await loadInstalledPlugins(
     await loadPluginStatuses(cfg.plugins),

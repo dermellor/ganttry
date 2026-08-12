@@ -6,7 +6,7 @@
 
 import { el, htmlAll, MenuItem } from '../../pluginHost/api';
 import { aggregateWorkState } from './pricing';
-import { statusOrDefault, type StatusKey } from '../../status';
+import { statusOrDefault, type StatusKey } from '../../pluginHost/api';
 import type { TimelineFileItem } from '../../types';
 
 const WORK_LABEL: Record<'doing' | 'done' | 'open', string> = {

@@ -36,7 +36,9 @@ import {
   legacyViewPrefs,
   parseViewPrefsStore,
   VIEW_PREFS_KEY,
-  viewPrefsFor,
+  presentationPrefsFor,
+  storedMode,
+  withLegacyFallback,
   withViewPrefs,
   type ViewPrefsStore,
 } from './viewPrefs';
@@ -107,12 +109,17 @@ export interface AppState {
   savedPhasesJson: string;
   activeFormItemId: string | null;
   activeFormPhaseIndex: number | null;
-  // Feature id whose Stammdaten form is open in the detail drawer (pricing
-  // matrix), mutually exclusive with activeFormItemId / activeFormPhaseIndex.
-  activeFormFeatureId: string | null;
-  // Tier id whose Stammdaten form is open in the detail drawer (pricing matrix
-  // column head) — mutually exclusive with the other activeForm* slots.
-  activeFormTierId: string | null;
+  // Id of the plugin whose own form is open in the detail drawer, mutually
+  // exclusive with the two slots above.
+  //
+  // One generic slot rather than one per plugin. It used to be two fields named
+  // after `product-roadmap`'s features and tiers — plugin facts in a core file,
+  // which `check-plugin-isolation` missed because the names carry no plugin id, and
+  // which no third-party plugin could ever get. What the core actually needs to
+  // know is only *that* a plugin form is open (`isAnyFormOpen`, which stops
+  // background persistence from writing under an open editor); *which* row it edits
+  // is the plugin's own business and lives in the plugin.
+  activePluginForm: string | null;
   // True while showItemForm is swapping the form's DOM. Removing the old
   // (focused) form fires a focusout → commit; suppress it so the previous
   // form's values aren't written onto the item being switched to.
@@ -228,8 +235,7 @@ export const state: AppState = {
   savedPhasesJson: '[]',
   activeFormItemId: null,
   activeFormPhaseIndex: null,
-  activeFormFeatureId: null,
-  activeFormTierId: null,
+  activePluginForm: null,
   formRebuilding: false,
   formJiraIssues: [],
   formDependsOn: [],
@@ -288,9 +294,7 @@ function writeViewPrefsStore(store: ViewPrefsStore): void {
 function adoptLegacyViewPrefs(store: ViewPrefsStore, viewId: string): ViewPrefsStore {
   const legacy = legacyViewPrefs((key) => localStorage.getItem(key));
   if (!legacy) return store;
-  const next = store[viewId]
-    ? store
-    : withViewPrefs(store, viewId, { ...DEFAULT_VIEW_PREFS, ...legacy });
+  const next = store[viewId] ? store : withLegacyFallback(store, viewId, legacy);
   for (const key of Object.values(LEGACY_PREF_KEYS)) localStorage.removeItem(key);
   if (next !== store) writeViewPrefsStore(next);
   return next;
@@ -304,11 +308,26 @@ function adoptLegacyViewPrefs(store: ViewPrefsStore, viewId: string): ViewPrefsS
 export function loadViewPrefs(viewId: string | null): void {
   let store = readViewPrefsStore();
   if (viewId) store = adoptLegacyViewPrefs(store, viewId);
-  const prefs = viewPrefsFor(store, viewId);
   // A stored mode may predate addressable plugin views (`pricing`), so it goes
   // through the legacy lookup rather than a bare comparison: reading it without
   // that would silently reset every user's saved view.
-  state.viewMode = readViewMode(prefs.mode, legacyViewMode);
+  state.viewMode = readViewMode(storedMode(store, viewId), legacyViewMode);
+  // …and then that presentation's own perspective and extent, because they are
+  // stored per presentation (see viewPrefs.ts).
+  const prefs = presentationPrefsFor(store, viewId, state.viewMode);
+  state.groupBy = prefs.groupBy;
+  state.filters = prefs.filters;
+}
+
+/**
+ * Swap perspective and extent to the ones `mode` remembers, without touching which
+ * timeline is open. Called when the presentation changes: each one keeps its own,
+ * so switching has to carry them along or the new presentation would inherit the
+ * previous one's and then save it as its own on the next edit.
+ */
+export function loadPresentationPrefs(mode: ViewMode): void {
+  const viewId = state.activeView?.id ?? null;
+  const prefs = presentationPrefsFor(readViewPrefsStore(), viewId, mode);
   state.groupBy = prefs.groupBy;
   state.filters = prefs.filters;
 }
@@ -426,8 +445,7 @@ export function isEditableView(): boolean {
 export function clearFormSlots(): void {
   state.activeFormItemId = null;
   state.activeFormPhaseIndex = null;
-  state.activeFormFeatureId = null;
-  state.activeFormTierId = null;
+  state.activePluginForm = null;
 }
 
 /** True while any detail form is open (an edit in progress). */
@@ -435,8 +453,7 @@ export function isAnyFormOpen(): boolean {
   return (
     state.activeFormItemId != null ||
     state.activeFormPhaseIndex != null ||
-    state.activeFormFeatureId != null ||
-    state.activeFormTierId != null
+    state.activePluginForm != null
   );
 }
 
