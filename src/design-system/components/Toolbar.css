@@ -43,6 +43,10 @@
   margin-left: auto;
 }
 
+.ds-ToolbarGroup[data-spacing='tight'] {
+  gap: var(--space-sm);
+}
+
 /* The caption's uppercase micro-type is stated here rather than reusing `.ds-Label`
    as an element, because the labelled form *is* a `<label>` and cannot nest one. */
 .ds-ToolbarControl {

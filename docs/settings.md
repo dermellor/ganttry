@@ -205,8 +205,8 @@ code rather than left to the URL.
 **What each area hides differs by one thing.** The instance area hides the
 timeline's identity too, since „8 items in Beispiel: Projektplan" under a page of
 instance settings reads as a claim about the settings. The timeline's own area keeps
-the name, the origin badge and the item count: that page is *about* that timeline, so
-its subject has to stay visible.
+the name, its read-only badge and the item count: that page is *about* that timeline,
+so its subject has to stay visible.
 
 ## What is deliberately not here
 

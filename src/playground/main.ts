@@ -322,7 +322,11 @@ const marksSection = section(
       ...TIMELINE_ICONS.map(({ key, label }) =>
         specimen(key, Icon({ name: key, size: 'lg', standalone: true, attrs: { title: label } })),
       ),
-      ...['delete', 'warning', 'check'].map((name) =>
+      // Every `--ui-icon-*` in icons.css belongs here. The list is hand-kept and had
+      // already lost `caret`, which is how a chrome glyph goes years without anyone
+      // looking at it — the gear was a sun the whole time it was drawn inline in
+      // appShell.ts, outside both this grid and the glyph file.
+      ...['delete', 'warning', 'check', 'caret', 'gear'].map((name) =>
         specimen(`ui: ${name}`, Icon({ name, chrome: true, size: 'lg', standalone: true })),
       ),
     ]),

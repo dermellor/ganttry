@@ -534,16 +534,17 @@ function clearLoadFailure(): void {
 }
 
 /**
- * The origin badge beside the open timeline's name. The wording lives in
- * [`src/sourceOrigin.ts`](./sourceOrigin.ts) (DOM-free, unit-tested); this is only
- * the two lines that put it on screen.
+ * The badge beside the open timeline's name. The wording *and* whether there is a
+ * badge at all live in [`src/sourceOrigin.ts`](./sourceOrigin.ts) (DOM-free,
+ * unit-tested); this is only the lines that put it on screen. An editable source
+ * shows none, so `hidden` is driven by the badge rather than always cleared here.
  */
 function showSourceOrigin(kind: SourceKind, editable: boolean, live: SourceLive): void {
   const badge = sourceOriginBadge(kind, editable, live);
   els.sourceOrigin.textContent = badge.label;
   els.sourceOrigin.dataset.tone = badge.tone;
   els.sourceOrigin.title = badge.title;
-  els.sourceOrigin.hidden = false;
+  els.sourceOrigin.hidden = !badge.shown;
 }
 
 function hideSourceOrigin(): void {

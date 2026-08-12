@@ -44,13 +44,23 @@ export type ToolbarGroupOptions = {
   children?: Child;
   /** Pushed to the trailing edge of the bar. */
   end?: boolean;
+  /**
+   * `tight` for controls that are one object rather than neighbours — the open
+   * timeline's name and the gear that opens its settings. At the default spacing
+   * those two read as two separate things.
+   */
+  spacing?: 'tight';
   className?: string;
   attrs?: Attrs;
 };
 
 export function ToolbarGroup(options: ToolbarGroupOptions = {}): HTMLDivElement {
-  const { children, end, className, attrs } = options;
-  return el('div', { class: classes('ds-ToolbarGroup', className), ...data({ end }), ...attrs }, children);
+  const { children, end, spacing, className, attrs } = options;
+  return el(
+    'div',
+    { class: classes('ds-ToolbarGroup', className), ...data({ end, spacing }), ...attrs },
+    children,
+  );
 }
 
 export type ToolbarControlOptions = {

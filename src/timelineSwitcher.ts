@@ -49,6 +49,12 @@ function label(view: View | undefined): string {
 function renderTrigger(): void {
   const view = views.find((v) => v.id === activeId);
   els.switcherBtn.textContent = label(view);
+  // The trigger used to have „TIMELINE" written beside it, which was the only place
+  // the interface said what kind of thing this name is. That caption is gone (a
+  // document name needs no label in front of it), so the word moves into the
+  // accessible name — set here, where the visible name is set, because two writers
+  // on one attribute is how the two drift apart.
+  els.switcherBtn.setAttribute('aria-label', `Timeline: ${label(view)}`);
   // The id in the tooltip, because two timelines may carry the same name and the id
   // is what a link and the API speak.
   els.switcherBtn.title = view ? `${view.name} · ${view.id}` : '';

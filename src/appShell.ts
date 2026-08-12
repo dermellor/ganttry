@@ -33,6 +33,7 @@ import {
   el,
   fromHtml,
   Heading,
+  Icon,
   IconButton,
   html,
   Panel,
@@ -107,12 +108,6 @@ const TIMELINE_ICON = `
   <line x1="4" y1="6" x2="14" y2="6" />
   <line x1="9" y1="12" x2="20" y2="12" />
   <line x1="4" y1="18" x2="12" y2="18" />
-</svg>`;
-
-const GEAR_ICON = `
-<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  <circle cx="12" cy="12" r="3" />
-  <path d="M12 3.5v2M12 18.5v2M4.9 7.5l1.8 1M17.3 15.5l1.8 1M4.9 16.5l1.8-1M17.3 8.5l1.8-1" />
 </svg>`;
 
 const LIST_ICON = `
@@ -255,9 +250,14 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     ariaLabel: 'Timelines',
     attrs: { id: 'switcher-list' },
   });
+  // No caption: the trigger shows a timeline's name and opens a list grouped by
+  // origin, so „TIMELINE" in front of it labelled a document with the word
+  // „document". The one thing that caption did carry moved into the trigger's
+  // accessible name (see renderTrigger in src/timelineSwitcher.ts) — it was never
+  // tied to the button programmatically, so a reader who hears the page got
+  // nothing from it in the first place.
   const switcherControl = ToolbarControl({
     labelled: false,
-    label: 'Timeline',
     attrs: { id: 'switcher-control' },
     children: ToolbarAnchor({ children: [switcherBtn, switcherSearchWrap, switcherList] }),
   });
@@ -292,7 +292,12 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // header unreadable in the first place. Unhidden by main.ts for a role that may
   // write — an affordance, never the permission.
   const tlSettingsBtn = IconButton({
-    icon: fromHtml(GEAR_ICON),
+    // From the chrome glyph set rather than an inline drawing of its own: the two
+    // segmented-control icons below are inline because a segment's icon is part of
+    // that control's content, but a lone affordance glyph is exactly what
+    // `--ui-icon-*` is for — and being the only glyph outside icons.css is how this
+    // one stayed a sun through several passes over the header.
+    icon: Icon({ name: 'gear', chrome: true, size: 'md', standalone: true }),
     ariaLabel: 'Einstellungen dieser Timeline',
     boxSize: 'md',
     attrs: { id: 'tl-settings-btn', hidden: true },
@@ -328,20 +333,26 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
           // timeline is open. Everything about *how* it is drawn moved into the
           // bar below (see „Where every control belongs" in
           // docs/information-architecture.md).
-          // The open timeline, as one group: which one it is, where it comes
-          // from, and who else is looking at it. Presence used to sit on the
-          // right among the instance controls, which said it was about the
-          // deployment; a session joins per timeline (see „Where every control
-          // belongs" in docs/information-architecture.md).
-          el('div', { class: 'app-timeline-controls' }, [
-            switcherControl,
-            sourceOrigin,
-            tlSettingsBtn,
-            presence,
-          ]),
+          //
+          // A `ToolbarGroup` rather than a bare `<div>`: as a plain element it had
+          // no layout at all, and the avatar stack inside it — a block-level flex
+          // container — dropped onto a second line under the app mark, which grew
+          // the header by half again. Layout that a group already has must not be
+          // re-invented as an unstyled wrapper.
+          ToolbarGroup({
+            spacing: 'tight',
+            className: 'app-timeline-controls',
+            children: [switcherControl, sourceOrigin, tlSettingsBtn],
+          }),
         ],
       }),
-      ToolbarGroup({ end: true, children: [settingsBtn] }),
+      // Presence sits with the instance controls again, at the trailing edge. It
+      // was moved beside the timeline's name on the argument that a session joins
+      // per timeline rather than per deployment, and that argument does not reach
+      // the layout: exactly one timeline is ever open, so no position here can say
+      // the wrong one. What the trailing edge does buy is the place every other
+      // tool puts the people on a document, and a header row that stays one line.
+      ToolbarGroup({ end: true, children: [presence, settingsBtn] }),
     ],
   });
 

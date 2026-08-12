@@ -100,12 +100,12 @@ are deliberately not part of this.
 | „Plugins" panel | footer | 1 + 3 | the catalog belongs in the instance area; the per-timeline half belongs to level 3. The footer entry stays reachable from a timeline, because that is where „why is this view missing" gets asked |
 | Timeline switcher | header, left | 2 | done: search, grouped by origin, the open one marked; the trigger doubles as the statement of which timeline is open |
 | Creating a timeline | nowhere | 2 | needs a create route before it can have an interface |
-| Name, origin, read-only state | header, left | 3 | done: the open timeline says which one it is and where it comes from |
+| Name, read-only state | header, left | 3 | done: the name with no caption in front of it, and a „Nur lesend" badge only where something is missing. The origin is the switcher's group heading, so a badge repeating it was the same word twice |
 | Custom field definitions | the timeline settings route | 3 | done: `#timeline-settings=fields` |
 | Enabled plugins and their config | a `timeline_plugins` row | 3 | timeline settings; stays an INSERT |
 | Name, description, default grouping | the timeline settings route | 3 | done: `#timeline-settings=general`, written through `PATCH /api/source/<id>` |
 | Phases as a set | only the ribbon | 3 | the set is structure of the timeline; one phase is level 5 |
-| Presence avatars | header, with the timeline | 3 | done: moved out of the instance group, because a session joins per timeline |
+| Presence avatars | header, trailing edge | 3 | they belong to the open timeline and sit with the instance controls anyway: exactly one timeline is ever open, so no position in this bar can name the wrong one, and the trailing edge is where every other tool puts the people on a document |
 | Darstellung switch (Timeline / Liste) | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
 | Plugin views | the bar, one control per plugin | 4 | done: each plugin's views sit in its own control, its name inside on the left; the control marks itself while one of its views is active |
 | „Gruppieren" | the bar | 4, perspective | done |
@@ -170,11 +170,21 @@ Not a layout, just the set of places the levels demand. One each.
   opens a timeline, so level 2 is a switcher over the open timeline and level 1 is
   a route behind the same entry.
 - **Level 3** needs a header for the open timeline: name, origin, who else is
-  looking, the way into its settings. The first three are there — the name, an origin
-  badge that also carries the read-only state, and the presence avatars beside them.
-  The way into its settings is the gear beside them, opening
-  `#timeline-settings=<section>` — the same section pattern the instance area uses,
-  from one shared frame (`src/areaFrame.ts`).
+  looking, the way into its settings. The name leads, with nothing written in front
+  of it, and the gear that opens `#timeline-settings=<section>` sits directly against
+  it — the same section pattern the instance area uses, from one shared frame
+  (`src/areaFrame.ts`). Who else is looking is at the trailing edge. The origin has
+  no element of its own here: the switcher groups its list under „Datenbank" and
+  „Lokal", so a badge saying the same word beside the name was that word twice and
+  pushed the name and its gear apart. What survives of it is the read-only badge,
+  which says the one thing nothing else does.
+
+  The three defects that cost this row half again its height are worth keeping in
+  view, because each is a way a bar decays: a wrapper element with no layout on it
+  (the avatar stack, a block-level flex container, dropped onto a second line), a
+  caption naming the *type* of a thing already named („TIMELINE" in front of a
+  timeline's name), and one control carrying two unrelated facts so that neither can
+  be dropped when only one applies.
 - **Level 4** gets one bar: the presentation switch, the perspective, the extent,
   then the actions on the presentation (create an entry, export). That replaces
   today's split across the header and the view toolbar.
