@@ -107,7 +107,7 @@ are deliberately not part of this.
 | Phases as a set | only the ribbon | 3 | the set is structure of the timeline; one phase is level 5 |
 | Presence avatars | header, with the timeline | 3 | done: moved out of the instance group, because a session joins per timeline |
 | Darstellung switch (Timeline / Liste) | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
-| Plugin views | the same switch | 4 | done: also presentations, each declaring its own accessories |
+| Plugin views | the bar, one control per plugin | 4 | done: each plugin's views sit in its own control, its name inside on the left; the control marks itself while one of its views is active |
 | „Gruppieren" | the bar | 4, perspective | done |
 | „Filter" | the bar | 4, extent | done: beside the switch, holding every narrowing |
 | „Nur Meilensteine" | gone | 4, extent | done: a value of the type dimension in the filter |
@@ -149,6 +149,14 @@ control goes, so the argument is had once.
   whole bar off for a plugin view, each presentation states which perspectives and
   extent dimensions apply to it. Otherwise every further plugin view adds another
   special case to the host, and the host is the part that must not know plugin ids.
+- **A control states its behaviour at N, and where N is owned by installed plugins,
+  N decides the form.** This chapter assigned every control a level and never asked
+  how many of each there would be, which is how the presentation switch ended up with
+  17 segments on an instance with five plugins: 34px each for labels needing 90, and
+  icon-only segments, so fifteen indistinguishable squares. A fixed-width row is the
+  wrong container for a count somebody else decides. What replaced it — one labelled
+  control per plugin — moves the limit rather than removing it, which is exactly why
+  the rule is about *stating* the behaviour rather than about a particular form.
 - **Every level you can link to is in the address.** Levels 3 to 5 are in the hash
   and level 1 has its route; level 2 has no address because it has no surface yet.
   A level without an address cannot be handed to somebody else, which is what

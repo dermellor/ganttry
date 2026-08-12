@@ -67,8 +67,10 @@ import {
 import { parsePluginViewMode, pluginViewMode, readViewMode } from './pluginHost/viewMode';
 import { viewAccessories } from './pluginHost/manifest';
 import {
-  pluginViewButton,
   pluginViewButtons,
+  pluginViewGroup,
+  pluginViewGroups,
+  setActivePluginGroup,
   pluginViewSection,
   renderPluginViewInto,
   showOnlyPluginSection,
@@ -163,6 +165,8 @@ function setModeButtons(mode: ViewMode) {
   for (const [btnMode, btn] of pluginViewButtons()) {
     btn.setAttribute('aria-pressed', String(mode === btnMode));
   }
+  // …and the control the active segment sits in, so the row says whose view it is.
+  setActivePluginGroup(mode);
 }
 
 // Show a plugin's view button only while its plugin applies to the active
@@ -174,16 +178,24 @@ export function updatePluginViews(): void {
   // only loads when a view is entered), so a generic timeline never downloads a
   // plugin's chunk.
   const available = new Set<string>();
+  const applying = new Set<string>();
   for (const plugin of activePlugins(state.activeSourceFile)) {
     const pluginId = plugin.manifest.id;
-    for (const view of pluginViews(plugin)) {
+    const views = pluginViews(plugin);
+    if (!views.length) continue;
+    applying.add(pluginId);
+    for (const view of views) {
       available.add(pluginViewMode(pluginId, view.id));
-      pluginViewButton(els.modeToggle, pluginId, view, (m) => applyViewMode(m as ViewMode)).hidden = false;
       pluginViewSection(els.contentArea, pluginId, view);
     }
+    // One control for the whole plugin, so its views arrive and go together — which
+    // is how enablement works: a plugin applies to a timeline or it does not.
+    pluginViewGroup(els.pluginViewBar, pluginId, plugin.manifest.name, views, (m) =>
+      applyViewMode(m as ViewMode),
+    ).hidden = false;
   }
-  for (const [mode, btn] of pluginViewButtons()) {
-    if (!available.has(mode)) btn.hidden = true;
+  for (const [pluginId, group] of pluginViewGroups()) {
+    if (!applying.has(pluginId)) group.hidden = true;
   }
   const current = parsePluginViewMode(state.viewMode);
   if (!current) return;
