@@ -34,6 +34,32 @@ export type TimelineGroupDecl = {
   content: string;
   nestedGroups?: string[];
   showNested?: boolean;
+  /** The group's own colour; see `TimelineFile.groups[].color` in src/types.ts. */
+  color?: string;
+};
+
+/**
+ * What a timeline-level PATCH may carry.
+ *
+ * A named type rather than the same object literal at each implementation, because
+ * it was written out four times — the interface, both drivers and the file repo —
+ * and #137 is what that cost: three settings were added to `TimelineFile`, one copy
+ * of this shape was never widened, and the fields became readable-but-unsettable
+ * without anything failing.
+ *
+ * `null` means „clear it". The database columns take a null; a file source deletes
+ * the key instead, because `TimelineFile` types these as optional and a written
+ * null makes the file invalid against its own schema.
+ */
+export type TimelineMetaPatch = {
+  name?: string | null;
+  description?: string | null;
+  groupBy?: string | null;
+  customFields?: CustomFieldDef[] | null;
+  /** `alpha` | `declared`; see src/groupOrder.ts. */
+  groupOrder?: TimelineFile['groupOrder'] | null;
+  /** Which group supplies band roots, which is shown as references. */
+  graph?: TimelineFile['graph'] | null;
 };
 
 export type TimelineMeta = { id: string; name?: string; description?: string; groupBy?: string };
@@ -184,15 +210,7 @@ export interface TimelineRepo {
    * `null` clears the value — which a database stores as NULL and a file source
    * expresses by dropping the key, since `TimelineFile` types these as optional.
    */
-  updateMeta(
-    id: string,
-    meta: {
-      name?: string | null;
-      description?: string | null;
-      groupBy?: string | null;
-      customFields?: CustomFieldDef[] | null;
-    },
-  ): Promise<void>;
+  updateMeta(id: string, meta: TimelineMetaPatch): Promise<void>;
 
   // ---- the instance's install registry ------------------------------------
   // Instance-level, not timeline-level, which is why none of these takes a

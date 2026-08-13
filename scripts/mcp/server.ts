@@ -257,6 +257,14 @@ const groupFields = {
   content: z.string().describe('Display name.'),
   nestedGroups: z.array(z.string()).optional().describe('Child group ids.'),
   showNested: z.boolean().optional(),
+  color: z
+    .string()
+    .optional()
+    .describe(
+      'Any CSS colour, honoured by the graph presentation. Unset falls back to the positional ' +
+        'lane palette. Set it when the group means a KIND of thing rather than a track — a hint ' +
+        'green, an antagonist red — because which kind is which colour is the author\'s call.',
+    ),
 } as const;
 
 const ok = (data: unknown) => ({
@@ -455,6 +463,48 @@ server.registerTool(
         ...(isPublic === undefined ? {} : { public: isPublic }),
       }),
     );
+  },
+);
+
+server.registerTool(
+  'set_layout',
+  {
+    title: 'Set layout settings',
+    description:
+      'How a timeline is laid out, beyond its items. `groupOrder` decides whether the groups[] ' +
+      'order is honoured ("declared") or the ids are sorted alphabetically ("alpha", the default ' +
+      'and what every timeline shipped with) — set "declared" when group ids carry meaning and ' +
+      'cannot be renumbered. `graph` configures the relation graph: `bandRootGroup` names the ' +
+      'group whose items become band headings (each claims what it reaches and leaves the ' +
+      'columns), `referenceGroup` names the group listed ON the nodes it references instead of ' +
+      'drawn as edges to them. Both name a group id from describe_view_dimensions. Only the keys ' +
+      'you send change; send null to clear one.',
+    inputSchema: {
+      id: z.string().describe('Timeline id.'),
+      groupOrder: z
+        .enum(['alpha', 'declared'])
+        .nullable()
+        .optional()
+        .describe('Group ordering rule. Null resets to the alphabetical default.'),
+      graph: z
+        .object({
+          bandRootGroup: z.string().optional().describe('Group supplying band roots.'),
+          referenceGroup: z.string().optional().describe('Group shown as references on a node.'),
+        })
+        .nullable()
+        .optional()
+        .describe('Replaced as a unit, not merged. Null clears it.'),
+    },
+  },
+  async ({ id, ...patch }) => {
+    // Only the keys actually sent are forwarded: `updateMeta` treats a present key
+    // as „change this", so passing undefined through would clear what the caller
+    // never mentioned.
+    const meta: Record<string, unknown> = {};
+    if ('groupOrder' in patch) meta.groupOrder = patch.groupOrder ?? null;
+    if ('graph' in patch) meta.graph = patch.graph ?? null;
+    await patchMeta(id, meta);
+    return ok({ ok: true, id, ...meta });
   },
 );
 
