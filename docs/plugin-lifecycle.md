@@ -110,12 +110,30 @@ avoids:
   satisfy is a statement about the plugin; a plugin whose *artifact* failed to load
   this session keeps its switch, because that is infrastructure and the row it writes
   is still the right row.
+- **The config form is derived from the schema, not typed as JSON.** One control per
+  declared key ([`src/pluginConfigForm.ts`](../src/pluginConfigForm.ts), DOM-free and
+  unit-tested): a text or number field, a checkbox, a select for an `enum`, a row editor
+  for an array of strings, a key/value editor for a string-valued map, and JSON only for
+  what those cannot express (a nested object, a list of objects, a key with no declared
+  type). The first version offered one JSON textarea per plugin, which was honest about
+  arbitrary schemas and wrong as an interface: switching a plugin on required knowing
+  JSON, and a missing brace failed the *save* rather than the keystroke. Deriving the
+  form also retired the type legend beside it — the control says what may go in, so
+  „array" and „object" no longer have to be read as words.
 - **Neither the config nor the verdict is re-decided here.** The API validates a config
   against the manifest's own `configSchema` and its refusal is shown at the card;
   a second copy of that check in the browser would be the one that keeps accepting what
-  the server has started refusing. Its message is the server's, because a generated
+  the server has started refusing. The derived controls make most refusals unreachable
+  rather than duplicating the check: a number field cannot produce a string. Where a
+  refusal does arrive, its message is the server's, because a generated
   „config.versions: expected array, got string" cannot be pre-worded and dropping the
   key name would make it useless.
+- **A key the manifest does not declare is kept, and named.** The form writes back the
+  whole bag rather than only what it drew, because a form that keeps only its own fields
+  is how a stored value disappears when a manifest moves on — the same destructive
+  normalisation a `select` once did to a metadata value whose option had been removed.
+  An empty control, by contrast, writes no key at all: absent is what „not set" means
+  everywhere else here.
 - **A write re-reads the timeline.** The enabled set decides which views the bar
   offers, which fields the item form shows and which data loads; patching only the list
   left a switched-off plugin's view control standing in the bar, offering a

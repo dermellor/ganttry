@@ -16,14 +16,6 @@ import type { PluginManifest } from './pluginHost/manifest';
 import type { LoadOutcome } from './pluginHost/loader';
 import type { PluginRef, PluginStatus } from './types';
 
-/** One declared config key, as the section lists it. */
-export type PluginConfigKey = {
-  key: string;
-  /** `type` as the schema declares it, or „?" when it says nothing. */
-  type: string;
-  required: boolean;
-};
-
 /** One row of the section: what the plugin is, and what may be done with it here. */
 export type PluginSettingsRow = PluginLine & {
   /**
@@ -40,9 +32,11 @@ export type PluginSettingsRow = PluginLine & {
   capabilities: string[];
   /** The views it would contribute here, by label. */
   views: string[];
-  /** Declared config keys, or null when the manifest declares no schema at all. */
-  configKeys: PluginConfigKey[] | null;
-  /** The schema to hold a config edit to, or null. Same object the API validates against. */
+  /**
+   * The schema its config is edited and validated against, or null when the manifest
+   * declares none. The form is derived from it (`configForm` in pluginConfigForm.ts),
+   * and it is the same object the API validates the saved bag against.
+   */
   configSchema: Record<string, unknown> | null;
   /** Does it declare `publicRead` collections, so publishing this timeline's rows is a choice? */
   publishable: boolean;
@@ -65,34 +59,6 @@ function describingManifest(plugin: PluginStatus): PluginManifest | null {
   return stored && Object.keys(stored).length ? stored : null;
 }
 
-/**
- * The declared config keys, or null when there is no schema.
- *
- * Only the top level, and only names and types: this is a legend beside the editor,
- * not a form generator. The one real schema in the repo declares an ordered array of
- * ids and a map of labels — data the plugin's own view maintains — so generating
- * inputs for it would offer somebody a way to break the references the plugin keeps.
- */
-export function configKeysOf(schema: unknown): PluginConfigKey[] | null {
-  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return null;
-  const rec = schema as Record<string, unknown>;
-  const props = rec.properties;
-  if (!props || typeof props !== 'object' || Array.isArray(props)) return [];
-  const required = new Set(
-    Array.isArray(rec.required) ? rec.required.filter((r): r is string => typeof r === 'string') : [],
-  );
-  return Object.entries(props as Record<string, unknown>).map(([key, value]) => {
-    const type = value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>).type
-      : undefined;
-    return {
-      key,
-      type: Array.isArray(type) ? type.join(' | ') : typeof type === 'string' ? type : '?',
-      required: required.has(key),
-    };
-  });
-}
-
 /** The rows the section renders, in the order it renders them. */
 export function pluginSettingsRows(
   installed: PluginStatus[],
@@ -110,39 +76,10 @@ export function pluginSettingsRows(
       offerable: plugin?.loadable === true,
       capabilities: manifest?.capabilities ? [...manifest.capabilities] : [],
       views: (manifest?.views ?? []).map((v) => v.label || v.id),
-      configKeys: schema ? configKeysOf(schema) : null,
       configSchema: schema,
       publishable: (manifest?.publicRead?.collections?.length ?? 0) > 0,
       config: ref?.config ?? {},
       public: ref?.public === true,
     };
   });
-}
-
-/**
- * Read a config bag out of what somebody typed. Empty text is the empty bag rather
- * than an error: „no config" is a legitimate state, and it is what enabling a plugin
- * without one stores.
- *
- * Only the parse lives here. Whether the bag satisfies the schema is decided by the
- * validator the API uses, so the two cannot disagree about the same config.
- */
-export function parseConfigDraft(raw: string): { config: Record<string, unknown> } | { error: string } {
-  const text = raw.trim();
-  if (!text) return { config: {} };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (e) {
-    return { error: `Kein gültiges JSON: ${e instanceof Error ? e.message : String(e)}` };
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { error: 'Die Konfiguration muss ein JSON-Objekt sein.' };
-  }
-  return { config: parsed as Record<string, unknown> };
-}
-
-/** The stored config as the editor shows it: pretty, and empty when there is nothing. */
-export function configDraftText(config: Record<string, unknown>): string {
-  return Object.keys(config).length ? JSON.stringify(config, null, 2) : '';
 }

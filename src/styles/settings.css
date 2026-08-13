@@ -267,3 +267,47 @@ body.settings-open .ds-Toolbar[data-tone='footer'] {
   font-size: var(--text-xs);
   text-align: right;
 }
+
+/* ---- the config form ---------------------------------------------------------- */
+
+/* One control per key the manifest declares, rather than one JSON textarea per plugin:
+   an operator switching a plugin on should not have to know JSON, and a missing brace
+   should not fail the save instead of the keystroke. Which control a key gets is decided
+   in src/pluginConfigForm.ts. */
+.settings .plugin-config {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--border);
+}
+
+.settings .plugin-config-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+}
+
+/* A list of values and a key/value map are both „rows plus a way to add one", so they
+   share the layout: the inputs take the width, the remove button keeps its own. */
+.settings .plugin-config-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.settings .plugin-config-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.settings .plugin-config-row > .ds-Input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings .plugin-config-row > .ds-Button {
+  flex: 0 0 auto;
+}

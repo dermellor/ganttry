@@ -1,12 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
-import {
-  configDraftText,
-  configKeysOf,
-  parseConfigDraft,
-  pluginSettingsRows,
-} from './pluginSettings';
+import { pluginSettingsRows } from './pluginSettings';
 import type { PluginManifest } from './pluginHost/manifest';
 import type { PluginStatus } from './types';
 
@@ -38,8 +33,6 @@ function status(over: Partial<PluginStatus> = {}): PluginStatus {
     ...over,
   } as PluginStatus;
 }
-
-
 
 test('an installed plugin is offered with what the manifest declares', () => {
   const [row] = pluginSettingsRows([status()], [], []);
@@ -113,45 +106,6 @@ test('a plugin nothing describes is still listed, with nothing claimed about it'
   assert.equal(row.name, 'com.example.sprints');
   assert.deepEqual(row.capabilities, []);
   assert.deepEqual(row.views, []);
-  assert.equal(row.configKeys, null);
   assert.equal(row.publishable, false);
 });
 
-test('the declared config keys are listed with their types', () => {
-  assert.deepEqual(configKeysOf(MANIFEST.configSchema), [
-    { key: 'length', type: 'number', required: true },
-    { key: 'name', type: 'string', required: false },
-    { key: 'tags', type: 'array | null', required: false },
-  ]);
-});
-
-test('a schema that declares no properties is an empty legend, not a missing one', () => {
-  // „There is a schema" and „the schema names no keys" are different answers: the
-  // first still validates the bag, so the editor has to be offered.
-  assert.deepEqual(configKeysOf({ type: 'object' }), []);
-  assert.equal(configKeysOf(null), null);
-  assert.equal(configKeysOf('nonsense'), null);
-});
-
-test('an untyped property is listed rather than dropped', () => {
-  assert.deepEqual(configKeysOf({ properties: { x: {} } }), [
-    { key: 'x', type: '?', required: false },
-  ]);
-});
-
-test('empty text is the empty bag, which is what „no config" means', () => {
-  assert.deepEqual(parseConfigDraft(''), { config: {} });
-  assert.deepEqual(parseConfigDraft('   \n '), { config: {} });
-});
-
-test('a config draft must be an object, and says so in the interface language', () => {
-  assert.deepEqual(parseConfigDraft('{"a":1}'), { config: { a: 1 } });
-  assert.match((parseConfigDraft('[1,2]') as { error: string }).error, /JSON-Objekt/);
-  assert.match((parseConfigDraft('"x"') as { error: string }).error, /JSON-Objekt/);
-  assert.match((parseConfigDraft('{oops') as { error: string }).error, /Kein gültiges JSON/);
-});
-
-test('the editor starts empty for a plugin with no config', () => {
-  assert.equal(configDraftText({}), '');
-  assert.equal(configDraftText({ a: 1 }), '{\n  "a": 1\n}');
-});
