@@ -10,6 +10,15 @@
   background: var(--surface);
 }
 
+/* A `display` declaration beats the `hidden` attribute, so every component that sets
+   one has to say this — the same guard `.ds-Button` and `.ds-Badge` carry. Without it
+   `group.hidden = true` sets the attribute and changes nothing: switching a plugin off
+   for a timeline left its view control standing in the bar, offering a presentation
+   the timeline no longer had. */
+.ds-SegmentedControl[hidden] {
+  display: none;
+}
+
 /* The caption inside the control, before the first segment. Quiet micro-type, like
    a toolbar control's own label: it says whose segments these are and must not
    compete with them. The left padding is the control's, so the border still reads

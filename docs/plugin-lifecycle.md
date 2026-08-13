@@ -89,6 +89,44 @@ data on the timeline — the same argument that put the generic store on the rep
 seam rather than in Postgres. On a local source the refs go into the file, or
 into a directory's `timeline.json`.
 
+### Switching one on, from the interface
+
+`#timeline-settings=plugins` ([`src/pluginsSection.ts`](../src/pluginsSection.ts)),
+one card per installed plugin: its name and version, the capabilities and views its
+**manifest** declares, whether it is on here, and its config where the manifest
+declares a schema. Enabling and disabling stay the single-plugin route
+(`PUT` / `DELETE /api/source/<id>/plugin/<id>`) rather than a bulk write, which is
+what keeps a concurrent edit from being lost.
+
+Until this existed the feature was reachable only by whoever had database access:
+enabling a plugin meant writing the row by hand, although it had been pure data and
+had an API from the start. Four rules the section follows, each with the failure it
+avoids:
+
+- **The manifest is what is shown**, not the granted capability list — that is what an
+  installer saw, and it is the honest answer to „what would this do to my timeline".
+- **A plugin the host will not run gets no switch**, and its reason in the interface's
+  own language with the specifics on hover. A contract range this host does not
+  satisfy is a statement about the plugin; a plugin whose *artifact* failed to load
+  this session keeps its switch, because that is infrastructure and the row it writes
+  is still the right row.
+- **Neither the config nor the verdict is re-decided here.** The API validates a config
+  against the manifest's own `configSchema` and its refusal is shown at the card;
+  a second copy of that check in the browser would be the one that keeps accepting what
+  the server has started refusing. Its message is the server's, because a generated
+  „config.versions: expected array, got string" cannot be pre-worded and dropping the
+  key name would make it useless.
+- **A write re-reads the timeline.** The enabled set decides which views the bar
+  offers, which fields the item form shows and which data loads; patching only the list
+  left a switched-off plugin's view control standing in the bar, offering a
+  presentation the timeline no longer had.
+
+Disabling keeps every row the plugin owns, and the section says so. Its **config**
+goes with the enablement row — that is where it lives — so the editor keeps the last
+value while the area stays open, and switching back on restores it rather than
+enabling the plugin with an empty bag. For a plugin whose config names its versions,
+that difference is a view that comes back able to render the data still sitting there.
+
 ## Decisions already settled for the catalogue
 
 There is no catalogue yet — it is

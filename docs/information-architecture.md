@@ -105,12 +105,12 @@ for a different part of the screen to set the same thing.
 | „Einstellungen" | the header menu | 1 | done: the `#settings` route, reached from the menu at the trailing edge rather than from a button in the row. Offered on a `manage` role, or to anybody where no access control runs — gating it on a role nobody can hold hid the one page that says so |
 | „Abmelden" | the header menu | 1 | done: `/auth/logout` had existed in the auth gate from the start with nothing pointing at it. Offered only where a session exists, which only the gate can report |
 | Access switch, domains, instance profile | env, shown in `#settings=instance` | 1 | done: origin and reason on every row |
-| „Plugins" panel | footer | 1 + 3 | the catalog belongs in the instance area; the per-timeline half belongs to level 3. The footer entry stays reachable from a timeline, because that is where „why is this view missing" gets asked |
+| „Plugins" panel | footer | 1 + 3 | the catalog belongs in the instance area; the per-timeline half is done as `#timeline-settings=plugins`. The footer entry stays reachable from a timeline, because that is where „why is this view missing" gets asked, and it answers for the instance where the section answers for the document |
 | Timeline switcher | header, left | 2 | done: search, grouped by origin, the open one marked; the trigger doubles as the statement of which timeline is open |
 | Creating a timeline | nowhere | 2 | needs a create route before it can have an interface |
 | Name, read-only state | header, left | 3 | done: the name with no caption in front of it, and a „Nur lesend" badge only where something is missing. The origin is the switcher's group heading, so a badge repeating it was the same word twice |
 | Custom field definitions | the timeline settings route | 3 | done: `#timeline-settings=fields` |
-| Enabled plugins and their config | a `timeline_plugins` row | 3 | timeline settings; stays an INSERT |
+| Enabled plugins and their config | the timeline settings route | 3 | done: `#timeline-settings=plugins`, one card per installed plugin; still an INSERT or DELETE on `timeline_plugins` (`PUT`/`DELETE /api/source/<id>/plugin/<id>`) |
 | Name, description, default grouping | the timeline settings route | 3 | done: `#timeline-settings=general`, written through `PATCH /api/source/<id>` |
 | Phases as a set | only the ribbon | 3 | the set is structure of the timeline; one phase is level 5 |
 | Presence avatars | header, trailing edge | 3 | they belong to the open timeline and sit with the instance controls anyway: exactly one timeline is ever open, so no position in this bar can name the wrong one, and the trailing edge is where every other tool puts the people on a document |

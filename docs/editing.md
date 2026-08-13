@@ -1451,8 +1451,12 @@ What is true of the timeline as a whole — its name, its description, the dimen
 opens with — is edited in its own area, `#timeline-settings=<section>`, reached from
 the gear beside the name ([`src/timelineSettings.ts`](../src/timelineSettings.ts)).
 It shares its frame and its section mechanics with the instance area (see „The second
-area" (docs/settings.md)); field definitions and per-timeline plugins become further
-sections of it.
+area" (docs/settings.md)). Three sections so far: `general` for those three values,
+`fields` for the timeline's own field definitions, and `plugins` for which installed
+plugins this timeline uses — that last one documented where the rest of a plugin's
+lifecycle is („Switching one on, from the interface",
+[`docs/plugin-lifecycle.md`](plugin-lifecycle.md)), because it is one act in that story
+rather than a second account of it.
 
 Three rules the form follows, each of them a trap avoided:
 
