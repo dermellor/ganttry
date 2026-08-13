@@ -114,7 +114,7 @@ for a different part of the screen to set the same thing.
 | Name, description, default grouping | the timeline settings route | 3 | done: `#timeline-settings=general`, written through `PATCH /api/source/<id>` |
 | Phases as a set | only the ribbon | 3 | the set is structure of the timeline; one phase is level 5 |
 | Presence avatars | header, trailing edge | 3 | they belong to the open timeline and sit with the instance controls anyway: exactly one timeline is ever open, so no position in this bar can name the wrong one, and the trailing edge is where every other tool puts the people on a document |
-| Darstellung switch (Timeline / Liste) | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
+| Darstellung switch (Timeline / Liste / Graph) | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
 | Plugin views | the bar, one control per plugin | 4 | done: each plugin's views sit in its own control, its name inside on the left; the control marks itself while one of its views is active |
 | „Gruppieren" | the bar | 4, perspective | done |
 | „Filter" | the bar | 4, extent | done: beside the switch, holding every narrowing |
@@ -158,6 +158,10 @@ control goes, so the argument is had once.
   whole bar off for a plugin view, each presentation states which perspectives and
   extent dimensions apply to it. Otherwise every further plugin view adds another
   special case to the host, and the host is the part that must not know plugin ids.
+  This holds for the **built-in** presentations too, and the graph is what proved
+  it: „built-in" had been shorthand for „a rendering of the item list, so all four
+  apply", and the first built-in presentation that is not one would otherwise have
+  inherited an export action it cannot perform.
 - **A control states its behaviour at N, and where N is owned by installed plugins,
   N decides the form.** This chapter assigned every control a level and never asked
   how many of each there would be, which is how the presentation switch ended up with

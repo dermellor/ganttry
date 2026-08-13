@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assignLanes,
+  buildFromJson,
   assignLaneSubgroups,
   backgroundLabelId,
   laneCountOf,
@@ -13,6 +14,10 @@ import {
   type TimelineItem,
 } from './buildItems';
 
+import type { View } from './types';
+
+const VIEW: View = { id: 'v', name: 'Test', source: { kind: 'local', id: 'v' } };
+
 // Lane packing lays out items into vertical lanes (`subgroup`) so nothing
 // overlaps under vis-timeline's `stack: false`. The subtle case: a point item
 // (milestone) has zero time span, but its label renders to the RIGHT of the dot
@@ -21,7 +26,7 @@ import {
 // measured label width (px) into a time width via the current px/day, so the
 // layout follows the zoom: wide-apart when zoomed out, tight when zoomed in.
 
-const GROUPS: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+const GROUPS: TimelineGroup[] = [{ id: 'g', content: 'g', label: 'g' }];
 
 function point(id: string, start: string): TimelineItem {
   return { id, group: 'g', start, content: id, label: id, title: '', type: 'point' };
@@ -215,7 +220,7 @@ test('no hierarchy at all leaves the list untouched', () => {
 // label height as a floor, so the lane count travels to CSS as `--lanes` on the
 // group and the label reserves `--lanes × lane pitch`. See LANE_COUNT_PROPERTY.
 test('a track publishes the number of lanes it needs', () => {
-  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g', label: 'g' }];
   // Three bars all overlapping Feb 3 → three lanes.
   const items = [
     range('a', '2026-02-01', '2026-02-10'),
@@ -227,7 +232,7 @@ test('a track publishes the number of lanes it needs', () => {
 });
 
 test('stored background labels reserve rows above ordinary item lanes', () => {
-  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g', label: 'g' }];
   const source: TimelineItem[] = [
     { ...range('absence-a', '2026-02-01', '2026-02-10'), type: 'background' },
     { ...range('absence-b', '2026-02-02', '2026-02-05'), type: 'background' },
@@ -270,8 +275,8 @@ test('stored background labels reserve rows above ordinary item lanes', () => {
 
 test('a track with no items reserves no room', () => {
   const groups: TimelineGroup[] = [
-    { id: 'g', content: 'g' },
-    { id: 'empty', content: 'empty' },
+    { id: 'g', content: 'g', label: 'g' },
+    { id: 'empty', content: 'empty', label: 'empty' },
   ];
   assignLaneSubgroups([range('a', '2026-02-01', '2026-02-05')], groups, new Map(), new Map());
   assert.equal(groups[0].style, laneCountStyle(1));
@@ -279,7 +284,7 @@ test('a track with no items reserves no room', () => {
 });
 
 test('a stale reservation is dropped when the track loses its last item', () => {
-  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g', label: 'g' }];
   assignLaneSubgroups([range('a', '2026-02-01', '2026-02-05')], groups, new Map(), new Map());
   assert.equal(groups[0].style, laneCountStyle(1));
   // The same call with the item filtered away (milestones-only, a value filter).
@@ -291,7 +296,7 @@ test('a stale reservation is dropped when the track loses its last item', () => 
 // track. Every item that could stay where it was has to stay there, or the whole
 // track reshuffles vertically over a change that concerned one label.
 test('a re-pack leaves an item in its lane when the lane is still free', () => {
-  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g', label: 'g' }];
   const items = [
     range('a', '2026-02-01', '2026-02-10'),
     range('b', '2026-02-02', '2026-02-04'),
@@ -317,7 +322,7 @@ test('a re-pack leaves an item in its lane when the lane is still free', () => {
 });
 
 test('remembering a lane never costs the track an extra lane', () => {
-  const groups: TimelineGroup[] = [{ id: 'g', content: 'g' }];
+  const groups: TimelineGroup[] = [{ id: 'g', content: 'g', label: 'g' }];
   const items = [
     range('a', '2026-02-01', '2026-02-20'),
     range('b', '2026-02-02', '2026-02-04'),
@@ -341,4 +346,38 @@ test('a lane count survives the round trip through the group style', () => {
   // A group vis never laid out carries no style; one lane is the honest floor.
   assert.equal(laneCountOf(undefined), 1);
   assert.equal(laneCountOf('color: red;'), 1);
+});
+
+// A group name with punctuation came out as `Hero&#39;s Journey` in the list's
+// section rows and in the graph's column heads, because `content` is escaped
+// markup for vis-timeline's group label and both consumers build DOM. The bug
+// stayed invisible until a group name contained an apostrophe.
+test('a group carries its name twice: escaped markup and plain text', () => {
+  const built = buildFromJson(VIEW, {
+    groups: [{ id: 'hj', content: "Hero's Journey" }],
+    items: [{ id: 'a', content: 'Erstes', start: '2026-01-01', group: 'hj' }],
+  });
+  const group = built.groups.find((g) => g.id === 'hj')!;
+  assert.equal(group.content, 'Hero&#39;s Journey');
+  assert.equal(group.label, "Hero's Journey");
+});
+
+test('groupOrder: declared beats the alphabet, and alpha stays the default', () => {
+  const file = {
+    groups: [{ id: '_Hints', content: 'H' }, { id: "_Hero's", content: 'X' }],
+    items: [
+      { id: 'a', content: 'A', start: '2026-01-01', group: '_Hints' },
+      { id: 'b', content: 'B', start: '2026-01-02', group: "_Hero's" },
+    ],
+  };
+  // „_Hero's" sorts before „_Hints" alphabetically, which is why the declaration
+  // has to be able to win.
+  assert.deepEqual(
+    buildFromJson(VIEW, file).groups.map((g) => g.id),
+    ["_Hero's", '_Hints'],
+  );
+  assert.deepEqual(
+    buildFromJson(VIEW, { ...file, groupOrder: 'declared' as const }).groups.map((g) => g.id),
+    ['_Hints', "_Hero's"],
+  );
 });

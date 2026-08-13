@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { envValue } from './db/env.ts';
 import { scanDirectory, timelineDirectories } from './local/scan.ts';
+import { localRoots } from './local/roots.ts';
 import { buildCsp, parseOrigins } from '../src/pluginHost/csp.ts';
 import { stripFileForPublication } from '../src/pluginHost/publicRead.ts';
 import { stripSavedViewsForPublication } from '../src/savedViews.ts';
@@ -19,9 +20,12 @@ const CONFIG_PATH = join(ROOT, 'timelines.config.json');
 const DATA_DIR = (envValue('TIMELINES_DATA_DIR') || 'data').replace(/^\/+|\/+$/g, '');
 const OUT_DIR = join(ROOT, 'public', DATA_DIR);
 // Via the shared cascade, so which data an instance builds is part of its
-// profile rather than something the shell has to export.
+// profile rather than something the shell has to export. The two paths come from
+// `localRoots()` — the adapter derives them from the same function, and a build
+// that registers a source the adapter cannot resolve is a 404 with no explanation.
 const SOURCES_SUBDIR = envValue('TIMELINES_SOURCES_SUBDIR').replace(/^\/+|\/+$/g, '');
-const SOURCES_DIR_IN = SOURCES_SUBDIR ? join(ROOT, 'data', SOURCES_SUBDIR) : join(ROOT, 'data');
+const LOCAL_ROOTS = localRoots();
+const SOURCES_DIR_IN = LOCAL_ROOTS.scope;
 const SOURCES_DIR_OUT = join(OUT_DIR, 'sources');
 
 /**
@@ -356,7 +360,7 @@ async function collectStandaloneSources(config: Config, manifestFor: (pluginId: 
   // across environments and matches the DB timeline id (e.g. "<subdir>/<name>").
   // Otherwise TIMELINES_SOURCES_SUBDIR would strip the prefix on the deploy and
   // the client would request /api/source/<name> which the DB doesn't have.
-  const DATA_ROOT = join(ROOT, 'data');
+  const DATA_ROOT = LOCAL_ROOTS.root;
 
   // Directory sources: a folder holding a container file, with one Markdown
   // file per item. Materialized into the build output the same way a JSON

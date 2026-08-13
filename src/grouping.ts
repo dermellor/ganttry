@@ -134,9 +134,12 @@ export function regroupForTimeline(
   const real = items.filter((it) => it.type !== 'background');
   const { sections } = computeSections(real, dim, options, sectionContext(groups));
 
+  // A section's label is already plain text, so it is both halves here: escaped
+  // for vis-timeline's group label, raw for the consumers that build DOM.
   const outGroups: TimelineGroup[] = sections.map((s) => ({
     id: GROUP_PREFIX + s.id,
     content: escapeHtml(s.label),
+    label: s.label,
   }));
 
   const outItems: TimelineItem[] = [];

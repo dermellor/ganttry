@@ -19,7 +19,7 @@
 // and width, so the x from vis's own conversion carries over unchanged.
 
 import type { Timeline } from 'vis-timeline/standalone';
-import { decodeEntities, type TimelineItem } from './buildItems';
+import { decodeEntities, laneClassOf, type TimelineItem } from './buildItems';
 import { realIdOf } from './cloneId';
 import { centerWidth, timeToX } from './visGeometry';
 
@@ -28,10 +28,6 @@ import { centerWidth, timeToX } from './visGeometry';
 // the phase ribbon listens to, for the same reason.
 const RAIL_EVENTS = ['changed', 'rangechange', 'rangechanged'] as const;
 
-// The lane colour classes assignLanes stamps onto an item (lane-0 … lane-5).
-// `className` also carries status marks, so the lane has to be picked out rather
-// than used whole.
-const LANE_CLASS = /(?:^|\s)(lane-\d+)(?:\s|$)/;
 
 // A mark is a 10px (border-box) square turned 45°, so on screen it is as wide as
 // that square's diagonal.
@@ -79,7 +75,7 @@ export function railMarks(items: TimelineItem[]): RailMark[] {
       // DOM property and would show the entities verbatim ("R&amp;D").
       label: decodeEntities(it.content ?? ''),
       start: it.start,
-      laneClass: LANE_CLASS.exec(it.className ?? '')?.[1] ?? null,
+      laneClass: laneClassOf(it.className) ?? null,
     });
   }
   return out.sort((a, b) => a.start.localeCompare(b.start));

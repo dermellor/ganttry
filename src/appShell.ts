@@ -63,6 +63,7 @@ export type AppShellElements = {
   timeline: HTMLElement;
   list: HTMLElement;
   listBody: HTMLElement;
+  graph: HTMLElement;
   contentArea: HTMLElement;
   modeToggle: HTMLElement;
   pluginViewBar: HTMLElement;
@@ -81,6 +82,7 @@ export type AppShellElements = {
   switcherList: HTMLElement;
   modeTimelineBtn: HTMLButtonElement;
   modeListBtn: HTMLButtonElement;
+  modeGraphBtn: HTMLButtonElement;
   presence: HTMLElement;
   sourceOrigin: HTMLElement;
   appMenuBtn: HTMLButtonElement;
@@ -127,6 +129,17 @@ const LIST_ICON = `
   <circle cx="4.5" cy="6" r="1.1" fill="currentColor" stroke="none" />
   <circle cx="4.5" cy="12" r="1.1" fill="currentColor" stroke="none" />
   <circle cx="4.5" cy="18" r="1.1" fill="currentColor" stroke="none" />
+</svg>`;
+
+// Two boxes and the line between them: the graph draws relations, so the glyph
+// has to say „connected", not „laid out in a grid".
+const GRAPH_ICON = `
+<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+  <rect x="2.5" y="3.5" width="7" height="5" rx="1.5" />
+  <rect x="14.5" y="8.5" width="7" height="5" rx="1.5" />
+  <rect x="2.5" y="15.5" width="7" height="5" rx="1.5" />
+  <path d="M9.5 6h2.5a2 2 0 0 1 2 2v3" />
+  <path d="M14.5 11.5h-2.5a2 2 0 0 0-2 2v4.5" />
 </svg>`;
 
 type DetailPanelParts = {
@@ -281,15 +294,19 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     segments: [
       { value: 'timeline', label: 'Timeline', icon: fromHtml(TIMELINE_ICON), selected: true },
       { value: 'list', label: 'Liste', icon: fromHtml(LIST_ICON) },
+      { value: 'graph', label: 'Graph', icon: fromHtml(GRAPH_ICON) },
     ],
   });
   // Where each plugin's own control goes: beside the built-in switch, not inside it.
   // A plugin's views belong to that plugin, and the host builds one control per
   // plugin into this row (see src/pluginHost/views.ts).
   const pluginViewBar = el('div', { class: 'plugin-view-bar', id: 'plugin-views' });
-  const [modeTimelineBtn, modeListBtn] = Array.from(modeToggle.querySelectorAll('button'));
+  const [modeTimelineBtn, modeListBtn, modeGraphBtn] = Array.from(
+    modeToggle.querySelectorAll('button'),
+  );
   modeTimelineBtn.id = 'mode-timeline';
   modeListBtn.id = 'mode-list';
+  modeGraphBtn.id = 'mode-graph';
 
   // Filled by `showSourceOrigin` once a source has loaded, because until then
   // „Datenbank" or „Lokal" would be a claim about nothing. Hidden rather than
@@ -538,9 +555,18 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     children: listBody,
   });
 
+  // No ScrollArea inside: the graph pans and zooms its own canvas, and a
+  // scrollbar over a surface that already answers the drag gesture is two ways to
+  // move one picture.
+  const graph = ViewSection({
+    ariaLabel: 'Graph',
+    hidden: true,
+    attrs: { id: 'graph' },
+  });
+
   const contentArea = ContentArea({
     attrs: { id: 'content-area' },
-    children: [viewToolbar, timeline, list],
+    children: [viewToolbar, timeline, list, graph],
   });
 
   const panel = detailPanel(true);
@@ -596,6 +622,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       timeline,
       list,
       listBody,
+      graph,
       contentArea,
       modeToggle,
       pluginViewBar,
@@ -614,6 +641,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       switcherList,
       modeTimelineBtn,
       modeListBtn,
+      modeGraphBtn,
       presence,
       sourceOrigin,
       appMenuBtn,

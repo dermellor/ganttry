@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  BUILTIN_VIEW_MODES,
+  isBuiltinViewMode,
   isPluginViewMode,
   parsePluginViewMode,
   pluginViewMode,
@@ -46,4 +48,23 @@ test('unknown, empty and truncated values degrade to the timeline', () => {
   assert.equal(readViewMode('plugin:', legacy), 'timeline');
   assert.equal(readViewMode('plugin:com.example.sprints:', legacy), 'timeline');
   assert.equal(readViewMode('plugin::board', legacy), 'timeline');
+});
+
+test('the graph is a built-in mode, so #mode=graph addresses it', () => {
+  assert.equal(readViewMode('graph', legacy), 'graph');
+  assert.equal(isBuiltinViewMode('graph'), true);
+  assert.equal(parsePluginViewMode('graph'), null);
+  // The legacy lookup must not be consulted for a built-in name: a plugin that
+  // claimed „graph" as an old mode id would otherwise take the built-in view's
+  // address away from it.
+  assert.equal(
+    readViewMode('graph', () => 'plugin:acme:graph'),
+    'graph',
+  );
+});
+
+test('the built-in list is the one the readers share', () => {
+  assert.deepEqual([...BUILTIN_VIEW_MODES], ['timeline', 'list', 'graph']);
+  assert.equal(isBuiltinViewMode('plugin:acme:board'), false);
+  assert.equal(isBuiltinViewMode('nope'), false);
 });

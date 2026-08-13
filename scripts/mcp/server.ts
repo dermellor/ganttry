@@ -616,8 +616,8 @@ const savedViewFields = {
     .string()
     .optional()
     .describe(
-      'Presentation to open in: "timeline", "list", or "plugin:<pluginId>:<viewId>". Leave it out ' +
-        'and applying the view keeps whatever presentation is showing.',
+      'Presentation to open in: "timeline", "list", "graph", or "plugin:<pluginId>:<viewId>". ' +
+        'Leave it out and applying the view keeps whatever presentation is showing.',
     ),
   groupBy: z
     .string()

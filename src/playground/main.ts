@@ -41,6 +41,7 @@ import {
   FormActions,
   FormGrid,
   fromHtml,
+  GraphNode,
   Heading,
   Icon,
   IconButton,
@@ -768,6 +769,47 @@ const tableSection = section(
 /* ------------------------------------------------------------------------- */
 /* Toolbar and skeleton                                                      */
 /* ------------------------------------------------------------------------- */
+/* GraphNode                                                                 */
+/* ------------------------------------------------------------------------- */
+
+// Absolutely positioned by the graph, so the specimens need a container that
+// gives them a positioning context and the two size properties the box reads.
+const graphSection = section(
+  'graph',
+  'GraphNode',
+  'Der Kasten, als den die Beziehungsansicht einen Eintrag zeichnet. Die Größe kommt von außen, weil das Layout jede Position aus einer Kastenbreite rechnet.',
+  el('div', { class: 'pg-GraphStage' }, [
+    GraphNode({
+      label: 'Konzept & Wireframes',
+      meta: '01.03.2026 – 14.03.2026',
+      status: 'Doing',
+      icon: 'launch',
+      attrs: { style: 'left:0;top:0' },
+    }),
+    GraphNode({
+      label: 'Ausgewählt: der Eintrag, für den das Detailpanel offen ist',
+      meta: '—',
+      status: 'Open',
+      selected: true,
+      attrs: { style: 'left:230px;top:0' },
+    }),
+    GraphNode({
+      label: 'Abgeblendet, während ein Nachbar unter dem Zeiger liegt',
+      meta: '20.05.2026',
+      status: 'Done',
+      dimmed: true,
+      attrs: { style: 'left:460px;top:0' },
+    }),
+    GraphNode({
+      label: 'Eigene Gruppenfarbe, plus eine Bezugszeile',
+      reference: 'Szenen: Das Angebot – Setup',
+      color: '#198754',
+      attrs: { style: 'left:690px;top:0;--ds-graph-node-h:62px' },
+    }),
+  ]),
+);
+
+/* ------------------------------------------------------------------------- */
 
 const SKELETON_ROWS = [
   [{ x: 4, w: 30 }, { x: 42, w: 17 }],
@@ -914,6 +956,7 @@ const body = el('div', { class: 'pg-Body' }, [
   selectorSection,
   surfaceSection,
   tableSection,
+  graphSection,
   messageSection,
   frameSection,
   layoutSection,

@@ -40,6 +40,7 @@ export * from './Panel';
 export * from './Prose';
 export * from './DescriptionList';
 export * from './Table';
+export * from './Graph';
 export * from './Toolbar';
 export * from './Layout';
 export * from './Skeleton';

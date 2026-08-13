@@ -14,6 +14,7 @@
 
 import { satisfiesApiVersion, type ApiVersion } from './apiVersion.ts';
 import { unsupportedKeywords } from './dataSchema.ts';
+import type { BuiltinViewMode } from './viewMode.ts';
 
 /**
  * What a plugin is allowed to do. Coarse on purpose: this list is shown to the
@@ -77,15 +78,46 @@ export type ManifestView = {
 };
 
 /**
+ * What each built-in presentation gets.
+ *
+ * This table exists because „built-in" stopped being a single answer. Timeline and
+ * list are two renderings of the item list and take all four; the graph is not one
+ * of them, and handing it „+ Eintrag" and „Export HTML" because it happens to be
+ * built in would put two controls in its bar that cannot do anything — the exact
+ * failure the per-accessory declaration was introduced to stop, one level up from
+ * where it was fixed for plugin views.
+ */
+const BUILTIN_ACCESSORIES: Record<BuiltinViewMode, Required<ViewAccessories>> = {
+  timeline: { grouping: true, filter: true, create: true, export: true },
+  list: { grouping: true, filter: true, create: true, export: true },
+  graph: {
+    // The grouping dimension *is* the graph's columns, so the perspective is not
+    // merely allowed here, it is what the presentation is built on.
+    grouping: true,
+    filter: true,
+    // An item with no date is exactly what this presentation can show, and the
+    // other two cannot — so creating one from here is the point rather than a
+    // concession.
+    create: true,
+    // Nothing renders a graph to HTML yet. Declaring it would offer an action that
+    // exports the timeline instead, which is worse than not offering one.
+    export: false,
+  },
+};
+
+/**
  * What a view actually gets. One place, so „built-in" and „declared by a plugin"
  * are answered the same way: the host asks the presentation instead of branching
  * on whether it belongs to a plugin, which is what `toolbar` made it do.
  *
- * No argument means a built-in presentation (timeline, list). Those are two
- * renderings of the item list, so both accessories apply.
+ * A built-in presentation is named by its mode. No argument means the timeline —
+ * the presentation everything falls back to when a plugin view stops applying.
  */
-export function viewAccessories(view?: ManifestView | null): Required<ViewAccessories> {
-  if (!view) return { grouping: true, filter: true, create: true, export: true };
+export function viewAccessories(
+  view?: ManifestView | BuiltinViewMode | null,
+): Required<ViewAccessories> {
+  if (!view) return BUILTIN_ACCESSORIES.timeline;
+  if (typeof view === 'string') return BUILTIN_ACCESSORIES[view];
   const declared = view.accessories;
   if (declared) {
     return {

@@ -231,3 +231,127 @@ describe('dates keep the shape the note wrote them in', () => {
     assert.equal((await scanDirectory(dir)).items[0].start, undefined);
   });
 });
+
+describe('scanDirectory: what the container declares about reading', () => {
+  // A vault stamps `created` on every note. Reading it as the start puts every
+  // item on the day it was typed, which looks like data and is an artefact of the
+  // editor. An empty array has to survive as „no item dates here".
+  test('an empty dateFields list leaves every item start-less', async () => {
+    const dir = await fresh('no-dates', { scan: { dateFields: [] } });
+    await note(dir, 'a.md', 'created: 2026-07-25\ntitle: Erstes');
+    const file = await scanDirectory(dir);
+    assert.equal(file.items.length, 1);
+    assert.equal(file.items[0].start, undefined);
+    // The value is still on metadata: the item must not become a lossy copy.
+    assert.ok(file.items[0].metadata?.created);
+  });
+
+  test('without the declaration `created` is still a date, as before', async () => {
+    const dir = await fresh('default-dates', {});
+    await note(dir, 'a.md', 'created: 2026-07-25\ntitle: Erstes');
+    const file = await scanDirectory(dir);
+    assert.equal(file.items[0].start, '2026-07-25');
+  });
+
+  test('the container outranks the caller, because it travels with the folder', async () => {
+    const dir = await fresh('container-wins', { scan: { dateFields: [] } });
+    await note(dir, 'a.md', 'created: 2026-07-25');
+    const file = await scanDirectory(dir, { dateFields: ['created'] });
+    assert.equal(file.items[0].start, undefined);
+  });
+
+  test('groupFromFolder makes the subfolder the group, and frontmatter still wins', async () => {
+    const dir = await fresh('folders', { scan: { groupFromFolder: true } });
+    await note(dir, '_Revelations/a.md', 'title: A');
+    await note(dir, '_Hints/b.md', 'title: B');
+    await note(dir, '_Hints/c.md', 'group: eigene\ntitle: C');
+    await note(dir, 'top.md', 'title: Top');
+    const file = await scanDirectory(dir);
+    const groupOf = (id: string) => file.items.find((i) => i.id === id)?.group;
+    assert.equal(groupOf('_Revelations/a'), '_Revelations');
+    assert.equal(groupOf('_Hints/b'), '_Hints');
+    assert.equal(groupOf('_Hints/c'), 'eigene');
+    // A note at the root has no folder to derive from, and must not get one.
+    assert.equal(groupOf('top'), undefined);
+  });
+
+  test('groupFromFolder is off unless declared', async () => {
+    const dir = await fresh('folders-off', {});
+    await note(dir, '_Revelations/a.md', 'title: A');
+    const file = await scanDirectory(dir);
+    assert.equal(file.items[0].group, undefined);
+  });
+
+  // `scan` says how the directory was *read*. It is spent by the time there are
+  // items, and the generated TimelineFile schema does not allow the key.
+  test('the scan block does not travel to the client', async () => {
+    const dir = await fresh('no-leak', { name: 'Buch', scan: { linkEdges: true } });
+    await note(dir, 'a.md', 'title: A');
+    const file = await scanDirectory(dir);
+    assert.equal(file.name, 'Buch');
+    assert.equal((file as Record<string, unknown>).scan, undefined);
+  });
+});
+
+describe('scanDirectory: wikilinks as relations', () => {
+  const dependsOn = (file: Awaited<ReturnType<typeof scanDirectory>>, id: string) =>
+    file.items.find((i) => i.id === id)?.metadata?.dependsOn;
+
+  test('a body link and a frontmatter link both become edges', async () => {
+    const dir = await fresh('links', { scan: { linkEdges: true, dateFields: [] } });
+    await note(dir, '_Scenes/Szene.md', 'Revelation:\n  - "[[Die Enthüllung]]"', 'Vgl. [[Der Hinweis]].');
+    await note(dir, '_Revelations/Die Enthüllung.md', 'title: Die Enthüllung');
+    await note(dir, '_Hints/Der Hinweis.md', 'title: Der Hinweis');
+    const file = await scanDirectory(dir);
+    assert.deepEqual(dependsOn(file, '_Scenes/Szene'), [
+      '_Revelations/Die Enthüllung',
+      '_Hints/Der Hinweis',
+    ]);
+  });
+
+  test('a link resolves by full path as well as by bare title', async () => {
+    const dir = await fresh('links-path', { scan: { linkEdges: true, dateFields: [] } });
+    await note(dir, 'a.md', '', 'Siehe [[_Hints/Der Hinweis]] und [[Der Hinweis]].');
+    await note(dir, '_Hints/Der Hinweis.md', 'title: Der Hinweis');
+    // Both spellings name the same note, so it is one edge and not two.
+    assert.deepEqual(dependsOn(await scanDirectory(dir), 'a'), ['_Hints/Der Hinweis']);
+  });
+
+  test('an alias, an anchor and a vault-absolute path all still resolve', async () => {
+    const dir = await fresh('links-forms', { scan: { linkEdges: true, dateFields: [] } });
+    await note(dir, 'a.md', '', 'A [[Ziel|anders genannt]] B [[Ziel#Abschnitt]] C [[Vault/Weit/Weg/Ziel|Ziel]]');
+    await note(dir, 'Ziel.md', 'title: Ziel');
+    assert.deepEqual(dependsOn(await scanDirectory(dir), 'a'), ['Ziel']);
+  });
+
+  // A vault carries both spellings of every quote, and matching the raw strings
+  // makes an edge vanish with no error anywhere.
+  test('typographic and straight quotes match each other', async () => {
+    const dir = await fresh('links-quotes', { scan: { linkEdges: true, dateFields: [] } });
+    await note(dir, 'a.md', '', "Siehe [[Finn's Plan]].");
+    await note(dir, 'Finn’s Plan.md', 'title: Plan');
+    assert.deepEqual(dependsOn(await scanDirectory(dir), 'a'), ['Finn’s Plan']);
+  });
+
+  test('a link to nothing, to itself, and one inside a code fence are all dropped', async () => {
+    const dir = await fresh('links-junk', { scan: { linkEdges: true, dateFields: [] } });
+    await note(dir, 'a.md', '', 'Fehlt: [[Gibt es nicht]]. Selbst: [[a]].\n```\n[[Der Hinweis]]\n```\n');
+    await note(dir, '_Hints/Der Hinweis.md', 'title: Der Hinweis');
+    assert.equal(dependsOn(await scanDirectory(dir), 'a'), undefined);
+  });
+
+  test('edges are off unless declared', async () => {
+    const dir = await fresh('links-off', { scan: { dateFields: [] } });
+    await note(dir, 'a.md', '', 'Siehe [[Ziel]].');
+    await note(dir, 'Ziel.md', 'title: Ziel');
+    assert.equal(dependsOn(await scanDirectory(dir), 'a'), undefined);
+  });
+
+  // Resolving as the walk goes would make an edge depend on directory order.
+  test('a link pointing at a note the walk reaches later still resolves', async () => {
+    const dir = await fresh('links-order', { scan: { linkEdges: true, dateFields: [] } });
+    await note(dir, 'aaa.md', '', 'Siehe [[zzz]].');
+    await note(dir, 'zzz.md', 'title: Z');
+    assert.deepEqual(dependsOn(await scanDirectory(dir), 'aaa'), ['zzz']);
+  });
+});

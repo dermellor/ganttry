@@ -1,0 +1,781 @@
+import test, { describe } from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  collapseClusterGaps,
+  edgePath,
+  layoutGraph,
+  BAND_GAP,
+  BAND_PAD,
+  BAND_TITLE_H,
+  HEADER_H,
+  INDENT_STEP,
+  MARGIN,
+  nodeHeight,
+  estimateLines,
+  NODE_W,
+  ROW_GAP,
+  COL_GAP,
+  type GraphInput,
+} from './graphLayout';
+
+const columns = (...ids: string[]) => ids.map((id) => ({ id, label: id.toUpperCase() }));
+
+function graph(partial: Partial<GraphInput>): GraphInput {
+  return { columns: [], nodes: [], edges: [], ...partial };
+}
+
+const nodeById = (result: ReturnType<typeof layoutGraph>, id: string) => {
+  const node = result.nodes.find((n) => n.id === id);
+  assert.ok(node, `no node ${id}`);
+  return node;
+};
+
+test('places a node in the column its bucket names', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: '1', column: 'b' },
+        { id: '2', column: 'a' },
+      ],
+    }),
+  );
+  assert.equal(nodeById(out, '1').column, 1);
+  assert.equal(nodeById(out, '2').column, 0);
+  assert.equal(nodeById(out, '2').x, MARGIN);
+  assert.equal(nodeById(out, '1').x, MARGIN + NODE_W + COL_GAP);
+});
+
+// A multi-valued dimension lists one item under every value it carries. Two boxes
+// for one item would draw its edges twice and make a click ambiguous.
+test('an item listed in several buckets is drawn once, in the first', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: '1', column: 'a' },
+        { id: '1', column: 'b' },
+      ],
+    }),
+  );
+  assert.equal(out.nodes.length, 1);
+  assert.equal(out.nodes[0].column, 0);
+});
+
+test('drops a node whose bucket is not among the columns', () => {
+  const out = layoutGraph(
+    graph({ columns: columns('a'), nodes: [{ id: '1', column: 'nope' }] }),
+  );
+  assert.deepEqual(out.nodes, []);
+});
+
+test('is empty, not header-high, without any node', () => {
+  const out = layoutGraph(graph({ columns: columns('a') }));
+  assert.equal(out.height, 0);
+  assert.deepEqual(out.bands, []);
+});
+
+// The extent narrows the node set. An edge left dangling would read as "depends on
+// something invisible" rather than as "you filtered it out".
+test('drops an edge whose other end is not drawn', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a'),
+      nodes: [{ id: '1', column: 'a' }],
+      edges: [{ from: '1', to: 'gone', kind: 'depends' }],
+    }),
+  );
+  assert.deepEqual(out.edges, []);
+  // …and with no edge left, the node is loose.
+  assert.equal(out.bands[0].loose, true);
+});
+
+test('drops a self-link and de-duplicates repeated edges', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: '1', column: 'a' },
+        { id: '2', column: 'b' },
+      ],
+      edges: [
+        { from: '1', to: '1', kind: 'depends' },
+        { from: '1', to: '2', kind: 'depends' },
+        { from: '1', to: '2', kind: 'depends' },
+      ],
+    }),
+  );
+  assert.deepEqual(out.edges, [{ from: '1', to: '2', kind: 'depends' }]);
+});
+
+// Two edges of different kinds between the same pair are two statements, so the
+// de-duplication must not collapse them into one.
+test('keeps a dependency and a containment between the same pair', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: '1', column: 'a' },
+        { id: '2', column: 'b' },
+      ],
+      edges: [
+        { from: '1', to: '2', kind: 'depends' },
+        { from: '1', to: '2', kind: 'parent' },
+      ],
+    }),
+  );
+  assert.equal(out.edges.length, 2);
+});
+
+test('connected nodes share a band, unconnected ones fall into the loose band', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: '1', column: 'a' },
+        { id: '2', column: 'b' },
+        { id: '3', column: 'a' },
+      ],
+      edges: [{ from: '1', to: '2', kind: 'depends' }],
+    }),
+  );
+  assert.equal(out.bands.length, 2);
+  assert.deepEqual(out.bands[0], { ...out.bands[0], loose: false, nodeIds: ['1', '2'] });
+  assert.deepEqual(out.bands[1], { ...out.bands[1], loose: true, nodeIds: ['3'] });
+  assert.equal(nodeById(out, '1').band, 0);
+  assert.equal(nodeById(out, '3').band, 1);
+});
+
+test('two separate chains are two bands, stacked without overlapping', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: '1', column: 'a' },
+        { id: '2', column: 'b' },
+        { id: '3', column: 'a' },
+        { id: '4', column: 'b' },
+      ],
+      edges: [
+        { from: '1', to: '2', kind: 'depends' },
+        { from: '3', to: '4', kind: 'depends' },
+      ],
+    }),
+  );
+  assert.equal(out.bands.length, 2);
+  assert.equal(out.bands.every((b) => !b.loose), true);
+  const [first, second] = out.bands;
+  assert.equal(second.top, first.top + first.height + BAND_GAP);
+  assert.equal(first.top, MARGIN + HEADER_H);
+  assert.ok(nodeById(out, '3').y > nodeById(out, '1').y);
+});
+
+// Ordering bands by size would reshuffle the picture whenever one item gains a
+// dependency, so they follow the order the sections produced.
+test('bands follow the order of their first node', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: 'solo-a', column: 'a' },
+        { id: 'solo-b', column: 'b' },
+        { id: 'pair-1', column: 'a' },
+        { id: 'pair-2', column: 'b' },
+      ],
+      edges: [
+        { from: 'solo-a', to: 'solo-b', kind: 'depends' },
+        { from: 'pair-1', to: 'pair-2', kind: 'depends' },
+      ],
+    }),
+  );
+  assert.deepEqual(
+    out.bands.map((b) => b.nodeIds[0]),
+    ['solo-a', 'pair-1'],
+  );
+});
+
+// The point of the relaxation: a node sits opposite what it is linked to, rather
+// than wherever the section order happened to put it.
+test('barycenter ordering pulls a node opposite its neighbour', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: 'a1', column: 'a' },
+        { id: 'a2', column: 'a' },
+        { id: 'a3', column: 'a' },
+        // Listed first in its column, but linked to the *last* node of column a.
+        { id: 'b1', column: 'b' },
+        { id: 'b2', column: 'b' },
+      ],
+      edges: [
+        { from: 'a3', to: 'b1', kind: 'depends' },
+        { from: 'a1', to: 'b2', kind: 'depends' },
+      ],
+    }),
+  );
+  // One band (a1–b2 and a3–b1 are separate chains) — check each pairing instead.
+  assert.equal(nodeById(out, 'a1').row, 0);
+  assert.equal(nodeById(out, 'b2').row, 0);
+  assert.equal(nodeById(out, 'a3').row, 0);
+  assert.equal(nodeById(out, 'b1').row, 0);
+  // a2 has no edge at all, so it is loose rather than sitting between them.
+  assert.equal(out.bands[nodeById(out, 'a2').band].loose, true);
+});
+
+test('a chain across three columns keeps its rows aligned', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b', 'c'),
+      nodes: [
+        { id: 'x1', column: 'a' },
+        { id: 'x2', column: 'b' },
+        { id: 'x3', column: 'c' },
+        { id: 'y1', column: 'a' },
+        { id: 'y2', column: 'b' },
+        { id: 'y3', column: 'c' },
+      ],
+      edges: [
+        { from: 'x1', to: 'x2', kind: 'depends' },
+        { from: 'x2', to: 'x3', kind: 'depends' },
+        { from: 'y1', to: 'y2', kind: 'depends' },
+        { from: 'y2', to: 'y3', kind: 'depends' },
+      ],
+    }),
+  );
+  for (const chain of [['x1', 'x2', 'x3'], ['y1', 'y2', 'y3']]) {
+    const ys = chain.map((id) => nodeById(out, id).y);
+    assert.equal(new Set(ys).size, 1, `${chain.join('→')} should sit on one row`);
+  }
+});
+
+test('edgeless nodes in a column stack directly under each other', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a'),
+      nodes: [
+        { id: '1', column: 'a' },
+        { id: '2', column: 'a' },
+      ],
+    }),
+  );
+  const first = nodeById(out, '1');
+  assert.equal(nodeById(out, '2').y - first.y, first.height + ROW_GAP);
+});
+
+test('a node’s height follows what is in it', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a'),
+      nodes: [
+        { id: 'plain', column: 'a' },
+        { id: 'tall', column: 'a', lines: 3, meta: true, reference: true },
+      ],
+    }),
+  );
+  assert.equal(nodeById(out, 'plain').height, nodeHeight({}));
+  assert.equal(nodeById(out, 'tall').height, nodeHeight({ lines: 3, meta: true, reference: true }));
+  assert.ok(nodeById(out, 'tall').height > nodeById(out, 'plain').height);
+});
+
+test('estimateLines rounds up and stops at four', () => {
+  assert.equal(estimateLines(''), 1);
+  assert.equal(estimateLines('kurz'), 1);
+  assert.equal(estimateLines('x'.repeat(35)), 2);
+  assert.equal(estimateLines('x'.repeat(1000)), 4);
+});
+
+// Ordering alone put a lone hint at the top of its band while the revelation it
+// feeds sat four rows down: the order was right and the picture read as if the two
+// were unrelated, because the edge between them crossed three other nodes.
+test('a node with one neighbour is placed level with it, not at the top', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('hint', 'rev'),
+      nodes: [
+        { id: 'h', column: 'hint' },
+        { id: 'r1', column: 'rev' },
+        { id: 'r2', column: 'rev' },
+        { id: 'r3', column: 'rev' },
+        { id: 'r4', column: 'rev' },
+      ],
+      // The hint feeds the *last* revelation in its column.
+      edges: [{ from: 'h', to: 'r4', kind: 'depends' }],
+    }),
+  );
+  const h = nodeById(out, 'h');
+  const r4 = nodeById(out, 'r4');
+  const centre = (n: { y: number; height: number }) => n.y + n.height / 2;
+  assert.ok(
+    Math.abs(centre(h) - centre(r4)) < 1,
+    `hint at ${centre(h)} should sit level with its only neighbour at ${centre(r4)}`,
+  );
+});
+
+test('placement never overlaps two nodes of one column', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: 'a1', column: 'a', lines: 3 },
+        { id: 'a2', column: 'a' },
+        { id: 'a3', column: 'a', lines: 2, reference: true },
+        { id: 'b1', column: 'b' },
+      ],
+      edges: [
+        { from: 'a1', to: 'b1', kind: 'depends' },
+        { from: 'a2', to: 'b1', kind: 'depends' },
+        { from: 'a3', to: 'b1', kind: 'depends' },
+      ],
+    }),
+  );
+  const inA = out.nodes.filter((n) => n.column === 0).sort((x, z) => x.y - z.y);
+  for (let i = 1; i < inA.length; i++) {
+    assert.ok(
+      inA[i].y >= inA[i - 1].y + inA[i - 1].height,
+      `${inA[i].id} overlaps ${inA[i - 1].id}`,
+    );
+  }
+});
+
+// Every sweep can only push down, so without the lift the whole band floats below
+// the frame that is supposed to contain it.
+test('a band starts at its own top edge, however far the sweeps pushed', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: 'a1', column: 'a' },
+        { id: 'a2', column: 'a' },
+        { id: 'b1', column: 'b' },
+      ],
+      edges: [
+        { from: 'a2', to: 'b1', kind: 'depends' },
+        { from: 'a1', to: 'b1', kind: 'depends' },
+      ],
+    }),
+  );
+  const top = Math.min(...out.nodes.map((n) => n.y));
+  assert.equal(top, out.bands[0].top + BAND_PAD);
+});
+
+// A cycle is malformed data (dependsOn can express one), and a layout that
+// recursed on it would hang the view rather than draw the mess.
+test('survives a dependency cycle', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [
+        { id: '1', column: 'a' },
+        { id: '2', column: 'b' },
+      ],
+      edges: [
+        { from: '1', to: '2', kind: 'depends' },
+        { from: '2', to: '1', kind: 'depends' },
+      ],
+    }),
+  );
+  assert.equal(out.nodes.length, 2);
+  assert.equal(out.bands.length, 1);
+});
+
+test('an edge inside one column keeps its nodes in one band, expressed as nesting', () => {
+  const out = layoutGraph(
+    graph({
+      columns: columns('a'),
+      nodes: [
+        { id: '1', column: 'a' },
+        { id: '2', column: 'a' },
+      ],
+      edges: [{ from: '1', to: '2', kind: 'depends' }],
+    }),
+  );
+  assert.equal(out.bands.length, 1);
+  assert.equal(out.bands[0].loose, false, 'the relation still counts as a connection');
+  // Drawn as indentation rather than as a line — see „same-column relations".
+  assert.deepEqual(out.edges, []);
+  // `1 → 2` means 2 depends on 1, so 2 is the conclusion and sits on top.
+  assert.equal(nodeById(out, '2').indent, 0);
+  assert.equal(nodeById(out, '1').indent, INDENT_STEP);
+});
+
+describe('band roots', () => {
+  // A root names a strand instead of sitting in it: „An Expedition teilnehmen" as a
+  // heading over its hints and tasks says more than the same string in a box with
+  // five lines going into it.
+  test('a root claims what it reaches, lends its title, and is not drawn', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('hint', 'task'),
+        nodes: [
+          { id: 'h1', column: 'hint' },
+          { id: 't1', column: 'task' },
+        ],
+        edges: [
+          { from: 'h1', to: 'p1', kind: 'depends' },
+          { from: 'p1', to: 't1', kind: 'depends' },
+        ],
+        roots: [{ id: 'p1', title: 'Der Plan' }],
+      }),
+    );
+    assert.equal(out.nodes.length, 2, 'the root is not a node');
+    assert.equal(out.bands.length, 1);
+    assert.equal(out.bands[0].title, 'Der Plan');
+    assert.deepEqual(out.bands[0].nodeIds, ['h1', 't1']);
+    // Both edges touch the root, which has no position, so neither is drawn.
+    assert.deepEqual(out.edges, []);
+  });
+
+  test('two nodes joined only through a root still share its band', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a'),
+        nodes: [{ id: 'x', column: 'a' }, { id: 'y', column: 'a' }],
+        edges: [
+          { from: 'x', to: 'p', kind: 'depends' },
+          { from: 'y', to: 'p', kind: 'depends' },
+        ],
+        roots: [{ id: 'p', title: 'P' }],
+      }),
+    );
+    assert.equal(out.bands.length, 1);
+    assert.equal(out.bands[0].loose, false);
+    assert.deepEqual(out.bands[0].nodeIds, ['x', 'y']);
+  });
+
+  // A heading over nothing reads as data that failed to load.
+  test('a root that claims nothing produces no band', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a'),
+        nodes: [{ id: 'x', column: 'a' }],
+        roots: [{ id: 'p', title: 'P' }],
+      }),
+    );
+    assert.equal(out.bands.length, 1);
+    assert.equal(out.bands[0].title, undefined);
+    assert.equal(out.bands[0].loose, true);
+  });
+
+  test('claimed bands come first, then anonymous components, then the loose one', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a', 'b'),
+        nodes: [
+          { id: 'solo', column: 'a' },
+          { id: 'c1', column: 'a' },
+          { id: 'c2', column: 'b' },
+          { id: 'claimed', column: 'b' },
+        ],
+        edges: [
+          { from: 'c1', to: 'c2', kind: 'depends' },
+          { from: 'p', to: 'claimed', kind: 'depends' },
+        ],
+        roots: [{ id: 'p', title: 'P' }],
+      }),
+    );
+    assert.deepEqual(
+      out.bands.map((b) => [b.title ?? null, b.loose, b.nodeIds]),
+      [
+        ['P', false, ['claimed']],
+        [null, false, ['c1', 'c2']],
+        [null, true, ['solo']],
+      ],
+    );
+  });
+
+  test('a node two roots can reach goes to the nearer one', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a', 'b'),
+        nodes: [
+          { id: 'near', column: 'a' },
+          { id: 'far', column: 'b' },
+        ],
+        edges: [
+          // p2 → near directly; p1 → far → near is one hop longer.
+          { from: 'p1', to: 'far', kind: 'depends' },
+          { from: 'far', to: 'near', kind: 'depends' },
+          { from: 'p2', to: 'near', kind: 'depends' },
+        ],
+        roots: [
+          { id: 'p1', title: 'Erster' },
+          { id: 'p2', title: 'Zweiter' },
+        ],
+      }),
+    );
+    const bandOf = (id: string) => out.bands[out.nodes.find((n) => n.id === id)!.band].title;
+    assert.equal(bandOf('far'), 'Erster');
+    assert.equal(bandOf('near'), 'Zweiter');
+  });
+
+  test('an edge between two claimed nodes is still drawn', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a', 'b'),
+        nodes: [
+          { id: 'x', column: 'a' },
+          { id: 'y', column: 'b' },
+        ],
+        edges: [
+          { from: 'p', to: 'x', kind: 'depends' },
+          { from: 'x', to: 'y', kind: 'depends' },
+        ],
+        roots: [{ id: 'p', title: 'P' }],
+      }),
+    );
+    assert.deepEqual(out.edges, [{ from: 'x', to: 'y', kind: 'depends' }]);
+    assert.equal(out.bands[0].title, 'P');
+  });
+});
+
+// The nodes' y positions come from the layout, so a heading the stylesheet made
+// room for would still have a box sitting on top of it.
+test('a titled band reserves room for its heading', () => {
+  // The edge has to cross columns in both variants: a same-column one would build
+  // an indented unit in one of them and the two would differ by more than the title.
+  const input = (withRoot: boolean) =>
+    graph({
+      columns: columns('a', 'b'),
+      nodes: [{ id: 'x', column: 'a' }, { id: 'y', column: 'b' }],
+      edges: withRoot
+        ? [{ from: 'p', to: 'x', kind: 'depends' as const }, { from: 'x', to: 'y', kind: 'depends' as const }]
+        : [{ from: 'x', to: 'y', kind: 'depends' as const }],
+      roots: withRoot ? [{ id: 'p', title: 'P' }] : [],
+    });
+  const titled = layoutGraph(input(true));
+  const plain = layoutGraph(input(false));
+  assert.equal(titled.bands[0].title, 'P');
+  assert.equal(plain.bands[0].title, undefined);
+  const firstY = (l: ReturnType<typeof layoutGraph>) => Math.min(...l.nodes.map((n) => n.y));
+  assert.equal(firstY(titled) - firstY(plain), BAND_TITLE_H);
+  assert.equal(titled.bands[0].height - plain.bands[0].height, BAND_TITLE_H);
+});
+
+describe('edgePath: which side an edge leaves and enters', () => {
+  const node = (x: number, y = 0, height = 40) => ({ x, y, height });
+  // "M sx sy C c1x sy, c2x ty, tx ty" → the four x values that matter.
+  const xs = (d: string) => {
+    const n = d.match(/-?[\d.]+/g)!.map(Number);
+    return { sx: n[0], c1: n[2], c2: n[4], tx: n[6] };
+  };
+  const WIDTH = 2000;
+
+  test('a forward edge goes right edge → left edge', () => {
+    const { sx, tx } = xs(edgePath(node(100), node(500), WIDTH));
+    assert.equal(sx, 100 + NODE_W, 'leaves the source’s right edge');
+    assert.equal(tx, 500, 'enters the target’s left edge');
+  });
+
+  // Always leaving on the right sent an edge from a plan back to its tasks out to
+  // the right, across the whole column it pointed into, and back in from the far
+  // left. Six of those over one node is a fan of diagonals over the boxes they
+  // connect.
+  test('a backward edge is mirrored: left edge → right edge', () => {
+    const { sx, tx } = xs(edgePath(node(500), node(100), WIDTH));
+    assert.equal(sx, 500, 'leaves the source’s left edge');
+    assert.equal(tx, 100 + NODE_W, 'enters the target’s right edge');
+  });
+
+  test('a backward edge stays between its two ends, taking the short way', () => {
+    const { sx, c1, c2, tx } = xs(edgePath(node(500), node(100), WIDTH));
+    for (const [name, x] of [['c1', c1], ['c2', c2]] as const) {
+      assert.ok(x <= sx && x >= tx, `${name} (${x}) should sit between ${tx} and ${sx}`);
+    }
+  });
+
+  test('a forward edge does the same, in its own direction', () => {
+    const { sx, c1, c2, tx } = xs(edgePath(node(100), node(900), WIDTH));
+    for (const x of [c1, c2]) assert.ok(x >= sx && x <= tx);
+  });
+
+  // Mirroring a same-column edge would loop it around the entire column.
+  test('an edge inside one column leaves and enters on the right, bulging out', () => {
+    const { sx, c1, c2, tx } = xs(edgePath(node(100, 0), node(100, 200), WIDTH));
+    assert.equal(sx, 100 + NODE_W);
+    assert.equal(tx, 100 + NODE_W);
+    assert.ok(c1 > sx && c2 > tx, 'both control points push out past the column');
+  });
+
+  test('each end is attached at its own vertical middle, not a shared constant', () => {
+    const d = edgePath(node(100, 0, 40), node(500, 300, 90), WIDTH);
+    const n = d.match(/-?[\d.]+/g)!.map(Number);
+    assert.equal(n[1], 20, 'source: 0 + 40/2');
+    assert.equal(n[7], 345, 'target: 300 + 90/2');
+  });
+
+  // An unclamped control point puts the curve that explains the arrowhead outside
+  // the viewport, which reads as a rendering fault.
+  test('control points stay inside the canvas at either border', () => {
+    const narrow = 400;
+    for (const d of [
+      edgePath(node(0, 0), node(0, 200), narrow),
+      edgePath(node(150), node(0), narrow),
+    ]) {
+      const { c1, c2 } = xs(d);
+      for (const x of [c1, c2]) {
+        assert.ok(x >= 0 && x <= narrow, `control point ${x} outside 0..${narrow}`);
+      }
+    }
+  });
+});
+
+describe('same-column relations become indented units', () => {
+  // Drawn as an edge, a same-column relation has to leave the column and come back
+  // — a bulge past its own lane, repeated for every pair. Indentation says the same
+  // thing where the reader is already looking.
+  test('a child sits under its parent, indented and narrower', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a'),
+        nodes: [{ id: 'basis', column: 'a' }, { id: 'schluss', column: 'a' }],
+        // `basis` is what `schluss` rests on: the dependent goes on top.
+        edges: [{ from: 'basis', to: 'schluss', kind: 'depends' }],
+      }),
+    );
+    const top = nodeById(out, 'schluss');
+    const under = nodeById(out, 'basis');
+    assert.equal(top.indent, 0);
+    assert.equal(under.indent, INDENT_STEP);
+    assert.equal(under.x - top.x, INDENT_STEP, 'indent moves the box, not the column');
+    assert.equal(under.width, NODE_W - INDENT_STEP, 'and narrows it, so it stays in its lane');
+    assert.ok(under.y > top.y, 'the basis hangs beneath its conclusion');
+    // And it is not drawn as a line as well: the reader would see one statement
+    // twice, once as a box inside a box and once as a bulge past the column.
+    assert.deepEqual(out.edges, []);
+  });
+
+  test('containment puts the parent on top, like the list view', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a'),
+        nodes: [{ id: 'eltern', column: 'a' }, { id: 'kind', column: 'a' }],
+        edges: [{ from: 'eltern', to: 'kind', kind: 'parent' }],
+      }),
+    );
+    assert.equal(nodeById(out, 'eltern').indent, 0);
+    assert.equal(nodeById(out, 'kind').indent, INDENT_STEP);
+  });
+
+  test('a unit moves as one block, so a grandchild keeps its offset', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a'),
+        nodes: [
+          { id: 'a1', column: 'a' },
+          { id: 'a2', column: 'a' },
+          { id: 'a3', column: 'a' },
+        ],
+        edges: [
+          { from: 'a2', to: 'a1', kind: 'depends' },
+          { from: 'a3', to: 'a2', kind: 'depends' },
+        ],
+      }),
+    );
+    assert.deepEqual(
+      ['a1', 'a2', 'a3'].map((id) => nodeById(out, id).indent),
+      [0, INDENT_STEP, 2 * INDENT_STEP],
+    );
+    const ys = ['a1', 'a2', 'a3'].map((id) => nodeById(out, id).y);
+    assert.ok(ys[0] < ys[1] && ys[1] < ys[2], 'and in that order down the column');
+  });
+
+  // A child that can reach itself through its ancestors would make the walk that
+  // builds a unit never return.
+  test('a cycle in the same column is broken rather than followed', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a'),
+        nodes: [{ id: 'x', column: 'a' }, { id: 'y', column: 'a' }],
+        edges: [
+          { from: 'x', to: 'y', kind: 'depends' },
+          { from: 'y', to: 'x', kind: 'depends' },
+        ],
+      }),
+    );
+    assert.equal(out.nodes.length, 2, 'both are placed exactly once');
+  });
+
+  test('a node with a parent in another column is not indented', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a', 'b'),
+        nodes: [{ id: 'x', column: 'a' }, { id: 'y', column: 'b' }],
+        edges: [{ from: 'x', to: 'y', kind: 'depends' }],
+      }),
+    );
+    assert.equal(nodeById(out, 'y').indent, 0);
+    assert.equal(nodeById(out, 'y').width, NODE_W);
+  });
+});
+
+describe('collapseClusterGaps', () => {
+  // The relaxation pulls related units together and lets unrelated ones drift, which
+  // is what produces readable clusters — and also what made a band four times taller
+  // than its content. A gap no column reaches into is space the relaxation happened
+  // to leave, not information.
+  const at = (...pairs: [number, number][]) => pairs.map(([y, height]) => ({ y, height }));
+
+  test('a wide gap between two clusters is shrunk to the fixed distance', () => {
+    const units = at([0, 40], [50, 40], [400, 40]);
+    collapseClusterGaps(units);
+    assert.equal(units[0].y, 0, 'the first cluster does not move');
+    assert.equal(units[1].y, 50, 'and neither does anything inside it');
+    assert.equal(units[2].y, 90 + 24, 'the second follows 24px after the first ends');
+  });
+
+  test('three clusters each close up on the one before', () => {
+    const units = at([0, 40], [300, 40], [900, 40]);
+    collapseClusterGaps(units);
+    assert.deepEqual(units.map((u) => u.y), [0, 64, 128]);
+  });
+
+  // Two things close together are one cluster; shrinking the space inside one would
+  // undo the alignment the relaxation just bought.
+  test('a gap inside a cluster is left alone', () => {
+    const units = at([0, 40], [70, 40]);
+    collapseClusterGaps(units);
+    assert.deepEqual(units.map((u) => u.y), [0, 70]);
+  });
+
+  test('overlapping and touching spans stay one cluster', () => {
+    const units = at([0, 100], [20, 30], [100, 40]);
+    collapseClusterGaps(units);
+    assert.deepEqual(units.map((u) => u.y), [0, 20, 100]);
+  });
+
+  test('one cluster is left exactly as it was', () => {
+    const units = at([10, 40], [55, 40]);
+    collapseClusterGaps(units);
+    assert.deepEqual(units.map((u) => u.y), [10, 55]);
+  });
+
+  test('nothing at all is not an error', () => {
+    assert.doesNotThrow(() => collapseClusterGaps([]));
+  });
+});
+
+describe('bands stay apart', () => {
+  // Two components are two bands with a frame each, and the space between them is
+  // deliberate — it is not a gap for the collapse to reclaim.
+  test('two components keep the band gap between them', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a', 'b'),
+        nodes: [
+          { id: 'x1', column: 'a' },
+          { id: 'x2', column: 'b' },
+          { id: 'y1', column: 'a' },
+          { id: 'y2', column: 'b' },
+        ],
+        edges: [
+          { from: 'x1', to: 'x2', kind: 'depends' },
+          { from: 'y1', to: 'y2', kind: 'depends' },
+        ],
+      }),
+    );
+    const [first, second] = out.bands;
+    assert.equal(second.top, first.top + first.height + BAND_GAP);
+  });
+});

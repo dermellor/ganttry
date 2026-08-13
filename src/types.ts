@@ -362,6 +362,38 @@ export type PluginCollectionData = Record<string, PluginDataRow[]>;
 export type PluginData = Record<string, PluginCollectionData>;
 
 /**
+ * What the relation graph needs told about a timeline, beyond its items and
+ * relations.
+ *
+ * Both fields name a **group**, because that is the vocabulary a timeline already
+ * has for „what kind of thing is this" — no new dimension, and a folder-derived
+ * group works as well as a declared one.
+ */
+export type GraphConfig = {
+  /**
+   * The group whose items are **band roots**: each one claims everything reachable
+   * from it, its title becomes the band's heading, and it is taken out of the
+   * columns.
+   *
+   * Without it a band is an anonymous connected component, which is honest but
+   * says nothing. With it, a strand is labelled by the thing it hangs off — the
+   * plan a set of tasks serves, the epic a set of stories belongs to. Members
+   * nothing claims fall back to anonymous components behind the titled ones.
+   */
+  bandRootGroup?: string;
+  /**
+   * The group whose items are shown **on** a node rather than beside it: every
+   * item of that group which references this node is listed under its title.
+   *
+   * It exists for the references that are context and not structure. A revelation
+   * surfaces in four scenes; drawn as four edges that is noise, and it also
+   * disappears the moment the extent hides scenes. As a line on the node it
+   * survives both.
+   */
+  referenceGroup?: string;
+};
+
+/**
  * Who a saved view is for.
  *
  * `private` is the default because a half-built narrowing is the normal state of
@@ -418,6 +450,24 @@ export type TimelineFile = {
   description?: string;
   groupBy?: string;
   /**
+   * In what order the groups are laid out: alphabetically by id (the default and
+   * the behaviour every existing timeline has), or in the order `groups` declares.
+   *
+   * `alpha` is the default rather than the obvious `declared` because it is what
+   * shipped: the committed examples number their group ids (`1-strategy`,
+   * `2-design`) precisely to steer the alphabetical sort, and flipping the default
+   * would silently reorder the lanes of every timeline in existence — including
+   * ones whose declared order was never meant to be read.
+   *
+   * `declared` is for the case the workaround cannot reach: group ids that carry
+   * meaning of their own and cannot be renumbered, such as the folder names a
+   * directory source derives its groups from. Groups that only appear on items,
+   * with no declaration, follow the declared ones alphabetically either way.
+   */
+  groupOrder?: 'alpha' | 'declared';
+  /** How the relation graph reads this timeline. See `GraphConfig`. */
+  graph?: GraphConfig;
+  /**
    * Named ways of looking at this timeline. On a `db` source these are rows of
    * the `saved_views` table folded in for the caller; in a file they are the
    * store itself, which is what keeps a local timeline self-contained — the same
@@ -442,6 +492,24 @@ export type TimelineFile = {
     content: string;
     nestedGroups?: string[];
     showNested?: boolean;
+    /**
+     * The group's own colour, any CSS colour. Unset falls back to the positional
+     * lane palette, so no existing timeline changes appearance.
+     *
+     * It exists because the lane palette answers „which track is this" and some
+     * timelines need „what kind of thing is this": a hint is green and an
+     * antagonist's move is red because of what they mean, not because of which
+     * column they landed in. That mapping is the author's to make, which is why it
+     * is a value in the data rather than a rule in the code — the same reasoning
+     * behind `phases[].color` and `customFields[].options[].color`.
+     *
+     * **Honoured by the relation graph only, for now.** The chart's lane colouring
+     * runs through `.lane-N` selectors on the item elements, and widening that to
+     * arbitrary per-group colours is its own change to the drawing path; claiming
+     * this field is global while half the app ignored it would be worse than the
+     * documented limit.
+     */
+    color?: string;
   }[];
 };
 
@@ -456,7 +524,50 @@ export type TimelineFile = {
  * result, which always has items. The cost is one more generated schema; the
  * benefit is that `file.items` stays something you can use without a guard.
  */
-export type TimelineContainer = Omit<TimelineFile, 'items'>;
+/**
+ * How a directory's Markdown files are read into items.
+ *
+ * It sits on the container rather than in an env var or in `timelines.config.json`
+ * because it is a property of *that* folder: which frontmatter key holds a date,
+ * whether the subfolder means something, whether wikilinks are relations. A folder
+ * of meeting notes and a folder holding a novel answer differently, and the answer
+ * has to travel with the folder — otherwise moving or copying it changes what it
+ * means (the same reasoning that put `groups` and `phases` here, see
+ * docs/local-sources.md).
+ */
+export type ScanConfig = {
+  /**
+   * Frontmatter keys tried in order for an item's start. Defaults to
+   * `["date", "scheduled", "created"]`.
+   *
+   * An **empty array** is the meaningful setting rather than a degenerate one: it
+   * says none of this folder's dates are the item's date. A vault stamps `created`
+   * on every note, and reading that as the start puts a hundred items on the day
+   * they were typed — a timeline that looks like data and is an artefact of the
+   * editor.
+   */
+  dateFields?: string[];
+  /** Regexes tried against the filename when no frontmatter date is found. */
+  filenameDatePatterns?: string[];
+  /**
+   * Take the item's group from the subfolder it sits in, when its frontmatter
+   * names none. Off by default: a flat folder has nothing to derive, and a folder
+   * whose subdirectories are storage rather than meaning would gain groups that
+   * say nothing.
+   */
+  groupFromFolder?: boolean;
+  /**
+   * Read `[[wikilinks]]` as relations between items, recorded on
+   * `metadata.dependsOn`. Off by default, because in most folders a link is a
+   * reference and not a dependency.
+   */
+  linkEdges?: boolean;
+};
+
+export type TimelineContainer = Omit<TimelineFile, 'items'> & {
+  /** Directory sources only: how the Markdown files are read. */
+  scan?: ScanConfig;
+};
 
 export type Config = {
   /** Points editors at schema/config.schema.json for completion + validation. */

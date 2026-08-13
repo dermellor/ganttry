@@ -222,3 +222,38 @@ test('custom-field dimension with no values still shows a single "Ohne Tier" hea
   assert.equal(sections[0].empty, true);
   assert.deepEqual(sections[0].items.map((i) => i.id), ['a', 'b']);
 });
+
+// A group carries its name twice: `content` is escaped markup, because
+// vis-timeline renders a group label from an HTML string, and `label` is the plain
+// text. Every consumer here builds DOM, so it has to prefer `label` — a group
+// called „Hero's Journey" printed as `Hero&#39;s Journey` in the list's section
+// rows and in the graph's column heads until it did, and the bug stayed invisible
+// until a group name contained punctuation.
+test('a section takes its label from the group’s plain text, not its markup', () => {
+  const entries = [item('a', '2026-01-01', { group: 'hj' })];
+  const context: SectionContext = {
+    groups: [{ id: 'hj', content: 'Hero&#39;s Journey', label: "Hero's Journey" }],
+    customFields: [],
+    metaOf: () => undefined,
+  };
+  const { sections } = computeSections(entries, 'group', groupByOptions(entries, []), context);
+  assert.equal(sections[0].label, "Hero's Journey");
+});
+
+// A caller that only has ids still has to be able to section.
+test('a group without plain text falls back to its content, then to its id', () => {
+  const entries = [item('a', '2026-01-01', { group: 'g1' }), item('b', '2026-01-02', { group: 'g2' })];
+  const context: SectionContext = {
+    groups: [
+      { id: 'g1', content: 'Nur Content' },
+      { id: 'g2', content: '' },
+    ],
+    customFields: [],
+    metaOf: () => undefined,
+  };
+  const { sections } = computeSections(entries, 'group', groupByOptions(entries, []), context);
+  assert.deepEqual(
+    sections.map((s) => s.label),
+    ['Nur Content', 'g2'],
+  );
+});
