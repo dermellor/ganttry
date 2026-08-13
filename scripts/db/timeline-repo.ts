@@ -44,6 +44,7 @@ import {
   type MemberInvite,
   type TimelineGroupDecl,
   type TimelineMeta,
+  type TimelineMetaPatch,
   type TimelineRepo,
 } from './repo.ts';
 
@@ -144,20 +145,22 @@ function itemToRow(timelineId: string, item: TimelineFileItem, sort?: number): R
   return row;
 }
 
-function rowToGroup(row: Record<string, any>): TimelineGroupDecl {
+export function rowToGroup(row: Record<string, any>): TimelineGroupDecl {
   const g: TimelineGroupDecl = { id: row.id, content: row.content ?? row.id };
   if (Array.isArray(row.nested_groups) && row.nested_groups.length) g.nestedGroups = row.nested_groups;
   if (row.show_nested != null) g.showNested = row.show_nested;
+  if (row.color != null) g.color = row.color;
   return g;
 }
 
-function groupToRow(timelineId: string, g: TimelineGroupDecl, sort?: number): Record<string, any> {
+export function groupToRow(timelineId: string, g: TimelineGroupDecl, sort?: number): Record<string, any> {
   const row: Record<string, any> = {
     timeline_id: timelineId,
     id: g.id,
     content: g.content ?? null,
     nested_groups: g.nestedGroups ?? null,
     show_nested: g.showNested ?? null,
+    color: g.color ?? null,
   };
   if (sort != null) row.sort = sort;
   return row;
@@ -306,7 +309,7 @@ export async function setMemberStatus(sql: Sql, email: string, status: MemberSta
 
 export async function getTimeline(sql: Sql, id: string): Promise<TimelineFile | null> {
   const [tl] = await sql`
-    select id, name, description, group_by, phases, custom_fields
+    select id, name, description, group_by, group_order, graph, phases, custom_fields
     from timelines where id = ${id}`;
   if (!tl) return null;
 
@@ -315,7 +318,7 @@ export async function getTimeline(sql: Sql, id: string): Promise<TimelineFile | 
     where timeline_id = ${id} order by sort asc nulls first`;
 
   const groupRows = await sql`
-    select id, content, nested_groups, show_nested, sort from timeline_groups
+    select id, content, nested_groups, show_nested, color, sort from timeline_groups
     where timeline_id = ${id} order by sort asc nulls first`;
 
   const pluginRows = await sql`
@@ -325,6 +328,14 @@ export async function getTimeline(sql: Sql, id: string): Promise<TimelineFile | 
   if (tl.name != null) file.name = tl.name;
   if (tl.description != null) file.description = tl.description;
   if (tl.group_by != null) file.groupBy = tl.group_by;
+  // Only the value the reader acts on is carried through. Anything else in the
+  // column degrades to the default rather than travelling to the client as a value
+  // it would have to guard against (see src/groupOrder.ts, and the note on the
+  // missing check constraint in migration 0024).
+  if (tl.group_order === 'declared') file.groupOrder = 'declared';
+  if (tl.graph && typeof tl.graph === 'object' && Object.keys(tl.graph).length) {
+    file.graph = tl.graph as TimelineFile['graph'];
+  }
   const plugins: PluginRef[] = pluginRows.map((r: Record<string, any>) => ({
     id: r.plugin_id,
     config: (r.config ?? {}) as Record<string, unknown>,
@@ -434,13 +445,25 @@ export async function replaceTimeline(sql: Sql, id: string, file: TimelineFile):
     name: file.name ?? null,
     description: file.description ?? null,
     group_by: file.groupBy ?? null,
+    group_order: file.groupOrder ?? null,
+    graph: sql.json(file.graph ?? null),
     phases: sql.json(file.phases ?? []),
     custom_fields: sql.json(file.customFields ?? []),
     updated_at: new Date().toISOString(),
   };
+  const metaCols = [
+    'name',
+    'description',
+    'group_by',
+    'group_order',
+    'graph',
+    'phases',
+    'custom_fields',
+    'updated_at',
+  ] as const;
   await sql`
-    insert into timelines ${sql(meta, 'id', 'name', 'description', 'group_by', 'phases', 'custom_fields', 'updated_at')}
-    on conflict (id) do update set ${sql(meta, 'name', 'description', 'group_by', 'phases', 'custom_fields', 'updated_at')}`;
+    insert into timelines ${sql(meta, 'id', ...metaCols)}
+    on conflict (id) do update set ${sql(meta, ...metaCols)}`;
 
   // Clear children, then re-insert (cascade-free explicit wipe keeps it simple).
   await sql`delete from timeline_items where timeline_id = ${id}`;
@@ -473,7 +496,7 @@ export async function replaceTimeline(sql: Sql, id: string, file: TimelineFile):
   if (groupRows.length) {
     await sql`insert into timeline_groups ${sql(
       groupRows,
-      'timeline_id', 'id', 'content', 'nested_groups', 'show_nested', 'sort',
+      'timeline_id', 'id', 'content', 'nested_groups', 'show_nested', 'color', 'sort',
     )}`;
   }
 }
@@ -617,10 +640,15 @@ export async function upsertGroup(
   group: TimelineGroupDecl,
 ): Promise<TimelineGroupDecl> {
   const row = groupToRow(timelineId, group);
+  // One list for insert and update, and `returning *` for the read back: the column
+  // names were written out three times, and adding `color` to the mapper while
+  // missing any of the three stores or returns a null without failing anywhere.
+  // That is the shape of bug #137 was about.
+  const cols = ['content', 'nested_groups', 'show_nested', 'color'] as const;
   const [data] = await sql`
-    insert into timeline_groups ${sql(row, 'timeline_id', 'id', 'content', 'nested_groups', 'show_nested')}
-    on conflict (timeline_id, id) do update set ${sql(row, 'content', 'nested_groups', 'show_nested')}
-    returning id, content, nested_groups, show_nested, sort`;
+    insert into timeline_groups ${sql(row, 'timeline_id', 'id', ...cols)}
+    on conflict (timeline_id, id) do update set ${sql(row, ...cols)}
+    returning *`;
   return rowToGroup(data);
 }
 
@@ -644,16 +672,7 @@ export async function updatePhases(sql: Sql, id: string, phases: TimelinePhase[]
     where id = ${id}`;
 }
 
-export async function updateMeta(
-  sql: Sql,
-  id: string,
-  meta: {
-    name?: string | null;
-    description?: string | null;
-    groupBy?: string | null;
-    customFields?: CustomFieldDef[] | null;
-  },
-): Promise<void> {
+export async function updateMeta(sql: Sql, id: string, meta: TimelineMetaPatch): Promise<void> {
   const set: Record<string, any> = { updated_at: new Date().toISOString() };
   if ('name' in meta) set.name = meta.name ?? null;
   if ('description' in meta) set.description = meta.description ?? null;
@@ -663,6 +682,11 @@ export async function updateMeta(
   // pricing model is no longer patched here — it has its own granular tables
   // and endpoints (see the pricing write layer below).
   if ('customFields' in meta) set.custom_fields = sql.json(meta.customFields ?? []);
+  if ('groupOrder' in meta) set.group_order = meta.groupOrder ?? null;
+  // `null` clears it; an object replaces it whole. Patching *into* the bag would
+  // need a merge rule for a value the caller may not have read first, and „set the
+  // graph config" is a small enough statement to make as a unit.
+  if ('graph' in meta) set.graph = sql.json(meta.graph ?? null);
   await sql`update timelines set ${sql(set, ...Object.keys(set))} where id = ${id}`;
 }
 

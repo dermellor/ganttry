@@ -29,8 +29,9 @@ live site and therefore not manipulable here.
 | `update_item`       | Patches an item (only the given fields; `metadata` is merged, a `null` value removes its key) |
 | `delete_item`       | Removes an item by id                                         |
 | `add_group`         | Adds a group                                                  |
-| `update_group`      | Patches a group                                               |
+| `update_group`      | Patches a group, `color` included                             |
 | `delete_group`      | Removes a group                                               |
+| `set_layout`        | `groupOrder` (`alpha` / `declared`) and the graph's `bandRootGroup` / `referenceGroup` |
 | `replace_timeline`  | Replaces a whole timeline (bulk)                              |
 | `read_plugin_data`  | The rows one plugin owns on a timeline; one collection or all of them |
 | `write_plugin_data` | One row of one collection: `put`, `patch`, `delete` or `move`  |

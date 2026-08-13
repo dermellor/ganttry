@@ -37,6 +37,7 @@ import {
   ConflictError,
   NotFoundError,
   NotSupportedError,
+  type TimelineMetaPatch,
   ValidationError,
   type TimelineGroupDecl,
   type TimelineMeta,
@@ -805,20 +806,22 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       await persist(loaded, { ...loaded.file, phases });
     },
 
-    async updateMeta(
-      id: string,
-      meta: {
-        name?: string | null;
-        description?: string | null;
-        groupBy?: string | null;
-        customFields?: CustomFieldDef[] | null;
-      },
-    ): Promise<void> {
+    async updateMeta(id: string, meta: TimelineMetaPatch): Promise<void> {
       const loaded = await loadForWrite(dirs, id);
       const next = { ...loaded.file };
       // Only keys actually present in the patch are applied, so a PATCH that
       // carries `name` alone cannot blank out `description`.
-      for (const key of ['name', 'description', 'groupBy', 'customFields'] as const) {
+      // The key list has to name every field of `TimelineMetaPatch`: a field missing
+      // here is silently dropped rather than refused, which is exactly how the three
+      // graph settings became readable-but-unsettable (#137).
+      for (const key of [
+        'name',
+        'description',
+        'groupBy',
+        'customFields',
+        'groupOrder',
+        'graph',
+      ] as const) {
         if (!(key in meta) || meta[key] === undefined) continue;
         // In a file, „cleared" is an ABSENT key, not a null. The database columns
         // take `null` and that is right for them, but `TimelineFile` types these as

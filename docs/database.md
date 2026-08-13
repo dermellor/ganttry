@@ -118,7 +118,31 @@ runner works against any Postgres).
   `400` (the rule lives in [`src/itemExtent.ts`](../src/itemExtent.ts), see
   „Standalone JSON timelines" (docs/data-model.md)). There is no DB CHECK for it, because `start` and
   `end` are `text` columns.
-- `timeline_groups` — id, content, nested_groups, show_nested, sort.
+- `timeline_groups` — id, content, nested_groups, show_nested, `color`, sort.
+  `color` (migration `0024`) is the group's own colour, honoured by the graph
+  presentation; null falls back to the positional lane palette. It is the author's
+  statement about what a group *means*, which is why it is a value here rather than
+  a rule in the code — the same shape `timeline_phases.color` has.
+- `timelines.group_order` and `timelines.graph` (migration `0024`) — the two
+  timeline-level settings the graph reads: whether the declared `groups[]` order is
+  honoured (`declared`) or the ids are sorted (`alpha`, the default every timeline
+  shipped with), and `GraphConfig` as a jsonb bag (`bandRootGroup`,
+  `referenceGroup`). All three columns are nullable and additive, so an existing
+  timeline behaves exactly as before.
+
+  Neither has a CHECK constraint, and `group_order` deliberately so: the reader
+  treats anything other than `declared` as `alpha`
+  ([`src/groupOrder.ts`](../src/groupOrder.ts)), so an unexpected value degrades to
+  today's behaviour instead of breaking a page, and a constraint would cost a
+  migration for every future ordering rule. `graph` is jsonb rather than a column
+  per key for the same reason: it is one declaration about one presentation and it
+  will grow.
+
+  **These three existed as `TimelineFile` fields for a while with no columns behind
+  them**, which is what [#137](https://github.com/zeitlines/zeitlines/issues/137)
+  was: the client read a setting a database timeline could not store. A field that
+  is read announces itself as supported, so a read-only one is worse than an absent
+  one — an absent field is a clear no, a read-only field is a silent one.
 - `saved_views` — named ways of looking at one timeline (migration `0023`): PK
   (`timeline_id`, `id`), a `name`, the presentation (`mode`), the grouping
   dimension (`group_by`), the filter selection (`filters` jsonb), an `owner`
