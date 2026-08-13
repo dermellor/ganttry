@@ -37,14 +37,14 @@ import { els, state, syncUrl } from './state';
 import { groupByChoices, timelineMetaDraft, timelineMetaPatch } from './timelineMeta';
 import { apiUpdateMeta } from './editor';
 import { mountFieldsSection, unmountFields } from './fieldsSection';
-import { renderTimeline } from './render';
+import { filterBuildForDisplay, renderTimeline, timelineItems } from './render';
 
 /**
  * A section id, which is also verbatim what `#timeline-settings=<id>` carries.
  * English like every other key in the hash, though the labels beside them are
  * German.
  */
-export type TimelineSection = 'general' | 'fields';
+export type TimelineSection = 'general' | 'fields' | 'export';
 
 const handle = createAreaHandle<TimelineSection>();
 
@@ -178,9 +178,98 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
   );
 }
 
+/**
+ * The HTML export: one self-contained file of this timeline, to send to somebody
+ * who has no access to the instance.
+ *
+ * It sits here rather than in the presentation bar, where it was an outline
+ * button beside „+ Eintrag" and drawn exactly like it. That said the two are
+ * reached for about equally often, and they are not: one is how a timeline gets
+ * filled, the other is taken out a handful of times in a timeline's life.
+ *
+ * What the move costs is that the picture being exported is no longer on screen
+ * while the button is — the area replaces the content. So the section says what
+ * ends up in the file instead of leaving it to be inferred from a view the
+ * reader cannot see, and it exports the timeline's current filter, which is what
+ * the button did from the same state.
+ */
+function mountExport(root: HTMLElement): void {
+  const view = state.activeView;
+  if (!view || !state.activeBuild) {
+    root.replaceChildren(
+      Callout({ text: 'Keine Timeline geladen. Öffne eine und komm zurück.' }),
+    );
+    return;
+  }
+
+  // Announced for the same reason the general section's is: while the file is
+  // being built this line is the only thing saying the click arrived.
+  const status = Text({
+    as: 'p',
+    text: '',
+    tone: 'muted',
+    size: 'xs',
+    attrs: { id: 'tl-export-status', role: 'status' },
+  });
+  // Not gated on editability: exporting is reading, and a read-only timeline is
+  // the one most likely to be passed on as a file.
+  const run = Button({
+    label: 'Als HTML herunterladen',
+    variant: 'outline',
+    attrs: { id: 'tl-export' },
+  });
+
+  run.addEventListener('click', () => {
+    if (!state.activeView || !state.activeBuild) return;
+    run.disabled = true;
+    status.textContent = 'Wird erzeugt …';
+    // The chunk carries vis-timeline and marked as raw text, so it is loaded on
+    // the click rather than with the app — the same lazy import the button had.
+    void import('./export')
+      .then(async (m) => {
+        const build = state.activeBuild!;
+        const filtered = filterBuildForDisplay(build);
+        // The export renders a vis-timeline too, so start-less items are left out
+        // (they cannot be placed) — mirroring the timeline presentation.
+        await m.exportTimelineHtml({
+          view: state.activeView!,
+          build: { ...build, items: timelineItems(filtered.items), groups: filtered.groups },
+        });
+        status.textContent = 'Datei erzeugt.';
+      })
+      .catch((e: unknown) => {
+        status.textContent = `Export fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`;
+      })
+      .finally(() => {
+        run.disabled = false;
+      });
+  });
+
+  root.replaceChildren(
+    el('div', { class: 'settings-form' }, [
+      Text({
+        as: 'p',
+        text:
+          'Eine einzelne HTML-Datei mit dieser Timeline: Balken, Phasen, Meilensteine und ' +
+          'die Detailtexte, ohne Zugang zur Instanz und ohne Bearbeitung.',
+        tone: 'muted',
+        size: 'sm',
+      }),
+      Text({
+        as: 'p',
+        text: 'Der gesetzte Filter gilt auch für die Datei; Einträge ohne Startdatum fehlen darin, wie in der Timeline.',
+        tone: 'muted',
+        size: 'xs',
+      }),
+      el('div', { class: 'settings-actions' }, [run, status]),
+    ]),
+  );
+}
+
 const SECTIONS: readonly AreaSection<TimelineSection>[] = [
   { id: 'general', label: 'Allgemein', mount: mountGeneral },
   { id: 'fields', label: 'Felder', mount: mountFieldsSection, unmount: unmountFields },
+  { id: 'export', label: 'Export', mount: mountExport },
 ];
 
 /** The section a hash value names, defaulting to the first. */

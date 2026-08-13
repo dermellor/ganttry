@@ -30,8 +30,6 @@ import {
 } from './state';
 import {
   renderTimeline,
-  filterBuildForDisplay,
-  timelineItems,
   applyBuildToDataSets,
   statusFor,
   addNewItem,
@@ -329,7 +327,6 @@ function applyViewMode(
   const accessories = viewAccessories(target?.view ?? (plugin ? null : (mode as BuiltinViewMode)));
   els.groupByControl.hidden = !accessories.grouping;
   els.filterControl.hidden = !accessories.filter;
-  els.exportBtn.hidden = !accessories.export;
   // Editability is the other half and stays where it is (render.ts): a presentation
   // may allow creating an item while this source does not.
   els.addBtn.hidden = !accessories.create || !isEditableView();
@@ -359,29 +356,6 @@ function applyViewMode(
   if (persist) {
     saveViewPrefs();
     syncUrl();
-  }
-}
-
-async function handleExport() {
-  if (!state.activeView || !state.activeBuild) return;
-  const original = els.exportBtn.textContent;
-  els.exportBtn.disabled = true;
-  els.exportBtn.textContent = 'Exportiere…';
-  try {
-    const { exportTimelineHtml } = await import('./export');
-    const filtered = filterBuildForDisplay(state.activeBuild);
-    // The export renders a vis-timeline too, so start-less items are excluded
-    // (they can't be placed) — mirroring the live timeline view.
-    await exportTimelineHtml({
-      view: state.activeView,
-      build: { ...state.activeBuild, items: timelineItems(filtered.items), groups: filtered.groups },
-    });
-  } catch (err) {
-    console.error(err);
-    alert(`Export fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
-  } finally {
-    els.exportBtn.disabled = false;
-    els.exportBtn.textContent = original;
   }
 }
 
@@ -567,7 +541,6 @@ async function bootstrap() {
     syncUrl();
   });
   els.addBtn.addEventListener('click', () => addNewItem());
-  els.exportBtn.addEventListener('click', handleExport);
 
   // The plugin list answers „why is that view not there?", so it is built fresh
   // on open: the registry can change under a long-lived tab (an operator installs

@@ -881,7 +881,7 @@ const frameSection = section(
     stage(
       Toolbar({
         tone: 'footer',
-        children: [Text({ text: '42 Einträge · 6 Gruppen', tone: 'muted' }), Button({ label: 'Export HTML', variant: 'link' })],
+        children: [Text({ text: '42 Einträge · 6 Gruppen', tone: 'muted' }), Button({ label: 'Plugins', variant: 'link' })],
       }),
     ),
     el('div', { class: 'pg-SkeletonHost' }, TimelineSkeleton({ rows: SKELETON_ROWS })),
