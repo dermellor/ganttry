@@ -161,6 +161,42 @@ export async function apiUpdateMeta(
   );
 }
 
+// ---- one plugin on one timeline --------------------------------------------
+//
+// The route that closes „enabling a plugin means writing a row by hand": one plugin
+// on one timeline, rather than a bulk `replace_timeline` that would lose a concurrent
+// edit. The server keeps the gates (installed, switched on for the instance, config
+// against the manifest's schema, publishing only where something is publishable), so
+// nothing here pre-judges a refusal — its message is what the section shows.
+
+/** Enable it here, or replace its config / publishing consent. */
+export async function apiEnablePlugin(
+  sourceId: string,
+  pluginId: string,
+  body: { config?: Record<string, unknown>; public?: boolean },
+): Promise<void> {
+  await apiJson(
+    await fetch(`/api/source/${sourceId}/plugin/${encodeURIComponent(pluginId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+/**
+ * Disable it here. Every row the plugin owns stays: only uninstalling with an
+ * explicit `purgeData` discards data (docs/plugin-lifecycle.md), and switching a
+ * plugin off is something people do in order to see what happens.
+ */
+export async function apiDisablePlugin(sourceId: string, pluginId: string): Promise<void> {
+  await apiJson(
+    await fetch(`/api/source/${sourceId}/plugin/${encodeURIComponent(pluginId)}`, {
+      method: 'DELETE',
+    }),
+  );
+}
+
 export async function apiPutPhases(sourceId: string, phases: TimelinePhase[]): Promise<void> {
   await apiJson(
     await fetch(`/api/source/${sourceId}/phases`, {

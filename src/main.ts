@@ -54,6 +54,7 @@ import {
   timelineSection,
   wireTimelineSettings,
 } from './timelineSettings';
+import { setPluginsSectionRefresh } from './pluginsSection';
 import { deleteItem } from './itemForm';
 import { hideDetail, pluginPanelBackend, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
@@ -462,6 +463,15 @@ async function bootstrap() {
   // view may enter a plugin view, which needs the mode resolved against this
   // timeline's plugins and its chunk loaded.
   setupSavedViewsControl((mode) => applyViewMode(mode, { keepPrefs: true }));
+  // Enabling or disabling a plugin changes what the timeline *is*, so the settings
+  // section hands that work back here rather than reimplementing the three steps
+  // applyView already takes after a source is read.
+  setPluginsSectionRefresh(async () => {
+    if (!state.activeView) return;
+    await renderTimeline(state.activeView);
+    applyViewMode(state.viewMode, { persist: false });
+    updatePluginViews();
+  });
 
   state.pendingSavedView = urlState.savedView ?? null;
 

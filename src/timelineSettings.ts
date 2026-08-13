@@ -7,8 +7,9 @@
 // and the API has accepted them for as long as there has been an API.
 //
 // A route rather than a panel or a dialog, for the reason the instance area is one:
-// this grows a section per concern (field definitions are #84, plugins #85), and a
-// dialog is the wrong size for that. It shares its frame and its section mechanics
+// it grows a section per concern — its name and default grouping, its field
+// definitions, the plugins it uses — and a dialog is the wrong size for that. It
+// shares its frame and its section mechanics
 // with the instance area (see src/areaFrame.ts) and keeps its own hash key, because
 // which area is open is a statement about levels — see
 // docs/information-architecture.md.
@@ -37,6 +38,7 @@ import { els, state, syncUrl } from './state';
 import { groupByChoices, timelineMetaDraft, timelineMetaPatch } from './timelineMeta';
 import { apiUpdateMeta } from './editor';
 import { mountFieldsSection, unmountFields } from './fieldsSection';
+import { mountPluginsSection, unmountPlugins } from './pluginsSection';
 import { renderTimeline } from './render';
 
 /**
@@ -44,7 +46,7 @@ import { renderTimeline } from './render';
  * English like every other key in the hash, though the labels beside them are
  * German.
  */
-export type TimelineSection = 'general' | 'fields';
+export type TimelineSection = 'general' | 'fields' | 'plugins';
 
 const handle = createAreaHandle<TimelineSection>();
 
@@ -181,6 +183,7 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
 const SECTIONS: readonly AreaSection<TimelineSection>[] = [
   { id: 'general', label: 'Allgemein', mount: mountGeneral },
   { id: 'fields', label: 'Felder', mount: mountFieldsSection, unmount: unmountFields },
+  { id: 'plugins', label: 'Plugins', mount: mountPluginsSection, unmount: unmountPlugins },
 ];
 
 /** The section a hash value names, defaulting to the first. */

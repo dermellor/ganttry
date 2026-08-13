@@ -233,3 +233,37 @@ body.settings-open .ds-Toolbar[data-tone='footer'] {
   align-items: center;
   gap: var(--space-2xs);
 }
+
+/* ---- one card per installed plugin ------------------------------------------- */
+
+/* The same card as a field definition, because it is the same problem: a name, a
+   version, a state, two flags and a config bag do not fit one row. It reuses the
+   class rather than copying its declarations — one card look, one place. */
+
+/* Wider than the forms beside it: a config bag is JSON, and 34rem wraps it into
+   something nobody can read. */
+.settings .plugin-cards {
+  max-width: 48rem;
+}
+
+.settings .plugin-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* Capabilities and views belong together — „what would this plugin do here" — so they
+   sit closer than the card's own spacing puts them. */
+.settings .plugin-card-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+/* The state sits opposite the name and stays quiet: it is what the reader scans, and
+   the reason for a plugin that cannot run is the only long text on the card. */
+.settings .plugin-card-state {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  text-align: right;
+}
