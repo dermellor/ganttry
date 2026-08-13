@@ -12,10 +12,30 @@
 // unit-testing without a browser.
 
 import type { TimelineItem } from './buildItems';
-import { bucketsFor, NO_BUCKET, type SectionContext } from './listGrouping';
+import { bucketsFor, NO_BUCKET, TYPE_DIM, type SectionContext } from './listGrouping';
 
 /** Selected bucket values per dimension key. */
 export type FilterSelection = Record<string, string[]>;
+
+/** What „nur Meilensteine" means now: the type dimension narrowed to `point`. */
+export const MILESTONES_ONLY_SELECTION: FilterSelection = { [TYPE_DIM]: ['point'] };
+
+/**
+ * Fold a „nur Meilensteine" flag into a selection.
+ *
+ * „Nur Meilensteine" was a control of its own beside the filter and **composed**
+ * with it, so it adds the type dimension rather than replacing what is there. An
+ * explicit type selection wins: it is the newer statement about the same dimension.
+ *
+ * It lives here because three callers need exactly this rule — the stored
+ * per-presentation state, the instance-wide keys it replaced, and now a link
+ * carrying `m=1` — and a fourth copy is how one of them ends up composing and the
+ * others overwriting.
+ */
+export function withMilestonesNarrowing(filters: FilterSelection): FilterSelection {
+  if (filters[TYPE_DIM]?.length) return filters;
+  return { ...filters, ...MILESTONES_ONLY_SELECTION };
+}
 
 /** The dimensions actually narrowing anything, in the selection's own order. */
 export function activeFilterDims(filters: FilterSelection): string[] {

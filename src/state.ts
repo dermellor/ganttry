@@ -42,7 +42,8 @@ import {
   withViewPrefs,
   type ViewPrefsStore,
 } from './viewPrefs';
-import type { FilterSelection } from './filterRule';
+import { isFilterSelectionActive, type FilterSelection } from './filterRule';
+import { canonicalFilters } from './savedViews';
 
 // The frame is built rather than looked up: `index.html` carries no markup any
 // more, because `src/export.ts` needs the same frame and two hand-kept copies of
@@ -221,6 +222,15 @@ export interface AppState {
    * before the source exists.
    */
   pendingSavedView: string | null;
+  /**
+   * The filter selection a link carried (`f=…`), held until after the saved view it
+   * may arrive with has been applied — a link with both says „that view, but narrowed
+   * like this", so the explicit selection is the later word.
+   *
+   * Separate from `pendingPrefs.filters`, which is the `m=1` fold and *composes* with
+   * what the timeline remembers. This one replaces it: `f` states the whole extent.
+   */
+  pendingFilters: FilterSelection | null;
   // Parent items whose children are folded away in the ACTIVE source (see
   // COLLAPSED_ITEMS_KEY). Swapped wholesale by loadCollapsedItems on every view
   // change, so nothing here ever refers to another timeline's ids.
@@ -279,6 +289,7 @@ export const state: AppState = {
   pendingPrefs: null,
   activeSavedViewId: null,
   pendingSavedView: null,
+  pendingFilters: null,
   collapsedItems: new Set(),
   persisting: false,
   persistAgain: false,
@@ -470,7 +481,33 @@ export function isAnyFormOpen(): boolean {
   );
 }
 
-export function syncUrl(): void {
+/**
+ * Does the applied saved view already state exactly the selection on screen?
+ *
+ * Compared through `canonicalFilters`, the same normalisation the drift marker uses:
+ * two selections that narrow identically must answer the same here, or the order two
+ * checkboxes were ticked in would decide whether the link spells the filter out.
+ */
+function appliedSavedViewCarriesFilters(): boolean {
+  if (!state.activeSavedViewId) return false;
+  const view = state.activeSourceFile?.savedViews?.find((v) => v.id === state.activeSavedViewId);
+  if (!view) return false;
+  return (
+    JSON.stringify(canonicalFilters(view.filters)) === JSON.stringify(canonicalFilters(state.filters))
+  );
+}
+
+/**
+ * Write the current state into the hash.
+ *
+ * `push` leaves a history entry instead of rewriting the current one, and exactly one
+ * caller asks for it: narrowing in the filter panel. Every other change is a rewrite,
+ * which is what it has always been. Without an entry there is nothing for back to
+ * return to, so „back reverses a narrowing" needs the entry to exist — and a
+ * repaint-driven write (a prune, a redraw) must not create one, or back would walk
+ * through states nobody chose.
+ */
+export function syncUrl(options: { push?: boolean } = {}): void {
   if (state.suppressUrlSync || !state.activeView) return;
   const urlState: UrlState = { view: state.activeView.id };
   if (state.selectedItemId) urlState.item = state.selectedItemId;
@@ -478,19 +515,29 @@ export function syncUrl(): void {
     urlState.from = isoDateOnly(state.userWindow.start);
     urlState.to = isoDateOnly(state.userWindow.end);
   }
-  // `m=1` is no longer written: „nur Meilensteine" is a value of the type
-  // dimension now, and the filter as a whole has never been in the hash. Writing
-  // one dimension of it and not the others would say something untrue about the
-  // rest. Old links carrying it are still read (see urlState.ts).
+  // `m=1` is not written: „nur Meilensteine" is a value of the type dimension, and
+  // the whole selection travels as `f` now. Old links carrying `m` are still read
+  // (see urlState.ts).
   if (state.viewMode !== 'timeline') urlState.mode = state.viewMode;
   // The saved view travels as one short parameter, which is what makes "look at
   // this the way I am" a link rather than a description of six clicks. Only while
   // one is actually applied — a plain link stays plain, the rule `mode` follows.
   if (state.activeSavedViewId) urlState.savedView = state.activeSavedViewId;
+  // …and the other half of the extent beside `from`/`to`, so a link carries the whole
+  // of it (see „URL state" in docs/editing.md).
+  //
+  // Not while an applied saved view already says exactly this, because then `sv` is
+  // the better statement: it keeps following the view when its owner edits it, where a
+  // spelled-out `f` would pin an old link to yesterday's narrowing. Once the display
+  // has drifted from the view, the drift is what has to travel, so `f` is written
+  // beside `sv` and wins on the way back in.
+  if (isFilterSelectionActive(state.filters) && !appliedSavedViewCarriesFilters()) {
+    urlState.filters = state.filters;
+  }
   // Written alongside everything else: the view, item and window stay in the
   // hash while the area is open, so closing it returns to the timeline the
   // operator left rather than to the default view.
   if (state.settingsSection) urlState.settings = state.settingsSection;
   if (state.tlSection) urlState.timelineSettings = state.tlSection;
-  writeUrlState(urlState);
+  writeUrlState(urlState, { replace: !options.push });
 }

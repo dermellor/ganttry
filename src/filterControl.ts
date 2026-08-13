@@ -15,7 +15,7 @@
 
 import { type TimelineItem } from './buildItems';
 import { Checkbox, MenuSection } from './design-system';
-import { state, els, saveViewPrefs } from './state';
+import { state, els, saveViewPrefs, syncUrl } from './state';
 import { filterDimensions, filterValueOptions } from './grouping';
 import { applyFilter } from './render';
 import { filterValueCount, pruneFilters, withFilterValues } from './filterRule';
@@ -26,10 +26,18 @@ function currentEntries(): TimelineItem[] {
   return (state.activeBuild?.items ?? []).filter((it) => it.type !== 'background');
 }
 
-// The selection belongs to the timeline it was made on, so it is written with the
-// rest of that timeline's display state (see viewPrefs.ts).
-function persist(): void {
+/**
+ * The selection belongs to the timeline it was made on, so it is written with the rest
+ * of that timeline's display state (see viewPrefs.ts) — and into the hash, because the
+ * extent is half of what a shared link is for („URL state", docs/editing.md).
+ *
+ * `push` only for a selection somebody actually made: it leaves a history entry, which
+ * is what back returns to. A prune during a repaint passes nothing, or back would walk
+ * through states nobody chose.
+ */
+function persist(options: { push?: boolean } = {}): void {
   saveViewPrefs();
+  syncUrl(options);
 }
 
 function updateToggleLabel(): void {
@@ -139,7 +147,7 @@ export function setupFilterControl(): void {
       (cb) => cb.value,
     );
     state.filters = withFilterValues(state.filters, dim, checked);
-    persist();
+    persist({ push: true });
     updateToggleLabel();
     applyFilter();
   });

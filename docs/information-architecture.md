@@ -85,8 +85,12 @@ A presentation is *chosen*, a perspective is *set*, an extent is *narrowed*. Thr
 different actions, so three places in one bar rather than two controls in the
 header and two below it.
 
-The extent is **private and per person**, stored per timeline, and shared by
-copying the link (see „Where the display state lives" (docs/editing.md)).
+The extent is **private and per person**, stored per presentation of a timeline, and
+shared by copying the link (see „Where the display state lives" (docs/editing.md)).
+Both halves of it are in that link now: the window as `from`/`to`, the filter as `f`
+(„URL state", docs/editing.md). It was a half-truth for a while — the sentence
+promised a shareable extent while only the window travelled — which is the kind of
+claim a chapter makes and the code quietly does not keep.
 
 **A named bundle of the two is level 3**, because it is stored with the document
 and can be somebody else's to read: that is what a saved view („Ansicht") is, and
@@ -117,7 +121,7 @@ for a different part of the screen to set the same thing.
 | Darstellung switch (Timeline / Liste / Graph) | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
 | Plugin views | the bar, one control per plugin | 4 | done: each plugin's views sit in its own control, its name inside on the left; the control marks itself while one of its views is active |
 | „Gruppieren" | the bar | 4, perspective | done |
-| „Filter" | the bar | 4, extent | done: beside the switch, holding every narrowing |
+| „Filter" | the bar | 4, extent | done: beside the switch, holding every narrowing, and travelling in the link as `f` |
 | „Ansicht" (saved views) | the bar, first of its group | 3 | done: a named bundle of the presentation, the perspective and the extent, stored with the timeline and shareable with the instance. A **mark** rather than a labelled control: the bar wraps below ~1000px with a plugin present, and a third caption moved that to ~1200px |
 | „Nur Meilensteine" | gone | 4, extent | done: a value of the type dimension in the filter |
 | Time window (zoom, pan) | the chart | 4, extent | stays a gesture, counts as extent, travels with it |
@@ -234,7 +238,8 @@ affordance, with every route enforcing for itself (see [`users.md`](users.md)).
 - **No start page.** The app opens a timeline.
 - **Timeline settings are a route**, not a panel and not a dialog, so field
   definitions have room and the settings of one timeline can be linked.
-- **An extent stays private**, stored per person and per timeline, shared by link.
+- **An extent stays private**, stored per person and per presentation, shared by link —
+  the whole of it, window and filter both.
 - **Every presentation declares its accessories**, which retires the `toolbar` flag
   on a plugin view.
 

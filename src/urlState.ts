@@ -1,4 +1,6 @@
 import { parseLocalDay } from './date';
+import { decodeFilterSelection, encodeFilterSelection, FILTER_PARAM } from './filterParam';
+import type { FilterSelection } from './filterRule';
 
 export type UrlState = {
   view?: string;
@@ -30,13 +32,55 @@ export type UrlState = {
    * a deleted view has to open the timeline, not fail.
    */
   savedView?: string;
+  /**
+   * The filter selection (`f=status:Open,Done`), the other half of the extent beside
+   * `from`/`to`. Absent means the link says nothing about the narrowing, which the two
+   * entry points read differently — see „URL state" (docs/editing.md).
+   */
+  filters?: FilterSelection;
 };
 
-const ORDER = ['view', 'item', 'from', 'to', 'm', 'mode', 'sv', 'settings', 'timeline-settings'] as const;
+const ORDER = [
+  'view',
+  'item',
+  'from',
+  'to',
+  'm',
+  'mode',
+  FILTER_PARAM,
+  'sv',
+  'settings',
+  'timeline-settings',
+] as const;
+
+/**
+ * Keys whose value is written into the hash exactly as the caller built it.
+ *
+ * `f` carries its own percent-encoding per dimension and per value, with the
+ * separators left literal (see filterParam.ts). Encoding it again would escape those
+ * separators and turn a legible link into a wall of `%3A`.
+ */
+const PRE_ENCODED = new Set<string>([FILTER_PARAM]);
 
 function parseHash(hash: string): URLSearchParams {
   const h = hash.startsWith('#') ? hash.slice(1) : hash;
   return new URLSearchParams(h);
+}
+
+/**
+ * One parameter as it literally stands in the hash, undecoded.
+ *
+ * `URLSearchParams` decodes percent-escapes before a caller can split on anything,
+ * so a filter value containing a comma would arrive as two values and one containing
+ * a `+` as a space. Only `f` needs this; everything else is a single opaque value
+ * that the standard parser handles correctly.
+ */
+function rawParam(hash: string, key: string): string | null {
+  const h = hash.startsWith('#') ? hash.slice(1) : hash;
+  for (const part of h.split('&')) {
+    if (part.startsWith(`${key}=`)) return part.slice(key.length + 1);
+  }
+  return null;
 }
 
 export function readUrlState(): UrlState {
@@ -55,6 +99,11 @@ export function readUrlState(): UrlState {
   if (mode) state.mode = mode;
   const savedView = p.get('sv');
   if (savedView) state.savedView = savedView;
+  // Out of the raw hash, and only set when the parameter is actually there: an absent
+  // key has to stay distinguishable from „narrows nothing", because the two mean
+  // different things on the two entry points.
+  const rawFilters = rawParam(location.hash, FILTER_PARAM);
+  if (rawFilters != null) state.filters = decodeFilterSelection(rawFilters);
   const settings = p.get('settings');
   // A bare `#settings` (no `=`) opens the area on its first section. URLSearchParams
   // reads that as an empty string, which is a *present* key — distinguishing it
@@ -100,9 +149,9 @@ function buildHash(state: UrlState): string {
   if (state.from) map.from = state.from;
   if (state.to) map.to = state.to;
   // `m` is read but never written: „nur Meilensteine" is a value of the filter's
-  // type dimension now, and the filter has never been in the hash. Writing this
-  // one dimension of it would claim the hash describes the narrowing, which it
-  // does not. `UrlState.milestones` therefore only ever arrives from outside.
+  // type dimension, and the whole selection now travels as `f`. Writing both would
+  // put the same narrowing in the hash twice, in two grammars. `UrlState.milestones`
+  // therefore only ever arrives from outside, out of a link that predates `f`.
   if (state.milestones) map.m = '1';
   // 'timeline' is the default and stays out of the hash, so a plain link keeps
   // looking plain. Everything else (list, or a plugin view) is written verbatim.
@@ -111,10 +160,18 @@ function buildHash(state: UrlState): string {
   // carries the whole extent under one short key, which is what the filter itself
   // has never done (see „URL state" in docs/editing.md).
   if (state.savedView) map.sv = state.savedView;
+  // Written only while something is narrowed, the rule `mode` and `sv` follow: a
+  // parameter on every link would say „this is a narrowed view" about the plain one.
+  if (state.filters) {
+    const encoded = encodeFilterSelection(state.filters);
+    if (encoded) map[FILTER_PARAM] = encoded;
+  }
   if (state.settings) map.settings = state.settings;
   if (state.timelineSettings) map['timeline-settings'] = state.timelineSettings;
   return ORDER.flatMap((k) =>
-    map[k] != null ? [`${encodeURIComponent(k)}=${encodeURIComponent(map[k])}`] : [],
+    map[k] != null
+      ? [`${encodeURIComponent(k)}=${PRE_ENCODED.has(k) ? map[k] : encodeURIComponent(map[k])}`]
+      : [],
   ).join('&');
 }
 

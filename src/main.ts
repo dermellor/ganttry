@@ -95,7 +95,11 @@ import {
   setSwitcherViews,
   wireTimelineSwitcher,
 } from './timelineSwitcher';
-import { MILESTONES_ONLY_SELECTION } from './viewPrefs';
+import {
+  MILESTONES_ONLY_SELECTION,
+  withMilestonesNarrowing,
+  type FilterSelection,
+} from './filterRule';
 import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
 import { hostApiFor } from './pluginHost/hostBackend';
 import { setTimelineRefresh } from './pluginHost/refresh';
@@ -154,6 +158,32 @@ async function loadCurrentUser(): Promise<PresenceUser | null> {
   }
 }
 
+/**
+ * Apply the selection a link spelled out (`f=…`), replacing whatever the timeline
+ * remembered or a saved view just set.
+ *
+ * Replaces rather than composes, which is the difference to the `m=1` fold in
+ * `pendingPrefs`: `f` states the whole extent, so a link narrowing nothing but naming
+ * the parameter clears the narrowing. That is what makes back and forward reverse a
+ * filter set in the panel.
+ *
+ * A dimension this timeline does not have survives into `state.filters` and is dropped
+ * by `pruneFilters` on the first paint, per dimension — deciding it here would need
+ * the build, and the panel already owns that rule.
+ */
+function applyPendingFilters(): void {
+  const wanted = state.pendingFilters;
+  state.pendingFilters = null;
+  if (!wanted) return;
+  state.filters = { ...wanted };
+  saveViewPrefs();
+  if (state.viewMode === 'list') renderListView();
+  else applyGrouping();
+  // The applied view has not changed, but the display may no longer be it: the marker
+  // is what says so.
+  syncSavedViewsControl();
+}
+
 async function applyView(viewId: string) {
   if (!state.config) return;
   const view = state.config.views.find((v) => v.id === viewId);
@@ -200,6 +230,10 @@ async function applyView(viewId: string) {
     : undefined;
   if (savedView) applySavedView(savedView);
   else syncSavedViewsControl();
+  // Last, because a link carrying both a saved view and a filter means „that view,
+  // narrowed like this": the spelled-out selection is the later word, and it is only
+  // ever in the link when it differs from what the view says (see syncUrl).
+  applyPendingFilters();
   syncUrl();
 }
 
@@ -464,6 +498,9 @@ async function bootstrap() {
   setupSavedViewsControl((mode) => applyViewMode(mode, { keepPrefs: true }));
 
   state.pendingSavedView = urlState.savedView ?? null;
+  // Only when the link carries the parameter: an absent `f` on load means „whatever
+  // this timeline remembers", the same rule `mode` follows here.
+  state.pendingFilters = urlState.filters ?? null;
 
   state.pendingItem = urlState.item ?? null;
   state.pendingWindow = parseUrlWindow(urlState);
@@ -629,13 +666,24 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
 
     // An incoming hash is authoritative about what it carries: no `mode` means the
     // timeline, which is what makes back/forward reverse a switch to the list.
-    //
-    // It is deliberately NOT authoritative about the filter. The filter has never
-    // been in the hash, and `m=1` — the one narrowing that was — is no longer
-    // written, so an absent `m` says nothing about the type dimension. Reading it
-    // as „no type filter" would clear a selection the user made in the panel on
-    // every back step.
     const wantMode: ViewMode = readViewMode(incoming.mode, legacyViewMode);
+
+    // The filter now travels in the hash too (`f`), so it follows that same rule: an
+    // absent parameter means „nothing narrowed", which is what makes back reverse a
+    // narrowing made in the panel. Before `f` existed there was nothing to be
+    // authoritative about, and reading an absent `m` that way would have cleared a
+    // selection the link never spoke about.
+    //
+    // `m=1` keeps its own, older rule: it is one dimension rather than the whole
+    // extent, and it composed with whatever was set. Hence three answers, not two —
+    // `null` means „this link says nothing, leave that to the fold below".
+    const linkFilters: FilterSelection | null = incoming.filters
+      ? incoming.milestones
+        ? withMilestonesNarrowing(incoming.filters)
+        : incoming.filters
+      : incoming.milestones
+        ? null
+        : {};
 
     const targetViewId = incoming.view ?? state.config.defaultView;
     const targetWindow = parseUrlWindow(incoming);
@@ -645,10 +693,14 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
     // overwrite them with the target timeline's stored state.
     if (switching) {
       state.pendingPrefs = {
+        // Only the legacy fold goes through here, because this one composes with the
+        // target timeline's stored selection. A spelled-out `f` replaces it instead
+        // and waits in `pendingFilters` until after the saved view.
+        ...(incoming.milestones && !incoming.filters && { filters: MILESTONES_ONLY_SELECTION }),
         mode: wantMode,
-        ...(incoming.milestones && { filters: MILESTONES_ONLY_SELECTION }),
       };
-    } else if (incoming.milestones) {
+      state.pendingFilters = linkFilters;
+    } else if (incoming.milestones && !incoming.filters) {
       // An old link pasted into the running app: add the narrowing it asks for.
       state.filters = { ...state.filters, ...MILESTONES_ONLY_SELECTION };
       saveViewPrefs();
@@ -712,6 +764,14 @@ async function applyExternalState(incoming: UrlState): Promise<void> {
         saveViewPrefs();
       }
       applyViewMode(wantMode, { persist: false });
+      // After the mode, never before: a mode change loads that presentation's own
+      // perspective and extent (see applyViewMode), which would overwrite the
+      // selection this link spelled out with whatever was last left in the
+      // presentation it names.
+      if (linkFilters) {
+        state.pendingFilters = linkFilters;
+        applyPendingFilters();
+      }
     }
   } finally {
     state.suppressUrlSync = false;
