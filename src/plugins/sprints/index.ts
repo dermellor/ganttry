@@ -579,14 +579,18 @@ function chartBlock(
   const plan = idealSeries(days, figures.scope ?? 0);
   const extras: (Element | null)[] = [];
   let actual: BurndownPoint[] = [];
-  let caption: string;
+  // What the second line IS, as its legend key. There used to be a caption under the
+  // chart saying it in a sentence, which is documentation standing in an interface: the
+  // legend already has to name both lines, so the one word belongs there and nowhere
+  // else. Null when there is no second line to name.
+  let actualKey: string | null = null;
 
   if (isPast && report) {
     // A closed sprint's curve is the record, never a recomputation: the item list
     // keeps moving afterwards, so recomputing rewrites history on every edit.
     const read = frozenSeries(days, report.series);
     actual = read.points;
-    caption = `Eingefroren beim Abschluss${sprint.closedOn ? ` am ${germanDay(sprint.closedOn)}` : ''}.`;
+    actualKey = sprint.closedOn ? `Eingefroren am ${germanDay(sprint.closedOn)}` : 'Eingefroren';
     if (read.outside.length) {
       extras.push(
         Callout({
@@ -607,37 +611,12 @@ function chartBlock(
       );
     }
   } else if (isPast) {
-    caption = 'Für diesen Sprint gibt es keinen eingefrorenen Verlauf.';
+    // No key: there is no second line, and „there is none" is what an absent key says.
   } else {
     const built = reconstructSeries(days, burndownItems(members), today());
     actual = built.points;
-    caption = built.points.length
-      ? 'Rekonstruiert aus Status und Enddatum der Einträge.'
-      : // Nothing is drawn before the first day, and saying „rekonstruiert" over an
-        // empty plot would describe a line that is not there.
-        'Der Sprint hat noch nicht begonnen.';
-    if (built.clampedToStart.length) {
-      extras.push(
-        Text({
-          as: 'p',
-          size: 'sm',
-          tone: 'muted',
-          text: `Vor Sprintbeginn abgeschlossen, deshalb auf den ersten Tag gelegt: ${built.clampedToStart.join(', ')}.`,
-        }),
-      );
-    }
-    if (built.clampedToAsOf.length) {
-      extras.push(
-        Text({
-          as: 'p',
-          size: 'sm',
-          tone: 'muted',
-          text:
-            'Abgeschlossen, aber ohne Enddatum im gezeichneten Zeitraum, deshalb auf den letzten Tag gelegt: ' +
-            `${built.clampedToAsOf.join(', ')}.`,
-        }),
-      );
-    }
+    // Nothing is drawn before the first day, so there is nothing to name then either.
+    actualKey = built.points.length ? 'Rekonstruiert' : null;
   }
 
   const unit = UNIT_LABELS[figures.unit];
@@ -649,9 +628,8 @@ function chartBlock(
     chart(doc, { days, scope: figures.scope ?? 0, plan, actual, ariaLabel }),
     el('div', { class: 'sprints-legend' }, [
       legendKey('Plan', 'plan'),
-      legendKey(figures.frozen ? 'Eingefroren' : 'Verlauf', 'actual'),
+      actualKey ? legendKey(actualKey, 'actual') : null,
     ]),
-    el('figcaption', {}, Text({ as: 'p', text: caption, tone: 'muted', size: 'sm' })),
     ...extras,
   ]);
 }
