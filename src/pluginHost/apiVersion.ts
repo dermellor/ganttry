@@ -29,7 +29,13 @@
 // one of them exists because the in-tree plugin could not be moved onto the public
 // contract without it (#117) — which is the evidence a contract addition should
 // have, rather than someone deciding a method sounded useful.
-export const HOST_API_VERSION = { major: 1, minor: 4 } as const;
+// 1.5 added derived field values: `CustomFieldDef.derived` plus
+// `PluginDescriptor.derive` (src/pluginHost/derived.ts). Additive — a plugin that
+// declares neither keeps working, and a host on 1.4 simply never asks. A plugin
+// whose field only makes sense computed should say `^1.5`, because on an older host
+// the field appears as an editable one with nothing filling it, which reads as the
+// plugin being broken rather than as a version mismatch.
+export const HOST_API_VERSION = { major: 1, minor: 5 } as const;
 
 export type ApiVersion = { major: number; minor: number };
 

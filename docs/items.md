@@ -368,6 +368,23 @@ Which fields a given plugin contributes is documented with that plugin
 (`src/plugins/<id>/README.md`), not here: uninstall it and a table in this
 chapter would be describing fields that no longer exist.
 
+**A field's *value* can be derived too, and then nothing is stored.** A def may
+carry `derived: true`, which says the contributing plugin computes the value per
+item ([`src/pluginHost/derived.ts`](../src/pluginHost/derived.ts)). The form shows
+such a field read-only, the write path leaves its key alone, and it never appears
+in the context menu — there is nothing to set. What it buys is a field that cannot
+go stale: the sprint an item falls into follows from that item's dates, so keeping
+it as a stored copy means a moved item carries a bucket it is no longer in, and
+nothing in the interface distinguishes that from a value somebody chose.
+
+The values arrive with the build, on `DetailNote.derived`, beside the stored
+metadata rather than merged into it — `withDerived` joins the two at each read
+point (grouping, the filter, the form). Keeping them apart is what stops a write
+path from persisting a computed value and recreating the stale copy. Two rules the
+host enforces rather than trusting: a plugin may only fill keys it declared
+derived, and a plugin whose rule throws loses its own values instead of blanking
+the build.
+
 **A plugin lays out its own section.** The order of the array `fields(file)`
 returns is the render order, and each def's `width` (`half`, the default, or
 `full`) decides whether it shares its grid row — `full` reuses the form's

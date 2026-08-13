@@ -24,6 +24,8 @@ import {
   type GroupByOption,
   type SectionContext,
 } from '../../src/listGrouping.ts';
+import { derivedValuesFor, withDerived } from '../../src/pluginHost/derived.ts';
+import { mergeFieldDefs, pluginFieldDefs } from '../../src/pluginHost/registry.ts';
 
 export type DimensionReport = {
   key: string;
@@ -58,10 +60,23 @@ function entriesOf(file: TimelineFile): TimelineItem[] {
 }
 
 function contextOf(file: TimelineFile): SectionContext {
-  const meta = new Map((file.items ?? []).map((it) => [it.id ?? '', it.metadata]));
+  // The same two-part answer the browser gives: what the item stores, plus what
+  // the enabled plugins compute for it. An agent asked to write a filter on a
+  // derived dimension would otherwise be told the timeline has no such values —
+  // and a filter naming a value that „does not exist" narrows nothing, silently.
+  const derive = derivedValuesFor(file);
+  const meta = new Map(
+    (file.items ?? []).map((it) => [it.id ?? '', withDerived(it.metadata, derive ? derive(it) : undefined)]),
+  );
   return {
     groups: (file.groups ?? []).map((g) => ({ id: g.id, content: g.content })),
-    customFields: (file.customFields ?? []) as CustomFieldDef[],
+    // Stored definitions merged with the contributed ones, exactly as the item
+    // form does it: a plugin's fields are dimensions too, and listing only the
+    // stored half is what kept them out of an agent's vocabulary until now.
+    customFields: mergeFieldDefs(
+      (file.customFields ?? []) as CustomFieldDef[],
+      pluginFieldDefs(file),
+    ),
     metaOf: (id: string) => meta.get(id),
   };
 }

@@ -58,6 +58,13 @@ Answer four questions before writing anything:
    from the timeline's own data or from the plugin's config is the cheapest possible
    plugin: it flows into the item form, grouping, filtering and the context menu with
    no further work.
+
+   **Ask the same question about the value.** If the value follows from the item
+   rather than being chosen — the sprint its dates fall into, the cohort its start
+   belongs to — declare the field `derived: true` and implement `derive(file)`
+   („A field's value can be the plugin's too" (architecture.md)). Nothing is stored,
+   so the value cannot outlive its reason; the alternative is a copy on the item that
+   a drag silently invalidates. It needs `apiVersion: "^1.5"`.
 2. **Does it need data of its own?** Item-level values live in `metadata[key]` and
    need nothing. Rows of its own are declared as `collections` in the manifest and
    stored generically by the host — a plugin never ships a migration. See

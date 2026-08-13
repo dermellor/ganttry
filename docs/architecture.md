@@ -126,6 +126,24 @@ takes its markers out of each plugin's own stylesheet rather than from a list in
 the script — a hardcoded list is a plugin fact in a core file, and it goes stale
 silently.
 
+**A field's value can be the plugin's too, not only its options.** A def with
+`derived: true` says the plugin computes the value per item, through
+`derive(file)` — a factory called once per build whose returned function runs per
+item ([`src/pluginHost/derived.ts`](../src/pluginHost/derived.ts)). The values ride
+along on the build (`DetailNote.derived`) and are joined to the stored metadata by
+`withDerived` at each read point: `metaOf` for grouping, the filter and the
+timeline's lanes, the item form for its read-only control, and `contextOf` in the
+MCP saved-view tools so an agent sees the same dimension a person does.
+
+Two reasons it is not simply written into `metadata`. A value that *follows* from
+the item survives the item moving if it is stored, and a stale bucket is
+indistinguishable from a chosen one — which is the bug the seam exists for. And
+keeping the two bags apart is what lets the write path refuse the computed half
+instead of persisting it back. The host enforces the rest, because a plugin cannot
+do it for the others: a plugin fills only the keys it declared derived, the first
+declaration of a key owns it, and a rule that throws costs that plugin its values
+rather than the whole build.
+
 **The manifest is what the host reads before running anything.**
 [`src/pluginHost/manifest.ts`](../src/pluginHost/manifest.ts) defines it: id, name,
 version, the contract range it was built against, its capabilities, its views, the

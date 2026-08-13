@@ -16,7 +16,7 @@
 // installing plugins at runtime (#9): `register()` is the seam a loader will call.
 // Until then the entries below are registered at module load.
 
-import type { CustomFieldDef, TimelineFile } from '../types';
+import type { CustomFieldDef, TimelineFile, TimelineFileItem } from '../types';
 import { pluginViewMode, type PluginViewMode } from './viewMode';
 import { validateManifest, type ManifestView, type PluginManifest, type ToolDecl } from './manifest';
 import type { ToolHandler } from './tools';
@@ -28,6 +28,19 @@ import type { HostApi } from './hostApi';
  * so the host has it before any plugin code runs.
  */
 export type PluginView = ManifestView;
+
+/** The values one plugin computed for one item, keyed by the field key. */
+export type DerivedValues = Record<string, unknown>;
+
+/**
+ * What `PluginDescriptor.derive(file)` returns: the per-item half of a derived
+ * field. Pure over one item, so a plugin's rule is testable in its own folder.
+ *
+ * The types live here rather than in `./derived` because that module reads the
+ * registry, and the contract a plugin author writes against should not depend on
+ * which direction the host's own imports run.
+ */
+export type DeriveFn = (item: TimelineFileItem) => DerivedValues;
 
 /** The lazily-loaded surface a plugin exposes to the host. */
 export interface PluginModule {
@@ -81,6 +94,22 @@ export interface PluginDescriptor {
    * demands enough data to make the *view* worth offering.
    */
   fields(file: TimelineFile | null | undefined): CustomFieldDef[];
+  /**
+   * The values behind the fields this plugin declared `derived`, as a factory over
+   * the timeline: `derive(file)` is called once per build, the function it returns
+   * once per item.
+   *
+   * Two shapes in one signature, and both matter. The factory is where whatever
+   * the *whole* timeline decides gets computed — a sprint raster, a set of cohorts
+   * — so it happens once rather than per item. The returned function is pure over
+   * one item, which is what makes the plugin's rule unit-testable in its own
+   * folder, exactly like a tool handler.
+   *
+   * `null` means „nothing to derive here" and is the right answer whenever the
+   * plugin is off or its config is empty. Data-only, like `fields`: this runs in
+   * the generic bundle and must reach no view code.
+   */
+  derive?(file: TimelineFile | null | undefined): DeriveFn | null;
   /**
    * The implementation of each tool the manifest declares, keyed by tool name.
    *

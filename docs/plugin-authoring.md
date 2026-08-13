@@ -52,6 +52,7 @@ orphans their rows, so pick it before you publish.
 | Export | Called when | Shape |
 | --- | --- | --- |
 | `fields(file)` | building the item form, grouping and filtering | synchronous, returns `CustomFieldDef[]` |
+| `derive(file)` | once per build, for the fields declared `derived` | synchronous factory, returns `(item) => values` or `null` |
 | `renderView(container, viewId, host)` | entering a view, and on every repaint | may be async |
 
 **`fields` is synchronous on purpose.** It runs on the item form's path, and an
@@ -61,6 +62,22 @@ timeline it is handed; do not fetch.
 **Store ids, never labels.** A contributed field's value ends up in an item's
 `metadata`, so a label as the value orphans every item the day somebody renames
 something.
+
+**Declare a field `derived: true` when its value follows from the item**, and
+implement `derive(file)` for it. Requires `apiVersion: "^1.5"`; on an older host the
+field appears as an editable control with nothing behind it. Nothing is stored: the
+form shows it read-only, the context menu skips it, and the key stays out of
+`metadataKeys`, since an uninstall has nothing to purge. That is what keeps a
+computed bucket — the sprint an item's dates fall into — from surviving the item
+moving out of it.
+
+The factory shape is the contract, not a convenience: whatever the *whole* timeline
+decides (a raster, a set of cohort boundaries) is computed in `derive(file)`, called
+once per build, while the function it returns is pure over one item. So the rule is
+unit-testable in your folder without a DOM, and the same function can back a tool
+handler — one rule, two surfaces. Return `null` when the plugin is off or its config
+is empty. The host drops values for any key you did not declare `derived`, and a
+`derive` that throws costs your plugin its values rather than taking the build down.
 
 **`renderView` has to be idempotent**, because the host calls it again on every
 repaint. It does *not* have to guard against overlapping calls: the host renders

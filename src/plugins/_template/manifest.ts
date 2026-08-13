@@ -18,8 +18,9 @@ export const exampleManifest: PluginManifest = {
   version: '0.1.0',
   // The host contract range this was built against. "^1" = any 1.x. Declare
   // "^1.3" or later if you use `tools` below, or an older host will load the plugin
-  // and list your verbs nowhere.
-  apiVersion: '^1.3',
+  // and list your verbs nowhere; "^1.5" if any field is `derived`, or an older host
+  // shows it as an editable field with nothing filling it.
+  apiVersion: '^1.5',
 
   // Keep this list short and true. It is shown to whoever installs the plugin, and
   // every declaration below has to be covered by it.

@@ -130,6 +130,15 @@ export type { PluginModule } from './registry';
 export type { PluginDescriptor } from './registry';
 
 /**
+ * The per-item half of a derived field: what `descriptor.derive(file)` returns.
+ *
+ * Exported for the same reason `PluginDescriptor` is — a plugin's own `fields.ts`
+ * is where the rule lives, and it should be able to name the type of the function
+ * it hands back without reaching into the registry.
+ */
+export type { DeriveFn, DerivedValues } from './registry';
+
+/**
  * What a plugin's tools receive and return, and the checks the host puts around
  * them. `validateToolPlan` is exported so a plugin's own tests can assert that a
  * rule produces a plan the host will accept, rather than finding out through a

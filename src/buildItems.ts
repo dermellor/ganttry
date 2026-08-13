@@ -8,6 +8,7 @@ import { childrenByParent, readParentId, resolveParents } from './itemHierarchy'
 import { CLONE_SEP } from './cloneId';
 import { orderGroups } from './groupOrder';
 import { BACKGROUND_LABEL_CLASS } from './backgroundItemDisplay';
+import { derivedValuesFor } from './pluginHost/derived';
 
 export const UNGROUPED = '_ungrouped';
 
@@ -289,6 +290,15 @@ export type DetailNote = {
   folder: string;
   filename: string;
   frontmatter: Record<string, unknown>;
+  /**
+   * What the enabled plugins computed for this item, for the fields they declared
+   * `derived` ([`./pluginHost/derived.ts`](./pluginHost/derived.ts)). Beside the
+   * stored metadata rather than merged into it, on purpose: `frontmatter` is what
+   * the item *has*, and a write path that cannot tell the two apart would store a
+   * computed value back and turn it into the stale copy the whole seam exists to
+   * avoid. Consumers merge with `withDerived` at the point they read a field.
+   */
+  derived?: Record<string, unknown>;
   body: string;
 };
 
@@ -829,6 +839,10 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
   const items: TimelineItem[] = [];
   const groupSet = new Map<string, TimelineGroup>();
   const details = new Map<string, DetailNote>();
+  // Once per build, not once per item: the factory is where a plugin computes what
+  // the whole timeline decides (a sprint raster). Null when no plugin derives
+  // anything, which is the common case and then costs nothing per item.
+  const derive = derivedValuesFor(file);
   const dependencies = new Map<string, string[]>();
   const rawParents = new Map<string, string>();
 
@@ -885,7 +899,11 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
       status: normalizeStatus(raw.status),
       tags: readTags(raw.metadata),
     });
-    details.set(id, detailFromJsonItem({ ...raw, id }));
+    const detail = detailFromJsonItem({ ...raw, id });
+    // The plugin sees the item as the file states it, which is the same shape its
+    // tools get — so one rule can serve both the field and the verb.
+    if (derive) detail.derived = derive(raw);
+    details.set(id, detail);
   }
 
   const hasGroupBy = view.groupBy || file.items.some((i) => i.group);
