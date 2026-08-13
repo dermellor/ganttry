@@ -39,6 +39,7 @@ import {
   type MemberInvite,
   type TimelineGroupDecl,
   type TimelineMeta,
+  type TimelineMetaPatch,
   type TimelineRepo,
 } from './repo.ts';
 
@@ -136,6 +137,7 @@ function rowToGroup(row: Record<string, any>): TimelineGroupDecl {
   const g: TimelineGroupDecl = { id: row.id, content: row.content ?? row.id };
   if (Array.isArray(row.nested_groups) && row.nested_groups.length) g.nestedGroups = row.nested_groups;
   if (row.show_nested != null) g.showNested = row.show_nested;
+  if (row.color != null) g.color = row.color;
   return g;
 }
 
@@ -146,6 +148,7 @@ function groupToRow(timelineId: string, g: TimelineGroupDecl, sort?: number): Re
     content: g.content ?? null,
     nested_groups: g.nestedGroups ?? null,
     show_nested: g.showNested ?? null,
+    color: g.color ?? null,
   };
   if (sort != null) row.sort = sort;
   return row;
@@ -309,7 +312,7 @@ export async function setMemberStatus(
 export async function getTimeline(db: SupabaseClient, id: string): Promise<TimelineFile | null> {
   const { data: tl, error: tlErr } = await db
     .from('timelines')
-    .select('id, name, description, group_by, phases, custom_fields')
+    .select('id, name, description, group_by, group_order, graph, phases, custom_fields')
     .eq('id', id)
     .maybeSingle();
   if (tlErr) throw new Error(`getTimeline: ${tlErr.message}`);
@@ -331,7 +334,7 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
 
   const { data: groupRows, error: grpErr } = await db
     .from('timeline_groups')
-    .select('id, content, nested_groups, show_nested, sort')
+    .select('id, content, nested_groups, show_nested, color, sort')
     .eq('timeline_id', id)
     .order('sort', { ascending: true, nullsFirst: true });
   if (grpErr) throw new Error(`getTimeline groups: ${grpErr.message}`);
@@ -340,6 +343,12 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
   if (tl.name != null) file.name = tl.name;
   if (tl.description != null) file.description = tl.description;
   if (tl.group_by != null) file.groupBy = tl.group_by;
+  // Only the value the reader acts on travels on; see the same note in
+  // timeline-repo.ts and the missing check constraint in migration 0024.
+  if (tl.group_order === 'declared') file.groupOrder = 'declared';
+  if (tl.graph && typeof tl.graph === 'object' && Object.keys(tl.graph).length) {
+    file.graph = tl.graph as TimelineFile['graph'];
+  }
   const plugins: PluginRef[] = (pluginRows ?? []).map((r) => ({
     id: r.plugin_id,
     config: (r.config ?? {}) as Record<string, unknown>,
@@ -449,6 +458,8 @@ export async function replaceTimeline(db: SupabaseClient, id: string, file: Time
     name: file.name ?? null,
     description: file.description ?? null,
     group_by: file.groupBy ?? null,
+    group_order: file.groupOrder ?? null,
+    graph: file.graph ?? null,
     phases: file.phases ?? [],
     custom_fields: file.customFields ?? [],
     updated_at: new Date().toISOString(),
@@ -631,7 +642,7 @@ export async function upsertGroup(
   const { data, error } = await db
     .from('timeline_groups')
     .upsert(groupToRow(timelineId, group))
-    .select('id, content, nested_groups, show_nested, sort')
+    .select('id, content, nested_groups, show_nested, color, sort')
     .single();
   if (error) throw new Error(`upsertGroup: ${error.message}`);
   return rowToGroup(data);
@@ -663,12 +674,7 @@ export async function updatePhases(db: SupabaseClient, id: string, phases: Timel
 export async function updateMeta(
   db: SupabaseClient,
   id: string,
-  meta: {
-    name?: string | null;
-    description?: string | null;
-    groupBy?: string | null;
-    customFields?: CustomFieldDef[] | null;
-  },
+  meta: TimelineMetaPatch,
 ): Promise<void> {
   const set: Record<string, any> = { updated_at: new Date().toISOString() };
   if ('name' in meta) set.name = meta.name ?? null;
@@ -679,6 +685,10 @@ export async function updateMeta(
   // pricing model is no longer patched here — it has its own granular tables
   // and endpoints (see the pricing write layer below).
   if ('customFields' in meta) set.custom_fields = meta.customFields ?? [];
+  if ('groupOrder' in meta) set.group_order = meta.groupOrder ?? null;
+  // Replaced whole rather than merged: patching into the bag needs a merge rule for
+  // a value the caller may not have read first.
+  if ('graph' in meta) set.graph = meta.graph ?? null;
   const { error } = await db.from('timelines').update(set).eq('id', id);
   if (error) throw new Error(`updateMeta: ${error.message}`);
 }
