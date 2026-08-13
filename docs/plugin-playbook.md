@@ -412,8 +412,42 @@ A hand-maintained list in the root README is fine at three plugins and is a wall
 links at fifty. The catalogue is what a reader browses and what a crawler indexes,
 so the entry fields are a publication requirement and not metadata hygiene.
 
+### 5.4 The page on the website
+
+**A plugin is not published until it has a page on <https://zeitlines.dev>.** The
+catalogue in this repository is read by somebody who is already here; the site is where
+somebody arrives with a kind of planning to do, and it is what `llms.txt` hands an
+answer engine. Skipping it means the work exists and nothing outside a GitHub tree says
+so, which is the „correct and invisible" failure this whole phase is about.
+
+The site is a **separate repository** (`zeitlines-web`, Astro, `output: 'static'`,
+deployed by Netlify on push). Two edits there, and its own `AGENTS.md` is the authority
+on how:
+
+| Where | What |
+| --- | --- |
+| `src/data/plugins.ts` | one `PluginEntry`: slug, id, title, `seoTitle`, description, domain, what it contributes, `status`, lane. It feeds the catalogue index, the footer and `llms.txt`, so a plugin missing from it is missing from all three |
+| `src/pages/plugins/<slug>.astro` | the page, through the `Doc` layout, with an **FAQ** — those entries become `FAQPage` structured data, so the questions have to be the ones people ask |
+
+Three rules that repository enforces and this one has to respect:
+
+- **`status` may not say `shipped` before the plugin is on `main` here.** The site
+  deploys on push, so a page that ships first is a page that lies. Land the plugin, then
+  the page.
+- **Every claim has to be true of the software today**, checked against this repository
+  rather than against an earlier version of the site. No invented numbers, and nothing
+  in the present tense that is still an open issue.
+- **No JavaScript, no third-party request, no image work.** A plugin page is prose,
+  tables and an FAQ; the `preview.png` from phase 4 stays in the catalogue here.
+
+The page is not a copy of the README. The README documents a plugin for somebody who has
+it; the page answers why anybody would want it, in the words they would search with,
+which is the same material phase 1.3 collected and the reason that phase runs before the
+naming.
+
 **Exit condition:** the plugin README stands on its own for a reader who has never
-seen this repository, and `plugins:catalogue:check` is green.
+seen this repository, `plugins:catalogue:check` is green, and the site page exists with
+its `status` matching reality.
 
 ---
 
@@ -549,7 +583,8 @@ research, the spec, the verification and the publication — is unaffected by ei
        preview.png; click path incl. how the plugin gets switched on
 [ ] 5  Plugin README incl. tools, confidence and contribution call;
        uninstall test on every sentence outside the plugin folder;
-       check-plugin-isolation green; plugins:catalogue:check green
+       check-plugin-isolation green; plugins:catalogue:check green;
+       page + data entry in zeitlines-web, status matching reality
 [ ] 6  Baseline recorded → measurement scheduled (or explicitly skipped);
        committed, pushed, deploy green
 ```
