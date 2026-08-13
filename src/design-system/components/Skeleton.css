@@ -63,7 +63,9 @@
   align-self: center;
   height: 10px;
   margin: 0 var(--space-md);
-  border-radius: 5px;
+  /* Fully rounded. It was `5px`, exactly half the height — the same shape, kept in
+     sync with the height by hand, so changing one left a half-rounded bar. */
+  border-radius: var(--radius-pill);
   background: var(--hover);
 }
 
@@ -99,7 +101,7 @@
   top: 50%;
   transform: translateY(-50%);
   height: 14px;
-  border-radius: 7px;
+  border-radius: var(--radius-pill);
   /* Plain tint first, for anything without color-mix: too saturated, but a
      visible bar beats an invisible one. */
   background: var(--ds-skeleton-lane);

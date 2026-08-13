@@ -16,9 +16,33 @@ export type PopoverPlacement =
   | 'anchored'
   /** Placed in viewport coordinates by the caller — a menu that must escape a
    *  scroll pane, which is every context menu the timeline opens. */
-  | 'fixed';
+  | 'fixed'
+  /**
+   * No positioning of its own: the surface only, because its container already
+   * owns where it sits. That container is a host-provided overlay layer
+   * (`src/pluginHost/overlay.ts`), which is `position: fixed`, carries the plugin
+   * stacking level and has had its coordinates computed — or the playground,
+   * showing a surface at rest.
+   *
+   * Both used to force `position: static` back off with a class of their own,
+   * which is the tell that the variant was missing. A `fixed` popover nested in a
+   * `fixed` layer does not merely double up: it resolves against the viewport
+   * from its own static position, so the surface leaves its layer and the layer's
+   * computed left/top stop meaning anything.
+   */
+  | 'static';
 
 export type PopoverLayer = 'popover' | 'menu';
+
+/**
+ * Which side of the trigger the surface opens on. Only meaningful for `anchored`
+ * placement; a `fixed` popover is placed by the caller.
+ *
+ * `top` exists for a trigger on the last row on screen — the footer's plugin list.
+ * Opening downwards there puts the surface below the viewport, where it is clipped
+ * rather than scrolled to, so the control appears to do nothing at all.
+ */
+export type PopoverSide = 'bottom' | 'top';
 
 export type PopoverOptions = {
   children?: Child;
@@ -28,6 +52,19 @@ export type PopoverOptions = {
    * topmost thing on screen and is what a context menu uses.
    */
   layer?: PopoverLayer;
+  /** Which side of the trigger it opens on. `bottom` unless the trigger is the
+   *  last row on screen — see `PopoverSide`. */
+  side?: PopoverSide;
+  /**
+   * How much air the surface keeps around its content.
+   *
+   * `tight` (the default) is a hairline, because the surface's usual content is
+   * `MenuItem`s and they bring their own padding — a menu row has to be able to
+   * highlight all the way to the surface's edge. `roomy` is for a surface holding
+   * *prose or a form* instead: a tooltip with a sentence in it at the menu padding
+   * has its text almost touching the border.
+   */
+  pad?: 'tight' | 'roomy';
   /** Anchor to the trigger's right edge — for a popover wider than its trigger. */
   alignEnd?: boolean;
   /** Scrolls internally past this height rather than growing off-screen. */
@@ -38,6 +75,12 @@ export type PopoverOptions = {
    * that resizes as its rows change reads as a glitch.
    */
   minWidth?: number;
+  /**
+   * A ceiling on the width, in pixels, for a surface holding sentences rather
+   * than single words. Without it a long line — the reason a plugin will not load
+   * — stretches the surface across the viewport instead of wrapping.
+   */
+  maxWidth?: number;
   hidden?: boolean;
   role?: string;
   ariaLabel?: string;
@@ -50,15 +93,24 @@ export function Popover(options: PopoverOptions = {}): HTMLDivElement {
     children,
     placement = 'anchored',
     layer = 'popover',
+    side = 'bottom',
+    pad = 'tight',
     alignEnd,
     scroll,
     minWidth,
+    maxWidth,
     hidden,
     role,
     ariaLabel,
     className,
     attrs,
   } = options;
+  const width = [
+    minWidth ? `min-width:${minWidth}px` : '',
+    maxWidth ? `max-width:${maxWidth}px` : '',
+  ]
+    .filter(Boolean)
+    .join(';');
   return el(
     'div',
     {
@@ -66,8 +118,8 @@ export function Popover(options: PopoverOptions = {}): HTMLDivElement {
       hidden,
       role,
       'aria-label': ariaLabel,
-      style: minWidth ? `min-width:${minWidth}px` : undefined,
-      ...data({ placement, layer, 'align-end': alignEnd, scroll }),
+      style: width || undefined,
+      ...data({ placement, layer, side, pad, 'align-end': alignEnd, scroll }),
       ...attrs,
     },
     children,

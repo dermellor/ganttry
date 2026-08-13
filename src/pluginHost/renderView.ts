@@ -43,8 +43,12 @@ export function renderPluginViewInto(
 ): void {
   const token = (generation.get(section) ?? 0) + 1;
   generation.set(section, token);
+  // Deliberately unclassed. It used to carry `plugin-view-body`, which no stylesheet
+  // ever defined: the wrapper is styled as „the section's child" (`.plugin-view > *`
+  // in app.css) precisely because a plugin is handed this element and may set
+  // `className` on it, which would drop any class we put here — silently, and only
+  // for that plugin.
   const staging = section.ownerDocument.createElement('div');
-  staging.className = 'plugin-view-body';
 
   const swap = () => {
     // A render that is no longer the latest is dropped: the newer one either has

@@ -15,6 +15,7 @@ import {
   el,
   Field,
   FormActions,
+  Popover,
   Select,
   Text,
   TextInput,
@@ -74,45 +75,54 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
       label,
     ]);
 
+  // The host's layer is already placed and `position: fixed`; the surface inside is
+  // the component. `placement: 'static'` keeps the two from both positioning — see
+  // the note on `PopoverPlacement`.
   layer.replaceChildren(
-    el('form', { class: 'pm-ce-form' }, [
-      Text({ as: 'p', text: `${tier.name} · ${feature.name}`, className: 'pm-ce-head' }),
-      el('div', { class: 'pm-ce-choices' }, [
-        radio('on', [el('span', { class: 'pm-check', 'aria-hidden': 'true' }, '✓'), ' Enthalten']),
-        radio('value', 'Wert'),
-        radio('off', [el('span', { class: 'pm-dash', 'aria-hidden': 'true' }, '–'), ' Nicht enthalten']),
+    Popover({
+      placement: 'static',
+      pad: 'roomy',
+      minWidth: 220,
+      maxWidth: 300,
+      children: el('form', { class: 'pm-ce-form' }, [
+        Text({ as: 'p', text: `${tier.name} · ${feature.name}`, className: 'pm-ce-head' }),
+        el('div', { class: 'pm-ce-choices' }, [
+          radio('on', [el('span', { class: 'pm-check', 'aria-hidden': 'true' }, '✓'), ' Enthalten']),
+          radio('value', 'Wert'),
+          radio('off', [el('span', { class: 'pm-dash', 'aria-hidden': 'true' }, '–'), ' Nicht enthalten']),
+        ]),
+        Field({
+          label: 'Wert',
+          className: 'pm-ce-value-field',
+          control: TextInput({ className: 'pm-ce-value', value: valueText, placeholder: 'z.B. 3.000' }),
+        }),
+        // „ab Version" only gates an included cell, so it is offered but never
+        // forced; clearing a cell drops the gate with it (see submit).
+        versions.length
+          ? Field({
+              label: 'ab Version',
+              control: Select({
+                className: 'pm-ce-version',
+                options: [
+                  { value: '', label: '— von Anfang an —', selected: !availableFrom },
+                  ...versions.map((v) => ({
+                    value: v,
+                    label: versionLabel(pricing.versionLabels, v),
+                    selected: v === availableFrom,
+                  })),
+                ],
+              }),
+            })
+          : null,
+        FormActions({
+          className: 'pm-ce-actions',
+          children: [
+            Button({ label: 'Speichern', type: 'submit' }),
+            Button({ label: 'Abbrechen', variant: 'outline', attrs: { 'data-action': 'cancel' } }),
+          ],
+        }),
       ]),
-      Field({
-        label: 'Wert',
-        className: 'pm-ce-value-field',
-        control: TextInput({ className: 'pm-ce-value', value: valueText, placeholder: 'z.B. 3.000' }),
-      }),
-      // „ab Version" only gates an included cell, so it is offered but never
-      // forced; clearing a cell drops the gate with it (see submit).
-      versions.length
-        ? Field({
-            label: 'ab Version',
-            control: Select({
-              className: 'pm-ce-version',
-              options: [
-                { value: '', label: '— von Anfang an —', selected: !availableFrom },
-                ...versions.map((v) => ({
-                  value: v,
-                  label: versionLabel(pricing.versionLabels, v),
-                  selected: v === availableFrom,
-                })),
-              ],
-            }),
-          })
-        : null,
-      FormActions({
-        className: 'pm-ce-actions',
-        children: [
-          Button({ label: 'Speichern', type: 'submit' }),
-          Button({ label: 'Abbrechen', variant: 'outline', attrs: { 'data-action': 'cancel' } }),
-        ],
-      }),
-    ]),
+    }),
   );
   overlay.showAt(anchorRect(anchor));
 

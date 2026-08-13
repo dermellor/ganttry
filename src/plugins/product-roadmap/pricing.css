@@ -227,61 +227,12 @@
   color: var(--fg-muted);
 }
 
-/* "Neu" badge for features introduced at the reference version. */
-.pricing-badge-new {
-  display: inline-block;
+/* The three badges behind a name are the `Badge` component now (see
+   pricingBadges.ts): „Neu" filled, „Modified" outlined in accent, „ab <version>"
+   quiet and — unlike the other two — not in caps, because it carries a value.
+   What is left here is the gap to the text they ride behind. */
+.pm-badge {
   margin-left: var(--space-xs);
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--bg);
-  font-family: var(--font-body);
-  font-size: 0.62rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  vertical-align: middle;
-}
-
-/* "Modified" badge: an existing feature reworked in the pinned version.
-   Secondary to "Neu": a muted neutral OUTLINE (ghost) chip, not a filled accent.
-   The fill-vs-outline contrast — not a competing hue — sets it apart from the
-   accent "Neu" badge, and it avoids the red/yellow/green status colors. */
-.pricing-badge-modified {
-  display: inline-block;
-  margin-left: var(--space-xs);
-  padding: 0 var(--space-xs);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--accent);
-  border: 1px solid var(--accent);
-  font-family: var(--font-body);
-  font-size: 0.62rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  line-height: 1.6;
-  vertical-align: middle;
-}
-
-/* "ab <version>" chip shown in the "Alle" view: a neutral, muted pill stating
-   the version a feature was introduced in — informational, so it stays quieter
-   than the accent "Neu" / "Modified" badges. */
-.pricing-badge-version {
-  display: inline-block;
-  margin-left: var(--space-xs);
-  padding: 0 var(--space-xs);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--fg-muted);
-  border: 1px solid var(--border);
-  font-family: var(--font-body);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  line-height: 1.6;
-  vertical-align: middle;
-  white-space: nowrap;
 }
 
 .pricing-table-wrap {
@@ -291,72 +242,50 @@
   background: var(--surface);
 }
 
-.pricing-table {
-  border-collapse: collapse;
-  width: 100%;
-  font-family: var(--font-body);
-  font-size: 0.92rem;
-}
+/* The grid itself is the `Table` component in its `matrix` layout: cell padding,
+   borders, the centred value cells, the sticky head and the headline voice on the
+   tier names all come from there. What stays here is what makes it a *pricing*
+   cross-tab rather than a cross-tab.
 
-.pricing-table th,
-.pricing-table td {
-  padding: var(--space-sm) var(--space-md);
-  border-bottom: 1px solid var(--border);
-  text-align: center;
-  vertical-align: middle;
-}
+   Specificity is load-bearing in this block. The component's `.ds-Table thead th`
+   is (0,1,2), so a plugin rule written as `.pm-price-row th` — (0,1,1) — loses and
+   the price row silently takes the head row's `top: 0` and surface colour, landing
+   on top of the head. Every rule below that has to beat it therefore leads with
+   `.pricing-table`. */
 
-/* Sticky header rows: the head row (Feature | tiers | Arbeit) pins to the top of
-   the scrolling wrap, and the price row pins directly beneath it. --pm-head-row-h
-   (the measured height of the head row) is set per-render in pricingMatrix.ts so
-   the price row's offset tracks the real rendered height across brands/fonts. */
-.pricing-table thead th {
-  position: sticky;
-  top: 0;
-  background: var(--surface);
-  z-index: 3;
-}
-
-.pricing-table thead tr.pm-price-row th,
-.pricing-table thead tr.pm-price-row td {
-  position: sticky;
-  /* The fallback covers the frame before the ResizeObserver has measured, so it
-     tracks the real rendered height: 38px with the cell padding below. It was
-     41px while that padding was 10px, and a stale fallback shows as the price row
-     overlapping the head row for one frame on every render. */
-  top: var(--pm-head-row-h, 38px);
-  z-index: 2;
-}
-
-.pricing-table th.pm-tier {
-  font-family: var(--font-headline);
-  font-weight: var(--headline-weight);
-  font-size: 1rem;
-}
-
-/* Row-header (feature name / group / price label) is left-aligned. */
-.pricing-table th.pm-feature {
-  text-align: left;
-  font-weight: 500;
+/* The row header column: wide enough that feature names do not wrap on every row.
+   Its left alignment is the component's `[data-header]`. */
+.pricing-table .pm-feature {
   min-width: 220px;
 }
 
-.pm-price-row td,
-.pm-price-row th {
-  font-weight: 600;
+/* Two pinned header rows. The head row outranks the price row beneath it, and both
+   outrank the body cells scrolling under them — hence `sticky` above `base` rather
+   than two bare numbers. */
+.pricing-table thead th {
+  z-index: var(--z-sticky);
+}
+
+/* The price row pins directly beneath the head row. --pm-head-row-h (the measured
+   height of that row) is set per-render in pricingMatrix.ts so the offset tracks
+   the real rendered height across brands and fonts. The fallback covers the frame
+   before the ResizeObserver has measured; a stale one shows as the price row
+   overlapping the head row for one frame on every render. */
+.pricing-table .pm-price-row th,
+.pricing-table .pm-price-row td {
+  position: sticky;
+  top: var(--pm-head-row-h, 38px);
+  z-index: var(--z-base);
+  font-weight: var(--weight-semibold);
   color: var(--fg);
   background: var(--accent-soft);
 }
 
-.pm-group-row th {
-  text-align: left;
-  background: var(--hover);
-  color: var(--fg-muted);
-  font-family: var(--font-headline);
-  font-weight: var(--headline-weight);
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+/* The work column takes only the width it needs. The head cell says so with the
+   component's `shrink`; the body cells are matched here. */
+.pricing-table td.pm-work-col {
+  width: 1%;
+  white-space: nowrap;
 }
 
 .pm-check {
@@ -379,13 +308,12 @@
   background: color-mix(in srgb, var(--fg-muted) 5%, transparent);
 }
 
-/* "ab <version>" chip inside a matrix cell (shown only in the "Alle" view for a
-   version-gated cell). Slightly tighter than the feature-row chip and allowed to
-   wrap under the value/✓ so a narrow tier column stays readable. */
+/* The same version `Badge` inside a matrix cell rather than behind a feature name:
+   a tighter gap, because a tier column is narrow and the chip has to be allowed to
+   wrap under the value. Its type size used to be set here too, at 0.56rem — below
+   the smallest step on the scale — and is the component's `sm` now. */
 .pm-cell-ver {
   margin-left: var(--space-2xs);
-  font-size: 0.56rem;
-  padding: 0 var(--space-2xs);
 }
 
 .pricing-table tbody tr:hover th.pm-feature {
@@ -447,31 +375,9 @@
   cursor: help;
 }
 
-/* Popover with the item list, anchored under the dot. */
-.pm-work-pop {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 20;
-  min-width: 260px;
-  max-width: 340px;
-  max-height: 320px;
-  overflow-y: auto;
-  padding: var(--space-xs);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-popover);
-  text-align: left;
-}
-
-.pm-work-pop-head {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--fg-muted);
-  padding: var(--space-2xs) var(--space-sm) var(--space-xs);
-}
+/* The item list's surface and its caption are both components now: a `Popover`
+   anchored under the dot (`.pm-work` above is the positioned ancestor) and a
+   `MenuSection` label for the aggregate state. See pricingWork.ts. */
 
 .pm-work-item {
   display: flex;
@@ -532,24 +438,17 @@
 }
 
 /* ---- feature description tooltip ----------------------------------------- */
-/* Lives on <body>, position:fixed, positioned in JS (see pricingMatrix.ts). */
+/* The host owns this layer: it is `position: fixed`, carries the plugin stacking
+   level and has its coordinates computed by `placeLayer` (see pluginHost/overlay.ts
+   and popover.ts). The surface inside it is a `Popover` with `placement: 'static'`,
+   so the two do not both try to position. What is left here is the layer's own box
+   and the fact that a tooltip is not a target.
+   `width: max-content` because a fixed layer otherwise shrink-to-fits far too
+   narrow for a sentence; the cap is the Popover's `maxWidth`. */
 .pm-tip {
-  position: fixed;
-  z-index: 60;
-  /* Size to content (a fixed element otherwise shrink-to-fits far too narrow),
-     capped so long notes wrap instead of running off-screen. positionTip()
-     clamps the left edge to keep it on-screen on narrow viewports. */
   width: max-content;
-  max-width: 320px;
-  padding: var(--space-sm) var(--space-md);
-  background: var(--surface);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-popover);
   font-size: 0.82rem;
   line-height: 1.45;
-  text-align: left;
   pointer-events: none;
 }
 
@@ -706,22 +605,18 @@
 }
 
 /* ---- Matrix cell editor popover ---------------------------------------- */
-/* Same fixed-on-body layer as .pm-tip (see popover.ts) — but interactive, so it
-   takes pointer events and its own focus ring. */
+/* Same host-owned layer as .pm-tip, with a `Popover` inside it for the surface.
+   Interactive rather than a hint, so it keeps pointer events.
+
+   The one property this plugin still owns about its own stacking: both layers get
+   `.plugin-overlay`'s level from the host, and nothing dismisses the hover tooltip
+   when this dialog opens, so the dialog has to outrank it. The proper fix is a
+   level on the overlay API rather than a rule here
+   (<https://github.com/zeitlines/zeitlines/issues/149>). */
 .pm-cell-editor {
-  position: fixed;
-  z-index: 70;
+  z-index: var(--z-menu);
   width: max-content;
-  min-width: 220px;
-  max-width: 300px;
-  padding: var(--space-md);
-  background: var(--surface);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-popover);
   font-size: 0.85rem;
-  text-align: left;
 }
 .pm-cell-editor[hidden] {
   display: none;

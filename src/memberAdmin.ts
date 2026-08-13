@@ -325,6 +325,7 @@ function build(): HTMLElement {
           TextInput({
             id: 'member-invite-url',
             readonly: true,
+            mono: true,
             attrs: { 'aria-label': 'Einladungslink' },
           }),
           Button({ label: 'Kopieren', variant: 'outline', attrs: { id: 'member-invite-copy' } }),

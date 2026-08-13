@@ -11,7 +11,25 @@
 // Highlights and the version list are still authored via MCP.
 
 import { escapeHtml } from '../../pluginHost/api';
-import { Button, html, IconButton, SegmentedControl, Select, ToolbarControl } from '../../pluginHost/api';
+import {
+  Button,
+  el,
+  fromHtml,
+  html,
+  IconButton,
+  Popover,
+  SegmentedControl,
+  Select,
+  Table,
+  TableCell,
+  TableGroupRow,
+  TableHead,
+  TableHeadCell,
+  TableRow,
+  ToolbarControl,
+  type Child,
+} from '../../pluginHost/api';
+import type { Overlay } from '../../pluginHost/api';
 import {
   groupFeatures,
   featureVisibleForVersion,
@@ -43,6 +61,7 @@ import {
 import { hasPlugin } from '../../pluginHost/api';
 import { PRODUCT_ROADMAP_PLUGIN } from './plugin';
 import { currentPricing, hasPricingModel } from './compose';
+import { modifiedBadge, newBadge, versionBadge } from './pricingBadges';
 
 const PRICING_VERSION_KEY = 'timelines.pricingVersion';
 const PRICING_SUBVIEW_KEY = 'timelines.pricingSubview';
@@ -89,25 +108,38 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
   // A tier's column head is its edit affordance (the Stammdaten drawer), mirroring
   // the feature row header. data-tier-id is only emitted when editable — unlike the
   // feature rows, nothing read-only needs to look a tier up off the DOM.
-  const head =
-    `<tr><th class="pm-feature">Feature</th>` +
-    tiers
-      .map((t) =>
-        editable
-          ? `<th class="pm-tier pm-tier-editable" data-tier-id="${escapeHtml(t.id)}" title="Tarif bearbeiten">${escapeHtml(t.name)}</th>`
-          : `<th class="pm-tier">${escapeHtml(t.name)}</th>`,
-      )
-      .join('') +
-    (showWorkCol ? `<th class="pm-work-col" title="Roadmap-Arbeit an diesem Feature">Arbeit</th>` : '') +
-    `</tr>`;
+  const head = el('tr', {}, [
+    TableHeadCell({ children: 'Feature', corner: true, className: 'pm-feature' }),
+    ...tiers.map((t) =>
+      TableHeadCell({
+        children: t.name,
+        className: editable ? 'pm-tier pm-tier-editable' : 'pm-tier',
+        attrs: editable ? { 'data-tier-id': t.id, title: 'Tarif bearbeiten' } : undefined,
+      }),
+    ),
+    showWorkCol
+      ? TableHeadCell({
+          children: 'Arbeit',
+          shrink: true,
+          className: 'pm-work-col',
+          attrs: { title: 'Roadmap-Arbeit an diesem Feature' },
+        })
+      : null,
+  ]);
 
-  const priceRow =
-    `<tr class="pm-price-row"><th class="pm-feature">Preis</th>` +
-    tiers.map((t) => `<td class="pm-tier">${escapeHtml(t.price)}</td>`).join('') +
-    (showWorkCol ? `<td class="pm-work-col"></td>` : '') +
-    `</tr>`;
+  // A second row inside the same `<thead>`, pinned under the first. It is a row of
+  // values rather than of column labels, so its cells are `TableCell`s; what keeps
+  // it in the header is the sticky offset in pricing.css.
+  const priceRow = TableRow({
+    className: 'pm-price-row',
+    children: [
+      TableCell({ header: true, children: 'Preis', className: 'pm-feature' }),
+      ...tiers.map((t) => TableCell({ children: t.price, className: 'pm-tier' })),
+      showWorkCol ? TableCell({ className: 'pm-work-col' }) : null,
+    ],
+  });
 
-  const bodyRows: string[] = [];
+  const bodyRows: (HTMLElement | null)[] = [];
   for (const { group, features: fs } of groupFeatures(features)) {
     const visible = fs.filter((f) => featureVisibleForVersion(f, versions, selectedVersion));
     if (!visible.length) continue;
@@ -116,19 +148,25 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
       // (the toolbar button leaves it ungrouped). Same two-affordance pattern the
       // list view uses for "+ Eintrag".
       const addInGroup = editable
-        ? html(
-            Button({
-              label: '+ Feature',
-              variant: 'outline',
-              size: 'sm',
-              reveal: true,
-              className: 'pm-add-inline',
-              attrs: { 'data-add-feature-group': group },
-            }),
-          )
-        : '';
+        ? Button({
+            label: '+ Feature',
+            variant: 'outline',
+            size: 'sm',
+            reveal: true,
+            className: 'pm-add-inline',
+            attrs: { 'data-add-feature-group': group },
+          })
+        : undefined;
+      // `dense`: in this grid a group divides bands of rows, where the list view's
+      // group row introduces a section of the page and takes the headline voice.
       bodyRows.push(
-        `<tr class="pm-group-row"><th class="pm-feature" colspan="${totalCols}">${escapeHtml(group)}${addInGroup}</th></tr>`,
+        TableGroupRow({
+          title: group,
+          colspan: totalCols,
+          action: addInGroup,
+          dense: true,
+          className: 'pm-group-row',
+        }),
       );
     }
     for (let i = 0; i < visible.length; i++) {
@@ -146,57 +184,71 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
           const gated = !off && !cellActiveForVersion(af, versions, selectedVersion);
 
           let cls: string;
-          let inner: string;
+          let inner: Child;
           if (off || gated) {
             cls = 'pm-cell is-off';
-            inner = '<span class="pm-dash" aria-hidden="true">–</span>';
+            inner = el('span', { class: 'pm-dash', 'aria-hidden': 'true' }, '–');
           } else {
-            const chip =
-              !selectedVersion && af
-                ? ` <span class="pricing-badge-version pm-cell-ver">ab ${escapeHtml(versionLabel(versionLabels, af))}</span>`
-                : '';
+            // A cell's value comes out of a timeline file, so it is set as *text* by
+            // `el()` rather than interpolated into markup.
+            const chip = !selectedVersion && af ? versionBadge(versionLabel(versionLabels, af), true) : null;
             if (v === true) {
               cls = 'pm-cell is-on';
-              inner = `<span class="pm-check" aria-label="enthalten">✓</span>${chip}`;
+              inner = [el('span', { class: 'pm-check', 'aria-label': 'enthalten' }, '✓'), chip];
             } else {
               cls = 'pm-cell is-value';
-              inner = `${escapeHtml(String(v))}${chip}`;
+              inner = [String(v), chip];
             }
           }
           // On an editable timeline every cell is a click target, an empty one
           // included — switching a feature on for a tier is exactly the edit that
           // starts from a dash.
-          if (!editable) return `<td class="${cls}">${inner}</td>`;
-          return (
-            `<td class="${cls} pm-cell-editable" data-tier-id="${escapeHtml(t.id)}"` +
-            ` data-feature-id="${escapeHtml(f.id)}" tabindex="0" role="button" title="Zelle bearbeiten">${inner}</td>`
-          );
-        })
-        .join('');
+          return TableCell({
+            children: inner,
+            className: editable ? `${cls} pm-cell-editable` : cls,
+            attrs: editable
+              ? {
+                  'data-tier-id': t.id,
+                  'data-feature-id': f.id,
+                  tabindex: '0',
+                  role: 'button',
+                  title: 'Zelle bearbeiten',
+                }
+              : undefined,
+          });
+        });
 
       const workItems = itemsForFeature(f.id, items, selectedVersion);
       const workCell = showWorkCol
-        ? `<td class="pm-work-col">${
-            workItems.length
-              ? workDotHtml(workItems)
+        ? TableCell({
+            className: 'pm-work-col',
+            children: workItems.length
+              ? fromHtml(workDotHtml(workItems))
               : needsWorkWarning(f, items, versions, selectedVersion)
-                ? '<span class="pm-work-warn" title="Neu bzw. geändert in dieser Version, aber noch keine Roadmap-Arbeit verknüpft" aria-label="Warnung: keine Roadmap-Arbeit verknüpft">⚠</span>'
-                : ''
-          }</td>`
-        : '';
+                ? el(
+                    'span',
+                    {
+                      class: 'pm-work-warn',
+                      title:
+                        'Neu bzw. geändert in dieser Version, aber noch keine Roadmap-Arbeit verknüpft',
+                      'aria-label': 'Warnung: keine Roadmap-Arbeit verknüpft',
+                    },
+                    '⚠',
+                  )
+                : null,
+          })
+        : null;
 
       // In "Alle" mode (no pinned version) the Neu/Modified badges never fire, so
       // instead show a neutral "ab <version>" chip stating when the feature was
       // introduced. Pre-existing features (no version) get no chip.
       const badge = isNewFeature(f, versions, selectedVersion)
-        ? '<span class="pricing-badge-new">Neu</span>'
+        ? newBadge()
         : isModifiedFeature(f, items, versions, selectedVersion)
-          ? '<span class="pricing-badge-modified">Modified</span>'
+          ? modifiedBadge()
           : !selectedVersion && f.version
-            ? `<span class="pricing-badge-version">ab ${escapeHtml(versionLabel(versionLabels, f.version))}</span>`
-            : '';
-      const name = escapeHtml(resolveFeatureName(f, versions, selectedVersion));
-      const featureThClass = editable ? 'pm-feature pm-feature-editable' : 'pm-feature';
+            ? versionBadge(versionLabel(versionLabels, f.version))
+            : null;
       // Row reordering anchors on the *visible* neighbour inside this section, so
       // one click moves the row one step in the direction the user sees — whatever
       // the global sort order does between groups, and whatever the version filter
@@ -204,40 +256,65 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
       const prev = visible[i - 1];
       const next = visible[i + 1];
       const moveBtn = (fid: string, anchorAttr: string, glyph: string, label: string) =>
-        html(
-          IconButton({
-            icon: glyph,
-            ariaLabel: label,
-            boxSize: 'sm',
-            className: 'pm-move',
-            attrs: { 'data-move-feature': f.id, [anchorAttr]: fid },
-          }),
-        );
+        IconButton({
+          icon: glyph,
+          ariaLabel: label,
+          boxSize: 'sm',
+          className: 'pm-move',
+          attrs: { 'data-move-feature': f.id, [anchorAttr]: fid },
+        });
       const reorder =
         editable && visible.length > 1
-          ? `<span class="pm-reorder">` +
-            (prev ? moveBtn(prev.id, 'data-move-before', '↑', 'Nach oben') : '') +
-            (next ? moveBtn(next.id, 'data-move-after', '↓', 'Nach unten') : '') +
-            `</span>`
-          : '';
+          ? el('span', { class: 'pm-reorder' }, [
+              prev ? moveBtn(prev.id, 'data-move-before', '↑', 'Nach oben') : null,
+              next ? moveBtn(next.id, 'data-move-after', '↓', 'Nach unten') : null,
+            ])
+          : null;
       // Info icon only when there's an actual description (base text or version
       // notes) — availability alone is already conveyed by the badge/switcher.
       // The icon is the tooltip trigger; it reads the feature id off the <th>.
       const { base, notes } = resolveFeatureDescriptionParts(f, versions);
       const info =
         base || notes.length
-          ? `<span class="pm-info" tabindex="0" role="button" aria-label="Beschreibung anzeigen"></span>`
-          : '';
+          ? el('span', {
+              class: 'pm-info',
+              tabindex: '0',
+              role: 'button',
+              'aria-label': 'Beschreibung anzeigen',
+            })
+          : null;
       // data-feature-id is emitted always — it lets the info-icon tooltip look up
       // the feature in read-only views too. Click-to-edit stays gated by
       // pm-feature-editable.
       bodyRows.push(
-        `<tr><th class="${featureThClass}" scope="row" data-feature-id="${escapeHtml(f.id)}">${name}${badge}${info}${reorder}</th>${cells}${workCell}</tr>`,
+        TableRow({
+          children: [
+            TableCell({
+              header: true,
+              className: editable ? 'pm-feature pm-feature-editable' : 'pm-feature',
+              attrs: { 'data-feature-id': f.id },
+              children: [resolveFeatureName(f, versions, selectedVersion), badge, info, reorder],
+            }),
+            ...cells,
+            workCell,
+          ],
+        }),
       );
     }
   }
 
-  return `<div class="pricing-table-wrap"><table class="pricing-table"><thead>${head}${priceRow}</thead><tbody>${bodyRows.join('')}</tbody></table></div>`;
+  // The wrapper stays the plugin's: it is the frame around the grid and the element
+  // whose height the sticky price row is measured against (--pm-head-row-h). What is
+  // inside it is the component, in its `matrix` layout.
+  return html(
+    el('div', { class: 'pricing-table-wrap' }, [
+      Table({
+        layout: 'matrix',
+        className: 'pricing-table',
+        children: [TableHead({ children: [head, priceRow] }), el('tbody', {}, bodyRows)],
+      }),
+    ]),
+  );
 }
 
 // Wire feature-row clicks to open the Stammdaten drawer (editable timelines
@@ -310,8 +387,19 @@ function wireEditing(host: HTMLElement): void {
 // layer itself comes from the host (see popover.ts for why the plugin no longer
 // builds it), which is also what places it clear of the table's own clipping.
 
-function ensureTip() {
-  return layerFor('pm-tip', 'pm-tip', 'tooltip');
+// The layer comes from the host; the surface inside it is the component. Both are
+// created once and reused across re-renders, which is what keeps a repaint from
+// leaving dead layers behind. `placement: 'static'` is the load-bearing part: the
+// layer is already `position: fixed` with computed coordinates, and a second
+// positioned box inside it would resolve against the viewport on its own and walk
+// out of the layer.
+function ensureTip(): { layer: Overlay; surface: HTMLElement } {
+  const layer = layerFor('pm-tip', 'pm-tip', 'tooltip');
+  const existing = layer.element.querySelector<HTMLElement>('.ds-Popover');
+  if (existing) return { layer, surface: existing };
+  const surface = Popover({ placement: 'static', pad: 'roomy', maxWidth: 320 });
+  layer.element.replaceChildren(surface);
+  return { layer, surface };
 }
 
 // Structured description → styled tooltip HTML: availability line, base
@@ -340,7 +428,7 @@ function featureTipHtml(f: PricingFeature, versions: string[], labels?: Record<s
 }
 
 function wireFeatureTooltips(host: HTMLElement): void {
-  const tip = ensureTip();
+  const { layer: tip, surface } = ensureTip();
   tip.hide(); // reset across re-renders
   const hide = () => tip.hide();
   const show = (icon: HTMLElement) => {
@@ -350,7 +438,7 @@ function wireFeatureTooltips(host: HTMLElement): void {
     if (!f) return;
     const html = featureTipHtml(f, pricing?.versions ?? [], pricing?.versionLabels);
     if (!html) return;
-    tip.element.innerHTML = html;
+    surface.innerHTML = html;
     tip.showAt(anchorRect(icon));
   };
   host.querySelectorAll<HTMLElement>('.pm-info').forEach((icon) => {

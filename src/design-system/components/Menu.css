@@ -22,12 +22,28 @@
   text-transform: none;
   letter-spacing: normal;
   color: var(--fg);
+  /* Same reasoning as the two above: the footer's toolbar centres its own row, and
+     a surface anchored inside it inherited that for a left-reading list. */
+  text-align: left;
 }
 
 .ds-Popover[data-placement='anchored'] {
   position: absolute;
-  top: calc(100% + var(--space-2xs));
   left: 0;
+}
+
+/* Written as „not top" rather than „is bottom" so a popover that names no side
+   still opens downwards. The factory always sets one; this keeps a surface built
+   by hand from ending up with no offset at all, pinned over its own trigger. */
+.ds-Popover[data-placement='anchored']:not([data-side='top']) {
+  top: calc(100% + var(--space-2xs));
+}
+
+/* Opens upwards, for a trigger on the last row on screen. Downwards there is not
+   „below the fold" but outside the viewport, so nothing scrolls it into view and
+   the control reads as broken. */
+.ds-Popover[data-placement='anchored'][data-side='top'] {
+  bottom: calc(100% + var(--space-2xs));
 }
 
 /* For a popover that must be wider than its trigger: anchored to the trigger's
@@ -43,6 +59,14 @@
   position: fixed;
 }
 
+/* Content padding. `tight` is the default and is what a menu needs: `MenuItem`
+   highlights to the surface's edge, so the surface itself keeps only a hairline.
+   `roomy` is for a surface holding prose or a form, where that hairline puts the
+   text against the border. */
+.ds-Popover[data-pad='roomy'] {
+  padding: var(--space-md);
+}
+
 .ds-Popover[data-layer='popover'] {
   z-index: var(--z-popover);
 }
@@ -54,6 +78,15 @@
 .ds-Popover[data-scroll] {
   max-height: 320px;
   overflow-y: auto;
+}
+
+/* Last of the placement rules on purpose: it has to beat the two `[data-layer]`
+   rules below, which carry equal specificity. `z-index` goes back to `auto` because
+   on an unpositioned box a number is inert anyway, and leaving one there invites
+   the next reader to believe this surface competes with the layer holding it. */
+.ds-Popover[data-placement='static'] {
+  position: static;
+  z-index: auto;
 }
 
 /* ---- MenuSection ----------------------------------------------------------- */

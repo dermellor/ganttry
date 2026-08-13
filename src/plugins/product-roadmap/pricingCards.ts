@@ -11,6 +11,7 @@ import { resolveHighlight, resolveHighlightLabel, versionLabel, type ResolvedHig
 import type { TimelineFile } from '../../types';
 import type { PricingHighlight, PricingTier } from './types';
 import { currentPricing } from './compose';
+import { newBadge, versionBadge } from './pricingBadges';
 
 const DEFAULT_SECTION = 'Weitere';
 
@@ -50,9 +51,9 @@ function highlightBadge(
   selected: string | null,
   labels?: Record<string, string>,
 ): string {
-  if (r.isNew) return '<span class="pricing-badge-new">Neu</span>';
+  if (r.isNew) return html(newBadge());
   if (!selected && r.introducedVersion)
-    return `<span class="pricing-badge-version">ab ${escapeHtml(versionLabel(labels, r.introducedVersion))}</span>`;
+    return html(versionBadge(versionLabel(labels, r.introducedVersion)));
   return '';
 }
 
