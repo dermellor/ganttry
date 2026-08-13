@@ -20,7 +20,10 @@
 // 1.2 added the `create` and `export` accessories, when those two actions moved
 // into the presentation's own bar and a view therefore had to be able to say
 // whether they apply to it. Additive as well: an existing declaration simply does
-// not claim them.
+// not claim them. `export` has since gone inert — the HTML export belongs to the
+// timeline and lives in its settings — and that is not a major: the key is still
+// accepted, so no plugin fails to load over it. It stops steering a control that
+// no presentation offers any more, for anybody.
 //
 // 1.3 added `manifest.tools` plus the `tools` capability. Purely additive: a plugin
 // declaring neither is unaffected. A plugin whose verbs are the point of it should

@@ -102,7 +102,6 @@ export type AppShellElements = {
   tlSettingsClose: HTMLButtonElement;
   tlSettingsBtn: HTMLButtonElement;
   addBtn: HTMLButtonElement;
-  exportBtn: HTMLButtonElement;
   pluginsBtn: HTMLButtonElement;
   pluginsPanel: HTMLElement;
   status: HTMLElement;
@@ -502,21 +501,20 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     children: ToolbarAnchor({ children: [filterToggle, filterMenu] }),
   });
 
-  const exportBtn = Button({
-    label: 'Export HTML',
-    variant: 'outline',
-    ariaLabel: 'Aktuelle Darstellung als statische HTML-Datei herunterladen',
-    attrs: { id: 'export-btn' },
-  });
-
   // The presentation level, in one bar and in the order the three actions happen:
   // a presentation is *chosen*, a perspective is *set*, an extent is *narrowed* —
-  // then the things you *do* to what is on screen, pushed to the far end.
+  // then the one thing you *do* to what is on screen, pushed to the far end.
   //
   // Before this the switch and one narrowing sat in the header, the perspective and
-  // the other narrowing here, „+ Eintrag" among the instance controls and „Export
-  // HTML" in the status line. Four places for one level, so the row you were
-  // reading never said what a click would change.
+  // the other narrowing here, and „+ Eintrag" among the instance controls. Four
+  // places for one level, so the row you were reading never said what a click
+  // would change.
+  //
+  // „+ Eintrag" is the only action left here. The HTML export stood beside it as a
+  // second outline button, drawn identically, which said the two are reached for
+  // about equally often — one fills a timeline, the other is taken out a handful
+  // of times in its life. It now lives in the timeline's own settings
+  // (`#timeline-settings=export`, see src/timelineSettings.ts).
   //
   // Which of the two middle controls a presentation gets is declared by that
   // presentation (see „Accessories" in docs/architecture.md). The bar itself is
@@ -533,7 +531,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       // first, how it is bundled and narrowed on the second.
       ToolbarGroup({ children: [modeToggle, pluginViewBar] }),
       ToolbarGroup({ children: [savedViewsControl, groupByControl, filterControl] }),
-      ToolbarGroup({ end: true, children: [addBtn, exportBtn] }),
+      ToolbarGroup({ end: true, children: [addBtn] }),
     ],
   });
 
@@ -609,8 +607,8 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // opened it.
   const pluginsWrap = el('div', { class: 'plugin-panel-wrap' }, [pluginsBtn, pluginsPanel]);
   // Status plus the one thing here that is about the deploy rather than about the
-  // timeline. „Export HTML" left, because it exports the active presentation with
-  // its extent and therefore belongs to that presentation, not to a status line.
+  // timeline. The HTML export left this row on its way to the timeline's settings:
+  // a status line reports, it does not act.
   const footer = Toolbar({
     tone: 'footer',
     children: [status, el('div', { class: 'footer-actions' }, [pluginsWrap])],
@@ -661,7 +659,6 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       tlSettingsClose: timelineArea.close,
       tlSettingsBtn,
       addBtn,
-      exportBtn,
       pluginsBtn,
       pluginsPanel,
       status,

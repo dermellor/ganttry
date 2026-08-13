@@ -1020,15 +1020,20 @@ One bar (`#view-toolbar`) sits above the timeline, the list and every plugin vie
 in the shared `.content-area` column left of the detail panel, and it carries the
 whole presentation level in the order the three actions happen: the **switch**
 (a presentation is chosen), **Gruppieren** (a perspective is set), **Filter** (an
-extent is narrowed), then at the far end what you *do* to what is on screen,
-**+ Eintrag** and **Export HTML**.
+extent is narrowed), then at the far end the one thing you *do* to what is on
+screen, **+ Eintrag**.
 
 Before this the switch and one narrowing sat in the header, the perspective and the
-other narrowing in this bar, „+ Eintrag" among the instance controls and
-„Export HTML" in the status line: four places for one level, so the row you were
-reading never said what a click would change. The header now identifies the instance
-and which timeline is open, and the footer holds the item count plus the plugin
-diagnostic.
+other narrowing in this bar, „+ Eintrag" among the instance controls and the export
+in the status line: four places for one level, so the row you were reading never
+said what a click would change. The header now identifies the instance and which
+timeline is open, and the footer holds the item count plus the plugin diagnostic.
+
+**The export left this bar again**, into the timeline's settings (see „Der Export"
+below). It stood here as a second outline button beside „+ Eintrag" and drawn
+exactly like it, which said the two are reached for about equally often: one is how
+a timeline gets filled, the other is taken out a handful of times in a timeline's
+life.
 
 **A plugin's views sit in that plugin's own control**, its name inside on the left,
 rather than as loose segments in the built-in switch (see „One control per plugin"
@@ -1046,9 +1051,9 @@ it started.
 
 **Which controls a presentation gets is declared by that presentation** (see
 „Accessories" (docs/architecture.md)). The timeline and the list are two renderings
-of the item list and take all four; the graph takes three of them (no „Export HTML",
-because nothing renders a graph to HTML yet); a plugin view takes what it declares
-and nothing else. A control that does not apply is hidden rather than shown inert, because an
+of the item list and take all three; the graph takes all three as well (its columns
+*are* the grouping dimension, and an item without a date is what only it can show);
+a plugin view takes what it declares and nothing else. A control that does not apply is hidden rather than shown inert, because an
 inert control claims the view supports something it does not — „+ Eintrag" in a view
 that cannot show the item is the clearest case. Nothing in `main.ts` branches on „is
 this a plugin view" for any of it.
@@ -1478,6 +1483,36 @@ header, the picker's own entry and the status line read the loaded source's name
 (`timelineName`), while every other entry in the picker keeps the built one — nothing
 has loaded those. Without that split a rename would appear to work and then come back
 after a reload.
+
+### Der Export
+
+`#timeline-settings=export` holds the one tool the app ships: the whole timeline as a
+single self-contained HTML file, for somebody who has no access to the instance.
+[`src/export.ts`](../src/export.ts) is loaded on the click rather than with the app —
+it carries vis-timeline and marked as raw text — and it renders the same shell the app
+builds, minus what cannot be used while reading (see the note at the top of
+[`src/appShell.ts`](../src/appShell.ts)).
+
+**It sits here because the file is a fact about the document.** It used to be an
+outline button in the presentation bar beside „+ Eintrag" and drawn exactly like it,
+which said the two are reached for about equally often: one is how a timeline gets
+filled, the other is taken out a handful of times in a timeline's life. The move also
+retires the special case that the graph declared no export while the timeline and the
+list did — a presentation cannot switch off something that is no longer its business
+(the `export` accessory is still accepted and read by nobody, see
+„Accessories" (docs/architecture.md)).
+
+**What the move costs, and what the section pays it with.** The area replaces the
+content, so the picture being exported is not on screen while the button is. Two
+muted lines therefore say what ends up in the file rather than leaving it to be
+inferred from a view the reader cannot see: the current filter applies to the file
+too, and items without a start date are missing from it, because the export renders
+a vis-timeline and cannot place them. Both were true of the button as well, where the
+timeline behind it made them obvious.
+
+**Not gated on editability.** Exporting is reading, and a read-only timeline is the
+one most likely to be handed on as a file — so the section carries the button even
+where the „Allgemein" form is a page of disabled inputs.
 
 ## URL state
 

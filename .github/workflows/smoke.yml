@@ -1,0 +1,102 @@
+# Does the deployed thing actually answer?
+#
+# CI proves the code builds and the tests pass; it cannot prove the deployment
+# works, because it has no database and no deploy — by design (see „CI" in
+# AGENTS.md). The gap between those two is where the 2026-08-13 outage lived: every
+# check was green, the deploy succeeded, and the main read path returned 500 because
+# it selected a column whose migration had only been applied locally. The first
+# detector was a person opening the page.
+#
+# So this asks the deployment the one question CI cannot: does a read path answer
+# without a server error. It catches a schema lag, a missing environment variable, a
+# broken edge function and a bad redirect alike — anything that makes the deployed
+# app fail where the built one did not.
+#
+# **What it proves depends on whether it can get past the auth gate**, and that
+# distinction is the whole difference between a useful check and a comforting one.
+# An unauthenticated request to a gated deployment is answered with `401` *before*
+# anything touches the database — so on its own it proves the app is up, not that a
+# read works. The 2026-08-13 outage returned `401` to an anonymous caller and `500`
+# to a signed-in one. Set `SMOKE_TOKEN` (the `X-MCP-Token` bypass) and the request
+# reaches the real read path; without it this job cannot see a schema lag, and says so.
+#
+# It **skips silently when no URL is configured.** The URL is a property of one
+# deployment, not of the project, so it lives in a repository variable rather than in
+# this file (AGENTS.md → „Issues are public", same reasoning: nothing about a
+# deployment belongs in the tracked tree). A fork, or this repo before somebody sets
+# the variable, must not fail a workflow over a deployment it does not have.
+
+name: Smoke
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: The deployment answers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the deploy to publish
+        # Netlify builds after the push lands, so asking immediately tests the
+        # previous deploy and would report green for a broken one.
+        run: sleep 90
+
+      - name: A read path answers without a server error
+        env:
+          SMOKE_URL: ${{ vars.SMOKE_URL }}
+          SMOKE_TOKEN: ${{ secrets.SMOKE_TOKEN }}
+        run: |
+          if [ -z "${SMOKE_URL:-}" ]; then
+            echo "No SMOKE_URL variable set — nothing deployed to check. Skipping."
+            exit 0
+          fi
+
+          auth=()
+          if [ -n "${SMOKE_TOKEN:-}" ]; then
+            auth=(-H "X-MCP-Token: $SMOKE_TOKEN")
+            echo "Authenticated: this exercises the real read path, database included."
+          else
+            echo "::warning::No SMOKE_TOKEN — a gated deployment answers 401 before it reads"
+            echo "::warning::anything, so this run proves the app is up, not that a read works."
+          fi
+
+          # Three attempts: a cold edge function can be slow enough to time out once,
+          # and a flaky smoke test gets muted, which is worse than not having one.
+          for attempt in 1 2 3; do
+            code=$(curl -s -o /tmp/body -w '%{http_code}' --max-time 20 "${auth[@]}" "$SMOKE_URL" || echo 000)
+            echo "attempt $attempt: HTTP $code"
+
+            # 2xx is healthy, and so is a redirect — the app answering at all is what a
+            # 3xx means. 401/403 counts only when unauthenticated: with a token, being
+            # refused means the token is wrong and the check proved nothing.
+            case "$code" in
+              2??|3??) echo "OK — the app answered."; exit 0 ;;
+              401|403)
+                if [ -z "${SMOKE_TOKEN:-}" ]; then
+                  echo "OK — the auth gate answered, which means the app is up."
+                  exit 0
+                fi
+                echo "::error::$code with a token set: SMOKE_TOKEN is wrong or revoked,"
+                echo "::error::so this check silently stopped testing the read path."
+                exit 1
+                ;;
+            esac
+
+            # A 5xx is the failure this exists for, and it is worth reporting at once
+            # rather than retrying into a timeout: the body usually names the cause.
+            case "$code" in
+              5??)
+                echo "::error::$SMOKE_URL returned $code — the deployment is broken."
+                echo "--- response body ---"
+                head -c 600 /tmp/body || true
+                exit 1
+                ;;
+            esac
+            sleep 15
+          done
+
+          echo "::error::$SMOKE_URL never answered (last status $code)."
+          head -c 600 /tmp/body || true
+          exit 1

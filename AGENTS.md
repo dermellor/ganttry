@@ -356,6 +356,7 @@ npm start            # serve that dist + the API from one Node process (self-hos
 npm test             # unit tests (node --test, TZ-pinned to Europe/Berlin)
 npm run typecheck    # tsc --noEmit
 npm run db:check     # migrations pending? (runs before `dev`; no-op without a DB)
+npm run db:check -- --strict # …and fail when it cannot answer at all (for pipelines)
 npm run db:local:up  # throwaway Postgres in Docker (port 55432)
 npm run db:reset     # drop schema → migrate → seed; refuses non-local databases
 npm run dev:local    # dev server against that local database, not a hosted one
@@ -499,6 +500,16 @@ current change, so gating PRs on them would block contributions on a debt that
 predates them. The step still reports the count, which is what catches a
 regression — dropping `continue-on-error` is the one-line change once the count
 reaches zero.
+
+**The deployment is asked whether it works**
+([`.github/workflows/smoke.yml`](.github/workflows/smoke.yml)). CI proves the code
+builds and the tests pass; it cannot prove the *deployment* works, because it has no
+database and no deploy. The gap between those two is where an outage on 2026-08-13
+lived: everything green, deploy successful, and the main read path returning `500`
+because it selected a column whose migration had only been applied locally. The job
+skips silently without a `SMOKE_URL` variable, and warns rather than reassures when it
+has no token — an unauthenticated request to a gated deployment is answered before
+anything reads a database, so on its own it proves the app is up and nothing more.
 
 **Bundle-split acceptance check**
 ([`scripts/ci/check-bundle-split.sh`](scripts/ci/check-bundle-split.sh)) enforces

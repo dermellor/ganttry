@@ -54,7 +54,14 @@ export type ViewAccessories = {
    * affordances inside the view.
    */
   create?: boolean;
-  /** „Export HTML": exporting what this presentation shows. */
+  /**
+   * @deprecated Nothing reads it any more. The HTML export was an action of the
+   * presentation while it stood in the presentation's bar; it now belongs to the
+   * timeline and lives in that timeline's settings, which no presentation can
+   * switch off. Still accepted, so a manifest declaring it keeps validating —
+   * removing the key would refuse plugins that are otherwise fine, which is a
+   * worse trade than a field that does nothing.
+   */
   export?: boolean;
 };
 
@@ -81,13 +88,18 @@ export type ManifestView = {
  * What each built-in presentation gets.
  *
  * This table exists because „built-in" stopped being a single answer. Timeline and
- * list are two renderings of the item list and take all four; the graph is not one
- * of them, and handing it „+ Eintrag" and „Export HTML" because it happens to be
- * built in would put two controls in its bar that cannot do anything — the exact
- * failure the per-accessory declaration was introduced to stop, one level up from
- * where it was fixed for plugin views.
+ * list are two renderings of the item list; the graph is not one of them, and
+ * handing it „+ Eintrag" because it happens to be built in would put a control in
+ * its bar that cannot do anything — the exact failure the per-accessory
+ * declaration was introduced to stop, one level up from where it was fixed for
+ * plugin views.
  */
 const BUILTIN_ACCESSORIES: Record<BuiltinViewMode, Required<ViewAccessories>> = {
+  // `export` is carried along and read by nobody: the HTML export moved into the
+  // timeline's settings, where it is a property of the document rather than of
+  // the way it is drawn. The values below say what each presentation *would*
+  // offer, which is what makes the day somebody re-introduces a per-presentation
+  // export cheap; the retired key is documented on `ViewAccessories`.
   timeline: { grouping: true, filter: true, create: true, export: true },
   list: { grouping: true, filter: true, create: true, export: true },
   graph: {
@@ -99,8 +111,8 @@ const BUILTIN_ACCESSORIES: Record<BuiltinViewMode, Required<ViewAccessories>> = 
     // other two cannot — so creating one from here is the point rather than a
     // concession.
     create: true,
-    // Nothing renders a graph to HTML yet. Declaring it would offer an action that
-    // exports the timeline instead, which is worse than not offering one.
+    // Nothing renders a graph to HTML yet, so this stayed false even while the
+    // key still steered a control.
     export: false,
   },
 };

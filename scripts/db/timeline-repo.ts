@@ -308,21 +308,28 @@ export async function setMemberStatus(sql: Sql, email: string, status: MemberSta
 }
 
 export async function getTimeline(sql: Sql, id: string): Promise<TimelineFile | null> {
+  // `select *` rather than a column list. A named select fails outright when one of
+  // its columns has not been migrated yet, which turns a schema lag into a 500 on
+  // the main read path — that is what took the production timeline down on
+  // 2026-08-13, for a setting nobody had used. Absent columns are simply absent
+  // from the row, and every mapper here guards with `!= null`.
+  //
+  // Reads tolerant, writes strict: see „Reads survive a schema lag, writes do not"
+  // (docs/database.md).
   const [tl] = await sql`
-    select id, name, description, group_by, group_order, graph, phases, custom_fields
-    from timelines where id = ${id}`;
+    select * from timelines where id = ${id}`;
   if (!tl) return null;
 
   const itemRows = await sql`
-    select ${sql.unsafe(ITEM_SELECT)} from timeline_items
+    select * from timeline_items
     where timeline_id = ${id} order by sort asc nulls first`;
 
   const groupRows = await sql`
-    select id, content, nested_groups, show_nested, color, sort from timeline_groups
+    select * from timeline_groups
     where timeline_id = ${id} order by sort asc nulls first`;
 
   const pluginRows = await sql`
-    select plugin_id, config, public from timeline_plugins where timeline_id = ${id} order by plugin_id asc`;
+    select * from timeline_plugins where timeline_id = ${id} order by plugin_id asc`;
 
   const file: TimelineFile = { items: itemRows.map(rowToItem) };
   if (tl.name != null) file.name = tl.name;

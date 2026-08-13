@@ -11,6 +11,7 @@
 //
 //   npm run db:check     # exit 1 when migrations are pending
 //   npm run db:check -- --quiet   # only speak up when something is wrong
+//   npm run db:check -- --strict  # ALSO exit 1 when it cannot answer at all
 //
 // Silent no-op when no database is configured: a checkout serving only Markdown
 // notes or data/*.json has no Postgres, and CI builds without credentials on
@@ -23,6 +24,20 @@ import { readMigrationState } from './pending.ts';
 import { envValue } from './env.ts';
 
 const quiet = process.argv.includes('--quiet');
+/**
+ * Treat „cannot answer" as a failure.
+ *
+ * Without it this check returns 0 when a database is configured but unreachable for
+ * schema questions, which is indistinguishable from „all good" to anything reading
+ * the exit code. On 2026-08-13 that is what it looked like: the warning below was
+ * printed, read as a footnote, and a deploy went out whose read path needed a column
+ * the production database did not have.
+ *
+ * It is opt-in rather than the default because `npm run dev` runs this check, and a
+ * developer whose instance cannot answer the question still has to be able to start a
+ * server. A pipeline has no such excuse.
+ */
+const strict = process.argv.includes('--strict');
 
 function note(...args: unknown[]): void {
   if (!quiet) console.log(...args);
@@ -36,12 +51,22 @@ async function main(): Promise<void> {
     // would either nag people who have no database or hide a real gap.
     const supabaseConfigured = Boolean(getServiceClient());
     if (supabaseConfigured) {
-      console.warn(
-        `[db:check] skipped — a database is configured (supabase-js) but schema checks need a\n` +
-          `           direct connection: migrations are DDL and the tracking table is not exposed\n` +
-          `           through PostgREST. Set ${MIGRATE_URL_VAR} to a connection string to enable\n` +
-          `           this check; it does not change which driver serves the app.`,
-      );
+      const message =
+        `a database is configured (supabase-js) but schema checks need a\n` +
+        `           direct connection: migrations are DDL and the tracking table is not exposed\n` +
+        `           through PostgREST. Set ${MIGRATE_URL_VAR} to a connection string to enable\n` +
+        `           this check; it does not change which driver serves the app.`;
+      if (strict) {
+        console.error(
+          `[db:check] FAIL (--strict): CANNOT ANSWER — ${message}\n` +
+            `           Refusing rather than passing: an unanswerable check that exits 0 is\n` +
+            `           indistinguishable from a green one, and that is how code shipped ahead\n` +
+            `           of its migration.`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      console.warn(`[db:check] skipped — ${message}`);
       return; // a warning, not a failure: this setup cannot answer the question
     }
     note('[db:check] no database configured — nothing to check.');

@@ -123,13 +123,17 @@ for a different part of the screen to set the same thing.
 | Time window (zoom, pan) | the chart | 4, extent | stays a gesture, counts as extent, travels with it |
 | „+ Eintrag" | the bar, right | 5 | done: an action of the presentation the object appears in, offered only where it can appear |
 | Detail panel, context menu, rail mark | at the object | 5 | they stay: three entrances to one level is right |
-| „Export HTML" | the bar, right | 6 | done: it exports the active presentation with its extent, so it sits with it |
+| „Als HTML herunterladen" | the timeline's settings, `#timeline-settings=export` | 6 acting on 3 | done: it was an outline button beside „+ Eintrag" and drawn like it, which claimed the two are used about equally often. It produces one file of one timeline, which is a fact about the document, so it sits with the document's other settings |
 | Status line | footer | across levels | done: the footer holds the count and the plugin diagnostic, no actions on the timeline |
 | Playground | its own page | 6 | stays outside the product navigation |
 
 Three controls changed level, and those were the moves with consequences: „Nur
 Meilensteine" into the filter, „+ Eintrag" from the instance row to the
-presentation, „Export HTML" out of the status line. All three have landed.
+presentation, the export out of the status line. All three have landed. The export
+has since moved once more, from the presentation bar into the timeline's settings:
+the bar was the right level for it while „it exports what is on screen" was the
+whole story, and the wrong weight for it either way — one outline button beside
+another says the two are reached for about equally often.
 
 **The bar is never hidden**, because it carries the switch: hiding it in a plugin
 view would strand whoever is in one with no way back. Only the controls that do not
@@ -222,7 +226,11 @@ Not a layout, just the set of places the levels demand. One each.
   today's split across the header and the view toolbar.
 - **Level 5** stays the panel on the right with its two direct entrances at the
   object.
-- **Level 6** needs a menu.
+- **Level 6** needs no place of its own yet. The one tool that ships in the app is
+  the HTML export, and it produces a file of one timeline — a fact about that
+  document, so it is a section in that document's settings rather than a menu
+  entry above it. A menu becomes the answer when a second tool arrives that acts
+  on something other than the open timeline; one entry does not earn a container.
 - The footer keeps the status line.
 
 Roles show and hide whole levels rather than individual buttons: a `viewer` never
