@@ -2,88 +2,110 @@
 //
 // This is the half of the plugin that fields cannot express. An agent gets
 // `add_item` and `update_item` from the core; what it cannot get is the rule that
-// decides which items move and where. Kept in a prompt, such a rule cannot be tested,
-// cannot be reused, and is wrong in a way nobody notices until a date is wrong.
+// decides which items belong to a sprint and what happens to the ones that did not
+// finish. Kept in a prompt, such a rule cannot be tested, cannot be reused, and is
+// wrong in a way nobody notices until a commitment is wrong.
 //
 // Every rule here follows from „a tool is a pure function": it returns changes rather
 // than performing them, it reads `now` from its context and never the clock, and it
 // does no I/O and touches no DOM (this module is imported statically by the registry
 // and by the process that serves agent calls, which has no DOM).
 //
-// Five rules the boundaries are chosen for, each with the failure it prevents:
+// **The verbs follow the sprint entity, not the raster.** Membership is an assignment on
+// the item (`metadata.sprint` carries a sprint row's id), so the three verbs are
+// „assign", „move the unfinished work" and „report" rather than the date arithmetic the
+// first cut had. What a sprint *is* — the rows, the window, the assignment lookup, the
+// „done" test, the warnings — lives in `./sprints.ts` and is imported: two answers to
+// „is this item in its sprint" is how one of them ends up fixed. The wording is what
+// stays here, because the view words the same warning for a person and these notes word
+// it for an agent.
 //
-//   - **No velocity, no capacity answer.** Absent, zero, negative and unparseable are
-//     one case: the verbs say they cannot answer. Dividing by it would be a division
-//     by zero, and defaulting to some number would produce a confident forecast out of
-//     a value nobody entered.
+// Six rules the boundaries are chosen for, each with the failure it prevents:
+//
+//   - **No verb here rewrites a date.** A disagreement between an item's dates and its
+//     assignment is surfaced and left standing, because both silent fixes edit
+//     something a person decided: moving the dates rewrites a plan, dropping the
+//     assignment rewrites a commitment (`./docs/model.md`, „Membership, and the two
+//     clocks").
+//   - **`roll_over` has no default target.** Canon returns unfinished work to the
+//     Product Backlog, the common products default to the next sprint, and choosing
+//     silently would pick a philosophy on the caller's behalf. An absent target is a
+//     refusal that names both options.
+//   - **Finished work is never re-dated and never rolled over.** Its scope stays in the
+//     sprint's sum, because that capacity really was consumed, and it keeps the sprint
+//     it was finished in: the record of where something was done is the one thing a
+//     later edit must not rewrite.
 //   - **An item with no usable estimate is named, never counted as zero.** A sum that
-//     silently omits three items reads as a capacity statement and is not one.
-//     „Usable" is what it says: the value is a `select` string, so `"8"` counts and
-//     `""`, `"XL"` or a stray array do not.
-//   - **`rebalance_sprint` relieves ONE sprint and stops.** A cascade rewrites the
-//     rest of the roadmap out of a single call; an agent that wants the next sprint
-//     relieved can ask again, and the note says so.
-//   - **A write that cannot help is worse than a refusal.** Three of the rules below
-//     exist for that one reason: finished work does not move, an item a successor
-//     depends on does not move, and a sprint whose immovable part alone exceeds the
-//     velocity is left untouched. A date rewrite with no possible benefit looks like
-//     the tool worked, which is the one outcome nobody checks.
-//   - **The verbs agree on what „the work in this sprint" is.** „Done" is decided by
-//     `statusOrDefault` in every verb, and every item carrying an estimate is
-//     accounted for in every answer, including the ones the raster does not place.
-//     Two verbs disagreeing about the same scope is wrong in a way neither shows.
+//     silently omits three items reads as a capacity statement and is not one. The rule
+//     is `estimateOf` in `./sprints.ts`, so „usable" means the same thing in the lanes,
+//     in the view and here.
+//   - **A write that cannot help is worse than a refusal.** An assignment an item
+//     already carries is not written, an item whose id cannot address it is named
+//     instead of put into a plan, and a roll-over into a sprint that is over is
+//     refused. A write with no possible benefit looks like the tool worked, which is the
+//     one outcome nobody checks.
+//   - **No velocity figure and no „committed versus completed" pair, in any note.** Not
+//     an omission: `./docs/model.md` („Velocity: computed, never displayed as a metric")
+//     carries the sources. An extrapolation is stated as one, out of a sprint's own
+//     capacity, and never as a date the plan then has to hold.
 
-import { statusOrDefault, type ItemChange, type ToolHandler, type ToolPlan } from '../../pluginHost/api';
-import type { TimelineFileItem } from '../../types';
-import { STORY_POINTS_KEY } from './fields';
+import { type ItemChange, type ToolHandler, type ToolPlan } from '../../pluginHost/api';
+import type { TimelineFile, TimelineFileItem } from '../../types';
+import { isDayString, sprintOfDay, type SprintRaster } from './raster';
 import {
-  isDayString,
-  rasterFrom,
-  readSprintConfig,
-  shiftDayString,
-  sprintFirstDay,
-  sprintLabel,
-  sprintOfDay,
-  sprintOfItem,
-  sprintsInPlay,
-  type SprintRaster,
-} from './raster';
+  SPRINT_KEY,
+  activeSprints,
+  assignedSprintId,
+  capacityUnitOf,
+  carriedInto,
+  estimateOf,
+  isDone,
+  itemsOfSprint,
+  rasterOf,
+  readEstimateUnit,
+  readPasses,
+  readSprints,
+  sprintById,
+  sprintWarnings,
+  sprintWindow,
+  windowContains,
+  type CapacityUnit,
+  type Sprint,
+  type SprintState,
+  type SprintWarning,
+  type SprintWindow,
+} from './sprints';
 
 /**
- * The raster, or a refusal.
+ * Whole calendar days from `from` to `to`; negative when `to` is earlier, null when
+ * either value names no day.
  *
- * Throwing rather than returning an empty plan: „nothing to do" is what an empty plan
- * says, and an unconfigured raster is not that. The message reaches the agent, which
- * is the only party that can fix the config.
+ * FOLD INTO `./sprints.ts`: „how much time is left" is a question about a sprint
+ * window, and this is the only arithmetic in this file that is not wording.
+ *
+ * Built on `sprintOfDay` with a one-day raster rather than on date parsing of its own,
+ * and that is the point: a second copy of the day rules is what this plugin's
+ * `AGENTS.md` forbids, and the copy would be the one that gets the Europe/Berlin change
+ * of 2026-03-29 wrong (`raster.test.ts` pins it). A one-day raster anchored at `from`
+ * numbers `to` as its offset plus one, so the offset falls out of the arithmetic that
+ * decides every other date question here.
  */
-function requireRaster(config: Record<string, unknown>): SprintRaster {
-  const raster = rasterFrom(readSprintConfig(config));
-  if (!raster) {
-    throw new Error(
-      'Kein Sprintraster konfiguriert: `start` (Ankerdatum von Sprint 1, YYYY-MM-DD) fehlt oder ' +
-        '`lengthDays` ist keine ganze Zahl ab 1.',
-    );
-  }
-  return raster;
+function dayOffset(from: string, to: string): number | null {
+  const oneDay = (anchor: string): SprintRaster => ({ anchor, lengthDays: 1, velocity: null, scale: [] });
+  const forward = sprintOfDay(oneDay(from), to);
+  if (forward != null) return forward - 1;
+  const backward = sprintOfDay(oneDay(to), from);
+  return backward == null ? null : -(backward - 1);
 }
 
-/** The velocity, or a refusal naming what is missing. */
-function requireVelocity(raster: SprintRaster): number {
-  if (raster.velocity == null) {
-    throw new Error(
-      'Ohne verwertbaren `velocity`-Wert in der Konfiguration ist nicht entscheidbar, was in einen ' +
-        'Sprint passt. Diese Frage bleibt unbeantwortet, statt auf einer Annahme zu rechnen.',
-    );
-  }
-  return raster.velocity;
-}
+// ---- wording ----------------------------------------------------------------
 
 /**
  * A value named in an error message so it cannot be mistaken for valid input.
  *
- * `String([3])` is `"3"`, so `{sprint: [3]}` was quoted back as „„3" ist keine
- * Sprintnummer" — an agent reading that sees the number it did not send and no reason
- * for the refusal. JSON keeps the brackets, the quotes and the type.
+ * `String(["S-3"])` is `"S-3"`, so `{sprint: ["S-3"]}` was quoted back as „„S-3" ist
+ * keine Sprint-Id" — an agent reading that sees the id it did not send and no reason for
+ * the refusal. JSON keeps the brackets, the quotes and the type.
  */
 function quoted(value: unknown): string {
   try {
@@ -96,57 +118,109 @@ function quoted(value: unknown): string {
   return `<${typeof value}>`;
 }
 
-/** The sprint number an argument names. */
-function sprintArg(args: Record<string, unknown>, required: boolean): number | null {
-  const raw = args.sprint;
-  if (raw == null) {
-    if (required) throw new Error('`sprint` fehlt: erwartet ist die Nummer des Sprints, der entlastet werden soll.');
-    return null;
-  }
-  const value = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw.trim()) : NaN;
-  if (!Number.isInteger(value) || value < 1) {
-    throw new Error(`${quoted(raw)} ist keine Sprintnummer: erwartet ist eine ganze Zahl ab 1.`);
-  }
-  return value;
+/**
+ * A counted noun in German. Notes are interface text an agent relays verbatim, and
+ * „1 Einträge" is the kind of wrongness that makes the whole answer read as machine
+ * output nobody checked.
+ */
+function count(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** What a person recognises the item by. The id is the fallback, never the first choice. */
+function nameOf(item: TimelineFileItem): string {
+  return item.content?.trim() || item.id?.trim() || '(ohne Titel)';
+}
+
+function nameList(items: readonly TimelineFileItem[]): string {
+  return items.map((item) => `„${nameOf(item)}"`).join(', ');
 }
 
 /**
- * A plain decimal number, and nothing `Number()` is additionally willing to read.
- *
- * Bare `Number()` accepted `"0x10"` as 16 and `"1e3"` as 1000, so a typo in a
- * hand-written file entered a capacity sum as a number nobody wrote — and the sum
- * looked right, because a sum always does. „Usable" is a plain string of digits, which
- * is what this plugin's `AGENTS.md` promises.
+ * The ids, for a note a caller has to act on. A title is what a person recognises, but
+ * only an id addresses an item in a follow-up call.
  */
-const DECIMAL_RE = /^[+-]?\d+(?:\.\d+)?$/;
-
-/**
- * The item's estimate, or null when it carries none that can be summed.
- *
- * A `select` field's value is a **string** in this data model (`readFieldValues` in
- * src/customFields.ts normalises the same way), so `"8"` is the normal shape and a
- * number is accepted for an agent that wrote one directly. Zero and negative values
- * are treated as „no usable estimate": they cannot move a sum, so counting them would
- * only hide them from the notes.
- */
-function estimateOf(item: TimelineFileItem): number | null {
-  const raw = item.metadata?.[STORY_POINTS_KEY];
-  if (typeof raw === 'number') return Number.isFinite(raw) && raw > 0 ? raw : null;
-  if (typeof raw !== 'string') return null;
-  const trimmed = raw.trim();
-  if (!DECIMAL_RE.test(trimmed)) return null;
-  const value = Number(trimmed);
-  return Number.isFinite(value) && value > 0 ? value : null;
+function idList(items: readonly TimelineFileItem[]): string {
+  return items.map((item) => item.id?.trim() || `(ohne Id: ${nameOf(item)})`).join(', ');
 }
 
-function totalPoints(items: readonly TimelineFileItem[]): number {
-  return items.reduce((sum, item) => sum + (estimateOf(item) ?? 0), 0);
+/** A sprint in a note: the name a person reads plus the id a follow-up call needs. */
+function sprintLabel(sprint: Sprint): string {
+  return `„${sprint.name}" (${sprint.id})`;
+}
+
+/** Every sprint a caller could have meant, so a refusal is actionable. */
+function sprintChoices(sprints: readonly Sprint[]): string {
+  return sprints.map((s) => `${s.id} („${s.name}")`).join(', ');
+}
+
+/**
+ * „Dieses Fenster ist berechnet", or nothing when the row carries it.
+ *
+ * Said wherever a window is stated, because a computed end reads exactly like a written
+ * one: the same two dates, and only the row knows the difference. A caller told that its
+ * items contradict „2026-05-01 bis 2026-05-14" has to be able to see which half of that
+ * nobody wrote, or it corrects the items against a date the plugin invented.
+ */
+function computedWindowNote(label: string, window: SprintWindow): string | null {
+  if (window.source === 'row') return null;
+  if (window.source === 'end-from-cadence') {
+    return (
+      `Das Ende dieses Fensters (${window.end}) steht nicht auf ${label}: es ist aus dem geschriebenen Anfang und ` +
+      'der Kadenzlänge berechnet. Ein Sprint hat eine feste Länge, geschrieben ist hier aber nur der Anfang.'
+    );
+  }
+  return (
+    `Dieses Fenster (${window.start} bis ${window.end}) steht nicht auf ${label}: es kommt aus dem Raster der ` +
+    'Konfiguration, an der Position dieser Zeile, und verschiebt sich deshalb, wenn die Zeilen umsortiert werden.'
+  );
+}
+
+/**
+ * The state as interface text.
+ *
+ * The stored value is one of four English ids, and a note is read by a person: an answer
+ * that mixes „aktiv" and „active" reads as two systems talking past each other.
+ */
+const STATE_LABELS: Record<SprintState, string> = {
+  planned: 'geplant',
+  active: 'aktiv',
+  closed: 'abgeschlossen',
+  cancelled: 'abgebrochen',
+};
+
+/**
+ * The unit a number in a note is counted in, declined for that number.
+ *
+ * The singular is not decoration: counting entries made a scope of exactly 1 an everyday
+ * case, and „davon offen 1 Einträge" is the kind of wrongness that makes the whole
+ * answer read as machine output nobody checked. Same reason `count` exists.
+ */
+function unitLabel(unit: CapacityUnit, value: number): string {
+  const one = atPrintedResolution(value) === 1;
+  if (unit === 'hours') return one ? 'Stunde' : 'Stunden';
+  if (unit === 'items') return one ? 'Eintrag' : 'Einträge';
+  return one ? 'Punkt' : 'Punkte';
+}
+
+/**
+ * The same unit after „von" or „mit".
+ *
+ * Two forms rather than one, because German declines: „13 Punkte" and „von 20 Punkten"
+ * are both right and „von 20 Punkte" is not. The number it agrees with is the one it
+ * follows, which is why it is an argument.
+ */
+function unitDative(unit: CapacityUnit, value: number): string {
+  const one = atPrintedResolution(value) === 1;
+  if (unit === 'hours') return one ? 'Stunde' : 'Stunden';
+  if (unit === 'items') return one ? 'Eintrag' : 'Einträgen';
+  return one ? 'Punkt' : 'Punkten';
 }
 
 /**
  * A value at the resolution the notes print it at.
  *
- * Two decimals, so a fractional velocity leaves no trailing noise. The overflow guard
+ * Two decimals, so a fractional capacity leaves no trailing noise. The overflow guard
  * is the part that is not decoration: `value * 100` becomes Infinity above ~1.8e306,
  * and `Math.round(Infinity) / 100` printed „Infinity" for a sum of 2e307 — a finite
  * total reported as a number that is not one.
@@ -157,21 +231,21 @@ function atPrintedResolution(value: number): number {
   return Math.round(scaled) / 100;
 }
 
-/** A number in a note: no trailing noise from a fractional velocity. */
+/** A number in a note: no trailing noise from a fractional capacity. */
 function points(value: number): string {
   return String(atPrintedResolution(value));
 }
 
 /**
- * Is the sum over the velocity, **at the resolution the note prints**?
+ * Is the sum over the capacity, **at the resolution the note prints**?
  *
  * Comparing the raw floats let the verdict contradict the two numbers beside it:
- * `"0.1"` + `"0.2"` is 0.30000000000000004, so a velocity of 0.3 produced
- * „0.3 von 0.3 Punkten (überbucht)". Both sides are compared where they are shown, so
- * a reader can always check the verdict against the figures it is printed with.
+ * `"0.1"` + `"0.2"` is 0.30000000000000004, so a capacity of 0.3 produced „0.3 von 0.3
+ * Punkten (überbucht)". Both sides are compared where they are shown, so a reader can
+ * always check the verdict against the figures it is printed with.
  */
-function overcommitted(sum: number, velocity: number): boolean {
-  return atPrintedResolution(sum) > atPrintedResolution(velocity);
+function overCapacity(sum: number, capacity: number): boolean {
+  return atPrintedResolution(sum) > atPrintedResolution(capacity);
 }
 
 /**
@@ -188,56 +262,41 @@ function unusableSumNote(sum: number, where: string): string | null {
   );
 }
 
-/**
- * A counted noun in German. Notes are interface text an agent relays verbatim, and
- * „1 Einträge" is the kind of wrongness that makes the whole answer read as machine
- * output nobody checked.
- */
-function count(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
-
-/** What a person recognises the item by. The id is the fallback, never the first choice. */
-function nameOf(item: TimelineFileItem): string {
-  return item.content?.trim() || item.id || '(ohne Titel)';
-}
-
-function nameList(items: readonly TimelineFileItem[]): string {
-  return items.map((item) => `„${nameOf(item)}"`).join(', ');
-}
+/** A set of items as a number plus the items that number does not account for. */
+type Scope = { sum: number; missing: TimelineFileItem[] };
 
 /**
- * The ids, for a note a caller has to act on. A title is what a person recognises, but
- * only an id addresses an item in a follow-up call.
- */
-function idList(items: readonly TimelineFileItem[]): string {
-  return items.map((item) => item.id?.trim() || `(ohne Id: ${nameOf(item)})`).join(', ');
-}
-
-/**
- * Code-unit order, never `localeCompare`.
+ * The scope of a set of items, in the unit the sprint is planned in.
  *
- * A collator answers 0 for two distinct strings it considers equal (an id carrying a
- * soft hyphen, `a` + U+00AD + `b`, against the same id without one), so a tie-break built on
- * it stops breaking ties exactly when it is
- * needed and hands the order back to however the source happened to list the items.
+ * **„items" counts entries, and that is the whole fix here.** A sprint with
+ * `capacityUnit: 'items'` and a capacity of 3, holding two items of 8 and 13 points,
+ * was reported as „Umfang 21 von 3 Einträgen (überbucht)": a story-point sum compared
+ * against a count of entries, declared over budget by an arithmetic nobody performed.
+ *
+ * Nothing is missing from such a count, so `missing` is empty for it: an entry is one
+ * entry whether or not anybody sized it. The absent estimate is still named, by
+ * `sprintWarnings` („item-without-estimate"), where it is a question about the item
+ * rather than about the sum.
  */
-function compareRaw(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
+function scopeOf(items: readonly TimelineFileItem[], unit: CapacityUnit): Scope {
+  if (unit === 'items') return { sum: items.length, missing: [] };
+  let sum = 0;
+  const missing: TimelineFileItem[] = [];
+  for (const item of items) {
+    const estimate = estimateOf(item);
+    if (estimate == null) missing.push(item);
+    else sum += estimate;
+  }
+  return { sum, missing };
 }
 
-/** Is this item finished? The one definition of „done" every verb here uses. */
-function isDone(item: TimelineFileItem): boolean {
-  return statusOrDefault(item.status) === 'Done';
-}
-
-function membersOf(raster: SprintRaster, items: readonly TimelineFileItem[], sprint: number): TimelineFileItem[] {
-  return items.filter((item) => sprintOfItem(raster, item) === sprint);
-}
-
-/** Items the raster does not place: no start at all, or a start before the anchor. */
-function outsideRaster(raster: SprintRaster, items: readonly TimelineFileItem[]): TimelineFileItem[] {
-  return items.filter((item) => sprintOfItem(raster, item) == null);
+/** „ohne verwertbare Schätzung: …", or nothing when every item carries one. */
+function missingEstimateNote(where: string, missing: readonly TimelineFileItem[]): string | null {
+  if (!missing.length) return null;
+  return (
+    `${where}: ohne verwertbare Schätzung: ${nameList(missing)}. ` +
+    `Eine Summe, in der ${count(missing.length, 'Eintrag fehlt', 'Einträge fehlen')}, ist keine Kapazitätsaussage.`
+  );
 }
 
 /**
@@ -247,17 +306,25 @@ function outsideRaster(raster: SprintRaster, items: readonly TimelineFileItem[])
  * which a plugin may not import (plugin isolation, see `AGENTS.md` in this folder), so
  * the accepted shapes have to agree with that function by hand — a list of ids, or a
  * single id written as a bare string. `dependsOn` is a core reserved metadata key
- * (`RESERVED_META_KEYS` in src/customFields.ts) and the relation graph draws an edge
- * for every entry, which is why a rule that moves dates has to read it.
+ * (`RESERVED_META_KEYS` in src/customFields.ts) and the relation graph draws an edge for
+ * every entry, which is why a rule that changes what a sprint holds has to read it.
+ *
+ * **Character for character the core's rule, including where it does not trim.** An
+ * entry of a list keeps its whitespace there (`v.map(String).filter((s) => s.length)`),
+ * so `[" P-1 "]` names no item and no edge is drawn; only the single-string form is
+ * trimmed. Trimming both here made this file claim a dependent the relation graph does
+ * not draw — a note about a stranded successor that no arrow on the page corresponds to.
  */
 function dependentsByTarget(items: readonly TimelineFileItem[]): Map<string, TimelineFileItem[]> {
   const map = new Map<string, TimelineFileItem[]>();
   for (const item of items) {
     const raw = item.metadata?.dependsOn;
-    const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
-    for (const entry of list) {
-      const target = String(entry).trim();
-      if (!target) continue;
+    const list = Array.isArray(raw)
+      ? raw.map(String).filter((entry) => entry.length > 0)
+      : typeof raw === 'string' && raw.trim()
+        ? [raw.trim()]
+        : [];
+    for (const target of list) {
       const known = map.get(target);
       if (known) known.push(item);
       else map.set(target, [item]);
@@ -266,412 +333,796 @@ function dependentsByTarget(items: readonly TimelineFileItem[]): Map<string, Tim
   return map;
 }
 
-/** „ohne verwertbare Schätzung: …", or nothing when every item carries one. */
-function missingEstimateNote(sprint: number, members: readonly TimelineFileItem[]): string | null {
-  const missing = members.filter((item) => estimateOf(item) == null);
-  if (!missing.length) return null;
-  return (
-    `${sprintLabel(sprint)}: ohne verwertbare Schätzung: ${nameList(missing)}. ` +
-    `Eine Summe, in der ${count(missing.length, 'Eintrag fehlt', 'Einträge fehlen')}, ist keine Kapazitätsaussage.`
-  );
+// ---- the disagreement between an item's dates and its sprint ----------------
+
+/**
+ * Do the item's own dates fall outside the window?
+ *
+ * Composed from `windowContains` rather than comparing days here, so „outside" means
+ * exactly what `sprintWarnings` means by it: the start counts, and the end counts when
+ * the item carries one. An item with no date at all is not a disagreement — it is the
+ * separate case below, because there is nothing to compare.
+ */
+function datesDisagree(window: SprintWindow, item: TimelineFileItem): boolean {
+  const startOff = isDayString(item.start) && !windowContains(window, item.start);
+  const endOff = isDayString(item.end) && !windowContains(window, item.end);
+  return startOff || endOff;
 }
 
 /**
- * „Außerhalb des Rasters …", or nothing when the raster places every item.
+ * What the writing verbs say about the items they just assigned.
  *
- * The counterpart of `missingEstimateNote`, for the same reason and against the same
- * failure: this verb iterates the sprints in play, so an item with no start or with a
- * start before the anchor appeared in no line at all — while `forecast_completion`
- * counted its points. A sum that silently omits three items reads as a capacity
- * statement and is not one, so the answer has to state the scope it did not place.
+ * Never a change: „the assignment wins, and a disagreement is shown rather than
+ * resolved" is this function's whole reason to exist. `sprint_status` renders the same
+ * facts out of `sprintWarnings`, which scans the timeline as stored; a plan has not been
+ * applied yet, so the verbs that write need this check over the items in hand.
  */
-function outsideRasterNote(raster: SprintRaster, items: readonly TimelineFileItem[]): string | null {
-  const outside = outsideRaster(raster, items);
-  if (!outside.length) return null;
-  const sum = totalPoints(outside);
-  return (
-    `Außerhalb des Rasters und daher in keiner Sprint-Summe: ` +
-    `${points(sum)} Punkte aus ${count(outside.length, 'Eintrag', 'Einträgen')} (${idList(outside)}), ` +
-    `ohne Startdatum oder mit einem Start vor dem Anker ${raster.anchor}. ` +
-    'Diese Antwort verortet diesen Umfang nicht.'
-  );
-}
-
-/**
- * The sum of story points per sprint against the velocity. Writes nothing.
- *
- * Without a usable velocity it still reports the sums, and says in its first note that
- * they carry no yardstick: summing needs no velocity, and withholding the numbers
- * would be less useful than labelling them.
- */
-export const checkSprintCapacity: ToolHandler = ({ file, config, args }): ToolPlan => {
-  const raster = requireRaster(config);
-  const items = file.items ?? [];
-  const asked = sprintArg(args, false);
-  const sprints = asked != null ? [asked] : sprintsInPlay(raster, items);
-  // Only the sweep owes the out-of-raster line. A caller who named one sprint asked
-  // about that sprint, and an unplaced item is not missing from that answer.
-  const outside = asked == null ? outsideRasterNote(raster, items) : null;
-
+function windowNotes(sprint: Sprint, raster: SprintRaster | null, items: readonly TimelineFileItem[]): string[] {
+  if (!items.length) return [];
   const notes: string[] = [];
-  if (raster.velocity == null) {
+  const window = sprintWindow(sprint, raster);
+  if (!window) {
+    return [
+      `${sprintLabel(sprint)} hat kein Fenster: weder trägt die Zeile start und end, noch gibt es ein Raster, das ` +
+        'eines beisteuert. Ob die Daten eines Eintrags der Zuordnung widersprechen, ist damit nicht prüfbar.',
+    ];
+  }
+  const outside = items.filter((item) => datesDisagree(window, item));
+  // Named once: an item with no start but an end outside the window is already in the
+  // line above, and two notes about one item read as two findings.
+  const undated = items.filter((item) => !isDayString(item.start) && !outside.includes(item));
+  if (outside.length) {
     notes.push(
-      'Ohne verwertbaren `velocity`-Wert in der Konfiguration lässt sich nicht sagen, ob ein Sprint ' +
-        'überbucht ist. Die Summen unten stehen ohne Maßstab.',
+      `Die eigenen Daten widersprechen der Zuordnung zu ${sprintLabel(sprint)} (${window.start} bis ${window.end}): ` +
+        `${nameList(outside)} (${idList(outside)}). Weder die Daten noch die Zuordnung werden geändert: das eine ` +
+        'überschreibt einen Plan, das andere eine Zusage, und beides hat ein Mensch entschieden.',
+    );
+    const computed = computedWindowNote(sprintLabel(sprint), window);
+    if (computed) notes.push(computed);
+  }
+  if (undated.length) {
+    notes.push(
+      `Ohne Startdatum und daher an keiner Stelle des Fensters: ${nameList(undated)} (${idList(undated)}). ` +
+        'Die Zuordnung gilt trotzdem, ein Vergleich mit dem Fenster ist nicht möglich.',
     );
   }
-  if (!sprints.length) {
-    notes.push(`Kein Eintrag fällt in einen Sprint des Rasters (Anker ${raster.anchor}, ${raster.lengthDays} Tage).`);
-    if (outside) notes.push(outside);
-    return { notes };
-  }
+  return notes;
+}
 
-  for (const sprint of sprints) {
-    const members = membersOf(raster, items, sprint);
-    if (!members.length) {
-      notes.push(`${sprintLabel(sprint)} ist leer.`);
-      continue;
-    }
-    const sum = totalPoints(members);
-    const unusable = unusableSumNote(sum, sprintLabel(sprint));
-    if (unusable) {
-      notes.push(unusable);
-    } else {
+// ---- the warnings, as an agent reads them -----------------------------------
+
+/** What a warning calls the item it is about. The content first, the id as a fallback. */
+function warnedName(warning: { content: string; itemId: string | null }): string {
+  return `„${warning.content.trim() || warning.itemId?.trim() || '(ohne Titel)'}"`;
+}
+
+/**
+ * The typed warnings of `sprints.ts`, worded for an agent.
+ *
+ * The rule stays there and the sentence stays here on purpose: the view says the same
+ * things to a person in its own layout, and one shared string would be wrong for one of
+ * the two. The grouping by sprint is wording as well — four separate lines for four
+ * unestimated items of one sprint is a wall an agent relays verbatim.
+ */
+function warningNotes(
+  warnings: readonly SprintWarning[],
+  sprints: readonly Sprint[],
+  file: TimelineFile,
+): string[] {
+  const notes: string[] = [];
+  const label = (id: string) => {
+    const sprint = sprintById(sprints, id);
+    return sprint ? sprintLabel(sprint) : `„${id}"`;
+  };
+
+  for (const warning of warnings) {
+    if (warning.kind === 'active-sprint-without-goal') {
       notes.push(
-        raster.velocity == null
-          ? `${sprintLabel(sprint)}: ${points(sum)} Punkte aus ${count(members.length, 'Eintrag', 'Einträgen')}.`
-          : `${sprintLabel(sprint)}: ${points(sum)} von ${points(raster.velocity)} Punkten aus ` +
-            `${count(members.length, 'Eintrag', 'Einträgen')} ` +
-            `(${overcommitted(sum, raster.velocity) ? 'überbucht' : 'im Rahmen'}).`,
+        `${label(warning.sprintId)} ist aktiv und hat kein Sprint-Ziel. Das Ziel ist das Kriterium, an dem während ` +
+          'des Sprints über Änderungen entschieden wird, und der einzige Grund, einen Sprint abzubrechen.',
       );
     }
-    const missing = missingEstimateNote(sprint, members);
-    if (missing) notes.push(missing);
+    if (warning.kind === 'several-active-sprints') {
+      // The host enforces no rule across rows, so „at most one active sprint" can only
+      // be reported, never prevented: „A new Sprint starts immediately after the
+      // conclusion of the previous Sprint".
+      notes.push(
+        `${count(warning.sprintIds.length, 'Sprint ist', 'Sprints sind')} gleichzeitig aktiv ` +
+          `(${warning.sprintIds.map(label).join(', ')}). Es kann nur einen aktiven Sprint geben; die übrigen ` +
+          'gehören geschlossen oder auf „planned" zurückgesetzt.',
+      );
+    }
+    if (warning.kind === 'overlapping-sprint-windows') {
+      // Both ids, because the fault is the pair and neither row is wrong on its own.
+      notes.push(
+        `Die Fenster von ${label(warning.sprintIds[0])} und ${label(warning.sprintIds[1])} überschneiden sich ` +
+          `(${warning.overlap.start} bis ${warning.overlap.end}). Ein Sprint beginnt, wenn der vorige endet, und ` +
+          'für einen Eintrag in diesen Tagen nennt „Sprint nach Datum" die frühere Zeile, während die Zuordnung ' +
+          'auf die spätere zeigt: der Widerspruch ist dann in keiner der beiden Zeilen zu sehen.',
+      );
+    }
+    if (warning.kind === 'closed-before-start') {
+      notes.push(
+        `${label(warning.sprintId)} ist am ${warning.closedOn} abgeschlossen worden und beginnt am ` +
+          `${warning.start}, also danach. Eines der beiden Daten ist falsch, und welches, sagt keine Zahl hier: ` +
+          'der eingefrorene Verlauf liegt damit außerhalb des Fensters, in dem er gezeichnet würde.',
+      );
+    }
+    if (warning.kind === 'pass-without-sprint') {
+      notes.push(
+        `Der Verlaufseintrag ${quoted(warning.rowId)} nennt den Sprint ${quoted(warning.sprintId)}, den es nicht ` +
+          `gibt (Eintrag ${quoted(warning.itemId)}). Er zählt damit in keinem Sprint und wird auch nicht ` +
+          'gelöscht: gehört er zu einem umbenannten Sprint, ist die Id zu korrigieren, sonst die Zeile zu entfernen.',
+      );
+    }
+    if (warning.kind === 'duplicate-row-id') {
+      notes.push(
+        `Die Sammlung „${warning.collection}" trägt die Id ${quoted(warning.rowId)} mehr als einmal. Gelesen wird ` +
+          'die erste Zeile, jede weitere existiert nur noch in der Datei: sie steht in keiner Auswahl, in keiner ' +
+          'Summe und in keinem Bericht.',
+      );
+    }
+    if (warning.kind === 'several-reports-for-one-sprint') {
+      notes.push(
+        `Zu ${label(warning.sprintId)} gibt es mehr als einen Bericht (${warning.rowIds.map(quoted).join(', ')}). ` +
+          'Gelesen wird der erste; die übrigen sind zweite eingefrorene Zahlen zum selben abgeschlossenen Sprint.',
+      );
+    }
   }
 
-  if (outside) notes.push(outside);
-  return { notes };
+  const bySprint = new Map<string, SprintWarning[]>();
+  for (const warning of warnings) {
+    if (warning.kind !== 'item-outside-sprint-window' && warning.kind !== 'item-without-estimate') continue;
+    const known = bySprint.get(warning.sprintId);
+    if (known) known.push(warning);
+    else bySprint.set(warning.sprintId, [warning]);
+  }
+
+  for (const [sprintId, group] of bySprint) {
+    const outside = group.filter((w) => w.kind === 'item-outside-sprint-window');
+    const missing = group.filter((w) => w.kind === 'item-without-estimate');
+    if (outside.length) {
+      const window = outside[0].kind === 'item-outside-sprint-window' ? outside[0].window : null;
+      notes.push(
+        `Die eigenen Daten widersprechen der Zuordnung zu ${label(sprintId)}` +
+          `${window ? ` (${window.start} bis ${window.end})` : ''}: ` +
+          `${outside.map(warnedName).join(', ')}. Weder die Daten noch die Zuordnung werden geändert: das eine ` +
+          'überschreibt einen Plan, das andere eine Zusage, und beides hat ein Mensch entschieden.',
+      );
+      // The window this contradiction is measured against may be one nobody wrote.
+      const computed = window ? computedWindowNote(label(sprintId), window) : null;
+      if (computed) notes.push(computed);
+    }
+    if (missing.length) {
+      // A sprint counted in entries has a complete scope without these estimates, so the
+      // „diese Summe ist keine Kapazitätsaussage" sentence would be false there — the
+      // missing estimate is still worth naming, for a different reason.
+      const sprint = sprintById(sprints, sprintId);
+      const counted = sprint != null && capacityUnitOf(sprint, file) === 'items';
+      notes.push(
+        `${label(sprintId)}: ohne verwertbare Schätzung: ${missing.map(warnedName).join(', ')}. ` +
+          (counted
+            ? 'Dieser Sprint zählt Einträge, sein Umfang ist damit vollständig; über den Aufwand sagt er nichts.'
+            : `Eine Summe, in der ${count(missing.length, 'Eintrag fehlt', 'Einträge fehlen')}, ist keine ` +
+              'Kapazitätsaussage.'),
+      );
+    }
+  }
+  return notes;
+}
+
+// ---- arguments --------------------------------------------------------------
+
+/**
+ * The sprint rows, or a refusal.
+ *
+ * Throwing rather than returning an empty plan: „nothing to do" is what an empty plan
+ * says, and „this timeline has no sprints" is not that. The message reaches the agent,
+ * which is the party that can create one.
+ */
+function requireSprints(file: TimelineFile): Sprint[] {
+  const sprints = readSprints(file);
+  if (!sprints.length) {
+    throw new Error(
+      'Auf dieser Timeline ist kein Sprint angelegt. Die Zuordnung verweist auf die Id einer Zeile der Sammlung ' +
+        '„sprints", die es dafür geben muss: erst einen Sprint anlegen, dann zuordnen.',
+    );
+  }
+  return sprints;
+}
+
+/** The sprint an argument names, or a refusal that lists the ones that exist. */
+function requireSprint(sprints: readonly Sprint[], raw: unknown, argName: string): Sprint {
+  if (raw == null) {
+    throw new Error(`\`${argName}\` fehlt: erwartet ist die Id eines Sprints. Vorhanden: ${sprintChoices(sprints)}.`);
+  }
+  const id = typeof raw === 'string' ? raw.trim() : '';
+  if (!id) {
+    throw new Error(
+      `${quoted(raw)} ist keine Sprint-Id: erwartet ist die Id einer Zeile der Sammlung „sprints". ` +
+        `Vorhanden: ${sprintChoices(sprints)}.`,
+    );
+  }
+  const found = sprintById(sprints, id);
+  if (!found) throw new Error(`Kein Sprint mit der Id ${quoted(id)}. Vorhanden: ${sprintChoices(sprints)}.`);
+  return found;
+}
+
+/**
+ * The item ids an argument names, plus the entries that are no id at all.
+ *
+ * The unusable entries come back rather than being thrown on, for the reason the
+ * whitespace-id rule already established: one bad entry must not make the whole call
+ * impossible, and an entry that is silently dropped is the other half of that bug.
+ *
+ * **`unusable` is reachable through the host, and that is why it stays.** The declared
+ * `items` schema is `string` with `minLength: 1`, and the host counts characters rather
+ * than non-blank ones (`validateRow` in src/pluginHost/dataSchema.ts), so `"  "` passes
+ * validation and arrives here. A direct call — a test, another plugin's rule — can hand
+ * over a number as well. Without this branch either entry would vanish from a plan the
+ * caller believes covered its whole list.
+ */
+function itemIdsArg(raw: unknown): { ids: string[]; unusable: unknown[] } {
+  if (raw == null) throw new Error('`items` fehlt: erwartet ist eine Liste von Item-Ids.');
+  if (!Array.isArray(raw)) throw new Error(`${quoted(raw)} ist keine Liste von Item-Ids.`);
+  if (!raw.length) throw new Error('`items` ist leer: ohne Einträge gibt es nichts zuzuordnen.');
+  const ids: string[] = [];
+  const unusable: unknown[] = [];
+  for (const entry of raw) {
+    const id = typeof entry === 'string' ? entry.trim() : '';
+    if (!id) unusable.push(entry);
+    else if (!ids.includes(id)) ids.push(id);
+  }
+  return { ids, unusable };
+}
+
+/**
+ * The items of a timeline a plan can address, looked up by trimmed id.
+ *
+ * Matched trimmed, so a caller's `"A-1"` finds an item whose stored id is `" A-1 "`:
+ * ids are unconstrained strings in this data model and nothing trims them on the way
+ * in. What goes into a plan is then the item's **own** id — see `planItemId` — because
+ * the host matches a change against the id as stored and refuses the whole plan when it
+ * does not find it. One padded id used to block the assignment of every other item in
+ * the call.
+ */
+function addressableItems(items: readonly TimelineFileItem[]): Map<string, TimelineFileItem> {
+  const map = new Map<string, TimelineFileItem>();
+  for (const item of items) {
+    const id = item.id?.trim();
+    // An id that is only whitespace passes a plain falsy check and then makes
+    // `validateToolPlan` refuse the WHOLE plan over a blank `itemId`. Such an item is
+    // named in the notes instead, so one bad id cannot block everything else.
+    if (id && !map.has(id)) map.set(id, item);
+  }
+  return map;
+}
+
+/**
+ * The id a plan addresses an item by: the one the item carries, untrimmed.
+ *
+ * `validateToolPlan` compares against `file.items[].id` as stored, so a trimmed id for
+ * an item stored as `" A-1 "` is „no item on this timeline" and the host refuses the
+ * plan whole — every other change in it included.
+ */
+function planItemId(item: TimelineFileItem): string {
+  return item.id as string;
+}
+
+// ---- plan_sprint ------------------------------------------------------------
+
+/**
+ * Assign items to a sprint. Writes the assignment key and nothing else.
+ *
+ * Membership is an act rather than a date test (`./docs/model.md`, „Why the sprint is an
+ * entity and not a date range"), so this verb is the act. What it deliberately does not
+ * do is make the dates agree: an item whose own dates fall outside the sprint's window
+ * is named, and both sides are left exactly as they are.
+ */
+export const planSprint: ToolHandler = ({ file, args }): ToolPlan => {
+  const sprints = requireSprints(file);
+  const sprint = requireSprint(sprints, args.sprint, 'sprint');
+  if (sprint.state === 'closed' || sprint.state === 'cancelled') {
+    // The same refusal `roll_over` gives for the same reason, and it was missing here:
+    // assigning work into a sprint that is over changes nothing about what was
+    // delivered, while the live scope it appears in then contradicts the frozen report
+    // that holds that sprint's figures — and no note said a report existed. A write with
+    // no possible benefit looks exactly like one that worked.
+    throw new Error(
+      `${sprintLabel(sprint)} ist ${STATE_LABELS[sprint.state]}: dorthin wird nichts mehr zugeordnet. Die Zahlen ` +
+        'dieses Sprints stehen in seinem eingefrorenen Bericht und werden nicht neu berechnet, eine weitere ' +
+        'Zuordnung würde ihm also nur widersprechen. Nenne einen geplanten oder aktiven Sprint.',
+    );
+  }
+  const { ids, unusable } = itemIdsArg(args.items);
+  const known = addressableItems(file.items ?? []);
+
+  const assign: TimelineFileItem[] = [];
+  const already: TimelineFileItem[] = [];
+  // Ids that name nothing first, then entries that are no id at all: the first group is
+  // what a caller mistyped, the second what it built wrongly.
+  const unknown: unknown[] = [];
+  for (const id of ids) {
+    const item = known.get(id);
+    if (!item) {
+      unknown.push(id);
+      continue;
+    }
+    if (assignedSprintId(item) === sprint.id) already.push(item);
+    else assign.push(item);
+  }
+
+  const changes: ItemChange[] = assign.map((item) => ({
+    op: 'update',
+    itemId: planItemId(item),
+    // The metadata of a patch is shallow-merged onto the item (`resolveItemPatch` in
+    // scripts/mcp/patch.ts), so writing one key keeps the estimate and everything else
+    // the item carries. A whole metadata object here would drop them.
+    patch: { metadata: { [SPRINT_KEY]: sprint.id } },
+  }));
+
+  const notes: string[] = [];
+  notes.push(
+    assign.length
+      ? `${sprintLabel(sprint)}: ${count(assign.length, 'Eintrag', 'Einträge')} zugeordnet (${nameList(assign)}). ` +
+        'Daten wurden dabei nicht angefasst.'
+      : `${sprintLabel(sprint)}: nichts zugeordnet.`,
+  );
+  if (already.length) {
+    // Writing the value an item already carries is a patch with no effect, and a plan
+    // that reports it looks like a change happened.
+    notes.push(`Bereits ${sprintLabel(sprint)} zugeordnet und daher nicht erneut geschrieben: ${nameList(already)}.`);
+  }
+  if (unknown.length || unusable.length) {
+    notes.push(
+      `Nicht auf dieser Timeline und daher nicht zugeordnet: ${[...unknown, ...unusable].map(quoted).join(', ')}. ` +
+        'Eine Id, die kein Eintrag trägt, würde den gesamten Plan ungültig machen, deshalb ist sie nicht darin.',
+    );
+  }
+
+  const done = assign.filter(isDone);
+  if (done.length) {
+    notes.push(
+      `Auch abgeschlossene Arbeit wurde zugeordnet (${nameList(done)}): das ändert kein Datum, verschiebt aber ` +
+        'fertige Arbeit in die Bilanz dieses Sprints. Für den Verlauf zählt der Sprint, in dem sie fertig wurde.',
+    );
+  }
+
+  notes.push(...windowNotes(sprint, rasterOf(file), [...assign, ...already]));
+  notes.push(
+    `Ob der Umfang in ${sprintLabel(sprint)} passt, beantwortet \`sprint_status\`: dieser Aufruf ordnet zu und ` +
+      'rechnet nichts.',
+  );
+
+  return { changes, notes };
 };
 
-/**
- * Move items out of one overcommitted sprint until the sum fits.
- *
- * The overflow order is „latest start first, then the larger estimate, then the item
- * id". It is a stand-in and the README says so: the core has no priority field, so the
- * rule a team would expect („lowest priority first") cannot be written. What it does
- * have is determinism, which is what keeps two runs from producing two different
- * roadmaps.
- *
- * A move shifts the start by exactly one sprint length and shifts the end with it, so
- * the item keeps its duration. An item stored with a `duration` instead of an `end`
- * keeps it without being touched.
- *
- * Four kinds of item are named and left where they are, and each one is a date rewrite
- * that could not have helped: an estimate bigger than the whole velocity, finished
- * work, an item some other item depends on, and an item whose id or dates cannot be
- * written back. When those four alone exceed the velocity, the call changes nothing at
- * all — see the refusal below.
- */
-export const rebalanceSprint: ToolHandler = ({ file, config, args }): ToolPlan => {
-  const raster = requireRaster(config);
-  const velocity = requireVelocity(raster);
-  const sprint = sprintArg(args, true)!;
-  const items = file.items ?? [];
-  const members = membersOf(raster, items, sprint);
+// ---- roll_over --------------------------------------------------------------
 
-  if (!members.length) return { notes: [`${sprintLabel(sprint)} ist leer, es gibt nichts zu entlasten.`] };
-
-  const before = totalPoints(members);
-  const trailing: string[] = [];
-  const missing = missingEstimateNote(sprint, members);
-  if (missing) trailing.push(missing);
-
-  const unusable = unusableSumNote(before, sprintLabel(sprint));
-  if (unusable) return { notes: [unusable, ...trailing] };
-
-  if (!overcommitted(before, velocity)) {
-    return {
-      notes: [`${sprintLabel(sprint)}: ${points(before)} von ${points(velocity)} Punkten, nicht überbucht.`, ...trailing],
-    };
-  }
-
-  // Finished work is not a capacity lever: its points stay in the sum, because the
-  // capacity was consumed, but moving it would re-date work that is over. Reading the
-  // status through the same helper `forecast_completion` uses is the point — the two
-  // verbs used to disagree about what „the work in this sprint" is, and on the shipped
-  // example `rebalance_sprint` moved an item marked „Done".
-  const done = members.filter(isDone);
-  if (done.length) {
-    trailing.push(
-      `Abgeschlossene Arbeit wird nicht verschoben (${nameList(done)}): sie zählt weiter in der Summe, weil die ` +
-        'Kapazität verbraucht ist, aber ein neues Datum daran würde fertige Arbeit umdatieren.',
+/** Where the unfinished work of a sprint goes. There is no default, and that is the rule. */
+function rollOverTarget(sprints: readonly Sprint[], source: Sprint, args: Record<string, unknown>): Sprint | null {
+  const wantsBacklog = args.toBacklog;
+  if (wantsBacklog != null && typeof wantsBacklog !== 'boolean') {
+    throw new Error(
+      `${quoted(wantsBacklog)} ist kein Wahrheitswert: \`toBacklog\` ist entweder true oder nicht gesetzt.`,
     );
   }
-
-  const dependents = dependentsByTarget(items);
-
-  const movable: TimelineFileItem[] = [];
-  for (const item of members) {
-    const estimate = estimateOf(item);
-    if (estimate == null) continue;
-    if (overcommitted(estimate, velocity)) {
-      // Moving this one relieves nothing: it does not fit in ANY sprint of this
-      // raster, so each call would push it one sprint further down the roadmap and
-      // the sprint it lands in would be overcommitted by the same item. Saying so is
-      // the answer; „move it forever" is not.
-      trailing.push(
-        `„${nameOf(item)}" trägt ${points(estimate)} Punkte und passt damit in keinen Sprint mit ` +
-          `velocity ${points(velocity)}. Verschieben schiebt das Problem weiter: entweder den Eintrag ` +
-          'aufteilen oder die velocity korrigieren.',
-      );
-      continue;
-    }
-    if (isDone(item)) continue;
-    // Trimmed, because `validateToolPlan` refuses a plan whose `itemId` is blank: an
-    // id of `"  "` passed a plain falsy check, and the whole plan was then rejected —
-    // so one whitespace id made a genuinely overcommitted sprint unrelievable.
-    const id = item.id?.trim();
-    if (!id) {
-      // A plan addresses an item by id, so one without an id cannot be moved. It
-      // stays in the sum, which is why the remaining overcommitment is reported below.
-      trailing.push(`„${nameOf(item)}" hat keine Id und kann daher nicht verschoben werden.`);
-      continue;
-    }
-    const waiting = dependents.get(id);
-    if (waiting?.length) {
-      // Moving a predecessor past its successor's start is how a plan starts
-      // contradicting itself: the relation graph then draws the edge backwards. The
-      // successors are deliberately NOT moved along — that is the same „one call
-      // rewrites the roadmap" trade the no-cascade rule already refuses.
-      trailing.push(
-        `„${nameOf(item)}" wird nicht verschoben: ${nameList(waiting)} ${
-          waiting.length === 1 ? 'hängt' : 'hängen'
-        } davon ab (\`dependsOn\`), und ein späteres Ende würde vor dem Start des Nachfolgers liegen. ` +
-          'Nachfolger werden hier nicht mitverschoben; das wäre eine Umschreibung des restlichen Plans aus einem Aufruf.',
-      );
-      continue;
-    }
-    if (item.end != null && shiftDayString(item.end, raster.lengthDays) == null) {
-      // Shifting the start alone would stretch the item by a sprint length as a side
-      // effect of rebalancing, which is a change nobody asked for.
-      trailing.push(`„${nameOf(item)}" hat ein Ende, das sich nicht verschieben lässt (${String(item.end)}).`);
-      continue;
-    }
-    if (shiftDayString(item.start, raster.lengthDays) == null) {
-      // A start the raster could read but the shift cannot write back (a date near the
-      // end of the four-digit year range, or a format only `new Date` understands).
-      // Skipping it silently left it neither moved nor named, and the sum unexplained.
-      trailing.push(`„${nameOf(item)}" hat einen Start, der sich nicht verschieben lässt (${String(item.start)}).`);
-      continue;
-    }
-    movable.push(item);
+  const backlog = wantsBacklog === true;
+  const named = args.toSprint;
+  if (backlog && named != null) {
+    throw new Error(
+      'Entweder `toSprint` oder `toBacklog`, nicht beides: zwei Ziele sind kein Ziel, und welches gewonnen hätte, ' +
+        'wäre an der Antwort nicht zu sehen.',
+    );
   }
-
-  // What cannot move at all. When that alone exceeds the velocity, every move this
-  // call could make would be a date rewrite that leaves the sprint overcommitted by
-  // exactly the same amount — and a write with no possible benefit is worse than a
-  // refusal, because it looks like the tool worked.
-  const immovable = before - totalPoints(movable);
-  if (overcommitted(immovable, velocity)) {
-    return {
-      changes: [],
-      notes: [
-        `${sprintLabel(sprint)} bleibt überbucht (${points(before)} von ${points(velocity)} Punkten): allein was ` +
-          `nicht verschoben werden kann, trägt ${points(immovable)} Punkte. Verschieben könnte daran nichts ändern, ` +
-          'deshalb ändert dieser Aufruf nichts.',
-        ...trailing,
-      ],
-    };
+  if (!backlog && named == null) {
+    // Canon: unfinished work „returns to the Product Backlog". Jira, Azure DevOps and
+    // Linear all offer the next sprint instead. A default here would pick one of those
+    // philosophies for the caller, silently, on a write.
+    throw new Error(
+      'Ohne Ziel wird nichts verschoben: `toSprint` (Id des Zielsprints) oder `toBacklog: true` (Zuordnung ' +
+        'entfernen) muss gesetzt sein. Es gibt hier absichtlich kein Standardziel, weil der Scrum Guide unfertige ' +
+        'Arbeit ins Product Backlog zurücklegt und die verbreiteten Werkzeuge sie in den nächsten Sprint schieben.',
+    );
   }
+  if (backlog) return null;
+  const target = requireSprint(sprints, named, 'toSprint');
+  if (target.id === source.id) {
+    throw new Error(
+      `Quelle und Ziel sind derselbe Sprint (${sprintLabel(source)}): das wäre ein Schreibvorgang ohne Wirkung.`,
+    );
+  }
+  if (target.state === 'closed' || target.state === 'cancelled') {
+    // Unfinished work rolled into a sprint that is over cannot be worked on there, so
+    // the write could not help and would look like a roll-over that succeeded.
+    throw new Error(
+      `${sprintLabel(target)} ist ${STATE_LABELS[target.state]}: offene Arbeit dorthin zu verschieben hilft nichts. ` +
+        'Nenne einen geplanten oder aktiven Sprint, oder `toBacklog: true`.',
+    );
+  }
+  return target;
+}
 
-  // Latest start first, then the larger estimate, then the id. All three are needed
-  // for a total order: without the last one, two items on the same day with the same
-  // estimate would move in whatever order the source happened to list them. The raw
-  // string comparison is what makes the last key actually total: `localeCompare`
-  // returns 0 for distinct spellings a locale treats as equal (an id with a soft
-  // hyphen against one without), and then the order falls back to the source array.
-  const order = [...movable].sort((a, b) => {
-    const byStart = compareRaw(String(b.start ?? ''), String(a.start ?? ''));
-    if (byStart !== 0) return byStart;
-    const byEstimate = (estimateOf(b) ?? 0) - (estimateOf(a) ?? 0);
-    if (byEstimate !== 0) return byEstimate;
-    return compareRaw(String(a.id), String(b.id));
-  });
+/**
+ * Move the unfinished work of one sprint to an explicit target. Writes assignments.
+ *
+ * Three things it never does, each one a write that could not help: it does not touch
+ * finished work (whose sprint is the record of where it was finished), it does not
+ * change a single date (the item's own dates and the target's window may disagree, and
+ * that is reported), and it does not follow the dependency graph. What it does report is
+ * every item that stays behind, with the reason.
+ */
+export const rollOver: ToolHandler = ({ file, args }): ToolPlan => {
+  const sprints = requireSprints(file);
+  const source = requireSprint(sprints, args.sprint, 'sprint');
+  const target = rollOverTarget(sprints, source, args);
+  const items = file.items ?? [];
+  const members = itemsOfSprint(items, source.id);
 
-  const changes: ItemChange[] = [];
-  const moved: TimelineFileItem[] = [];
-  let remaining = before;
-  for (const item of order) {
-    if (!overcommitted(remaining, velocity)) break;
-    const start = shiftDayString(item.start, raster.lengthDays);
-    // Guaranteed by the filter above; kept as a type guard rather than a `!`.
-    if (start == null) continue;
-    const patch: Partial<TimelineFileItem> = { start };
-    if (item.end != null) {
-      const end = shiftDayString(item.end, raster.lengthDays);
-      if (end) patch.end = end;
-    }
-    changes.push({ op: 'update', itemId: item.id!, patch });
-    moved.push(item);
-    remaining -= estimateOf(item) ?? 0;
+  if (!members.length) {
+    return { changes: [], notes: [`${sprintLabel(source)} hält keinen Eintrag: es gibt nichts zu verschieben.`] };
   }
 
   const notes: string[] = [];
-  const receiving = sprint + 1;
-  if (moved.length) {
+  const done = members.filter(isDone);
+  const moved: TimelineFileItem[] = [];
+  const unaddressable: TimelineFileItem[] = [];
+  for (const item of members) {
+    if (isDone(item)) continue;
+    if (!item.id?.trim()) unaddressable.push(item);
+    else moved.push(item);
+  }
+
+  const where = target ? sprintLabel(target) : 'das Backlog';
+  const changes: ItemChange[] = moved.map((item) => ({
+    op: 'update',
+    itemId: planItemId(item),
+    // A metadata value of null removes the key (`mergeMetadata` in
+    // scripts/mcp/patch.ts), and that is what „back to the backlog" is: no assignment,
+    // rather than an assignment to something called backlog.
+    patch: { metadata: { [SPRINT_KEY]: target ? target.id : null } },
+  }));
+
+  notes.push(
+    moved.length
+      ? `${sprintLabel(source)}: ${count(moved.length, 'offener Eintrag', 'offene Einträge')} nach ${where} ` +
+        `verschoben (${nameList(moved)}). Kein Datum wurde dabei geändert.`
+      : `${sprintLabel(source)}: kein offener Eintrag verschoben.`,
+  );
+
+  if (done.length) {
     notes.push(
-      `${sprintLabel(sprint)}: ${moved.length} von ${count(members.length, 'Eintrag', 'Einträgen')} nach ` +
-        `${sprintLabel(receiving)} ` +
-        `verschoben (${nameList(moved)}), ${points(before)} → ${points(remaining)} von ${points(velocity)} Punkten.`,
+      `Abgeschlossene Arbeit bleibt in ${sprintLabel(source)} (${nameList(done)}): sie ist dort fertig geworden, und ` +
+        'eine andere Zuordnung würde den Verlauf umschreiben.',
     );
   }
-  if (overcommitted(remaining, velocity)) {
+  if (unaddressable.length) {
     notes.push(
-      `${sprintLabel(sprint)} bleibt überbucht (${points(remaining)} von ${points(velocity)} Punkten): ` +
-        'was übrig ist, lässt sich nicht verschieben.',
+      `Ohne verwendbare Id und daher nicht verschoben: ${nameList(unaddressable)}. Ein Plan adressiert einen ` +
+        'Eintrag über seine Id; eine leere Id würde den gesamten Plan ungültig machen.',
     );
   }
-  notes.push(...trailing);
+
+  // The dependency graph is not followed, and the successors left behind are named
+  // instead. The older rule refused to *move* a depended-on item, and its reason was a
+  // date: shifting a predecessor by a sprint length put its successor's start before the
+  // predecessor's end, which the relation graph then drew backwards. This verb changes
+  // no date, so that failure cannot happen — while refusing to move the item would leave
+  // unfinished work in a sprint that is over, the very thing this verb exists for. What
+  // remains is a dependency now pointing back across a sprint boundary, and that is a
+  // note. Moving the successors along would rewrite the rest of the plan out of one call.
+  // Looked up by the item's own id, and „did it move too" asked of the item rather than
+  // of a trimmed id: `dependsOn` names an id exactly as the core resolves it, so the
+  // edges named here are the edges the relation graph draws and no others.
+  const movedSet = new Set(moved);
+  const dependents = dependentsByTarget(items);
+  const stranded: TimelineFileItem[] = [];
+  for (const item of moved) {
+    for (const waiting of dependents.get(planItemId(item)) ?? []) {
+      if (movedSet.has(waiting)) continue;
+      if (!stranded.includes(waiting)) stranded.push(waiting);
+    }
+  }
+  if (stranded.length) {
+    notes.push(
+      'Hängt an verschobener Arbeit und ist selbst nicht mitverschoben worden (`dependsOn`): ' +
+        `${nameList(stranded)} (${idList(stranded)}). Die Abhängigkeit zeigt jetzt über eine Sprintgrenze zurück; ` +
+        'ein Mitverschieben wäre eine Umschreibung des restlichen Plans aus einem Aufruf.',
+    );
+  }
 
   if (moved.length) {
-    const receivingSum = totalPoints(membersOf(raster, items, receiving)) + totalPoints(moved);
-    if (overcommitted(receivingSum, velocity)) {
-      notes.push(
-        `${sprintLabel(receiving)} ist damit überbucht (${points(receivingSum)} von ${points(velocity)} Punkten). ` +
-          'Dieser Aufruf entlastet genau einen Sprint und rechnet nicht weiter; für den nächsten ist ein ' +
-          'zweiter Aufruf nötig.',
-      );
-    }
+    // A tool returns item changes and cannot write the plugin's own rows, so this verb
+    // moves items and nothing else: the sprint keeps its state and no `passes` row
+    // records the move (./docs/model.md, „A close is not atomic"). An agent that reads
+    // „rolled over" as „closed" would leave a sprint that is over standing as active.
+    notes.push(
+      'Verschoben wurden nur Zuordnungen: der Status des Sprints bleibt, und es entsteht kein Verlaufseintrag ' +
+        '(`passes`). Ein Abschluss ist ein eigener Schritt.',
+    );
+  }
+
+  if (target) notes.push(...windowNotes(target, rasterOf(file), moved));
+  else if (moved.length) {
+    notes.push(
+      'Im Backlog gilt kein Fenster, die Daten der Einträge bleiben stehen. Sie widersprechen damit keiner ' +
+        'Zuordnung mehr, terminieren aber weiterhin Arbeit, die niemand zugesagt hat.',
+    );
   }
 
   return { changes, notes };
 };
 
+// ---- sprint_status ----------------------------------------------------------
+
 /**
- * Which sprint the open scope is expected to finish in. Writes nothing.
+ * What one sprint answers with, before the warnings.
  *
- * Counted from the **later** of two sprints, and both halves are needed:
- *
- *   - the sprint `now` falls into, because the question is „from here", not „from the
- *     anchor". A `now` before the anchor counts from sprint 1: the raster has nothing
- *     earlier;
- *   - the earliest sprint that still holds open, scheduled work, because counting from
- *     „now" alone promised a completion before the work is scheduled to start. On the
- *     shipped example that produced „Abschluss voraussichtlich in Sprint 3 (ab
- *     2026-02-02)" with a first day over a week in the past, while half the points
- *     belonged to an item not scheduled before sprint 7.
- *
- * When open work is scheduled past the computed sprint, the notes say so: a verb may
- * not present a date the plan it is reading contradicts.
- *
- * The result is an extrapolation from an average and the notes say so. Velocity and
- * story points are complementary practice rather than anything the Scrum Guide
- * defines, so presenting a date from them as a commitment would be the one thing this
- * plugin refuses to do (see „How well is this domain modelled?" in the README).
+ * The raster is handed in rather than read here: it decides the window of a sprint whose
+ * row carries no dates, so every line of one answer has to be computed against the same
+ * one.
  */
-export const forecastCompletion: ToolHandler = ({ file, config, args, now }): ToolPlan => {
-  const raster = requireRaster(config);
-  const items = file.items ?? [];
-  const group = typeof args.group === 'string' && args.group.trim() ? args.group.trim() : null;
-  const scope = group ? items.filter((item) => item.group === group) : items;
-  const where = group ? ` in Gruppe „${group}"` : '';
+function statusOf(
+  sprint: Sprint,
+  sprints: readonly Sprint[],
+  file: TimelineFile,
+  raster: SprintRaster | null,
+  now: string,
+): string[] {
+  const notes: string[] = [];
+  const members = itemsOfSprint(file.items ?? [], sprint.id);
+  const unit = capacityUnitOf(sprint, file);
+  const state = STATE_LABELS[sprint.state];
 
-  if (raster.velocity == null) {
-    return {
-      notes: [
-        'Ohne verwertbaren `velocity`-Wert in der Konfiguration lässt sich kein Abschluss-Sprint ' +
-          'hochrechnen. Diese Frage bleibt unbeantwortet, statt auf einer Annahme zu rechnen.',
-      ],
-    };
+  if (!members.length) {
+    notes.push(`${sprintLabel(sprint)}, ${state}: kein Eintrag zugeordnet.`);
+  } else {
+    const scope = scopeOf(members, unit);
+    const remaining = scopeOf(members.filter((item) => !isDone(item)), unit);
+    const unusable = unusableSumNote(scope.sum, sprintLabel(sprint));
+    if (unusable) {
+      notes.push(unusable);
+    } else if (sprint.capacity == null) {
+      notes.push(
+        `${sprintLabel(sprint)}, ${state}: ${count(members.length, 'Eintrag', 'Einträge')}, Umfang ` +
+          `${points(scope.sum)} ${unitLabel(unit, scope.sum)}, davon offen ${points(remaining.sum)} ` +
+          `${unitLabel(unit, remaining.sum)}. ` +
+          'Ohne `capacity` auf dem Sprint steht diese Zahl ohne Maßstab.',
+      );
+    } else {
+      notes.push(
+        `${sprintLabel(sprint)}, ${state}: ${count(members.length, 'Eintrag', 'Einträge')}, Umfang ` +
+          `${points(scope.sum)} von ${points(sprint.capacity)} ${unitDative(unit, sprint.capacity)} ` +
+          `(${overCapacity(scope.sum, sprint.capacity) ? 'überbucht' : 'im Rahmen'}), ` +
+          `davon offen ${points(remaining.sum)} ${unitLabel(unit, remaining.sum)}.`,
+      );
+    }
+
+    // The extrapolation the retired `forecast_completion` did, against a real sprint's
+    // own capacity instead of a team constant. Stated as an extrapolation and never as a
+    // velocity: a throughput figure on a page invites exactly the comparison
+    // ./docs/model.md („Velocity: computed, never displayed as a metric") argues against.
+    if (sprint.capacity != null && Number.isFinite(remaining.sum) && overCapacity(remaining.sum, sprint.capacity)) {
+      const further = Math.ceil(remaining.sum / sprint.capacity) - 1;
+      notes.push(
+        // A count of 1e306 sprints is arithmetically right and says nothing, which is
+        // the failure `unusableSumNote` catches one step earlier: a figure nobody can
+        // check reads exactly as confident as one that can.
+        Number.isSafeInteger(further)
+          ? `Offen sind ${points(remaining.sum)} ${unitLabel(unit, remaining.sum)} bei einer Kapazität von ` +
+            `${points(sprint.capacity)}: das reicht über diesen Sprint hinaus, um ` +
+            `${count(further, 'weiteren Sprint', 'weitere Sprints')} dieser Größe. Hochrechnung aus einer ` +
+            'Kapazität, keine Zusage.'
+          : `Der offene Umfang (${points(remaining.sum)} ${unitLabel(unit, remaining.sum)}) ist gegen eine ` +
+            `Kapazität von ${points(sprint.capacity)} keine Zahl von Sprints mehr, die eine Aussage wäre. ` +
+            'Die Schätzungen gehören korrigiert.',
+      );
+    }
   }
 
-  const open = scope.filter((item) => !isDone(item));
-  if (!open.length) {
-    return { notes: [`Kein offener Eintrag${where}: es gibt nichts hochzurechnen.`] };
+  notes.push(...carriedInNotes(sprint, sprints, file));
+  notes.push(...daysLeftNotes(sprint, raster, now));
+  return notes;
+}
+
+/**
+ * What this sprint received from an earlier one, out of the `passes` rows.
+ *
+ * The rows were written at every close and read by nothing, so „carried" was a record
+ * kept for its own sake. It answers what neither the assignment nor any current figure
+ * can: part of this sprint's scope was already committed once and did not get done, and
+ * the estimate it carried at that close is the one figure a later re-estimate cannot
+ * rewrite.
+ */
+function carriedInNotes(sprint: Sprint, sprints: readonly Sprint[], file: TimelineFile): string[] {
+  const carried = carriedInto(sprints, readPasses(file), file.items ?? [], sprint.id);
+  if (!carried.length) return [];
+  const unit = capacityUnitOf(sprint, file);
+  const from = (id: string) => {
+    const found = sprintById(sprints, id);
+    return found ? sprintLabel(found) : `„${id}"`;
+  };
+  const parts = carried.map((entry) => {
+    const when = entry.recordedOn ? `, festgehalten am ${entry.recordedOn}` : '';
+    // The estimate at the close, and „ohne Schätzung" rather than 0 when nobody had
+    // sized it: that is also why a report can say `carried: 0` about a carried item.
+    const estimate =
+      entry.estimateAtClose == null
+        ? ', damals ohne Schätzung'
+        : `, damals mit ${points(entry.estimateAtClose)} ${unitLabel(unit, entry.estimateAtClose)}`;
+    return `${quoted(entry.itemId)} aus ${from(entry.fromSprintId)}${when}${estimate}`;
+  });
+  return [
+    `Aus einem früheren Sprint mitgenommen: ${parts.join('; ')}. Dieser Umfang war schon einmal zugesagt; im ` +
+      'Verlauf des früheren Sprints steht er als „carried".',
+  ];
+}
+
+/** „Wie lange noch", against `now` and never against the clock. */
+function daysLeftNotes(sprint: Sprint, raster: SprintRaster | null, now: string): string[] {
+  const window = sprintWindow(sprint, raster);
+  if (!window) {
+    return [
+      `${sprintLabel(sprint)} hat kein Fenster: ohne start und end auf der Zeile, und ohne Raster, das eines ` +
+        'beisteuert, ist nicht zu sagen, wie viel Zeit bleibt. Ein Sprint hat eine feste Länge, und ohne sie kann ' +
+        'er auch nicht aktiv sein.',
+    ];
   }
-
-  const missing = open.filter((item) => estimateOf(item) == null);
-  const missingNote = missing.length
-    ? `Ohne verwertbare Schätzung und daher nicht in der Rechnung: ${nameList(missing)}. ` +
-      `Die Prognose fällt um deren Aufwand zu früh aus.`
-    : null;
-
-  const openPoints = totalPoints(open);
-  if (openPoints === 0) {
-    return {
-      notes: [
-        `Kein offener Eintrag${where} trägt eine verwertbare Schätzung: ohne Punkte gibt es keine Prognose.`,
-        ...(missingNote ? [missingNote] : []),
-      ],
-    };
+  if (!isDayString(now)) {
+    // „Outside the window" and „not a date at all" are two different answers, and a
+    // count from a value nobody could read is a confident number over nothing.
+    return [
+      `${quoted(now)} ist kein Datum, deshalb bleibt „wie viel Zeit bleibt" unbeantwortet. Erwartet ist ein Tag ` +
+        'als YYYY-MM-DD.',
+    ];
   }
+  const toStart = dayOffset(now, window.start);
+  const toEnd = dayOffset(now, window.end);
+  if (toStart == null || toEnd == null) return [];
+  // „Wie viel Zeit bleibt" is counted against this end, so where the end came from
+  // belongs in the same answer.
+  const computed = computedWindowNote(sprintLabel(sprint), window);
+  const withSource = (line: string): string[] => (computed ? [line, computed] : [line]);
+  if (toStart > 0) {
+    return withSource(
+      `${sprintLabel(sprint)} beginnt erst am ${window.start}, in ${count(toStart, 'Tag', 'Tagen')} ` +
+        `(Stichtag ${now}).`,
+    );
+  }
+  if (toEnd >= 0) {
+    return withSource(
+      `${count(toEnd + 1, 'Tag', 'Tage')} bis zum Ende am ${window.end}, den Stichtag ${now} eingeschlossen.`,
+    );
+  }
+  const over = withSource(
+    `Das Fenster von ${sprintLabel(sprint)} endete am ${window.end}, vor ${count(-toEnd, 'Tag', 'Tagen')} ` +
+      `(Stichtag ${now}).`,
+  );
+  if (sprint.state === 'active') {
+    over.push(
+      `${sprintLabel(sprint)} steht weiterhin auf „active": nichts schließt einen Sprint von selbst, und ein Sprint ` +
+        'wird nicht verlängert, sondern geschlossen.',
+    );
+  }
+  return over;
+}
 
-  const unusable = unusableSumNote(openPoints, `Offener Umfang${where}`);
-  if (unusable) return { notes: [unusable, ...(missingNote ? [missingNote] : [])] };
-
+/**
+ * Remaining, scope, days left and every warning the rows can produce. Writes nothing.
+ *
+ * Asked without an argument it reports the active sprint, which is what „how are we
+ * doing" means. What it never reports is a velocity figure or a „committed versus
+ * completed" pair; ./docs/model.md carries the sources for that.
+ */
+export const sprintStatus: ToolHandler = ({ file, args, now }): ToolPlan => {
+  const sprints = readSprints(file);
   const notes: string[] = [];
 
-  // „Before the anchor" and „not a date at all" are two different answers, and
-  // `sprintOfDay(…) ?? 1` made them one: `""`, `"heute"` and `"2026-13-40"` all became
-  // sprint 1 silently, so the verb answered with a confident count over an argument it
-  // could not read.
-  const nowSprint = sprintOfDay(raster, now);
-  if (!isDayString(now)) {
+  // No rows is an answer here rather than a refusal: this verb writes nothing, so the
+  // note *is* the whole result and „there are none yet" is the true one. The writing
+  // verbs throw instead, because for them there is nothing to write to.
+  if (!sprints.length) {
     notes.push(
-      `${quoted(now)} ist kein Datum, deshalb beginnt die Zählung bei Sprint 1 statt beim heutigen Sprint. ` +
-        'Für eine Rechnung „ab heute" muss `now` ein Tag als YYYY-MM-DD sein.',
+      'Auf dieser Timeline ist kein Sprint angelegt: es gibt keinen Umfang, keine Restarbeit und keine ' +
+        'Restlaufzeit zu berichten.',
+    );
+    notes.push(...unaccountedNotes(sprints, file));
+    return { notes };
+  }
+
+  const asked = args.sprint == null ? null : requireSprint(sprints, args.sprint, 'sprint');
+  const active = activeSprints(sprints);
+  const targets = asked ? [asked] : active;
+
+  if (!asked && !active.length) {
+    // Deliberately not a `SprintWarning`: nothing in the host fires at a sprint
+    // boundary, so „no sprint is active" is the normal state of a plan that has not
+    // started and is an answer about the argument rather than a fault in the data.
+    notes.push(
+      `Kein Sprint ist aktiv (${count(sprints.length, 'Sprint', 'Sprints')} angelegt: ${sprintChoices(sprints)}). ` +
+        'Ohne Argument berichtet dieser Aufruf den aktiven Sprint; nenne `sprint` für einen bestimmten.',
     );
   }
 
-  // The earliest sprint that still holds open, scheduled work. Counting from „now"
-  // alone let the answer finish the scope before the plan starts it.
-  const openSprints = open
-    .map((item) => sprintOfItem(raster, item))
-    .filter((sprint): sprint is number => sprint != null);
-  const earliestOpen = openSprints.length ? openSprints.reduce((a, b) => (b < a ? b : a)) : null;
+  const raster = rasterOf(file);
+  for (const sprint of targets) notes.push(...statusOf(sprint, sprints, file, raster, now));
 
-  const from = Math.max(nowSprint ?? 1, earliestOpen ?? 1);
-  const sprintsNeeded = Math.ceil(openPoints / raster.velocity);
-  const finish = from + sprintsNeeded - 1;
-  const firstDay = sprintFirstDay(raster, finish);
-
-  notes.push(
-    `${points(openPoints)} offene Punkte${where} bei velocity ${points(raster.velocity)}: ` +
-      `${count(sprintsNeeded, 'Sprint', 'Sprints')} ab ${sprintLabel(from)}, ` +
-      `Abschluss voraussichtlich in ${sprintLabel(finish)}` +
-      `${firstDay ? ` (ab ${firstDay})` : ''}.`,
-    'Hochrechnung aus einem Durchsatzmittel, keine Zusage: Velocity und Story Points sind ergänzende ' +
-      'Praxis, kein Bestandteil des Scrum Guide.',
-  );
-
-  if (nowSprint != null && from > nowSprint) {
-    notes.push(
-      `Gezählt wird ab ${sprintLabel(from)}, nicht ab dem heutigen ${sprintLabel(nowSprint)}: davor ist keine ` +
-        'offene Arbeit terminiert, und ein Abschluss vor dem geplanten Beginn wäre keine Aussage.',
-    );
-  }
-
-  // The plan may still contradict the extrapolation: this rule divides points by a
-  // throughput and reads no start dates, so open work scheduled after the computed
-  // sprint has to be named rather than left for the reader to notice.
-  const later = open.filter((item) => {
-    const sprint = sprintOfItem(raster, item);
-    return sprint != null && sprint > finish;
-  });
-  if (later.length) {
-    notes.push(
-      `Der Plan widerspricht dieser Hochrechnung: offene Arbeit ist erst nach ${sprintLabel(finish)} terminiert ` +
-        `(${nameList(later)}). Die Rechnung teilt Punkte durch den Durchsatz und liest keine Startdaten.`,
-    );
-  }
-
-  if (missingNote) notes.push(missingNote);
+  const relevant = new Set(targets.map((sprint) => sprint.id));
+  const warnings = sprintWarnings(file).filter((warning) => concerns(warning, relevant));
+  notes.push(...warningNotes(warnings, sprints, file));
+  notes.push(...unaccountedNotes(sprints, file));
   return { notes };
 };
 
+/**
+ * Does this warning belong in an answer about these sprints?
+ *
+ * Three groups rather than one test on `sprintId`, and the difference decides what a
+ * caller is never told: a fault of the whole timeline — two active sprints, a row id
+ * twice in one collection, a history row naming a sprint that does not exist — names no
+ * sprint that could be „the one asked about", and this is the only verb that reports, so
+ * a filter on `sprintId` alone would hide it from every answer. An overlap belongs to a
+ * pair, so either half brings it in. Everything else is about one sprint.
+ */
+function concerns(warning: SprintWarning, sprintIds: ReadonlySet<string>): boolean {
+  switch (warning.kind) {
+    case 'several-active-sprints':
+    case 'duplicate-row-id':
+    case 'pass-without-sprint':
+      return true;
+    case 'overlapping-sprint-windows':
+      return warning.sprintIds.some((id) => sprintIds.has(id));
+    default:
+      return sprintIds.has(warning.sprintId);
+  }
+}
+
+/**
+ * The scope no sprint accounts for: the backlog, and assignments pointing at nothing.
+ *
+ * This is the „außerhalb des Rasters" line of the retired capacity verb, and it exists
+ * for the same reason: a per-sprint sum plus silence about everything else reads as a
+ * statement about the whole timeline.
+ *
+ * The dangling assignment is deliberately *not* a `SprintWarning` — `sprints.ts` leaves
+ * it out because the field renders it as a value with no option rather than as a sprint
+ * problem. It matters here anyway, and only here: such an item is counted in no sprint's
+ * sum, so a report that stays quiet about it omits scope.
+ */
+function unaccountedNotes(sprints: readonly Sprint[], file: TimelineFile): string[] {
+  const notes: string[] = [];
+  // No sprint owns this scope, so the unit is the config's rather than a row's.
+  const unit = readEstimateUnit(file);
+  const known = new Set(sprints.map((s) => s.id));
+  const backlog: TimelineFileItem[] = [];
+  const orphan: TimelineFileItem[] = [];
+  for (const item of file.items ?? []) {
+    const assigned = assignedSprintId(item);
+    if (assigned == null) backlog.push(item);
+    else if (!known.has(assigned)) orphan.push(item);
+  }
+  if (backlog.length) {
+    const scope = scopeOf(backlog, unit);
+    const sum = Number.isFinite(scope.sum) ? `${points(scope.sum)} ${unitDative(unit, scope.sum)}` : String(scope.sum);
+    notes.push(
+      `Ohne Sprint-Zuordnung und daher in keiner Sprint-Summe: ${count(backlog.length, 'Eintrag', 'Einträge')} ` +
+        `mit ${sum} (${idList(backlog)}). Diese Antwort verortet diesen Umfang nicht.`,
+    );
+    const missing = missingEstimateNote('Ohne Sprint-Zuordnung', scope.missing);
+    if (missing) notes.push(missing);
+  }
+  if (orphan.length) {
+    notes.push(
+      `Zugeordnet auf einen Sprint, den es nicht gibt: ${nameList(orphan)} (${idList(orphan)}). Solange die Id auf ` +
+        'keine Zeile zeigt, zählt der Eintrag in keinem Sprint und die Oberfläche zeigt ihn ohne Sprint.',
+    );
+  }
+  return notes;
+}
+
 /** Keyed by the tool name the manifest declares. The two must agree. */
 export const sprintsTools: Record<string, ToolHandler> = {
-  check_sprint_capacity: checkSprintCapacity,
-  rebalance_sprint: rebalanceSprint,
-  forecast_completion: forecastCompletion,
+  plan_sprint: planSprint,
+  roll_over: rollOver,
+  sprint_status: sprintStatus,
 };

@@ -51,7 +51,10 @@ const CHROME_CANDIDATES = [
   '/usr/bin/chromium-browser',
 ].filter((p): p is string => !!p);
 
-const VIEWPORT = { width: 1280, height: 720 };
+// 16:9 by default, which suits a plugin whose picture is the timeline. A view that is
+// taller than wide gets cut off in it, and a cropped chart is exactly the „renders
+// correctly and still looks like nothing" this image exists to catch — hence `--size`.
+const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
 
 function fail(message: string): never {
   console.error(`[preview] ${message}`);
@@ -126,13 +129,23 @@ const args = process.argv.slice(2).filter((a) => a !== '--');
 const folder = args.find((a) => !a.startsWith('-'));
 if (!folder) {
   fail(
-    'usage: npm run plugins:preview -- <plugin-folder> [--url http://localhost:3120] [--param key=value …]',
+    'usage: npm run plugins:preview -- <plugin-folder> [--url http://localhost:3120] ' +
+      '[--param key=value …] [--size 1280x900]',
   );
 }
 
 const urlFlag = args.indexOf('--url');
 const base = urlFlag >= 0 ? args[urlFlag + 1] : `http://localhost:${process.env.TIMELINES_PORT ?? '3120'}`;
 const extra = args.flatMap((a, i) => (a === '--param' && args[i + 1] ? [args[i + 1]] : []));
+
+const sizeFlag = args.indexOf('--size');
+const VIEWPORT = ((): { width: number; height: number } => {
+  if (sizeFlag < 0) return DEFAULT_VIEWPORT;
+  const raw = args[sizeFlag + 1] ?? '';
+  const m = /^(\d{3,4})x(\d{3,4})$/.exec(raw);
+  if (!m) fail(`--size wants WIDTHxHEIGHT, got "${raw}"`);
+  return { width: Number(m![1]), height: Number(m![2]) };
+})();
 
 const manifest = await manifestOf(folder);
 const url = previewUrl(base, manifest, extra);

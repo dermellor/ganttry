@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_LENGTH_DAYS,
   DEFAULT_SCALE,
+  dayOf,
   isDayString,
   rasterFrom,
   readSprintConfig,
@@ -176,6 +177,43 @@ test('a start carrying a zone is bucketed on the day the viewer draws it', () =>
     assert.equal(sprintOfDay(r, '2026-02-15T23:00:00Z'), 4);
     assert.equal(sprintOfDay(r, '2026-02-16T00:30:00+02:00'), 3);
   }
+});
+
+test('a European date is not a date here, rather than a different month', () => {
+  // `new Date` guesses at both of these and says nothing: „01.05.2026" came back as
+  // 2026-01-05 and „05/01/2026" as 2026-05-01, so a cadence anchored on either ran four
+  // months from the day somebody wrote, with every window, every lane and every capacity
+  // sum moving along.
+  for (const value of ['01.05.2026', '1.5.2026', '05/01/2026', '2026/05/01', 'May 1 2026', '20260501']) {
+    assert.equal(dayOf(value), null, value);
+    assert.equal(isDayString(value), false, value);
+  }
+  assert.equal(readSprintConfig({ start: '01.05.2026' }).start, null);
+  // The zoned-datetime support is untouched, because that is the shape the core reads the
+  // same way: a day followed by a time, honouring a `Z` or an offset, read back in local
+  // components (Europe/Berlin, which `npm test` pins).
+  if (BERLIN) {
+    assert.equal(dayOf('2026-02-15T23:00:00Z'), '2026-02-16');
+    assert.equal(dayOf('2026-02-16T00:30:00+02:00'), '2026-02-15');
+  }
+  assert.equal(dayOf('2026-02-15'), '2026-02-15');
+  assert.equal(dayOf('2026-02-15T09:30:00'), '2026-02-15');
+  assert.equal(dayOf('2026-02-15 09:30'), '2026-02-15');
+  // A day that does not exist stays refused whether or not a time follows it: rolling it
+  // into March would land the item in a sprint the author never wrote down.
+  assert.equal(dayOf('2026-02-31T09:00:00'), null);
+});
+
+test('„is this a date at all" and „which day is it" are one predicate', () => {
+  // They disagreed outside the four-digit year range: `0999-01-01` has a day index, so
+  // `isDayString` said yes, while `dayOf` refuses to write it. `plan_sprint` therefore
+  // called such an item's dates a contradiction and `sprint_status` stayed silent about
+  // the very same item.
+  for (const value of ['0999-01-01', '0001-01-01']) {
+    assert.equal(dayOf(value), null, value);
+    assert.equal(isDayString(value), false, value);
+  }
+  assert.equal(isDayString('1000-01-01'), true);
 });
 
 test('„is this a date at all" is a different question from „which sprint"', () => {

@@ -1,0 +1,292 @@
+/* The sprint page: its goal, its numbers, its burndown, its items.
+   Imported by `index.ts`, so this file lands in the plugin's lazy chunk and a
+   deploy without this plugin downloads none of it
+   (scripts/ci/check-bundle-split.sh).
+
+   Every colour here is a token by name or an alias of one defined in the block
+   below, and every gap is a step on the --space-* scale. The chart is the reason
+   the aliases exist: an SVG's stroke is set from CSS rather than in the markup, so
+   „which colour is the reconstructed line" has to be answerable in one place. */
+
+.sprints-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2xl);
+  background: var(--bg);
+  color: var(--fg);
+
+  /* The chart's four semantic colours, named once.
+     `--sprints-plan` is quiet on purpose: the ideal line is a reference, and a
+     reader comparing two equally loud lines cannot tell which one is the record.
+     They are aliases rather than literals, so a theme that overrides the tokens
+     recolours the chart with everything else. */
+  --sprints-plan: var(--fg-muted);
+  --sprints-actual: var(--accent);
+  --sprints-grid: var(--grid-line);
+  --sprints-axis: var(--axis-text);
+}
+
+/* The author `display:flex` above beats the UA rule for [hidden] (equal
+   specificity, author origin wins), which would leave this view showing over the
+   timeline after a view switch. Restore it. */
+.sprints-view[hidden] {
+  display: none;
+}
+
+.sprints-inner {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  /* A flex column so the sprint's own page scrolls as one document: the header,
+     the numbers, the chart and the item list belong to one sprint, and scrolling
+     the list separately would leave the goal off screen while somebody reads it. */
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xl);
+}
+
+/* ---- the switcher bar --------------------------------------------------- */
+
+.sprints-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.sprints-bar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+/* ---- the header -------------------------------------------------------- */
+
+.sprints-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.sprints-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.sprints-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+/* The Sprint Goal, and the reason it is the largest text on the page: canon makes
+   it the change-control criterion during the sprint, what the Daily Scrum
+   inspects and the only cancellation trigger (./docs/model.md). Rendering it as a
+   caption under the dates would put the point of the sprint in its footnotes. */
+.sprints-goal {
+  margin: 0;
+  font-family: var(--font-headline);
+  font-size: var(--text-lg);
+  font-weight: var(--headline-weight);
+  line-height: var(--leading-snug);
+  color: var(--fg);
+}
+
+/* ---- the numbers ------------------------------------------------------- */
+
+.sprints-numbers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-md);
+}
+
+.sprints-number {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.sprints-number-value {
+  font-family: var(--font-headline);
+  font-size: var(--text-xl);
+  font-weight: var(--headline-weight);
+  line-height: var(--leading-tight);
+  /* Tabular figures so four boxes side by side line up: proportional digits make
+     „11" and „14" different widths, which reads as a layout that shifts. */
+  font-variant-numeric: tabular-nums;
+}
+
+.sprints-number-label {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+/* ---- the burndown ------------------------------------------------------ */
+
+.sprints-chart {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.sprints-chart-svg {
+  /* Scales with the content area instead of assuming a width: the viewBox carries
+     the geometry and the element takes whatever the column gives it. `meet` rather
+     than `none`, because a non-uniform scale stretches the axis labels into
+     something unreadable at the narrow end. */
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.sprints-grid-line {
+  stroke: var(--sprints-grid);
+  stroke-width: 1;
+}
+
+.sprints-axis-label {
+  fill: var(--sprints-axis);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+}
+
+/* The chart scales uniformly with its column, so in a narrow window the labels
+   shrink with it: at 330px the 11px of a --text-xs renders as five, which is not a
+   label any more. The size is in the SVG's own user units, so raising it here raises
+   the RENDERED size back to about eleven. The other half of the same fix is in
+   `labelCount` (index.ts), which draws fewer dates at this width so the larger type
+   still fits. */
+@media (max-width: 760px) {
+  .sprints-axis-label {
+    font-size: var(--text-xl);
+  }
+}
+
+.sprints-plan-line {
+  fill: none;
+  stroke: var(--sprints-plan);
+  stroke-width: 1.5;
+  /* Dashed, so „the plan" and „the record" are distinguishable without the legend
+     and without colour vision. */
+  stroke-dasharray: 5 4;
+}
+
+.sprints-actual-line {
+  fill: none;
+  stroke: var(--sprints-actual);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.sprints-actual-dot {
+  fill: var(--sprints-actual);
+}
+
+.sprints-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.sprints-legend-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.sprints-legend-swatch {
+  width: var(--space-lg);
+  height: 0;
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+
+.sprints-legend-swatch[data-series='plan'] {
+  border-top-color: var(--sprints-plan);
+  border-top-style: dashed;
+}
+
+.sprints-legend-swatch[data-series='actual'] {
+  border-top-color: var(--sprints-actual);
+}
+
+/* ---- the item list ----------------------------------------------------- */
+
+.sprints-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  /* A four-column table has a minimum width the phone does not have. It scrolls
+     inside its own box, because the alternative is the whole page scrolling
+     sideways and the goal drifting off the left edge with it. */
+  overflow-x: auto;
+}
+
+.sprints-estimate {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A per-row warning: the item's dates disagree with its assignment, or it carries
+   no estimate the scope can count. `--warning` rather than `--danger`: neither is
+   an error, both are something to know before the plan is believed. */
+.sprints-item-warning {
+  color: var(--warning);
+  font-size: var(--text-sm);
+}
+
+/* ---- the edit form ----------------------------------------------------- */
+
+.sprints-form {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: var(--space-lg);
+}
+
+.sprints-notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+/* The Callout is designed as a block standing in for content that is missing, so it
+   centres itself and reserves --space-3xl of air above and below. On this page every
+   Callout is a notice inside a flow whose rhythm `.sprints-inner`'s gap already owns,
+   so the auto margins centre a sentence over a left-aligned page and double the space
+   around it.
+
+   Only the placement is overridden: the frame, the tone edge, the padding and the
+   reading width stay the component's. The real fix is an `inline` variant on Callout,
+   which is a design-system change rather than a line in a plugin's stylesheet. */
+.sprints-view .ds-Callout {
+  margin: 0;
+}
+
+/* „aus Sprint 2 übertragen": history, not a fault, so it is quiet where a warning is
+   loud. Same cell, because both answer „what should I know about this item here". */
+.sprints-item-carried {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}

@@ -54,14 +54,16 @@ export const DEFAULT_LENGTH_DAYS = 14;
 export const DEFAULT_SCALE = ['1', '2', '3', '5', '8', '13', '21'] as const;
 
 const DAY_MS = 86_400_000;
-/** A calendar day and nothing else, the one shape whose components are taken as written. */
-const BARE_DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 /**
  * A stored date **as it is written**: a calendar day, optionally followed by a time
  * component. Anchored at both ends, unlike a leading-day match: `"2026-03-2900"` used
  * to read as the day `2026-03-29` with a tail of `"00"`, and shifting it produced
  * `"2026-04-1200"` — a value nothing can parse back, so the item silently lost its
  * sprint after a move.
+ *
+ * It is also the whole shape this module reads, which is why there is no second
+ * pattern for a bare day: a value that is not this is not a date here, however
+ * plausibly `new Date` would guess at it (see `dayIndex`).
  */
 const STORED_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})([T ].*)?$/;
 
@@ -129,8 +131,22 @@ function dayIndex(value: unknown): number | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  const bare = BARE_DAY_RE.exec(trimmed);
-  if (bare) return bareDayIndex(Number(bare[1]), Number(bare[2]), Number(bare[3]));
+  // Only a day, optionally followed by a time. Handing everything else to
+  // `new Date` read a European date as a different month and said nothing about it:
+  // „01.05.2026" came back as 2026-01-05 and „05/01/2026" as 2026-05-01, so a
+  // cadence anchored on either ran four months away from the day somebody wrote,
+  // and every window, every lane and every capacity sum moved with it.
+  const stored = STORED_DATE_RE.exec(trimmed);
+  if (!stored) return null;
+  const bare = bareDayIndex(Number(stored[1]), Number(stored[2]), Number(stored[3]));
+  // A day that does not exist stays refused whether or not a time follows it:
+  // `new Date('2026-02-31T09:00')` rolls into March, which lands the item in a
+  // sprint the author never wrote down.
+  if (bare == null) return null;
+  if (!stored[4]) return bare;
+  // A tail carrying a zone decides the calendar day, exactly as `parseLocalDay`
+  // (src/date.ts) decides where the bar is drawn: `2026-02-15T23:00:00Z` is Feb 16
+  // in Europe/Berlin, so the sums have to count it there too.
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) return null;
   return utcDayIndex(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
@@ -156,6 +172,24 @@ function dayFromIndex(index: number): string | null {
 }
 
 /**
+ * The calendar day a stored value names, as a canonical `YYYY-MM-DD`, or null when
+ * it names none.
+ *
+ * Exported so that everything in this plugin which has to *compare* two days reads a
+ * stored value the same way the lanes do. `sprints.ts` asks whether an item's start
+ * falls inside a sprint's window, and a second parser there would disagree with the
+ * bucketing for exactly the two values this module is careful about: a value carrying
+ * a zone (`2026-02-15T23:00:00Z` is Feb 16 in Europe/Berlin) and a day beside a clock
+ * change. Because the output is canonical, a plain string compare is a correct day
+ * order — which is what makes „inside this window" one line instead of a second
+ * arithmetic.
+ */
+export function dayOf(value: unknown): string | null {
+  const index = dayIndex(value);
+  return index == null ? null : dayFromIndex(index);
+}
+
+/**
  * Does the value name a calendar day at all?
  *
  * Exported because „no sprint" and „no date" are two different answers that
@@ -163,9 +197,15 @@ function dayFromIndex(index: number): string | null {
  * raster does not cover, while `""`, `"heute"` and `"2026-13-40"` are not days. A
  * verb that counts from sprint 1 in both cases states a confident number over an
  * argument it could not read, and nothing in its answer says so.
+ *
+ * Asked of `dayOf` rather than of `dayIndex`, so that „this is a day" and „this is
+ * the day" are one predicate. They disagreed for a year outside four digits:
+ * `0999-01-01` has a day index, but `dayOf` refuses to write it, so `plan_sprint`
+ * called the item's dates a contradiction while `sprint_status` stayed silent about
+ * the very same item.
  */
 export function isDayString(value: unknown): boolean {
-  return dayIndex(value) != null;
+  return dayOf(value) != null;
 }
 
 /**

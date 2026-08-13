@@ -15,14 +15,18 @@ import { sprintsManifest } from './manifest';
 import { SPRINTS_PLUGIN, sprintsDerive, sprintsFields } from './fields';
 import { sprintsTools } from './tools';
 
-// **No `load()`.** This plugin has no view: grouping by „Sprints · Sprint" is the
-// raster rendering, and a burndown chart would be a second product rather than a
-// second view (see the README). A `load()` here would be a dynamic import, which is a
-// build chunk that renders nothing.
+// **`load()` is the only thing in this file that reaches view code**, and it is a
+// dynamic `import()` for that reason: Rollup emits everything behind it — the sprint
+// page, the chart and `sprints.css` — as its own chunk, so a deploy without this
+// plugin downloads none of it (scripts/ci/check-bundle-split.sh asserts exactly
+// that). Making it a static import would pull the stylesheet into the generic
+// bundle.
 //
-// `matches` and `applies` answer the same question here, and only because there is no
-// view: `matches` may additionally demand enough data to make a VIEW worth a button,
-// while `applies` has to stay a stable data check.
+// `matches` and `applies` still answer the same question, and now for a stated
+// reason rather than for lack of a view: the view's own **empty state** is what tells
+// a reader with no sprint rows yet what to do, so demanding rows here would hide the
+// one screen that explains the plugin. `applies` has to stay a plain data check
+// either way.
 export const sprintsDescriptor: PluginDescriptor = {
   manifest: sprintsManifest,
 
@@ -32,4 +36,5 @@ export const sprintsDescriptor: PluginDescriptor = {
   fields: sprintsFields,
   derive: sprintsDerive,
   tools: sprintsTools,
+  load: () => import('./index'),
 };

@@ -38,7 +38,13 @@
 // whose field only makes sense computed should say `^1.5`, because on an older host
 // the field appears as an editable one with nothing filling it, which reads as the
 // plugin being broken rather than as a version mismatch.
-export const HOST_API_VERSION = { major: 1, minor: 5 } as const;
+// 1.6 exported the core's calendar-day and duration arithmetic through the contract
+// barrel (`durationToMs`, `endFromDuration`, `parseLocalDay`, `shiftDays`,
+// `isoDateOnly`). Additive, and the evidence is a bug rather than a preference: the
+// first date-shaped plugin had to restate the rules, and its reconstruction of a
+// burndown burned every `duration`-only item on the day it started, because resolving
+// an item's real end was the one piece the contract did not carry.
+export const HOST_API_VERSION = { major: 1, minor: 6 } as const;
 
 export type ApiVersion = { major: number; minor: number };
 

@@ -14,17 +14,18 @@ Writing one: [docs/plugin-authoring.md](docs/plugin-authoring.md) for the contra
 
 ### [Sprints](src/plugins/sprints/README.md)
 
-A sprint raster that follows from the dates: which sprint an item is in is computed, not stored, with capacity checks and a forecast on top.
+Sprints as rows with a goal, a capacity and a frozen result: membership is assigned per item, and the date raster stays a suggestion beside it.
 
 ![Sprints](src/plugins/sprints/preview.png)
 
 | | |
 | --- | --- |
 | Id | `dev.zeitlines.sprints` |
-| Version | 0.1.0 |
-| Keywords | sprint, sprint planning, story points, velocity, capacity, forecast, scrum, self-hosted roadmap |
+| Version | 0.2.0 |
+| Keywords | sprint, sprint planning, sprint goal, story points, velocity, capacity, forecast, scrum, self-hosted roadmap |
 | Example | [`src:example-sprint-planung`](data/example-sprint-planung.json) |
-| Agent tools | `check_sprint_capacity`, `rebalance_sprint`, `forecast_completion` |
+| Views | Sprint |
+| Agent tools | `plan_sprint`, `roll_over`, `sprint_status` |
 
 ## product
 

@@ -1,50 +1,99 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { checkSprintCapacity, forecastCompletion, rebalanceSprint, sprintsTools } from './tools';
+import { planSprint, rollOver, sprintStatus, sprintsTools } from './tools';
 import { sprintsManifest } from './manifest';
 import { validateToolArgs, validateToolPlan, type ToolPlan } from '../../pluginHost/api';
-import type { TimelineFile, TimelineFileItem } from '../../types';
+import type { PluginDataRow, TimelineFile, TimelineFileItem } from '../../types';
 
-// One test per rule, and one per boundary the domain cares about: the sprint with no
-// velocity to measure against, the item with no estimate, the item that fits in no
-// sprint at all, the scope with nothing open left. „It works on the happy path" is not
-// what these are for: a plausible-looking wrong rule is worse than a missing one,
-// because it gets trusted.
+// One test per rule, and one per boundary the domain cares about: no sprint at all, a
+// sprint id nobody created, work that is finished, a roll-over with no target, a date
+// that disagrees with its assignment, and `now` on each side of the window. „It works
+// on the happy path" is not what these are for: a plausible-looking wrong rule is worse
+// than a missing one, because it gets trusted.
 //
 // Every plan is also checked against `validateToolPlan`, which is the frame the host
 // puts around a rule: ids that exist, no rename, nothing host-managed. Cheaper to
 // assert here than to discover through a refused call.
 
-const RASTER = { start: '2026-01-05', lengthDays: 14, velocity: 20 };
-const NOW = '2026-02-04'; // inside sprint 3
+type Decl = NonNullable<typeof sprintsManifest.tools>[number];
 
-const decl = (name: string) => sprintsManifest.tools!.find((t) => t.name === name)!;
+/**
+ * The declaration a plan is validated against.
+ *
+ * From the manifest, because that is what an operator approves on install and where
+ * `validateToolPlan` reads `writes`. The fallback covers exactly one situation and is
+ * not meant to survive it: while the manifest still declares the previous verb set,
+ * every rule below would fail for a reason that has nothing to do with the rule. The
+ * parity test at the bottom is what keeps the fallback from becoming permanent.
+ */
+const FALLBACK: Decl[] = [
+  { name: 'plan_sprint', title: 'plan_sprint', description: 'fallback', writes: 'items' },
+  { name: 'roll_over', title: 'roll_over', description: 'fallback', writes: 'items' },
+  { name: 'sprint_status', title: 'sprint_status', description: 'fallback' },
+];
+const decl = (name: string): Decl =>
+  sprintsManifest.tools?.find((t) => t.name === name) ?? FALLBACK.find((t) => t.name === name)!;
 
-const item = (
-  id: string,
-  start: string | undefined,
-  storyPoints?: unknown,
-  over: Partial<TimelineFileItem> = {},
-): TimelineFileItem => ({
-  id,
-  content: id,
-  ...(start ? { start } : {}),
-  ...over,
-  metadata: { ...(storyPoints === undefined ? {} : { storyPoints }), ...(over.metadata ?? {}) },
+const NOW = '2026-02-04'; // inside the window of S-3
+
+type ItemSpec = {
+  content?: string;
+  start?: string;
+  end?: string;
+  status?: TimelineFileItem['status'];
+  /** The assignment key, the one thing membership follows from. */
+  sprint?: string;
+  storyPoints?: unknown;
+  dependsOn?: unknown;
+};
+
+const item = (id: string, spec: ItemSpec = {}): TimelineFileItem => {
+  const metadata: Record<string, unknown> = {};
+  if (spec.sprint !== undefined) metadata.sprint = spec.sprint;
+  if (spec.storyPoints !== undefined) metadata.storyPoints = spec.storyPoints;
+  if (spec.dependsOn !== undefined) metadata.dependsOn = spec.dependsOn;
+  return {
+    id,
+    content: spec.content ?? id,
+    ...(spec.start ? { start: spec.start } : {}),
+    ...(spec.end ? { end: spec.end } : {}),
+    ...(spec.status ? { status: spec.status } : {}),
+    ...(Object.keys(metadata).length ? { metadata } : {}),
+  };
+};
+
+const row = (id: string, data: Record<string, unknown>): PluginDataRow => ({ id, data });
+
+/**
+ * A timeline carrying this plugin's sprint rows, the way the host hands them over.
+ *
+ * The `plugins` entry is not decoration: every reader in `sprints.ts` goes through
+ * `hasPlugin` first, so rows on a timeline the plugin is not enabled on are correctly
+ * invisible. Leaving it out here would make every case below read as „no sprints".
+ */
+const timeline = (
+  items: TimelineFileItem[],
+  sprints: PluginDataRow[],
+  config?: Record<string, unknown>,
+): TimelineFile => ({
+  items,
+  plugins: [{ id: sprintsManifest.id, ...(config ? { config } : {}) }],
+  pluginData: { [sprintsManifest.id]: { sprints } },
 });
 
-const file = (items: TimelineFileItem[]): TimelineFile => ({ items });
+const S2 = row('S-2', { name: 'Sprint 2', state: 'closed', start: '2026-01-19', end: '2026-02-01', capacity: 20 });
+const S3 = row('S-3', {
+  name: 'Sprint 3',
+  state: 'active',
+  goal: 'Checkout live',
+  start: '2026-02-02',
+  end: '2026-02-15',
+  capacity: 20,
+});
+const S4 = row('S-4', { name: 'Sprint 4', state: 'planned', start: '2026-02-16', end: '2026-03-01', capacity: 20 });
 
-/** Sprint 3 holds 34 points against a velocity of 20; sprint 4 already holds 8. */
-const overcommitted = file([
-  item('P-1', '2026-01-05', '8'),
-  item('P-2', '2026-02-02', '13'),
-  item('A-3', '2026-02-03', '8'),
-  item('I-2', '2026-02-09', '5'),
-  item('Q-2', '2026-02-11', '8'),
-  item('A-4', '2026-02-16', '8'),
-]);
+const SPRINTS = [S2, S3, S4];
 
 const notes = (plan: ToolPlan) => plan.notes ?? [];
 const says = (plan: ToolPlan, needle: string) => notes(plan).some((note) => note.includes(needle));
@@ -53,474 +102,729 @@ const said = (plan: ToolPlan, needle: string) =>
 const didNotSay = (plan: ToolPlan, needle: string) =>
   assert.equal(says(plan, needle), false, `a note said "${needle}": ${notes(plan).join(' | ')}`);
 
-// ---- check_sprint_capacity ---------------------------------------------------
+/** No verb in this file may rewrite a date, so no patch may carry one. */
+const movedNoDates = (plan: ToolPlan) => {
+  for (const change of plan.changes ?? []) {
+    if (change.op !== 'update') continue;
+    for (const key of ['start', 'end', 'duration']) {
+      assert.equal(key in change.patch, false, `patch for ${change.itemId} carries "${key}"`);
+    }
+  }
+};
 
-const capacity = (args: Record<string, unknown>, timeline = overcommitted, config: Record<string, unknown> = RASTER) =>
-  checkSprintCapacity({ file: timeline, config, args, now: NOW });
+// The plugin config reaches these verbs through the file (`readEstimateUnit`,
+// `rasterOf`), the same way the view and the fields read it, so `config` on the context
+// stays empty here rather than carrying a second copy of it.
+const plan = (args: Record<string, unknown>, file: TimelineFile) => planSprint({ file, config: {}, args, now: NOW });
+const roll = (args: Record<string, unknown>, file: TimelineFile) => rollOver({ file, config: {}, args, now: NOW });
+const status = (args: Record<string, unknown>, file: TimelineFile, now = NOW) =>
+  sprintStatus({ file, config: {}, args, now });
 
-test('the capacity check sums each sprint in play against the velocity', () => {
-  const plan = capacity({});
-  said(plan, 'Sprint 1: 8 von 20 Punkten aus 1 Eintrag (im Rahmen).');
-  said(plan, 'Sprint 3: 34 von 20 Punkten aus 4 Einträgen (überbucht).');
-  said(plan, 'Sprint 4: 8 von 20 Punkten aus 1 Eintrag (im Rahmen).');
-  // An analysis tool must return no changes, or the host refuses the whole plan.
-  assert.equal(plan.changes, undefined);
-  assert.deepEqual(validateToolPlan(decl('check_sprint_capacity'), overcommitted, plan), []);
+// ---- no sprints, and ids that name nothing -----------------------------------
+
+test('without a single sprint row the writing verbs refuse and say what is missing', () => {
+  // „Nothing to do" is what an empty plan says, and „this timeline has no sprints" is
+  // not that. Only the agent can create one, so the message has to reach it.
+  const bare: TimelineFile = { items: [item('A-1', { start: '2026-02-03' })] };
+  assert.throws(() => plan({ sprint: 'S-3', items: ['A-1'] }, bare), /kein Sprint angelegt/);
+  assert.throws(() => roll({ sprint: 'S-3', toBacklog: true }, bare), /kein Sprint angelegt/);
+  // Also when the plugin section exists and is empty, which is what an enabled plugin
+  // with no rows yet looks like.
+  const empty = timeline([item('A-1', { start: '2026-02-03' })], []);
+  assert.throws(() => plan({ sprint: 'S-3', items: ['A-1'] }, empty), /kein Sprint angelegt/);
 });
 
-test('the capacity check narrows to one sprint when asked', () => {
-  const plan = capacity({ sprint: 3 });
-  said(plan, 'Sprint 3: 34 von 20 Punkten');
-  didNotSay(plan, 'Sprint 1:');
+test('with no sprints the status verb answers instead of failing', () => {
+  // It writes nothing, so the note is the entire result and „there are none yet" is the
+  // true one. An error here would be a refusal to answer a question that has an answer.
+  const file = timeline([item('A-1', { start: '2026-02-03', storyPoints: '8' })], []);
+  const result = status({}, file);
+  said(result, 'kein Sprint angelegt');
+  said(result, 'Ohne Sprint-Zuordnung und daher in keiner Sprint-Summe: 1 Eintrag mit 8 Punkten (A-1)');
+  assert.equal(result.changes, undefined);
+  assert.deepEqual(validateToolPlan(decl('sprint_status'), file, result), []);
 });
 
-test('a sprint that holds nothing is reported as empty, not as 0 of 20', () => {
-  said(capacity({ sprint: 9 }), 'Sprint 9 ist leer.');
+test('a sprint id that does not exist is refused with the ids that do', () => {
+  const file = timeline([item('A-1', { start: '2026-02-03' })], SPRINTS);
+  assert.throws(
+    () => plan({ sprint: 'S-9', items: ['A-1'] }, file),
+    /Kein Sprint mit der Id "S-9"\. Vorhanden: S-2 \(„Sprint 2"\), S-3 \(„Sprint 3"\), S-4 \(„Sprint 4"\)\./,
+  );
+  assert.throws(() => roll({ sprint: 'S-9', toBacklog: true }, file), /Kein Sprint mit der Id "S-9"/);
+  assert.throws(() => roll({ sprint: 'S-3', toSprint: 'S-9' }, file), /Kein Sprint mit der Id "S-9"/);
+  assert.throws(() => status({ sprint: 'S-9' }, file), /Kein Sprint mit der Id "S-9"/);
+  assert.throws(() => plan({ items: ['A-1'] }, file), /`sprint` fehlt/);
+});
+
+test('a rejected sprint argument is quoted so it cannot look like valid input', () => {
+  // `String(["S-3"])` is „S-3", so an array came back quoted as the id it is not: an
+  // agent reading „„S-3" ist keine Sprint-Id" sees a valid id being refused and has
+  // nothing to correct. JSON keeps the brackets, the quotes and the type.
+  const file = timeline([item('A-1', { start: '2026-02-03' })], SPRINTS);
+  assert.throws(() => plan({ sprint: ['S-3'], items: ['A-1'] }, file), /^Error: \["S-3"\] ist keine Sprint-Id/);
+  assert.throws(() => plan({ sprint: 3, items: ['A-1'] }, file), /^Error: 3 ist keine Sprint-Id/);
+  assert.throws(() => plan({ sprint: '  ', items: ['A-1'] }, file), /^Error: "  " ist keine Sprint-Id/);
+});
+
+// ---- plan_sprint -------------------------------------------------------------
+
+test('planning assigns the named items and touches nothing else', () => {
+  const file = timeline(
+    [item('A-1', { start: '2026-02-03', storyPoints: '8' }), item('A-2', { start: '2026-02-04', storyPoints: '5' })],
+    SPRINTS,
+  );
+  const result = plan({ sprint: 'S-3', items: ['A-1', 'A-2'] }, file);
+  assert.deepEqual(result.changes, [
+    { op: 'update', itemId: 'A-1', patch: { metadata: { sprint: 'S-3' } } },
+    { op: 'update', itemId: 'A-2', patch: { metadata: { sprint: 'S-3' } } },
+  ]);
+  // The patch carries one metadata key, not the whole object: the host shallow-merges
+  // it, so a full object would drop the estimate the item already has.
+  said(result, '„Sprint 3" (S-3): 2 Einträge zugeordnet („A-1", „A-2")');
+  movedNoDates(result);
+  assert.deepEqual(validateToolPlan(decl('plan_sprint'), file, result), []);
+});
+
+test('an item id that names nothing is reported instead of poisoning the plan', () => {
+  // `validateToolPlan` refuses the WHOLE plan over one unknown `itemId`, so a typo in a
+  // list of five would otherwise assign none of the four that exist. The same reasoning
+  // as the whitespace-id rule: one bad entry must not block everything else, and an
+  // entry that is silently dropped is the other half of that bug.
+  const file = timeline([item('A-1', { start: '2026-02-03' }), item('  ', { start: '2026-02-05' })], SPRINTS);
+  const result = plan({ sprint: 'S-3', items: ['A-1', 'A-99', '  ', 42] }, file);
+  assert.deepEqual(result.changes, [{ op: 'update', itemId: 'A-1', patch: { metadata: { sprint: 'S-3' } } }]);
+  said(result, 'Nicht auf dieser Timeline und daher nicht zugeordnet: "A-99", "  ", 42');
+  assert.deepEqual(validateToolPlan(decl('plan_sprint'), file, result), []);
+});
+
+test('an assignment the item already carries is not written again', () => {
+  // A patch that writes the value already there is a write with no effect, and a plan
+  // reporting it looks like a change happened.
+  const file = timeline([item('A-1', { start: '2026-02-03', sprint: 'S-3' })], SPRINTS);
+  const result = plan({ sprint: 'S-3', items: ['A-1', 'A-1'] }, file);
+  assert.deepEqual(result.changes, []);
+  said(result, 'Bereits „Sprint 3" (S-3) zugeordnet und daher nicht erneut geschrieben: „A-1"');
+  assert.deepEqual(validateToolPlan(decl('plan_sprint'), file, result), []);
+});
+
+test('planning needs items, and an empty list is refused rather than answered', () => {
+  const file = timeline([item('A-1', { start: '2026-02-03' })], SPRINTS);
+  assert.throws(() => plan({ sprint: 'S-3' }, file), /`items` fehlt/);
+  assert.throws(() => plan({ sprint: 'S-3', items: [] }, file), /`items` ist leer/);
+  assert.throws(() => plan({ sprint: 'S-3', items: 'A-1' }, file), /"A-1" ist keine Liste von Item-Ids/);
+});
+
+test('dates that disagree with the assignment are named, and neither side is changed', () => {
+  // The rule the model turns on: moving the dates overwrites a plan a person made,
+  // dropping the assignment overwrites a commitment a team made. So the disagreement is
+  // shown and nothing is resolved.
+  const file = timeline(
+    [
+      item('früh', { start: '2026-01-20', storyPoints: '5' }),
+      item('spät', { start: '2026-03-10', storyPoints: '5' }),
+      item('lang', { start: '2026-02-10', end: '2026-02-25', storyPoints: '3' }),
+      item('ohne-datum', { storyPoints: '2' }),
+    ],
+    SPRINTS,
+  );
+  const result = plan({ sprint: 'S-3', items: ['früh', 'spät', 'lang', 'ohne-datum'] }, file);
+  assert.equal(result.changes?.length, 4);
+  movedNoDates(result);
+  // „Outside" means what `sprintWarnings` means by it, because both read the same
+  // `windowContains`: the start counts, and so does an end that leaves the window („lang"
+  // ends after the sprint). Two definitions of „is this item in its sprint" is how one of
+  // them ends up fixed.
+  said(
+    result,
+    'Die eigenen Daten widersprechen der Zuordnung zu „Sprint 3" (S-3) (2026-02-02 bis 2026-02-15): „früh", „spät", „lang"',
+  );
+  said(result, 'Weder die Daten noch die Zuordnung werden geändert');
+  said(result, 'Ohne Startdatum und daher an keiner Stelle des Fensters: „ohne-datum"');
+  assert.deepEqual(validateToolPlan(decl('plan_sprint'), file, result), []);
+});
+
+test('a sprint with no window cannot be checked against, and says so', () => {
+  // A row with no dates takes the window of the raster sprint at its position, so „no
+  // window" needs both to be absent: no dates on the row, and no raster in the config.
+  const file = timeline([item('A-1', { start: '2026-02-03' })], [row('S-x', { name: 'Sprint X', state: 'planned' })]);
+  const result = plan({ sprint: 'S-x', items: ['A-1'] }, file);
+  said(result, '„Sprint X" (S-x) hat kein Fenster');
+  didNotSay(result, 'widersprechen der Zuordnung');
+
+  // With a raster configured the same row does have one, and the check runs against it:
+  // sprint 1 of a raster anchored at 2026-01-05 covers 2026-01-05 to 2026-01-18.
+  const withRaster = timeline([item('A-1', { start: '2026-02-03' })], [row('S-x', { name: 'Sprint X', state: 'planned' })], {
+    start: '2026-01-05',
+    lengthDays: 14,
+  });
+  said(
+    plan({ sprint: 'S-x', items: ['A-1'] }, withRaster),
+    'Die eigenen Daten widersprechen der Zuordnung zu „Sprint X" (S-x) (2026-01-05 bis 2026-01-18): „A-1"',
+  );
+});
+
+test('a padded item id is matched trimmed and written back as the item carries it', () => {
+  // Ids are unconstrained strings and the core does not trim them, so a plan carrying the
+  // TRIMMED id is „no item on this timeline" to `validateToolPlan` — which refuses the
+  // whole plan, so one padded id blocked the assignment of every other item in the call.
+  const file = timeline(
+    [item(' A-1 ', { start: '2026-02-03', storyPoints: '5' }), item('A-2', { start: '2026-02-04', storyPoints: '5' })],
+    SPRINTS,
+  );
+  const result = plan({ sprint: 'S-3', items: ['A-1', 'A-2'] }, file);
+  assert.deepEqual(result.changes, [
+    { op: 'update', itemId: ' A-1 ', patch: { metadata: { sprint: 'S-3' } } },
+    { op: 'update', itemId: 'A-2', patch: { metadata: { sprint: 'S-3' } } },
+  ]);
+  didNotSay(result, 'Nicht auf dieser Timeline');
+  assert.deepEqual(validateToolPlan(decl('plan_sprint'), file, result), []);
+
+  // The same on the way out: an item stored with a padded id and rolled over.
+  const rolling = timeline([item(' B-1 ', { start: '2026-02-03', storyPoints: '5', sprint: 'S-3' })], SPRINTS);
+  const rolled = roll({ sprint: 'S-3', toSprint: 'S-4' }, rolling);
+  assert.deepEqual(rolled.changes, [{ op: 'update', itemId: ' B-1 ', patch: { metadata: { sprint: 'S-4' } } }]);
+  assert.deepEqual(validateToolPlan(decl('roll_over'), rolling, rolled), []);
+});
+
+test('an entry of only whitespace reaches the handler, which is why it is named there', () => {
+  // `minLength: 1` counts characters, not non-blank ones (`validateRow` in
+  // src/pluginHost/dataSchema.ts), so the host accepts `"  "` and the branch that names
+  // it is reachable rather than dead. Without it the entry would vanish from a plan the
+  // caller believes covered its whole list.
+  const declaration = decl('plan_sprint');
+  assert.deepEqual(validateToolArgs(declaration, { sprint: 'S-3', items: ['  '] }), []);
+  const file = timeline([item('A-1', { start: '2026-02-03' })], SPRINTS);
+  const result = plan({ sprint: 'S-3', items: ['A-1', '  '] }, file);
+  said(result, 'Nicht auf dieser Timeline und daher nicht zugeordnet: "  "');
+});
+
+test('planning into a closed or cancelled sprint is refused, the way rolling into one is', () => {
+  // Assigning work to a sprint that is over changes nothing about what was delivered,
+  // while the live scope it then appears in contradicts the frozen report that holds
+  // that sprint's figures — and no note said a report existed.
+  const cancelled = row('S-5', { name: 'Sprint 5', state: 'cancelled' });
+  const file = timeline([item('A-1', { start: '2026-01-20', storyPoints: '5' })], [...SPRINTS, cancelled]);
+  assert.throws(() => plan({ sprint: 'S-2', items: ['A-1'] }, file), /„Sprint 2" \(S-2\) ist abgeschlossen/);
+  assert.throws(() => plan({ sprint: 'S-2', items: ['A-1'] }, file), /eingefrorenen Bericht/);
+  assert.throws(() => plan({ sprint: 'S-5', items: ['A-1'] }, file), /ist abgebrochen/);
+  // A planned and an active sprint are unaffected.
+  assert.equal(plan({ sprint: 'S-3', items: ['A-1'] }, file).changes?.length, 1);
+  assert.equal(plan({ sprint: 'S-4', items: ['A-1'] }, file).changes?.length, 1);
+});
+
+test('finished work assigned along is named, and no date is written for it either', () => {
+  const file = timeline([item('fertig', { start: '2026-01-20', status: 'Done', storyPoints: '8' })], SPRINTS);
+  const result = plan({ sprint: 'S-3', items: ['fertig'] }, file);
+  said(result, 'Auch abgeschlossene Arbeit wurde zugeordnet („fertig")');
+  movedNoDates(result);
+});
+
+// ---- roll_over ---------------------------------------------------------------
+
+const rollFile = () =>
+  timeline(
+    [
+      item('offen-1', { start: '2026-02-03', storyPoints: '8', sprint: 'S-3' }),
+      item('offen-2', { start: '2026-02-05', storyPoints: '5', status: 'Doing', sprint: 'S-3' }),
+      item('fertig', { start: '2026-02-04', storyPoints: '13', status: 'Done', sprint: 'S-3' }),
+      item('fremd', { start: '2026-02-20', storyPoints: '3', sprint: 'S-4' }),
+    ],
+    SPRINTS,
+  );
+
+test('a roll-over without a target is refused, because there is no default', () => {
+  // Canon puts unfinished work back into the Product Backlog; Jira, Azure DevOps and
+  // Linear default to the next sprint. Picking one silently would pick a philosophy on
+  // the caller's behalf, on a write.
+  const file = rollFile();
+  assert.throws(() => roll({ sprint: 'S-3' }, file), /Ohne Ziel wird nichts verschoben/);
+  assert.throws(() => roll({ sprint: 'S-3' }, file), /kein Standardziel/);
+  // „not the backlog" is not a target either.
+  assert.throws(() => roll({ sprint: 'S-3', toBacklog: false }, file), /Ohne Ziel wird nichts verschoben/);
+  // Two targets are no target: which one won would not be visible in the answer.
+  assert.throws(() => roll({ sprint: 'S-3', toSprint: 'S-4', toBacklog: true }, file), /nicht beides/);
+  assert.throws(() => roll({ sprint: 'S-3', toBacklog: 'ja' }, file), /"ja" ist kein Wahrheitswert/);
+  // The same sprint is a write with no effect.
+  assert.throws(() => roll({ sprint: 'S-3', toSprint: 'S-3' }, file), /derselbe Sprint/);
+});
+
+test('rolling into a sprint that is over is refused rather than performed', () => {
+  // Unfinished work cannot be worked on in a closed sprint, so the write could not help
+  // and would look exactly like a roll-over that succeeded.
+  const file = rollFile();
+  assert.throws(() => roll({ sprint: 'S-3', toSprint: 'S-2' }, file), /ist abgeschlossen/);
+  const cancelled = timeline(rollFile().items!, [...SPRINTS, row('S-5', { name: 'Sprint 5', state: 'cancelled' })]);
+  assert.throws(() => roll({ sprint: 'S-3', toSprint: 'S-5' }, cancelled), /ist abgebrochen/);
+});
+
+test('rolling over to a sprint moves the unfinished work and nothing else', () => {
+  const file = rollFile();
+  const result = roll({ sprint: 'S-3', toSprint: 'S-4' }, file);
+  assert.deepEqual(result.changes, [
+    { op: 'update', itemId: 'offen-1', patch: { metadata: { sprint: 'S-4' } } },
+    { op: 'update', itemId: 'offen-2', patch: { metadata: { sprint: 'S-4' } } },
+  ]);
+  said(result, '„Sprint 3" (S-3): 2 offene Einträge nach „Sprint 4" (S-4) verschoben („offen-1", „offen-2")');
+  said(result, 'Kein Datum wurde dabei geändert.');
+  // A tool returns item changes and cannot write the plugin's own rows, so „rolled over"
+  // must not be read as „closed": the state stays, and no `passes` row records the move.
+  said(result, 'der Status des Sprints bleibt, und es entsteht kein Verlaufseintrag');
+  // The item of another sprint is not touched by a call about this one.
+  didNotSay(result, '„fremd"');
+  movedNoDates(result);
+  assert.deepEqual(validateToolPlan(decl('roll_over'), file, result), []);
+});
+
+test('rolling over to the backlog clears the assignment instead of naming a fake sprint', () => {
+  // A metadata value of null removes the key (`mergeMetadata`), which is what „no
+  // sprint" is. An assignment to something called „backlog" would be a sprint row that
+  // does not exist.
+  const file = rollFile();
+  const result = roll({ sprint: 'S-3', toBacklog: true }, file);
+  assert.deepEqual(result.changes, [
+    { op: 'update', itemId: 'offen-1', patch: { metadata: { sprint: null } } },
+    { op: 'update', itemId: 'offen-2', patch: { metadata: { sprint: null } } },
+  ]);
+  said(result, 'nach das Backlog verschoben');
+  said(result, 'Im Backlog gilt kein Fenster');
+  movedNoDates(result);
+  assert.deepEqual(validateToolPlan(decl('roll_over'), file, result), []);
+});
+
+test('finished work keeps the sprint it was finished in', () => {
+  // Its scope stays in that sprint's sum, because the capacity really was consumed, and
+  // re-assigning it would rewrite the record of where it was done. No date of it is
+  // touched either, which is the older half of the same rule.
+  const file = rollFile();
+  const result = roll({ sprint: 'S-3', toSprint: 'S-4' }, file);
+  assert.equal(
+    result.changes?.some((change) => change.op === 'update' && change.itemId === 'fertig'),
+    false,
+  );
+  said(result, 'Abgeschlossene Arbeit bleibt in „Sprint 3" (S-3) („fertig")');
+});
+
+test('a sprint holding nothing has nothing to roll over', () => {
+  const file = timeline([item('A-1', { start: '2026-02-03' })], SPRINTS);
+  const result = roll({ sprint: 'S-3', toBacklog: true }, file);
+  assert.deepEqual(result.changes, []);
+  said(result, '„Sprint 3" (S-3) hält keinen Eintrag: es gibt nichts zu verschieben.');
+});
+
+test('an item whose id is only whitespace is named rather than written into a refused plan', () => {
+  // `if (!item.id)` let `"  "` through, and `validateToolPlan` then rejected the WHOLE
+  // plan over the blank `itemId` — so one whitespace id made a sprint impossible to roll
+  // over at all.
+  const file = timeline(
+    [
+      item('  ', { content: 'namenlos', start: '2026-02-03', storyPoints: '5', sprint: 'S-3' }),
+      item('echt', { start: '2026-02-04', storyPoints: '5', sprint: 'S-3' }),
+    ],
+    SPRINTS,
+  );
+  const result = roll({ sprint: 'S-3', toSprint: 'S-4' }, file);
+  assert.deepEqual(result.changes, [{ op: 'update', itemId: 'echt', patch: { metadata: { sprint: 'S-4' } } }]);
+  said(result, 'Ohne verwendbare Id und daher nicht verschoben: „namenlos"');
+  assert.deepEqual(validateToolPlan(decl('roll_over'), file, result), []);
+});
+
+test('an item something else depends on moves, and what waits for it is named', () => {
+  // The old rule refused to MOVE such an item, and the reason was a date: shifting a
+  // predecessor by a sprint length put its successor's start before the predecessor's
+  // end, which the relation graph then drew backwards. This verb changes no date, so
+  // that failure cannot happen; what remains is a dependency now pointing back across a
+  // sprint boundary, and that is reported. Refusing instead would leave unfinished work
+  // in a sprint that is over, which is the thing roll_over exists to prevent.
+  const file = timeline(
+    [
+      item('BIG', { start: '2026-02-03', storyPoints: '8', sprint: 'S-3' }),
+      item('SUCC', { start: '2026-02-12', storyPoints: '2', sprint: 'S-3', dependsOn: ['BIG'], status: 'Done' }),
+      item('ANDERS', { start: '2026-02-14', storyPoints: '1', sprint: 'S-4', dependsOn: 'BIG' }),
+    ],
+    SPRINTS,
+  );
+  const result = roll({ sprint: 'S-3', toSprint: 'S-4' }, file);
+  assert.deepEqual(result.changes, [{ op: 'update', itemId: 'BIG', patch: { metadata: { sprint: 'S-4' } } }]);
+  said(result, 'Hängt an verschobener Arbeit und ist selbst nicht mitverschoben worden');
+  said(result, '„SUCC"');
+  // A single id written as a bare string is the other shape `extractDependsOn` accepts,
+  // so this rule has to read it too.
+  said(result, '„ANDERS"');
+  movedNoDates(result);
+  assert.deepEqual(validateToolPlan(decl('roll_over'), file, result), []);
+});
+
+test('a dependent is claimed exactly where the relation graph draws an edge', () => {
+  // `extractDependsOn` (src/buildItems.ts) trims a single id written as a bare string and
+  // does NOT trim the entries of a list, so `[" BIG "]` names no item and no arrow is
+  // drawn. Trimming both here made this verb report a stranded successor that nothing on
+  // the page corresponds to.
+  const file = timeline(
+    [
+      item('BIG', { start: '2026-02-03', storyPoints: '8', sprint: 'S-3' }),
+      item('LOSE', { start: '2026-02-20', storyPoints: '2', sprint: 'S-4', dependsOn: [' BIG '] }),
+      item('ECHT', { start: '2026-02-13', storyPoints: '2', sprint: 'S-4', dependsOn: ' BIG ' }),
+    ],
+    SPRINTS,
+  );
+  const result = roll({ sprint: 'S-3', toSprint: 'S-4' }, file);
+  // „ECHT" waits for BIG in the graph (the single-string form is trimmed), „LOSE" does
+  // not (a list entry is not).
+  said(result, '„ECHT"');
+  didNotSay(result, '„LOSE"');
+});
+
+test('the target window is compared against, and the dates still are not moved', () => {
+  const file = timeline([item('offen', { start: '2026-02-03', storyPoints: '5', sprint: 'S-3' })], SPRINTS);
+  const result = roll({ sprint: 'S-3', toSprint: 'S-4' }, file);
+  said(result, 'Die eigenen Daten widersprechen der Zuordnung zu „Sprint 4" (S-4) (2026-02-16 bis 2026-03-01): „offen"');
+  movedNoDates(result);
+});
+
+// ---- sprint_status -----------------------------------------------------------
+
+const statusFile = () =>
+  timeline(
+    [
+      item('offen-1', { start: '2026-02-03', storyPoints: '13', sprint: 'S-3' }),
+      item('fertig', { start: '2026-02-04', storyPoints: '8', status: 'Done', sprint: 'S-3' }),
+      item('backlog', { start: '2026-04-01', storyPoints: '5' }),
+    ],
+    SPRINTS,
+  );
+
+test('the status reports scope, remaining and the days left of the active sprint', () => {
+  const file = statusFile();
+  const result = status({}, file);
+  said(result, '„Sprint 3" (S-3), aktiv: 2 Einträge, Umfang 21 von 20 Punkten (überbucht), davon offen 13 Punkte.');
+  said(result, '12 Tage bis zum Ende am 2026-02-15, den Stichtag 2026-02-04 eingeschlossen.');
+  // The scope no sprint accounts for, so the sums above cannot be read as the whole
+  // timeline.
+  said(result, 'Ohne Sprint-Zuordnung und daher in keiner Sprint-Summe: 1 Eintrag mit 5 Punkten (backlog)');
+  // A velocity figure and a „committed versus completed" pair are what this plugin
+  // refuses to print; `docs/model.md` carries the sources.
+  didNotSay(result, 'velocity');
+  didNotSay(result, 'Velocity');
+  assert.equal(result.changes, undefined);
+  assert.deepEqual(validateToolPlan(decl('sprint_status'), file, result), []);
+});
+
+test('the status can be asked about one sprint, including a closed one', () => {
+  const file = statusFile();
+  const result = status({ sprint: 'S-4' }, file);
+  said(result, '„Sprint 4" (S-4), geplant: kein Eintrag zugeordnet.');
+  didNotSay(result, '„Sprint 3" (S-3), aktiv');
+  said(status({ sprint: 'S-2' }, file), '„Sprint 2" (S-2), abgeschlossen');
+});
+
+test('now before, inside and after the window are three different answers', () => {
+  const file = statusFile();
+  said(status({ sprint: 'S-4' }, file, '2026-02-04'), '„Sprint 4" (S-4) beginnt erst am 2026-02-16, in 12 Tagen');
+  said(status({ sprint: 'S-3' }, file, '2026-02-15'), '1 Tag bis zum Ende am 2026-02-15');
+  const late = status({ sprint: 'S-3' }, file, '2026-02-20');
+  said(late, 'endete am 2026-02-15, vor 5 Tagen');
+  // Nothing fires at a sprint boundary in this product, so an active sprint whose window
+  // is over stays active until somebody says otherwise. Saying it is the whole point.
+  said(late, 'steht weiterhin auf „active"');
+  said(late, 'wird nicht verlängert');
+});
+
+test('an unusable now leaves the remaining time unanswered instead of counting from nothing', () => {
+  // „Before the window" and „not a date at all" are two different answers, and a count
+  // over a value nobody could read is a confident number over nothing.
+  const file = statusFile();
+  for (const now of ['', '   ', 'heute', '2026-13-40']) {
+    const result = status({ sprint: 'S-3' }, file, now);
+    said(result, 'ist kein Datum, deshalb bleibt „wie viel Zeit bleibt" unbeantwortet');
+    didNotSay(result, 'Tage bis zum Ende');
+  }
+  // A real day outside the window is the other case, and gets no such note.
+  didNotSay(status({ sprint: 'S-3' }, file, '2026-02-20'), 'ist kein Datum');
+});
+
+test('an active sprint without a goal is a warning, and only while it is active', () => {
+  // Canon requires the goal and no product enforces one, so it is nullable in storage
+  // and warned about exactly while the sprint runs.
+  const noGoal = row('S-3', { ...(S3.data as Record<string, unknown>), goal: '   ' });
+  const file = timeline([item('offen', { start: '2026-02-03', storyPoints: '5', sprint: 'S-3' })], [noGoal, S4]);
+  said(status({}, file), '„Sprint 3" (S-3) ist aktiv und hat kein Sprint-Ziel.');
+  // S-4 is planned and carries no goal either, and that is not yet a problem.
+  didNotSay(status({ sprint: 'S-4' }, file), 'kein Sprint-Ziel');
+  said(status({}, statusFile()), '„Sprint 3" (S-3), aktiv');
+  didNotSay(status({}, statusFile()), 'kein Sprint-Ziel');
+});
+
+test('a second active sprint is reported, because nothing else can refuse it', () => {
+  // „A new Sprint starts immediately after the conclusion of the previous Sprint", and
+  // the host enforces no rule across rows, so the violation has to be visible here.
+  const alsoActive = row('S-4', { ...(S4.data as Record<string, unknown>), state: 'active' });
+  const file = timeline(statusFile().items!, [S2, S3, alsoActive]);
+  const result = status({}, file);
+  said(result, '2 Sprints sind gleichzeitig aktiv („Sprint 3" (S-3), „Sprint 4" (S-4))');
+  said(result, 'Es kann nur einen aktiven Sprint geben');
+  // Both are reported, rather than one being picked silently.
+  said(result, '„Sprint 3" (S-3), aktiv');
+  said(result, '„Sprint 4" (S-4), aktiv');
+});
+
+test('no active sprint at all is an answer with the ids to ask about', () => {
+  const file = timeline(statusFile().items!, [S2, S4]);
+  const result = status({}, file);
+  said(result, 'Kein Sprint ist aktiv (2 Sprints angelegt: S-2 („Sprint 2"), S-4 („Sprint 4"))');
+  // No sprint is reported in place of the active one: a closed sprint's numbers would be
+  // an answer to a question nobody asked.
+  didNotSay(result, 'aktiv:');
+  didNotSay(result, 'abgeschlossen:');
 });
 
 test('items with no usable estimate are named rather than counted as zero', () => {
-  // A missing key, an empty string, a word and a stray array are one case: none of
-  // them can be summed. A sum that quietly omits them reads as a capacity statement
-  // and is not one.
-  const timeline = file([
-    item('mit', '2026-02-02', '8'),
-    item('ohne', '2026-02-03'),
-    item('leer', '2026-02-04', ''),
-    item('wort', '2026-02-05', 'XL'),
-    item('liste', '2026-02-06', ['8']),
-    item('null', '2026-02-07', 0),
-  ]);
-  const plan = capacity({ sprint: 3 }, timeline);
-  said(plan, 'Sprint 3: 8 von 20 Punkten aus 6 Einträgen');
-  said(plan, 'ohne verwertbare Schätzung: „ohne", „leer", „wort", „liste", „null"');
-  said(plan, 'Eine Summe, in der 5 Einträge fehlen, ist keine Kapazitätsaussage.');
-});
-
-test('without a usable velocity the capacity check says it cannot answer', () => {
-  for (const config of [
-    { start: '2026-01-05', lengthDays: 14 }, // absent
-    { ...RASTER, velocity: 0 }, // zero: never a division, and never a yardstick either
-    { ...RASTER, velocity: -3 },
-    { ...RASTER, velocity: 'viel' },
-  ]) {
-    const plan = capacity({ sprint: 3 }, overcommitted, config);
-    said(plan, 'lässt sich nicht sagen, ob ein Sprint');
-    // The sums still stand, labelled as sums: summing needs no velocity, and
-    // withholding the numbers would be less useful than saying they have no yardstick.
-    said(plan, 'Sprint 3: 34 Punkte aus 4 Einträgen.');
-    // No verdict anywhere: „von 20 Punkten" is the shape a comparison would take.
-    didNotSay(plan, 'von 20 Punkten');
-  }
-});
-
-test('nothing in the raster at all is said out loud', () => {
-  const plan = capacity({}, file([item('a', undefined, '8'), item('b', '2025-12-15', '5')]));
-  said(plan, 'Kein Eintrag fällt in einen Sprint des Rasters (Anker 2026-01-05, 14 Tage).');
-  // …and the thirteen points are still named. „Nothing is in the raster" plus silence
-  // about what is outside it reads as „there is nothing", which is a different claim.
-  said(plan, '13 Punkte aus 2 Einträgen (a, b)');
-});
-
-test('items the raster does not place are reported, not dropped from the answer', () => {
-  // The sweep iterates the sprints in play, so an item with no start, or a start before
-  // the anchor, appeared in no line at all — while `forecast_completion` counted its
-  // points. On the shipped example those are P-0 (3 points, starts 2025-12-15) and P-4
-  // (5 points, no start), and neither showed up anywhere in the answer.
-  const timeline = file([
-    item('P-0', '2025-12-15', '3'),
-    item('P-4', undefined, '5'),
-    item('P-1', '2026-01-05', '8'),
-  ]);
-  const plan = capacity({}, timeline);
-  said(plan, 'Sprint 1: 8 von 20 Punkten aus 1 Eintrag (im Rahmen).');
-  said(plan, 'Außerhalb des Rasters und daher in keiner Sprint-Summe: 8 Punkte aus 2 Einträgen (P-0, P-4),');
-  said(plan, 'ohne Startdatum oder mit einem Start vor dem Anker 2026-01-05');
-  // A caller who named one sprint asked about that sprint, so the line would be noise
-  // there rather than a scope the answer left out.
-  didNotSay(capacity({ sprint: 1 }, timeline), 'Außerhalb des Rasters');
+  // A missing key, an empty string, a word, a stray array, zero, a hex and an exponent
+  // string are one case: none of them can be summed. `Number()` would have read the last
+  // two as 16 and 1000, which turns a typo into a capacity figure.
+  const file = timeline(
+    [
+      item('mit', { start: '2026-02-03', storyPoints: '8', sprint: 'S-3' }),
+      item('ohne', { start: '2026-02-03', sprint: 'S-3' }),
+      item('leer', { start: '2026-02-03', storyPoints: '', sprint: 'S-3' }),
+      item('wort', { start: '2026-02-03', storyPoints: 'XL', sprint: 'S-3' }),
+      item('liste', { start: '2026-02-03', storyPoints: ['8'], sprint: 'S-3' }),
+      item('null', { start: '2026-02-03', storyPoints: 0, sprint: 'S-3' }),
+      item('hex', { start: '2026-02-03', storyPoints: '0x10', sprint: 'S-3' }),
+      item('exponent', { start: '2026-02-03', storyPoints: '1e3', sprint: 'S-3' }),
+      item('bruch', { start: '2026-02-03', storyPoints: '2.5', sprint: 'S-3' }),
+    ],
+    SPRINTS,
+  );
+  const result = status({ sprint: 'S-3' }, file);
+  said(result, 'Umfang 10.5 von 20 Punkten (im Rahmen)');
+  said(result, 'ohne verwertbare Schätzung: „ohne", „leer", „wort", „liste", „null", „hex", „exponent"');
+  said(result, 'Eine Summe, in der 7 Einträge fehlen, ist keine Kapazitätsaussage.');
 });
 
 test('the verdict cannot contradict the numbers printed beside it', () => {
-  // „0.1" + „0.2" is 0.30000000000000004 in binary floating point, so against a velocity
+  // „0.1" + „0.2" is 0.30000000000000004 in binary floating point, so against a capacity
   // of 0.3 the check printed „0.3 von 0.3 Punkten (überbucht)": the verdict said the
   // opposite of the two numbers in front of it.
-  const config = { ...RASTER, velocity: 0.3 };
-  const timeline = file([item('a', '2026-02-02', '0.1'), item('b', '2026-02-03', '0.2')]);
-  said(capacity({ sprint: 3 }, timeline, config), 'Sprint 3: 0.3 von 0.3 Punkten aus 2 Einträgen (im Rahmen).');
-  // The writing verb has to agree, or it moves a date over a rounding artefact.
-  const plan = rebalance({ sprint: 3 }, timeline, config);
-  assert.equal(plan.changes, undefined);
-  said(plan, 'Sprint 3: 0.3 von 0.3 Punkten, nicht überbucht.');
+  const sprint = row('S-3', { ...(S3.data as Record<string, unknown>), capacity: 0.3 });
+  const file = timeline(
+    [
+      item('a', { start: '2026-02-03', storyPoints: '0.1', sprint: 'S-3' }),
+      item('b', { start: '2026-02-04', storyPoints: '0.2', sprint: 'S-3' }),
+    ],
+    [sprint],
+  );
+  said(status({ sprint: 'S-3' }, file), 'Umfang 0.3 von 0.3 Punkten (im Rahmen)');
 });
 
 test('a sum that is no longer a representable number is refused, not printed as Infinity', () => {
   // `points()` multiplied by 100 before rounding, and that product overflows: a finite
   // total of 2e307 printed „Infinity", which is not a number anybody can check.
-  const large = file([item('a', '2026-02-02', 1e307), item('b', '2026-02-03', 1e307)]);
-  said(capacity({ sprint: 3 }, large), 'Sprint 3: 2e+307 von 20 Punkten aus 2 Einträgen (überbucht).');
-
-  // A total that really is Infinity is not a capacity at all, and both verbs say so
-  // rather than comparing against it.
-  const beyond = file([item('a', '2026-02-02', 1e308), item('b', '2026-02-03', 1e308)]);
-  said(capacity({ sprint: 3 }, beyond), 'Die Summe der Schätzungen ist keine darstellbare Zahl mehr (Infinity)');
-  didNotSay(capacity({ sprint: 3 }, beyond), 'von 20 Punkten');
-  const plan = rebalance({ sprint: 3 }, beyond);
-  assert.equal(plan.changes, undefined);
-  said(plan, 'keine darstellbare Zahl mehr');
-});
-
-test('only a plain decimal counts as an estimate', () => {
-  // Bare `Number()` also reads „0x10" as 16 and „1e3" as 1000, so a typo in a
-  // hand-written file entered the capacity sum as a number nobody wrote — and a sum
-  // always looks right. `AGENTS.md` promises a plain string of digits.
-  const timeline = file([
-    item('hex', '2026-02-02', '0x10'),
-    item('exponent', '2026-02-03', '1e3'),
-    item('komma', '2026-02-04', '2,5'),
-    item('vorzeichen', '2026-02-05', '+8'),
-    item('bruch', '2026-02-06', '2.5'),
-    item('fuehrende-null', '2026-02-07', '08'),
-  ]);
-  const plan = capacity({ sprint: 3 }, timeline);
-  said(plan, 'Sprint 3: 18.5 von 20 Punkten aus 6 Einträgen (im Rahmen).');
-  said(plan, 'ohne verwertbare Schätzung: „hex", „exponent", „komma"');
-});
-
-test('an unconfigured raster is refused, not answered with an empty plan', () => {
-  // „Nothing to do" is what an empty plan says, and an unconfigured raster is not
-  // that. The message reaches the agent, which is the only party that can fix it.
-  assert.throws(() => capacity({}, overcommitted, {}), /Kein Sprintraster konfiguriert/);
-  assert.throws(() => capacity({}, overcommitted, { start: '2026-01-05', lengthDays: 0 }), /lengthDays/);
-  assert.throws(() => capacity({ sprint: 0 }), /keine Sprintnummer/);
-});
-
-// ---- rebalance_sprint -------------------------------------------------------
-
-const rebalance = (args: Record<string, unknown>, timeline = overcommitted, config: Record<string, unknown> = RASTER) =>
-  rebalanceSprint({ file: timeline, config, args, now: NOW });
-
-test('rebalancing moves the latest starts out until the sprint fits', () => {
-  const plan = rebalance({ sprint: 3 });
-  // 34 → 26 → 21 → 13: Q-2 (11.2.), I-2 (9.2.), A-3 (3.2.). P-2 stays, and the sprint
-  // is not emptied beyond what it takes to fit.
-  assert.deepEqual(plan.changes, [
-    { op: 'update', itemId: 'Q-2', patch: { start: '2026-02-25' } },
-    { op: 'update', itemId: 'I-2', patch: { start: '2026-02-23' } },
-    { op: 'update', itemId: 'A-3', patch: { start: '2026-02-17' } },
-  ]);
-  said(plan, 'Sprint 3: 3 von 4 Einträgen nach Sprint 4 verschoben');
-  said(plan, '34 → 13 von 20 Punkten.');
-  assert.deepEqual(validateToolPlan(decl('rebalance_sprint'), overcommitted, plan), []);
-});
-
-test('the receiving sprint is reported, and nothing cascades into it', () => {
-  // A cascade rewrites the rest of the roadmap out of a single call. An agent that
-  // wants the next sprint relieved asks again, and the note says so.
-  const plan = rebalance({ sprint: 3 });
-  said(plan, 'Sprint 4 ist damit überbucht (29 von 20 Punkten).');
-  said(plan, 'für den nächsten ist ein zweiter Aufruf nötig');
-  assert.equal(
-    plan.changes?.every((change) => change.op === 'update' && ['Q-2', 'I-2', 'A-3'].includes(change.itemId)),
-    true,
+  const big = timeline(
+    [
+      item('a', { start: '2026-02-03', storyPoints: 1e307, sprint: 'S-3' }),
+      item('b', { start: '2026-02-04', storyPoints: 1e307, sprint: 'S-3' }),
+    ],
+    SPRINTS,
   );
+  const huge = status({ sprint: 'S-3' }, big);
+  said(huge, 'Umfang 2e+307 von 20 Punkten (überbucht)');
+  // …and „1e+306 weitere Sprints" is not an extrapolation, it is the same unusable
+  // number one step further on.
+  said(huge, 'ist gegen eine Kapazität von 20 keine Zahl von Sprints mehr, die eine Aussage wäre');
+  didNotSay(huge, 'weitere Sprints');
+
+  const beyond = timeline(
+    [
+      item('a', { start: '2026-02-03', storyPoints: 1e308, sprint: 'S-3' }),
+      item('b', { start: '2026-02-04', storyPoints: 1e308, sprint: 'S-3' }),
+    ],
+    SPRINTS,
+  );
+  const result = status({ sprint: 'S-3' }, beyond);
+  said(result, 'Die Summe der Schätzungen ist keine darstellbare Zahl mehr (Infinity)');
+  didNotSay(result, 'von 20 Punkten');
 });
 
-test('a move keeps the duration: an end shifts by the same amount', () => {
-  const timeline = file([
-    item('lang', '2026-02-11', '8', { end: '2026-02-20T18:00:00' }),
-    item('bleibt', '2026-02-02', '13'),
-  ]);
-  const plan = rebalance({ sprint: 3 }, timeline);
-  assert.deepEqual(plan.changes, [
-    { op: 'update', itemId: 'lang', patch: { start: '2026-02-25', end: '2026-03-06T18:00:00' } },
-  ]);
-  assert.deepEqual(validateToolPlan(decl('rebalance_sprint'), timeline, plan), []);
-});
-
-test('the same start orders by the larger estimate, then by the item id', () => {
-  const config = { ...RASTER, velocity: 8 };
-  const bigger = file([item('k-small', '2026-01-06', '2'), item('k-big', '2026-01-06', '8'), item('j', '2026-01-05', '3')]);
-  assert.deepEqual(rebalance({ sprint: 1 }, bigger, config).changes, [
-    { op: 'update', itemId: 'k-big', patch: { start: '2026-01-20' } },
-  ]);
-
-  // Same day, same estimate: the id is the third key, and without it two runs could
-  // produce two different roadmaps out of the source order alone.
-  const tied = file([item('b', '2026-01-06', '5'), item('a', '2026-01-06', '5')]);
-  assert.deepEqual(rebalance({ sprint: 1 }, tied, config).changes, [
-    { op: 'update', itemId: 'a', patch: { start: '2026-01-20' } },
-  ]);
-});
-
-test('a sprint that is not overcommitted is left alone', () => {
-  const plan = rebalance({ sprint: 1 });
-  assert.deepEqual(plan.changes, undefined);
-  said(plan, 'Sprint 1: 8 von 20 Punkten, nicht überbucht.');
-});
-
-test('an empty sprint has nothing to relieve', () => {
-  said(rebalance({ sprint: 9 }), 'Sprint 9 ist leer, es gibt nichts zu entlasten.');
-});
-
-test('an item bigger than the whole velocity is reported, never moved forever', () => {
-  // Moving it relieves nothing: it fits in no sprint of this raster, so every call
-  // would push it one sprint further down the roadmap and the sprint it lands in would
-  // be overcommitted by the same item.
-  const timeline = file([item('Monolith', '2026-01-05', '34')]);
-  const plan = rebalance({ sprint: 1 }, timeline);
-  assert.deepEqual(plan.changes, []);
-  said(plan, '„Monolith" trägt 34 Punkte und passt damit in keinen Sprint mit velocity 20.');
-  said(plan, 'Sprint 1 bleibt überbucht (34 von 20 Punkten)');
-  assert.deepEqual(validateToolPlan(decl('rebalance_sprint'), timeline, plan), []);
-});
-
-test('an item with no usable estimate is named and stays put', () => {
-  // Moving it would reduce the sum by nothing, so it would be a write with no reason.
-  const timeline = file([item('gross', '2026-01-05', '21'), item('ungeschätzt', '2026-01-06')]);
-  const plan = rebalance({ sprint: 1 }, timeline);
-  assert.deepEqual(plan.changes, []);
-  said(plan, 'ohne verwertbare Schätzung: „ungeschätzt"');
-  said(plan, 'Sprint 1 bleibt überbucht (21 von 20 Punkten)');
-});
-
-test('rebalancing without a usable velocity refuses rather than guessing what fits', () => {
-  // It writes, so a refusal is the only safe answer: „what fits" is undefined without
-  // a velocity, and a default would move items on the strength of a number nobody entered.
-  for (const velocity of [undefined, 0, -3, 'viel']) {
-    assert.throws(
-      () => rebalance({ sprint: 3 }, overcommitted, { start: '2026-01-05', lengthDays: 14, velocity }),
-      /velocity/,
-      `velocity ${String(velocity)}`,
-    );
+test('a sprint without a usable capacity gets sums without a yardstick', () => {
+  // Absent, zero, negative and unparseable are one case: the answer owed to the caller
+  // is the same, and none of them is a number a rule may divide by. The sums still
+  // stand, labelled as sums.
+  for (const capacity of [undefined, 0, -3, 'viel', '0x10']) {
+    const sprint = row('S-3', { ...(S3.data as Record<string, unknown>), capacity });
+    const file = timeline([item('a', { start: '2026-02-03', storyPoints: '13', sprint: 'S-3' })], [sprint]);
+    const result = status({ sprint: 'S-3' }, file);
+    said(result, 'Umfang 13 Punkte, davon offen 13 Punkte');
+    said(result, 'Ohne `capacity` auf dem Sprint steht diese Zahl ohne Maßstab.');
+    // No verdict anywhere: „von 20 Punkten" is the shape a comparison would take.
+    didNotSay(result, 'im Rahmen');
+    didNotSay(result, 'überbucht');
+    didNotSay(result, 'weitere Sprints');
   }
 });
 
-test('rebalancing needs to be told which sprint', () => {
-  assert.throws(() => rebalance({}), /`sprint` fehlt/);
-  assert.throws(() => rebalance({ sprint: 'drei' }), /keine Sprintnummer/);
-  // The host checks the arguments before the handler runs; this is that check.
-  assert.deepEqual(validateToolArgs(decl('rebalance_sprint'), { sprint: 3 }), []);
-  assert.equal(validateToolArgs(decl('rebalance_sprint'), {}).length, 1);
+test('open work beyond the capacity is extrapolated as one, never as a velocity', () => {
+  const file = timeline(
+    [
+      item('a', { start: '2026-02-03', storyPoints: '45', sprint: 'S-3' }),
+      item('b', { start: '2026-02-04', storyPoints: '13', status: 'Done', sprint: 'S-3' }),
+    ],
+    SPRINTS,
+  );
+  const result = status({ sprint: 'S-3' }, file);
+  said(result, 'Offen sind 45 Punkte bei einer Kapazität von 20: das reicht über diesen Sprint hinaus, um 2 weitere Sprints dieser Größe.');
+  said(result, 'Hochrechnung aus einer Kapazität, keine Zusage.');
+  didNotSay(result, 'velocity');
 });
 
-test('a rejected sprint argument is quoted so it cannot look like valid input', () => {
-  // `String([3])` is „3", so `{sprint: [3]}` came back quoted as the number it is not:
-  // an agent reading „„3" ist keine Sprintnummer" sees a valid sprint number being
-  // refused and has nothing to correct.
-  assert.throws(() => rebalance({ sprint: [3] }), /^Error: \[3\] ist keine Sprintnummer/);
-  assert.throws(() => rebalance({ sprint: 'drei' }), /^Error: "drei" ist keine Sprintnummer/);
-  assert.throws(() => rebalance({ sprint: {} }), /^Error: \{\} ist keine Sprintnummer/);
-  assert.throws(() => rebalance({ sprint: 2.5 }), /^Error: 2\.5 ist keine Sprintnummer/);
+test('the unit follows the sprint, then the config, and never a guess', () => {
+  const hours = row('S-3', { ...(S3.data as Record<string, unknown>), capacityUnit: 'hours' });
+  const file = timeline([item('a', { start: '2026-02-03', storyPoints: '13', sprint: 'S-3' })], [hours]);
+  said(status({ sprint: 'S-3' }, file), 'Umfang 13 von 20 Stunden');
+  // The plugin config is the fallback, and an unknown unit is the documented default
+  // rather than a word nothing counts in.
+  const withConfig = (estimateUnit: unknown) =>
+    timeline([item('a', { start: '2026-02-03', storyPoints: '13', sprint: 'S-3' })], [S3], { estimateUnit });
+  // One item of 13 points, in a sprint counted in entries: the scope is 1.
+  said(status({ sprint: 'S-3' }, withConfig('items')), 'Umfang 1 von 20 Einträgen');
+  said(status({ sprint: 'S-3' }, withConfig('bananen')), 'Umfang 13 von 20 Punkten');
 });
 
-test('finished work counts in the sum and is never re-dated', () => {
-  // The reproduction is the shipped example at velocity 10: sprint 1 holds P-1 and A-1,
-  // both „Done", 13 points in total. `movable` was built from estimate, id and end
-  // alone — `status` was never read — so the rule rewrote the dates of work that was
-  // over, while `forecast_completion` had been excluding „Done" all along. The points
-  // stay in the sum, because that capacity really was consumed.
-  const config = { ...RASTER, velocity: 10 };
-  const timeline = file([
-    item('P-1', '2026-01-05', '8', { status: 'Done' }),
-    item('A-1', '2026-01-07', '5', { status: 'Done' }),
-  ]);
-  const plan = rebalance({ sprint: 1 }, timeline, config);
-  assert.deepEqual(plan.changes, []);
-  said(plan, 'Abgeschlossene Arbeit wird nicht verschoben („P-1", „A-1")');
-  said(plan, 'Sprint 1 bleibt überbucht (13 von 10 Punkten)');
-  assert.deepEqual(validateToolPlan(decl('rebalance_sprint'), timeline, plan), []);
+test('a sprint counted in items reports entries, never a sum of their points', () => {
+  // „Umfang 21 von 3 Einträgen (überbucht)": a story-point sum compared against a count
+  // of entries, and declared over budget by an arithmetic nobody performed.
+  const inItems = row('S-3', { ...(S3.data as Record<string, unknown>), capacity: 3, capacityUnit: 'items' });
+  const file = timeline(
+    [
+      item('a', { start: '2026-02-03', storyPoints: '8', sprint: 'S-3' }),
+      item('b', { start: '2026-02-04', storyPoints: '13', sprint: 'S-3' }),
+    ],
+    [inItems],
+  );
+  const result = status({ sprint: 'S-3' }, file);
+  said(result, 'Umfang 2 von 3 Einträgen (im Rahmen), davon offen 2 Einträge.');
+  didNotSay(result, '21');
+  didNotSay(result, 'überbucht');
+  // Nothing is missing from a count of entries, so no note claims the sum is incomplete.
+  // The absent estimate is still named, by the warning that is about the item.
+  const unsized = timeline([...file.items!, item('c', { start: '2026-02-05', sprint: 'S-3' })], [inItems]);
+  const withUnsized = status({ sprint: 'S-3' }, unsized);
+  said(withUnsized, 'Umfang 3 von 3 Einträgen (im Rahmen)');
+  said(withUnsized, 'ohne verwertbare Schätzung: „c"');
+  didNotSay(withUnsized, 'ist keine Kapazitätsaussage');
+  // …and the declension follows the number, or „1 Einträge" makes the answer read as
+  // machine output nobody checked.
+  const one = timeline([item('a', { start: '2026-02-03', sprint: 'S-3' })], [inItems]);
+  said(status({ sprint: 'S-3' }, one), 'Umfang 1 von 3 Einträgen (im Rahmen), davon offen 1 Eintrag.');
 });
 
-test('an open item moves while the finished one beside it stays', () => {
-  const config = { ...RASTER, velocity: 8 };
-  const timeline = file([
-    item('fertig', '2026-01-05', '8', { status: 'Done' }),
-    item('offen', '2026-01-07', '2'),
-  ]);
-  const plan = rebalance({ sprint: 1 }, timeline, config);
-  assert.deepEqual(plan.changes, [{ op: 'update', itemId: 'offen', patch: { start: '2026-01-21' } }]);
-  said(plan, '10 → 8 von 8 Punkten.');
-  said(plan, 'Abgeschlossene Arbeit wird nicht verschoben („fertig")');
+test('an item whose dates the window excludes is a warning on the status as well', () => {
+  // The same fact the writing verbs report about the items they touch, here for the
+  // timeline as stored. The rule is `sprintWarnings`, so the two cannot drift; only the
+  // wording lives in this file.
+  const file = timeline(
+    [
+      item('spät', { start: '2026-03-10', storyPoints: '5', sprint: 'S-3' }),
+      item('passend', { start: '2026-02-03', storyPoints: '5', sprint: 'S-3' }),
+    ],
+    SPRINTS,
+  );
+  const result = status({ sprint: 'S-3' }, file);
+  said(result, 'Die eigenen Daten widersprechen der Zuordnung zu „Sprint 3" (S-3) (2026-02-02 bis 2026-02-15): „spät"');
+  didNotSay(result, '„passend"');
+  // Reported, never resolved: an analysis verb that returned a date change would be a
+  // declaration that stopped being true.
+  assert.equal(result.changes, undefined);
+  assert.deepEqual(validateToolPlan(decl('sprint_status'), file, result), []);
 });
 
-test('an item another item depends on is not moved past its successor', () => {
-  // `metadata.dependsOn` is a core reserved key and the relation graph draws an edge for
-  // it, so moving a predecessor by a sprint length puts its successor's start before the
-  // predecessor's end and the graph draws the arrow backwards. The successors are
-  // deliberately not moved along: that is the same „one call rewrites the roadmap" trade
-  // the no-cascade rule already refuses.
-  const timeline = file([
-    item('BIG', '2026-02-10', '13', { end: '2026-02-15' }),
-    item('klein', '2026-02-03', '8'),
-    item('SUCC', '2026-02-16', '1', { metadata: { dependsOn: ['BIG'] } }),
-  ]);
-  const plan = rebalance({ sprint: 3 }, timeline);
-  // „klein" starts earlier, so the old order picked BIG first and moved it.
-  assert.deepEqual(plan.changes, [{ op: 'update', itemId: 'klein', patch: { start: '2026-02-17' } }]);
-  said(plan, '„BIG" wird nicht verschoben: „SUCC" hängt davon ab');
-  assert.deepEqual(validateToolPlan(decl('rebalance_sprint'), timeline, plan), []);
-
-  // A single id written as a bare string is the other shape `extractDependsOn`
-  // (src/buildItems.ts) accepts, so this rule has to read it too.
-  const bare = file([
-    item('BIG', '2026-02-10', '13', { end: '2026-02-15' }),
-    item('klein', '2026-02-03', '8'),
-    item('SUCC', '2026-02-16', '1', { metadata: { dependsOn: 'BIG' } }),
-  ]);
-  said(rebalance({ sprint: 3 }, bare), '„BIG" wird nicht verschoben');
+test('an assignment pointing at no sprint row is reported as such', () => {
+  // The interface shows the item without a sprint, which is indistinguishable from one
+  // nobody assigned. It counts in no sum either, so the answer has to name it.
+  const file = timeline([item('verwaist', { start: '2026-02-03', storyPoints: '5', sprint: 'S-77' })], SPRINTS);
+  const result = status({}, file);
+  said(result, 'Zugeordnet auf einen Sprint, den es nicht gibt: „verwaist" (verwaist)');
+  didNotSay(result, 'Ohne Sprint-Zuordnung');
 });
 
-test('a sprint whose immovable part alone exceeds the velocity is left untouched', () => {
-  // Reproduction: „MONOLITH" carries 30 points and fits in no sprint of this raster, so
-  // it cannot move; „klein" carries 2. The old rule moved „klein" and then reported the
-  // sprint still overcommitted at 30 of 20 — a date rewrite with no possible benefit,
-  // which is worse than a refusal because it looks like the tool worked.
-  const timeline = file([item('MONOLITH', '2026-02-02', '30'), item('klein', '2026-02-05', '2')]);
-  const plan = rebalance({ sprint: 3 }, timeline);
-  assert.deepEqual(plan.changes, []);
-  said(plan, 'Sprint 3 bleibt überbucht (32 von 20 Punkten): allein was nicht verschoben werden kann, trägt 30 Punkte');
-  said(plan, 'deshalb ändert dieser Aufruf nichts');
-  didNotSay(plan, 'verschoben (');
-  assert.deepEqual(validateToolPlan(decl('rebalance_sprint'), timeline, plan), []);
+test('the status reports what an earlier sprint handed over, out of the history rows', () => {
+  // `passes` was written at every close and read by nothing. What it answers is what no
+  // current figure can: part of this scope was already committed once.
+  const file: TimelineFile = {
+    items: [
+      item('Q-1', { start: '2026-01-28', storyPoints: '5', sprint: 'S-3' }),
+      item('A-1', { start: '2026-02-03', storyPoints: '8', sprint: 'S-3' }),
+    ],
+    plugins: [{ id: sprintsManifest.id }],
+    pluginData: {
+      [sprintsManifest.id]: {
+        sprints: SPRINTS,
+        passes: [
+          row('Q-1:S-2', { itemId: 'Q-1', sprintId: 'S-2', outcome: 'carried', recordedOn: '2026-02-01' }),
+          row('A-9:S-9', { itemId: 'A-9', sprintId: 'S-9', outcome: 'done', recordedOn: '2026-02-01' }),
+        ],
+      },
+    },
+  };
+  const result = status({ sprint: 'S-3' }, file);
+  said(result, 'Aus einem früheren Sprint mitgenommen: "Q-1" aus „Sprint 2" (S-2), festgehalten am 2026-02-01');
+  // The estimate at that close is the figure a later re-estimate cannot rewrite, and
+  // „damals ohne Schätzung" is why a report can say „carried: 0" about a carried item.
+  said(result, 'damals ohne Schätzung');
+  // The other half of giving those rows a reader: one pointing at a sprint that does not
+  // exist is a warning, and it belongs in every answer because it names no real sprint.
+  said(result, 'Der Verlaufseintrag "A-9:S-9" nennt den Sprint "S-9", den es nicht gibt');
+  assert.deepEqual(validateToolPlan(decl('sprint_status'), file, result), []);
 });
 
-test('an id that is only whitespace is named rather than written into a refused plan', () => {
-  // `if (!item.id)` let `"  "` through, and `validateToolPlan` then rejected the WHOLE
-  // plan over the blank `itemId` — so one whitespace id made a genuinely overcommitted
-  // sprint impossible to relieve at all.
-  const timeline = file([item('  ', '2026-02-11', '13'), item('echt', '2026-02-03', '13')]);
-  const plan = rebalance({ sprint: 3 }, timeline);
-  assert.deepEqual(validateToolPlan(decl('rebalance_sprint'), timeline, plan), []);
-  assert.deepEqual(plan.changes, [{ op: 'update', itemId: 'echt', patch: { start: '2026-02-17' } }]);
-  said(plan, 'hat keine Id und kann daher nicht verschoben werden');
+test('two sprints whose windows overlap are reported, with both names', () => {
+  // Nothing else can see it: the item below sits inside its own sprint's window, so
+  // „outside the window" stays silent, while „Sprint nach Datum" names the earlier row.
+  const wide = row('S-3', { ...(S3.data as Record<string, unknown>), end: '2026-02-20' });
+  const file = timeline([item('a', { start: '2026-02-17', storyPoints: '5', sprint: 'S-4' })], [wide, S4]);
+  const result = status({ sprint: 'S-4' }, file);
+  said(result, 'Die Fenster von „Sprint 3" (S-3) und „Sprint 4" (S-4) überschneiden sich (2026-02-16 bis 2026-02-20)');
+  didNotSay(result, 'widersprechen der Zuordnung');
 });
 
-test('a start that cannot be shifted back is named instead of silently skipped', () => {
-  // The move used to be attempted and abandoned inside the loop, so the item was neither
-  // moved nor named and the sum it left behind had no explanation.
-  const config = { start: '9999-12-29', lengthDays: 14, velocity: 20 };
-  const timeline = file([item('rand', '9999-12-30', '13'), item('klein', '9999-12-29', '13')]);
-  const plan = rebalance({ sprint: 1 }, timeline, config);
-  said(plan, '„rand" hat einen Start, der sich nicht verschieben lässt (9999-12-30)');
-  assert.deepEqual(validateToolPlan(decl('rebalance_sprint'), timeline, plan), []);
+test('a window the row does not carry is stated as computed wherever it is stated', () => {
+  // A computed end reads exactly like a written one, and it is usually quoted in the note
+  // telling a caller its items are in the wrong place. „Bis zum 2026-01-18" out of a
+  // cadence nobody looked at is a date the plugin invented.
+  const noDates = timeline(
+    [item('A-1', { start: '2026-02-03', storyPoints: '5', sprint: 'S-x' })],
+    [row('S-x', { name: 'Sprint X', state: 'active', goal: 'A' })],
+    { start: '2026-01-05', lengthDays: 14 },
+  );
+  const cadence = status({ sprint: 'S-x' }, noDates);
+  said(cadence, 'Die eigenen Daten widersprechen der Zuordnung zu „Sprint X" (S-x) (2026-01-05 bis 2026-01-18)');
+  said(cadence, 'Dieses Fenster (2026-01-05 bis 2026-01-18) steht nicht auf „Sprint X" (S-x)');
+  said(cadence, 'Raster der Konfiguration');
+
+  // Only a start: the start stands and the END is the computed half.
+  const halfDated = timeline(
+    [item('A-1', { start: '2026-05-04', storyPoints: '5', sprint: 'S-y' })],
+    [row('S-y', { name: 'Sprint Y', state: 'active', goal: 'A', start: '2026-05-01' })],
+    { start: '2026-01-05', lengthDays: 14 },
+  );
+  const half = status({ sprint: 'S-y' }, halfDated, '2026-05-04');
+  said(half, '11 Tage bis zum Ende am 2026-05-14');
+  said(half, 'Das Ende dieses Fensters (2026-05-14) steht nicht auf „Sprint Y" (S-y)');
+  // …and the item that agrees with the written start is not reported as contradicting it.
+  didNotSay(half, 'widersprechen der Zuordnung');
+
+  // A row that carries both dates says nothing of the sort.
+  didNotSay(status({ sprint: 'S-3' }, statusFile()), 'steht nicht auf');
 });
 
-test('the id tie-break is a total order, including ids a collator calls equal', () => {
-  // `localeCompare` returns 0 for „a" + U+00AD + „b" against „ab" (a soft hyphen is
-  // ignorable), so the third sort key stopped separating two items and the order fell
-  // back to however the source listed them: two runs, two different roadmaps.
-  assert.equal('a\u00ADb'.localeCompare('ab'), 0, 'the premise: a collator calls these two equal');
-  const config = { ...RASTER, velocity: 8 };
-  const oneWay = file([item('a\u00ADb', '2026-01-06', '5'), item('ab', '2026-01-06', '5')]);
-  const theOther = file([item('ab', '2026-01-06', '5'), item('a\u00ADb', '2026-01-06', '5')]);
-  assert.deepEqual(rebalance({ sprint: 1 }, oneWay, config).changes, [
-    { op: 'update', itemId: 'ab', patch: { start: '2026-01-20' } },
-  ]);
-  assert.deepEqual(rebalance({ sprint: 1 }, theOther, config).changes, rebalance({ sprint: 1 }, oneWay, config).changes);
-});
-
-// ---- forecast_completion ----------------------------------------------------
-
-const forecastTimeline = file([
-  item('erledigt', '2026-01-05', '13', { status: 'Done' }),
-  item('offen-1', '2026-02-02', '13', { group: 'plattform' }),
-  item('offen-2', '2026-02-09', '8', { status: 'Doing', group: 'app' }),
-  item('ohne-schätzung', '2026-02-16', undefined, { group: 'app' }),
-]);
-
-const forecast = (
-  args: Record<string, unknown>,
-  timeline = forecastTimeline,
-  config: Record<string, unknown> = RASTER,
-  now = NOW,
-) => forecastCompletion({ file: timeline, config, args, now });
-
-test('the forecast counts open points from the sprint today falls into', () => {
-  // 21 open points at velocity 20 is two sprints, and today is in sprint 3, so the
-  // scope is expected to finish in sprint 4.
-  const plan = forecast({});
-  said(plan, '21 offene Punkte bei velocity 20: 2 Sprints ab Sprint 3');
-  said(plan, 'Abschluss voraussichtlich in Sprint 4 (ab 2026-02-16).');
-  said(plan, 'keine Zusage');
-  said(plan, 'Ohne verwertbare Schätzung und daher nicht in der Rechnung: „ohne-schätzung"');
-  assert.equal(plan.changes, undefined);
-  assert.deepEqual(validateToolPlan(decl('forecast_completion'), forecastTimeline, plan), []);
-});
-
-test('the forecast narrows to one group when asked', () => {
-  const plan = forecast({ group: 'app' });
-  said(plan, '8 offene Punkte in Gruppe „app" bei velocity 20: 1 Sprint ab Sprint 3');
-  said(plan, 'Abschluss voraussichtlich in Sprint 3');
-  didNotSay(plan, '„offen-1"');
-});
-
-test('a now before the anchor counts from sprint 1, when that is where the work is', () => {
-  // The raster has nothing earlier than sprint 1, so a `now` before the anchor counts
-  // from it. What must not follow is counting from sprint 1 while the work is scheduled
-  // later — that is the test below.
-  const early = file([item('a', '2026-01-05', '13'), item('b', '2026-01-06', '8')]);
-  said(forecast({}, early, RASTER, '2025-11-30'), '2 Sprints ab Sprint 1');
-  said(forecast({}, early, RASTER, '2025-11-30'), 'Abschluss voraussichtlich in Sprint 2 (ab 2026-01-19).');
-  didNotSay(forecast({}, early, RASTER, '2025-11-30'), 'Gezählt wird ab');
-});
-
-test('the count starts where the open work is scheduled, not where today is', () => {
-  // Counting from „now" alone promised a completion before the plan even starts the
-  // work: 25 points scheduled in sprint 5 were reported as finishing in sprint 2 when
-  // asked in sprint 1.
-  const timeline = file([item('spaeter', '2026-03-02', '25')]);
-  const plan = forecast({}, timeline, RASTER, '2026-01-06');
-  said(plan, '2 Sprints ab Sprint 5');
-  said(plan, 'Abschluss voraussichtlich in Sprint 6 (ab 2026-03-16).');
-  said(plan, 'Gezählt wird ab Sprint 5, nicht ab dem heutigen Sprint 1');
-  didNotSay(plan, 'Abschluss voraussichtlich in Sprint 2');
-});
-
-test('a forecast the plan contradicts says so', () => {
-  // The reproduction is the shipped example's group „4-qualitaet" asked on 2026-02-10:
-  // „Abschluss voraussichtlich in Sprint 3 (ab 2026-02-02)", a first day eight days in
-  // the past, while half those points belong to an item not scheduled before sprint 7.
-  // This rule divides points by a throughput and reads no start dates, so where the plan
-  // disagrees it has to say so instead of leaving the reader to notice.
-  const timeline = file([item('Q-2', '2026-02-11', '8'), item('Q-3', '2026-03-30', '8')]);
-  const plan = forecast({}, timeline, RASTER, '2026-02-10');
-  said(plan, 'Abschluss voraussichtlich in Sprint 3');
-  said(plan, 'Der Plan widerspricht dieser Hochrechnung: offene Arbeit ist erst nach Sprint 3 terminiert („Q-3")');
-});
-
-test('an unusable now is said out loud instead of silently becoming sprint 1', () => {
-  // `sprintOfDay(raster, now) ?? 1` conflated „before the anchor" (a real day the raster
-  // does not cover) with „not a date at all": „", „heute" and „2026-13-40" all became
-  // sprint 1, and the answer read exactly as confident as any other.
-  for (const now of ['', '   ', 'heute', '2026-13-40']) {
-    said(forecast({}, forecastTimeline, RASTER, now), 'ist kein Datum, deshalb beginnt die Zählung bei Sprint 1');
-  }
-  // A real day before the anchor is the other case, and gets no such note.
-  didNotSay(forecast({}, forecastTimeline, RASTER, '2025-11-30'), 'ist kein Datum');
-});
-
-test('nothing open left is an answer, not an empty plan', () => {
-  const done = file([item('a', '2026-01-05', '8', { status: 'Done' }), item('b', '2026-02-02', '5', { status: 'Done' })]);
-  const plan = forecast({}, done);
-  said(plan, 'Kein offener Eintrag: es gibt nichts hochzurechnen.');
-  assert.equal(plan.changes, undefined);
-  said(forecast({ group: 'app' }, done), 'Kein offener Eintrag in Gruppe „app": es gibt nichts hochzurechnen.');
-});
-
-test('open items with no usable estimate give no forecast, and are named', () => {
-  const unestimated = file([item('a', '2026-02-02'), item('b', '2026-02-03', 'XL')]);
-  const plan = forecast({}, unestimated);
-  said(plan, 'ohne Punkte gibt es keine Prognose');
-  said(plan, 'Ohne verwertbare Schätzung und daher nicht in der Rechnung: „a", „b"');
-  didNotSay(plan, 'Abschluss voraussichtlich');
-});
-
-test('without a usable velocity the forecast says it cannot answer', () => {
-  for (const velocity of [undefined, 0, -3, 'viel']) {
-    const plan = forecast({}, forecastTimeline, { start: '2026-01-05', lengthDays: 14, velocity });
-    said(plan, 'lässt sich kein Abschluss-Sprint hochrechnen');
-    didNotSay(plan, 'Abschluss voraussichtlich');
-    assert.equal(plan.changes, undefined);
+test('a status answer is notes only, whatever it found', () => {
+  // An analysis tool that returns changes is a declaration that stopped being true, and
+  // the host refuses the whole plan over it.
+  const file = statusFile();
+  for (const args of [{}, { sprint: 'S-3' }, { sprint: 'S-4' }]) {
+    const result = status(args, file);
+    assert.equal(result.changes, undefined);
+    assert.deepEqual(validateToolPlan(decl('sprint_status'), file, result), []);
   }
 });
 
@@ -528,8 +832,15 @@ test('without a usable velocity the forecast says it cannot answer', () => {
 
 test('every declared tool has an implementation, and every implementation a declaration', () => {
   // The two live in different files and drift silently: a declared verb with no handler
-  // is one an agent can see and cannot call, and a handler nobody declared never
-  // becomes callable.
+  // is one an agent can see and cannot call, and a handler nobody declared never becomes
+  // callable. This is also the test that retires the fallback declarations above.
   const declared = (sprintsManifest.tools ?? []).map((t) => t.name).sort();
   assert.deepEqual(Object.keys(sprintsTools).sort(), declared);
+  assert.deepEqual(
+    declared,
+    FALLBACK.map((t) => t.name).sort(),
+  );
+  for (const t of sprintsManifest.tools ?? []) {
+    assert.equal(t.writes, FALLBACK.find((f) => f.name === t.name)?.writes, `writes of ${t.name}`);
+  }
 });

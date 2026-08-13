@@ -7,14 +7,31 @@ restated here: a copy is how one of them ends up fixed and the other does not.
 
 ## Invariants
 
-- **The sprint is computed, never stored.** `sprint` is a `derived: true` field
-  (`fields.ts`) filled by `sprintsDerive`, and it is deliberately absent from the
-  manifest's `metadataKeys`. Storing it would mean an item that moves keeps the sprint
-  it was in, and nothing in the interface would say so: a stale bucket is
-  indistinguishable from a chosen one. It is also why `metadataKeys` names only the two
-  chosen keys, since an uninstall has nothing else to purge.
-- **`raster.ts` is the only place that decides which sprint a date is in.** `fields.ts`
-  (the lanes a user sees) and `tools.ts` (the sums an agent gets) both import it. Two
+- **A sprint is a row, and membership is assigned.** `metadata.sprint` holds a
+  `sprints` row id and IS in `metadataKeys`, so an uninstall purges it. The first cut of
+  this plugin computed membership from the item's start date; that is wrong in the domain
+  (canon makes the Sprint Backlog a selection, and no product derives it), and the
+  correction is the plugin's shape. `docs/model.md` carries the sourcing.
+- **The cadence survives as a suggestion, in a second field.** `sprintByDate` is the
+  `derived: true` one and is deliberately absent from `metadataKeys`, because nothing
+  stores it. Two fields for one question is the point: „what did we commit this to" and
+  „where do its dates fall" are different questions, and the disagreement between them is
+  reported rather than resolved. Resolving it either way edits something a human decided.
+- **At most one `active` sprint.** Canon has a new Sprint begin as the previous one ends.
+  The host enforces no cross-row rule, so the plugin refuses the second activation itself
+  and `sprint_status` reports a violation it finds in existing data.
+- **A closed sprint's numbers and curve come from its frozen `reports` row.** Never a
+  recomputation: the items keep moving after a close, and a recomputed chart rewrites
+  history on every later edit.
+- **Calendar and duration arithmetic comes from the contract, not from here.** Host API
+  1.6 exports `durationToMs`, `endFromDuration`, `parseLocalDay`, `shiftDays` and
+  `isoDateOnly` through `pluginHost/api` precisely because this plugin restated them and
+  got one wrong: a `duration`-only item burned on the day it started. A rule the viewer
+  uses to place a bar has to be the rule a plugin uses to count it.
+- **`raster.ts` is the only place that decides which sprint a date is in, and
+  `sprints.ts` the only place that reads the rows.** `fields.ts` (the lanes a user sees),
+  `tools.ts` (the sums an agent gets), `burndown.ts` (the curve) and `index.ts` (the
+  page) all import them rather than restating a rule. Two
   copies of that arithmetic would let the capacity sum be taken over a different
   bucketing than the lanes, which is wrong in a way nobody can see, because each half
   looks right on its own.
@@ -41,56 +58,56 @@ restated here: a copy is how one of them ends up fixed and the other does not.
   unusable (0, negative, fractional, a word) yields no raster at all. Falling back to 14
   there would bucket every item against a cadence the user did not configure and cannot
   see.
-- **No velocity, no capacity answer.** Absent, zero, negative and unparseable are one
-  case in `readSprintConfig` (`velocity: null`), because the answer owed to the caller is
-  the same for all four and „velocity: 0" is not something a rule may divide by. The two
-  reading verbs say they cannot answer; `rebalance_sprint` throws, because it writes and
-  „what fits" is undefined without a yardstick. Zero and negative are refused one layer
-  earlier as well, by `configSchema` (`minimum: 0.01`), so an operator gets a rejected
-  `configure_plugin` call instead of a plugin that looks configured and is not.
+- **No capacity, no capacity verdict.** Absent, zero, negative and unparseable are one
+  case, because the answer owed to the caller is the same for all four and „capacity: 0"
+  is not something a rule may divide by. `sprint_status` reports the sums and says the
+  verdict is missing rather than inventing one. Zero and negative are refused a layer
+  earlier by the schema (`minimum: 0.01`), so a write is rejected instead of storing a
+  sprint that looks configured and is not.
 - **An item with no usable estimate is named, never counted as zero.** A sum that
   quietly omits three items reads as a capacity statement and is not one. „Usable" is
   literal: a `select` value is a **string**, and only a plain decimal counts
   (`/^[+-]?\d+(?:\.\d+)?$/`). So `"8"` and `"8.5"` count, while `""`, `"XL"`, `0`, a
   stray array, `"0x10"` and `"1e3"` do not. `Number()` would have read those last two as
   16 and 1000, which turns a typo into a capacity figure.
-- **`rebalance_sprint` relieves one sprint and stops.** If the receiving sprint is
-  overcommitted afterwards it says so. A cascade would rewrite the rest of the roadmap
-  out of a single call, and an agent that wants the next sprint relieved can ask again.
-- **Four kinds of item never move, and each is named rather than skipped.** An item
-  whose own estimate exceeds the velocity (it fits in no sprint, so each call would push
-  it one further down the roadmap and leave the receiving sprint over by the same item);
-  an item that is `Done` (finished work is not a capacity lever, and re-dating it
-  rewrites history — its points still count in the sum, which is why the verdict does
-  not change); an item another item depends on (moving it would start a successor before
-  its predecessor ends, which the relation graph then draws as a backward arrow); and one
-  whose id or dates cannot be written (a whitespace id, or an end that would have to
-  stretch). `forecast_completion` and `rebalance_sprint` read „done" through the same
-  helper, so the two verbs cannot disagree about what work is in a sprint.
-- **When the immovable part alone exceeds the velocity, nothing is written.** Not one
-  move, and the reason is said. A date rewrite that cannot relieve the sprint looks
-  exactly like a tool that worked.
-- **There is no view and no `load()`.** Grouping by „Sprints · Sprint" is the raster
-  rendering. A `load()` would be a dynamic import, which is a build chunk that renders
-  nothing. `PluginDescriptor.load` is optional for exactly this case: this plugin was
-  what made it so, and a descriptor here needs no cast.
+- **No verb writes a date.** Assigning work and moving work between sprints are
+  assignment changes, and every plan is asserted against that in the tests. The predecessor
+  rule that used to guard against a date shift is therefore retired: what remains is that
+  `roll_over` names the dependents it leaves behind rather than dragging them along.
+- **`roll_over` has no default target.** Canon returns unfinished work to the Product
+  Backlog, the common products default to the next sprint, and a default would pick a
+  philosophy for the caller. A call with neither target is refused, and so is one with
+  both, a target that is closed or cancelled, and a target equal to the source.
+- **Finished work is never moved and never re-dated**, and its points stay in the
+  sprint's sum: it consumed that capacity. `roll_over` and `sprint_status` read „done"
+  through one helper in `sprints.ts`, so the two cannot disagree about what is unfinished.
+- **A close is not atomic, and the interface admits it.** `passes` → `reports` → `state`,
+  in that order, so an interrupted close leaves a sprint that still says „aktiv" rather
+  than a closed one with no record. `keyFields` on both collections makes a retry safe.
+  The gap is the host's: a tool returns item changes, so no verb can close a sprint, and
+  `docs/model.md` names it rather than hiding it.
 
 ## Data
 
 - `metadata.storyPoints`: the estimate, a **string** from the `scale` options.
 - `metadata.estimateConfidence`: `hoch` / `mittel` / `niedrig`.
-- `metadata.sprint`: **the plugin never writes it, and no answer reads it.** The value
-  is computed per build and merged over the item's metadata by the host
-  (`src/pluginHost/derived.ts`), where the computed half wins. The generic write path is
-  not a gate, so a `PATCH`, an MCP `update_item` or a hand-edited file can still put a
-  value there; it then changes nothing and is a tidy-up rather than a wrong bucket. That
-  is also why the key is deliberately absent from `metadataKeys`: there is nothing the
-  plugin put on an item for an uninstall to purge.
-- The raster itself lives in the plugin's config bag (`start`, `lengthDays`, `velocity`,
-  `scale`), written by `configure_plugin` on a database timeline or by the `plugins`
-  entry in a local file. **It is never written as phases or as items:** that would store
-  the same raster twice, once as config and once as data, and the second copy is the one
-  that goes stale.
+- `metadata.sprint`: **the assignment**, a `sprints` row id. Stored, written by
+  `plan_sprint` and `roll_over` and by the item form, and declared in `metadataKeys` so an
+  uninstall purges it. An id rather than a name, so renaming a sprint orphans nothing.
+- `metadata.sprintByDate`: **nothing writes this key.** The suggestion is computed per
+  build and merged over the item's metadata by the host (`src/pluginHost/derived.ts`),
+  where the computed half wins. The generic write path is not a gate, so a `PATCH` or an
+  MCP write can still put a value there; it then changes nothing and is a tidy-up rather
+  than a wrong bucket. That is why the key is absent from `metadataKeys`: there is nothing
+  the plugin put on an item for an uninstall to purge.
+- The three collections (`sprints`, `passes`, `reports`) live in the host's generic row
+  store and are read only through `sprints.ts`. Their shapes are in `manifest.ts` and the
+  reasoning is in [`docs/model.md`](docs/model.md).
+- The cadence behind the suggestion lives in the plugin's config bag (`start`,
+  `lengthDays`, `scale`, `estimateUnit`), written by `configure_plugin` on a database
+  timeline or by the `plugins` entry in a local file. **It is never written as phases or
+  as items:** that would store the same windows twice, and the second copy is the one that
+  goes stale.
 
 ### What must not be renamed
 
@@ -104,8 +121,11 @@ restated here: a copy is how one of them ends up fixed and the other does not.
 - **The three tool names.** They are what an agent calls, in a namespace shared by every
   installed plugin; renaming one breaks every prompt and every saved instruction that
   used it, with no error to see.
-- **The plugin id `dev.zeitlines.sprints`.** It keys the `timeline_plugins` row that
-  carries the raster.
+- **The plugin id `dev.zeitlines.sprints`.** It keys the `timeline_plugins` row, the
+  plugin's own rows in the store, and the metadata it writes on items.
+- **The collection ids and their field names** (`sprints`, `passes`, `reports`). They are
+  the addresses of stored rows; renaming one orphans every row a timeline holds, and the
+  host has no migration for a plugin.
 - **The field label `Sprint`, together with the manifest `name`.** The core qualifies a
   plugin's field with the plugin name, so the interface shows the dimension as „Sprints ·
   Sprint" and the empty bucket as „Ohne Sprints · Sprint" (`dimensionLabel` in
@@ -116,11 +136,16 @@ restated here: a copy is how one of them ends up fixed and the other does not.
 
 | Rule | Where | Grounded in | Confidence |
 | --- | --- | --- | --- |
-| Sprint membership from the start date against anchor plus fixed length | `raster.ts` | mechanical; fixed-length sprints are the [2020 Scrum Guide](https://scrumguides.org/scrum-guide.html)'s own constraint | verified |
-| The capacity sum against `velocity` | `tools.ts` (`check_sprint_capacity`) | a sum against a number | verified |
-| An item spanning sprints counts in the one it starts in | `raster.ts` (`sprintOfItem`) | our decision, so one item sits in one lane and is counted once | plausible |
-| Velocity as the basis of a forecast, counted from the later of today's sprint and the earliest sprint holding open scheduled work | `tools.ts` (`forecast_completion`) | complementary practice, not in the Scrum Guide. The notes say so on every answer, no date is presented as a commitment, and open work scheduled past the computed finish is named | a convention, not a rule |
-| The overflow order: latest start, larger estimate, item id, applied to what may move at all | `tools.ts` (`rebalance_sprint`) | nothing. The core has no priority field, so „lowest priority first" cannot be written; this is a deterministic stand-in | guessed |
+| Membership is assigned, not derived | `sprints.ts` (`assignedSprintId`) | canon makes the Sprint Backlog a selection; six products checked, none derives it | verified |
+| A sprint's window is its own dates, else the cadence | `sprints.ts` (`sprintWindow`) | fixed-length sprints are canon; a row that carries dates is what every product stores | verified |
+| The capacity sum against the sprint's `capacity` | `tools.ts`, `burndown.ts` | a sum against a number | verified |
+| A closed sprint reads from its frozen report | `index.ts`, `burndown.ts` | the divergence it prevents is documented product behaviour | verified |
+| The ideal line is working-day aware and anchored at the scope | `burndown.ts` | two products compute the flattening that way; the anchor is what every guideline does | verified |
+| A closed sprint's figures are read in the unit its report froze | `sprints.ts` (`reportUnitOf`) | editing `capacityUnit` after a close would otherwise relabel a frozen curve | verified |
+| An item's burn day is its resolved end, duration included | `burndown.ts` (`itemEndDay`) | the core's own `endFromDuration`, exported for this in host API 1.6 | verified |
+| The active line is reconstructed from status and end date | `burndown.ts` | structurally what Taiga does, but from a planned date rather than a completion timestamp | plausible |
+| The assignment wins and the disagreement is reported | `sprints.ts` (`sprintWarnings`) | nothing. No product needed the rule, because none draws items on a date axis like this | guessed |
+| `cancelled` as a state of its own | `manifest.ts` | canon separates cancellation; no product models it separately | plausible |
 
 A rule nobody can trace to a source gets „improved" into a different wrong rule by the
 next reader, which is why the last row says „guessed" rather than describing itself as
@@ -129,26 +154,28 @@ sensible.
 ## Verification
 
 ```bash
-npm test                        # raster, fields, tools, manifest: 75 cases, no DOM
+npm test                        # raster, sprints, fields, tools, burndown, manifest: no DOM
+npm run build && bash scripts/ci/check-bundle-split.sh   # the view's chunk and CSS
+bash scripts/ci/check-design-system.sh                   # tokens and components in the view
 npm run typecheck
 node scripts/ci/check-plugin-isolation.mjs
 npm run schema:check            # validates data/example-sprint-planung.json
 npm run plugins:catalogue:check  # the catalogue entry, the README and preview.png
 ```
 
-**Regenerating `preview.png` needs the saved view, or the picture shows nothing of this
-plugin.** The grouping dimension is not in the hash on purpose (it is per-timeline
-display state), so a bare preview URL renders the example grouped by group: an ordinary
-timeline that says nothing about sprints. The example therefore ships the saved view
-`nach-sprints`, and the preview is taken through it:
+**`preview.png` is the view now.** `plugins:preview` puts the plugin's first declared
+view into the hash by itself, so the plain command renders a sprint's page:
 
 ```bash
-npm run dev                                                   # or a worktree server
-npm run plugins:preview -- sprints --param sv=nach-sprints
+npm run dev                                            # or a worktree server
+npm run plugins:preview -- sprints --size 1280x1000
 ```
 
-Leaving out `--param` produces a valid image of the wrong thing, and nothing in CI
-catches that: the check requires the file to exist, not to be the right picture.
+**The size is not optional here.** The default 1280x720 cuts the burndown off below the
+fold, and a cropped chart is exactly the „renders correctly and still looks like nothing"
+the catalogue image exists to catch. Which sprint it shows follows the view's own default
+(the active one). Nothing in CI catches a stale or wrong picture: the check requires the
+file to exist, not to be the right one.
 
 - `raster.test.ts` covers the boundaries: no start, a start before the anchor, an item
   spanning sprints, a day exactly on a boundary, a boundary across both clock changes, a
@@ -156,19 +183,25 @@ catches that: the check requires the file to exist, not to be the right picture.
   begins like a day, a shift out of the four-digit year range, „is this a date at all"
   as its own question, an empty and a malformed config, and a `lengthDays` of 0 or
   below.
-- `tools.test.ts` covers each verb at its boundary: no velocity and a velocity of 0, an
-  item with no usable estimate (missing, empty, a word, a hex or exponent string, an
-  array, zero), an empty sprint, and the four kinds of item that never move (oversized
-  estimate, `Done`, depended-on, an unwritable id or date) plus the refusal to write
-  anything when the immovable part alone exceeds the velocity. Also: items the raster
-  does not place at all, a forecast the plan contradicts, an unusable `now`, a float sum
-  whose verdict must not contradict the printed figures, a sum that is no longer a
-  representable number, a rejected sprint argument quoted so it cannot look valid, and
-  the tie-break as a total order. Every plan is asserted against `validateToolPlan`, so
-  a plan the host would refuse fails here rather than at call time.
-- By hand: `data/example-sprint-planung.json` is the example, and its saved view „Nach
-  Sprints" is the one click that groups it. Expect lanes for sprints 1, 2, 3, 4, 5 and 7
-  plus the „Ohne Sprints · Sprint" bucket
-  (sprint 6 holds nothing, so it has no lane), with sprint 3 overcommitted against a
-  velocity of 20. Dragging an item across a sprint boundary has to change its lane
-  without anything being saved to the item.
+- `sprints.test.ts` covers the rows: tolerant reading of malformed `pluginData`, a
+  duplicate row id, a pass pointing at no sprint, the window falling back to the cadence,
+  and every warning including „two active" and „nothing to warn about".
+- `tools.test.ts` covers each verb at its boundary: no sprint rows at all, a sprint id
+  that names no row, an item id that names no item, `roll_over` with neither target and
+  with both, a closed or cancelled target, source equal to target, finished work left
+  untouched, dependents named rather than moved, an item with no usable estimate (missing,
+  empty, a word, a hex or exponent string, an array, zero), `now` before, inside, after
+  and unparseable, and the assertion that no plan ever carries a date. Every plan goes
+  through `validateToolPlan`, so a plan the host would refuse fails here rather than at
+  call time.
+- `burndown.test.ts` covers the curve: a window containing a weekend, a one-day sprint,
+  scope zero, an item done before the start (clamped) and one after the end, a frozen
+  series with gaps and with days outside the window, and the working-day ideal line.
+- By hand, in the **Sprint** presentation of `data/example-sprint-planung.json`: switch
+  between „Sprint 1 (abgeschlossen)" and „Sprint 3 (aktiv)". The closed one draws its
+  frozen curve and says so; the active one draws a reconstruction, carries the „no
+  goal" warning where its goal would be, and names the item with no estimate. „Sprint
+  bearbeiten" edits goal, window, state, capacity and note; activating a second sprint
+  has to be refused by name. On the timeline, the two dimensions „Sprints · Sprint"
+  (the assignment) and „Sprints · Sprint nach Datum" (the suggestion) must disagree for
+  exactly the one item the example plants for it.

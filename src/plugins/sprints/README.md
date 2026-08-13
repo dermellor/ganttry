@@ -2,27 +2,39 @@
 
 ## What does it do?
 
-It gives a timeline a sprint raster, and the raster is a rule rather than data: which
-sprint an item falls into follows from that item's start date plus the cadence the
-timeline was configured with. Nothing is stored per item, so an item that moves
-changes sprint by itself. On top of that it can say whether a sprint is
-overcommitted, move what does not fit into the next one, and report the sprint a
-remaining scope is expected to finish in.
+It gives a timeline sprints as things of their own: a sprint has a **goal**, a window,
+a state and a capacity, and items are **assigned** to it. On top of that it draws a
+burndown, keeps the history of which sprints an item passed through, and hands an agent
+three verbs: assign work, roll unfinished work over to an explicit target, report a
+sprint with every warning its data produces.
+
+The cadence has not gone away, it has been demoted to what it is: a **suggestion**. A
+second, computed field says which sprint an item's dates fall into, so the timeline's
+own axis stays useful for planning while the assignment remains the commitment. Where
+the two disagree, the plugin says so and changes neither.
 
 ## Who is it for?
 
-A team that keeps a roadmap and a sprint cadence at the same time and has to answer
-"which sprint is this in" and "does this sprint still fit" from the same picture,
-without maintaining a sprint field on every item by hand.
+A team that runs sprints and keeps a roadmap on the same dates, and is tired of
+answering „which sprint is this in" twice: once in the tracker and once on the plan.
+
+The first cut of this plugin computed the sprint from an item's start date and stored
+nothing. That was wrong in the domain and is worth saying out loud, because the
+correction is the plugin's whole shape: the Scrum Guide makes the Sprint Backlog a
+*selection*, and of six products checked (Jira, Azure DevOps, Linear, GitHub Projects,
+YouTrack, OpenProject) not one derives membership from dates. The full reasoning, with
+sources, is in [`docs/model.md`](docs/model.md).
 
 ## Where can you see it?
 
 The committed example is [`data/example-sprint-planung.json`](../../../data/example-sprint-planung.json):
-sixteen items across four tracks, a fortnightly raster from 2026-01-05 and a velocity of
-20. It ships the saved view **„Nach Sprints"**, which is the one click that turns the
-plan into its raster.
+sixteen items across four tracks, five sprints (two closed with a frozen report, one
+active without a goal, two planned), and one item deliberately assigned to a sprint
+whose window its dates fall outside. Open the **Sprint** presentation for a sprint's own
+page; the saved views „Nach Sprints" and „Nach Datum" group the timeline by the
+assignment and by the suggestion.
 
-![The example timeline, grouped by the derived sprint](preview.png)
+![A sprint's page: goal, numbers and burndown](preview.png)
 
 ## How do you switch it on?
 
@@ -54,16 +66,22 @@ same operation under two names. In a local file it is an entry in `plugins`:
 
 | Key | Label | Type | Where the value comes from |
 | --- | --- | --- | --- |
-| `sprint` | Sprint | select, **derived** | computed from the item's start against the raster; read-only, never stored |
+| `sprint` | Sprint | select | **the assignment.** Chosen, stored, options are the sprint rows (values are their ids, so renaming a sprint orphans nothing) |
+| `sprintByDate` | Sprint nach Datum | select, **derived** | the suggestion: the sprint whose window contains the item's start. Read-only, never stored |
 | `storyPoints` | Story Points | select | chosen; options from `scale` |
 | `estimateConfidence` | Confidence | select (hoch, mittel, niedrig) | chosen |
 
-The sprint field's **options are the sprints the timeline's items actually occupy**,
-in chronological order. A sprint that holds nothing therefore offers no option and
-gets no lane — grouping by sprint shows the sprints in play rather than a run of
-empty ones out to the end of the raster.
+Two fields for one question, on purpose. „Which sprint did we commit this to" and
+„which sprint do its dates fall into" are different questions, and a plugin that
+answered only one of them would either lose the commitment or lose the plan. Both are
+grouping dimensions, so the disagreement is visible in one click rather than hidden in
+a rule.
 
-Three boundaries the rule has to hold, and each is a test:
+**The assignment wins wherever a number is computed**, and a disagreement is reported,
+never resolved: moving the item's dates would edit a plan somebody made, moving it out
+of the sprint would edit a commitment somebody made.
+
+Three boundaries the suggestion has to hold, and each is a test:
 
 - an item **without a start** has no sprint and lands in the empty bucket, which the
   interface names „Ohne Sprints · Sprint" (the core qualifies a plugin's dimension with
@@ -75,109 +93,148 @@ Three boundaries the rule has to hold, and each is a test:
   means a long item is absent from the sprints it runs through, which is the trade
   and is question 1 below.
 
+## What data does it keep?
+
+Three collections in the host's generic row store, so the plugin ships no migration:
+
+| Collection | What it holds |
+| --- | --- |
+| `sprints` | the sprint itself: name, **goal**, window, state (`planned`/`active`/`closed`/`cancelled`), `closedOn`, capacity and its unit, and one note for the review, the retro or the cancellation reason |
+| `passes` | which sprints an item passed through, and how it left each one (`done`, `carried`, `removed`, `cancelled`), with the estimate as it stood. Keyed on item and sprint, so closing twice updates rather than duplicates |
+| `reports` | the frozen result of a closed sprint: scope, completed, carried, and the burndown curve as it was |
+
+**At most one sprint is `active`.** The Scrum Guide has a new Sprint start immediately
+after the previous one concludes, so a second activation is refused by name rather than
+warned about.
+
+**Why the report is frozen rather than recomputed:** a closed sprint's chart has to stay
+what it was. Linear documents the alternative from experience, where the graph is a
+snapshot precisely because the issue list keeps moving afterwards and the two then
+diverge. Recomputing a past sprint means every later edit silently rewrites history.
+
+## What does the burndown show?
+
+The sprint's days on the x-axis, remaining work on the y-axis. The unit is the sprint's
+own, and a **closed** sprint reads the unit its report froze rather than the row's, so
+changing the row later cannot relabel a curve that was counted in something else.
+`items` counts entries instead of summing estimates.
+
+- **The ideal line starts at the full scope** on the sprint's first day and is
+  **working-day aware**, visibly flat across non-working days, the way Azure DevOps and
+  Linear draw it. Without the anchor the plan line opens below the actual one and day one
+  reads as a backlog; without the flattening a Monday looks like a slip.
+- **For the active sprint the actual line is a reconstruction**, and the chart says so.
+  An item burns on its **resolved** end, so an item dated by `duration` counts on the day
+  it ends rather than the day it started. This repo keeps no revision history for items,
+  so nothing records when something became done: moving an item's end date changes
+  yesterday's curve. Taiga computes its chart the same way, from completion dates.
+- **For a closed sprint the frozen curve is drawn** and never recomputed. A day the
+  frozen record does not cover is named rather than interpolated.
+- **No velocity figure and no „committed versus completed" pair.** The plugin does use
+  the last closed sprints to *suggest* a capacity when a sprint has none, which is what
+  Linear's capacity dial does. It does not show the number as a measurement, and
+  [`docs/model.md`](docs/model.md) carries the sourced reasoning: the framework moved
+  away from „commitment" for a Sprint's scope in 2011, the person most associated with
+  story points warns against using them to predict and against comparing teams by
+  velocity, and the general objection is that output cannot be measured.
+
 ## What can your agent do with it?
 
 | Tool | Writes | The rule it applies |
 | --- | --- | --- |
-| `check_sprint_capacity` | nothing | the sum of story points per sprint against `velocity`. It also names what it could not count: the items with no usable estimate, and the ones the raster does not place at all (no start, or a start before the anchor) with their points and ids. A sum that quietly omits either is not a capacity statement |
-| `rebalance_sprint` | items | moves items out of one overcommitted sprint until the sum fits: latest start first, tie-break larger estimate, then item id. A move shifts the start by one sprint length and keeps the duration |
-| `forecast_completion` | nothing | open story points against `velocity` → the sprint the scope is expected to finish in, counted from the later of today's sprint and the earliest sprint that still holds open scheduled work. Optionally narrowed to one group |
+| `plan_sprint` | items | assigns the named items to a sprint. It writes **no date**: an item whose own dates fall outside the sprint's window is named, and neither the dates nor the assignment is touched |
+| `roll_over` | items | moves the unfinished work of one sprint to an explicit target: another sprint, or the Product Backlog (clearing the assignment). Finished work keeps the sprint it was finished in |
+| `sprint_status` | nothing | scope and remaining work against the capacity, days left against today, every warning the rows produce, and the scope no sprint accounts for |
 
-**Four kinds of item never move**, and each is named in the answer rather than quietly
-skipped: work that is already `Done` (finished work is not a capacity lever, though its
-points still count in the sum), an item another item depends on (moving it would put a
-successor before its predecessor and draw a backward arrow in the relation graph), an
-item whose own estimate exceeds the whole velocity, and one whose id or dates cannot be
-written. When what cannot move already exceeds the velocity on its own, the call
-changes **nothing** and says why: a date rewrite with no possible benefit is worse than
-a refusal, because it looks like the tool worked.
+**`roll_over` has no default target, and that is the point.** The Scrum Guide returns
+unfinished work to the Product Backlog; the common products default to the next sprint. A
+default would pick a philosophy for the caller, so a call without a target is refused,
+and so is one with both.
 
-`rebalance_sprint` relieves **one** sprint and stops. If the receiving sprint is
-overcommitted afterwards it says so instead of cascading: a cascade rewrites the rest
-of the roadmap from a single call, and an agent that wants that can ask again for the
-next sprint.
-
-`forecast_completion` says two things a bare division cannot. When the plan itself
-contradicts the extrapolation, because open work is scheduled after the computed finish
-sprint, it names that work. And when the date it was handed is not a date, it says the
-count started at sprint 1 for that reason rather than presenting the number as if the
-clock had been read.
-
-There is no `plan_sprints`. A tool returns item changes and notes, not configuration
-([`docs/plugin-authoring.md`](../../../docs/plugin-authoring.md)), and the raster is
-configuration — `configure_plugin` already writes it.
+**No verb closes a sprint.** A tool returns item changes and notes, so it cannot flip a
+sprint's state, write its `passes` rows and freeze its report in one operation. Closing
+is therefore an action in the view, and it is not atomic: if a write fails partway, the
+interface says what was written and what was not, and the sprint stays `active` rather
+than becoming a closed sprint with no record. That gap is the host's, and
+[`docs/model.md`](docs/model.md) names it rather than hiding it.
 
 ## How well is this domain modelled?
 
 | Part | Standing |
 | --- | --- |
-| The raster and sprint membership | **verified** — mechanical: the start date against anchor plus length |
+| Timebox plus state as the core of a sprint | **verified** — canon plus four independent product schemas agree |
+| Membership as an assignment rather than a date consequence | **verified** — six products checked, not one derives it; canon makes the Sprint Backlog a selection |
+| The Sprint Goal nullable in storage, warned about while active | **verified** as to both halves (canon requires it, no product enforces it); the warning is our decision |
+| `closedOn` separate from `end` | **verified** — a sprint can be closed early, and one date cannot answer both questions |
+| The frozen report | **verified** as to necessity — the divergence it prevents is documented behaviour elsewhere |
 | The capacity arithmetic | **verified** — a sum against a number |
-| Velocity as a basis for forecasting | **a convention, not a rule.** Velocity and story points are not in the Scrum Guide; they are complementary practice. A date computed from an average velocity is an extrapolation, and this page will not present one as a commitment |
-| The overflow order | **guessed.** The core has no priority field, so the rule cannot be „lowest priority first", which is what a team would expect. „Latest start first" is defensible and deterministic, and it is a stand-in. It orders only what may move at all: the four exclusions above come first |
+| The active burndown as a reconstruction | **plausible.** Structurally what Taiga does, but from a planned end date rather than a real completion timestamp, which is a weaker signal |
+| `cancelled` as a state of its own | **plausible** — canon separates cancellation clearly; no product I checked models it separately |
+| „Assignment wins, disagreement surfaced" | **guessed.** No product needed the rule, because none draws items on a date axis the way this one does |
+| One note field for review, retro and cancellation | **guessed** — nothing computes on it, so it is a decision about tidiness |
 
-Fixed-length sprints are the Scrum Guide's own constraint ([2020 Scrum
-Guide](https://scrumguides.org/scrum-guide.html): sprints are fixed-length events of
-one month or less), which is why the raster has one length and no exceptions. A team
-with a varying cadence is described wrongly by it, and the plugin says so rather than
-smoothing it over.
+Fixed-length sprints are canon ([2020 Scrum
+Guide](https://scrumguides.org/scrum-guide.html)), which is why the cadence has one
+length and no exceptions. A team with a varying cadence is described wrongly by it, and
+the plugin says so rather than smoothing it over. Canon also names burndowns and refuses
+to require them, so the chart is an aid and never a measurement of a team.
 
 ## Improve this plugin
 
-Five questions decide how good this is, and none of them can be answered from the
-code:
+Six questions decide how good this is, and none can be answered from the code:
 
-1. Should an item spanning two sprints count in both, or does it belong to the sprint
-   it starts in?
-2. What should leave an overcommitted sprint first, when there is no priority?
-3. Is an average over *n* sprints the usable velocity, or the minimum of the last
-   three?
-4. Should a sprint holding nothing appear as an empty lane?
-5. Are sprint names worth it („Sprint 14" against „Herbst-Härtung"), or is numbering
-   enough?
+1. Is „back to the Product Backlog" or „into the next sprint" the roll-over a team
+   actually wants, given that canon says one and the tools default to the other?
+2. Should a sprint be startable without a goal at all, when canon says no and no product
+   enforces it?
+3. Is `cancelled` worth its own state, or is it a closed sprint with a reason?
+4. Should an item spanning two sprints be listed in every sprint it touches, rather than
+   only in the one it is assigned to?
+5. Is a missing estimate ever allowed to count as zero, or as a team average, the way
+   some tools fall back?
+6. What should happen at a sprint boundary, given that nothing fires there today: does a
+   sprint whose window has passed deserve a stronger statement than a warning?
 
-Corrections from anyone who runs sprints for a living are the contribution this
-plugin most needs. See [`CONTRIBUTING.md`](../../../CONTRIBUTING.md).
+Corrections from anyone who runs sprints for a living are the contribution this plugin
+most needs. See [`CONTRIBUTING.md`](../../../CONTRIBUTING.md).
 
 ## How does it compare?
 
-Category: sprint planning on a self-hosted roadmap. The terminology it deliberately
-adopts rather than inventing:
+Category: sprint planning on a self-hosted roadmap. The terminology it adopts rather
+than inventing:
 
 | Our word | The common word | Used where |
 | --- | --- | --- |
 | Schätzung, Aufwand | **Story Points** | field label, this page |
-| Raster, Kadenz | **Sprintlänge** | config, this page |
-| Durchsatz | **Velocity** | config, this page |
+| Kadenz | **Sprintlänge** | config, this page |
+| Durchsatz | **Velocity** | config, this page, and only as a capacity suggestion |
 
-Core vocabulary stays as it is: a sprint is **not** a group and **not** a phase, it is
-the value of a derived field. Which is also why this plugin writes no phases for the
-raster — that would store the same raster twice, once as config and once as data, and
-the second copy is the one that goes stale.
+Core vocabulary stays as it is: a sprint is **not** a group and **not** a phase. It is a
+row of this plugin's own, and items point at it. Which is also why the plugin writes no
+phases for the cadence: that would store the same windows twice, and the second copy is
+the one that goes stale.
 
 ## What it deliberately does not do
 
-- **Capacity per person, and absence conflicts.** A separate plugin's job. A sprint
-  plugin asking it for an answer would need a plugin-to-plugin call the contract does
-  not have; if this plugin wants one, that is a finding rather than a reason to
-  duplicate the rule here.
-- **Variable sprint lengths.** One anchor, one length. See the confidence section.
-- **A view of its own.** Grouping by „Sprints · Sprint" gives the raster rendering,
-  and a burndown chart is a second product rather than a second view.
-- **Sprint names, and a commitment record.** Numbering is the model; what a team
-  committed to in Sprint Planning is not in Zeitlines, so this plugin knows the
-  planning clock only.
+- **Capacity per person, and absence conflicts.** One number per sprint, not person
+  times day minus days off, so it cannot answer „who is over-committed". A separate
+  plugin's job, and asking it would need a plugin-to-plugin call the contract does not
+  have.
+- **Variable sprint lengths in the cadence.** A sprint row may carry its own window, but
+  the suggestion behind it has one length.
+- **Anything at a sprint boundary.** There is no scheduler and no lifecycle hook, so a
+  sprint that ended stays active until a person or an agent says otherwise.
+- **A Definition of Done of its own.** The core's item status is the mapping, and canon
+  puts the Definition of Done on the product rather than on a sprint.
+- **Cross-timeline sprints.** Plugin rows belong to one timeline.
 
 ## Catalogue entry
 
-What the manifest will carry, so the generated catalogue and this page cannot
-disagree:
+What the manifest carries, so the generated catalogue and this page cannot disagree:
 
 - **Name:** Sprints
-- **Summary:** A sprint raster that follows from the dates: which sprint an item is in
-  is computed, not stored, with capacity checks and a forecast on top.
-- **Domain:** `delivery-planning` (a slug: the manifest validator refuses a space, and
-  an invalid manifest is refused at load rather than at install)
-- **Keywords:** sprint, sprint planning, story points, velocity, capacity, forecast,
-  scrum, self-hosted roadmap
+- **Summary:** Sprints as rows with a goal, a capacity and a frozen result: membership is assigned per item, and the date raster stays a suggestion beside it.
+- **Domain:** `delivery-planning` (a slug: the validator refuses a space, and an invalid
+  manifest is refused at load rather than at install)
+- **Keywords:** sprint, sprint planning, sprint goal, story points, velocity, capacity, forecast, scrum, self-hosted roadmap
 - **Example:** `src:example-sprint-planung`
