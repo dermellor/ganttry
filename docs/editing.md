@@ -872,11 +872,25 @@ arrows, and an item with no date yet lived in the list and nowhere else.
   They come from `computeSections`, the function the list sections with, which is
   what keeps the column order from drifting away from the list's sections. A
   multi-valued dimension lists one item under every value it carries; here the
-  first bucket wins, because two boxes for one item would draw its edges twice.
+  first bucket wins, because two boxes for one item would draw its edges twice. The
+  one exception is a single bucket, which hands the horizontal axis to the chain
+  layout below.
 - **Vertically**, connected nodes form a band ordered by barycenter relaxation, so
   a chain lands on one row. Everything with no edge at all goes into a separate,
   dashed band at the end: on a timeline where three items depend on each other and
   forty do not, mixing them in loses the three.
+- **A single column switches to the chain layout.** With one bucket the horizontal
+  axis carries no grouping information — every node would sit in column 0 — so it is
+  free to mean something else. Each connected band is then drawn as its **longest
+  directed path stacked vertically** (a spine, arrows pointing down), with the nodes
+  that feed into a spine node hung off to its **left** and arrowing in; feeders of
+  feeders step one column further out, and separate components stay separate blocks.
+  This is what makes a „leads-to" chain (a manuscript's reveal plan is the case it
+  was built for) read as a through-line instead of a diagonal tangle. It is derived
+  purely from the edge topology — no tag, no config, no plugin — and only ever
+  engages with one column, so every grouped, multi-column graph is untouched. The
+  spine geometry lives in `chainPlan`/`spineUnits`
+  ([`src/graphLayout.ts`](../src/graphLayout.ts)).
 
 **Bands can be named, and nodes can carry references.** Both are declared per
 timeline (`graph` in [`src/types.ts`](../src/types.ts)), and both name a *group*,

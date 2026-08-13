@@ -9,6 +9,16 @@
 // (listGrouping.ts), the same function the list view sections with, so the two
 // presentations cannot end up disagreeing about what the values of a dimension
 // are or which order they come in.
+//
+// The chain layout is the one exception, and it is gated to a single column
+// (`columns.length === 1`). The x-axis normally *is* the grouping dimension, and a
+// spine needs the x-axis to mean „on the spine versus feeding in from the side"
+// instead — the two readings cannot both hold, so the spine may only repurpose x
+// when the grouping axis carries nothing: one bucket, every node in column 0.
+// There it stacks each connected component's longest directed path as a vertical
+// spine (arrows down) and hangs the nodes that feed into it off to the left. With
+// two or more buckets the old column-and-barycenter path runs unchanged, so no
+// grouped graph view moves. See `chainPlan` and `spineUnits`.
 
 /** What an edge means. The graph draws the two differently, so it has to know. */
 export type EdgeKind = 'depends' | 'parent';
@@ -87,7 +97,17 @@ export type PlacedBand = {
   nodeIds: string[];
 };
 
-export type PlacedEdge = { from: string; to: string; kind: EdgeKind };
+export type PlacedEdge = {
+  from: string;
+  to: string;
+  kind: EdgeKind;
+  /**
+   * A step down the spine of a chain band: the two ends sit in the same column,
+   * directly above each other, so the edge is drawn as a straight vertical
+   * connector rather than the side bulge a same-column edge gets everywhere else.
+   */
+  vertical?: boolean;
+};
 
 export type GraphLayout = {
   columns: { id: string; label: string; x: number }[];
@@ -196,6 +216,12 @@ export function nodeHeight(node: { lines?: number; meta?: boolean; reference?: b
  * the right, so it bulges out and comes back. Mirroring it would loop it around the
  * entire column instead.
  *
+ * A spine step is the fourth case, asked for with `vertical`: the two ends share a
+ * column and sit one directly above the other, so the line runs straight down the
+ * middle from the source's bottom to the target's top. The bulge would be wrong
+ * here — a chain drawn as a stack of little side-loops reads as anything but a
+ * chain, which is the whole point of the spine.
+ *
  * Control points are clamped into the canvas. Unclamped, an edge near either border
  * pulls its control point outside and the curve that explains the arrowhead is cut
  * off — which reads as a rendering fault rather than as an edge pointing backwards.
@@ -204,6 +230,7 @@ export function edgePath(
   from: { x: number; y: number; height: number; width?: number },
   to: { x: number; y: number; height: number; width?: number },
   width: number,
+  vertical = false,
 ): string {
   // Each node's own width, because an indented one is narrower: using the column
   // constant attaches the line a few pixels past the box it leaves.
@@ -215,6 +242,18 @@ export function edgePath(
   const ty = to.y + to.height / 2;
   const edge = 4;
   const clamp = (x: number) => Math.min(width - edge, Math.max(edge, x));
+
+  if (vertical) {
+    // Bottom-centre of the source down to the top-centre of the target. The two
+    // share a column, so the x values are equal and the line is vertical; the
+    // slight bezier keeps the join smooth where the boxes are close.
+    const cx = from.x + fromW / 2;
+    const tcx = to.x + toW / 2;
+    const sBottom = from.y + from.height;
+    const tTop = to.y;
+    const lift = Math.max(MIN_PULL, (tTop - sBottom) / 2);
+    return `M ${cx} ${sBottom} C ${cx} ${sBottom + lift}, ${tcx} ${tTop - lift}, ${tcx} ${tTop}`;
+  }
 
   if (to.x === from.x) {
     const x = Math.max(from.x + fromW, to.x + toW);
@@ -267,6 +306,29 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     });
   }
 
+  // The chain layout, and only in a single column: the x-axis is otherwise the
+  // grouping dimension, and a spine needs it to mean something else (see the top
+  // of the file). One bucket makes that axis free. Each connected band is then a
+  // spine plus its feeders; the loose band still just stacks.
+  const chain = input.columns.length === 1;
+  const plans: (ChainPlan | undefined)[] = [];
+  const steps = new Set<string>();
+  // Only for the canvas width: the widest band decides how far left the feeders
+  // reach. Each band still anchors its own spine (see `spineUnits`).
+  let maxDepth = 0;
+  if (chain) {
+    for (const band of bands) {
+      if (band.loose) {
+        plans.push(undefined);
+        continue;
+      }
+      const plan = chainPlan(band.nodeIds, edges);
+      plans.push(plan);
+      for (const d of plan.depthOf.values()) maxDepth = Math.max(maxDepth, d);
+      for (const step of plan.steps) steps.add(step);
+    }
+  }
+
   const placed: PlacedNode[] = [];
   const placedBands: PlacedBand[] = [];
   /** Relations expressed by nesting, so they are not drawn as lines as well. */
@@ -277,21 +339,28 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     const titleRoom = band.title ? BAND_TITLE_H : 0;
     const baseY = top + BAND_PAD + titleRoom;
 
-    // The loose band has no relations by definition, so nothing to relax against
-    // and no same-column tree to build: its nodes just stack.
+    // Three regimes: the loose band stacks (no relations to relax against); a
+    // connected band in a single column becomes a spine; anything else is the
+    // column-and-barycenter layout the grouped views have always used.
     const cols = band.loose
       ? stackedUnits(band.nodeIds, columnOf, heightOf, input.columns.length, baseY)
-      : buildUnits(band.nodeIds, columnOf, heightOf, linesOf, edges, input.columns.length, nested);
+      : chain
+        ? spineUnits(band.nodeIds, plans[index]!, heightOf, baseY)
+        : buildUnits(band.nodeIds, columnOf, heightOf, linesOf, edges, input.columns.length, nested);
 
     const flat = cols.flat();
-    if (!band.loose) {
+    if (!band.loose && !chain) {
       const unitOf = new Map<string, Unit>();
       for (const unit of flat) for (const member of unit.members) unitOf.set(member.id, unit);
       relaxBand(cols, baseY, edges, unitOf);
       collapseClusterGaps(flat);
-      // Every pass can only push down, and the collapse only pulls up by whole
-      // clusters, so the band may have drifted off its own top edge in either
-      // direction. Its position is the caller's business, not the relaxation's.
+    }
+    if (!band.loose) {
+      // Both regimes can leave the band off its own top edge: the barycenter passes
+      // only push down while the collapse pulls up by whole clusters, and a chain's
+      // feeder can be taller than the spine node it hangs beside. Lift it back —
+      // where the band sits is the caller's business, not the placement's. (The
+      // loose band was stacked straight from `baseY`, so it never drifts.)
       const highest = Math.min(...flat.map((u) => u.y));
       if (Number.isFinite(highest) && highest !== baseY) {
         for (const unit of flat) unit.y -= highest - baseY;
@@ -332,12 +401,18 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   }
 
   const columns = input.columns.map((c, i) => ({ ...c, x: MARGIN + i * COL_PITCH }));
+  // In a chain the feeders extend the picture to the left of the single column, so
+  // the width is the spine's column plus one per feeder level; everywhere else it
+  // is just the declared columns.
+  const usedColumns = chain ? maxDepth + 1 : columns.length;
   return {
     columns,
     nodes: placed,
     bands: placedBands,
-    edges: edges.filter((e) => !nested.has(`${e.from}␟${e.to}`) && !nested.has(`${e.to}␟${e.from}`)),
-    width: columns.length ? MARGIN + columns.length * COL_PITCH - COL_GAP + MARGIN : 0,
+    edges: edges
+      .filter((e) => !nested.has(`${e.from}␟${e.to}`) && !nested.has(`${e.to}␟${e.from}`))
+      .map((e) => (steps.has(`${e.from}␟${e.to}`) ? { ...e, vertical: true } : e)),
+    width: usedColumns ? MARGIN + usedColumns * COL_PITCH - COL_GAP + MARGIN : 0,
     // No band means no content; the empty state is the view's business, but a
     // height of `top` would still reserve the header strip for headers that have
     // nothing under them.
@@ -368,6 +443,167 @@ function usableEdges(
     out.push({ from: edge.from, to: edge.to, kind: edge.kind });
   }
   return out;
+}
+
+/**
+ * The plan for laying one connected band out as a chain: its spine, and where
+ * every other node sits relative to it.
+ *
+ * The spine is the band's **longest directed path**, ordered from the edge source
+ * downward, so the arrows read top-to-bottom. Everything else is measured by its
+ * undirected distance to the spine — one hop for a node that feeds a spine node
+ * directly, two for a node that feeds *that* one, and so on — and hangs off the
+ * side at that depth, level with the node it reaches through.
+ */
+type ChainPlan = {
+  /** The longest directed path, source at the top down to the final dependent. */
+  spine: string[];
+  /** 0 for a spine node, then the number of hops to the spine for the rest. */
+  depthOf: Map<string, number>;
+  /** For a non-spine node, the neighbour one hop nearer the spine it hangs from. */
+  anchorOf: Map<string, string>;
+  /** Consecutive spine pairs `${a}␟${b}`, the edges drawn as vertical connectors. */
+  steps: Set<string>;
+};
+
+function chainPlan(nodeIds: string[], edges: PlacedEdge[]): ChainPlan {
+  const inBand = new Set(nodeIds);
+  const adj = new Map<string, string[]>(); // directed, from → to
+  const near = new Map<string, string[]>(); // undirected
+  const push = (m: Map<string, string[]>, a: string, b: string) =>
+    (m.get(a) ?? m.set(a, []).get(a)!).push(b);
+  for (const e of edges) {
+    if (!inBand.has(e.from) || !inBand.has(e.to)) continue;
+    push(adj, e.from, e.to);
+    push(near, e.from, e.to);
+    push(near, e.to, e.from);
+  }
+
+  // Longest directed path, memoised, and cycle-safe: a node already on the walk's
+  // own stack is treated as a dead end, so a malformed cycle (a `dependsOn` can
+  // express one) truncates the path instead of recursing forever.
+  const memo = new Map<string, { len: number; next?: string }>();
+  const onStack = new Set<string>();
+  const walk = (u: string): { len: number; next?: string } => {
+    const cached = memo.get(u);
+    if (cached) return cached;
+    if (onStack.has(u)) return { len: 0 };
+    onStack.add(u);
+    let best: { len: number; next?: string } = { len: 0 };
+    for (const v of adj.get(u) ?? []) {
+      const r = walk(v);
+      if (r.len + 1 > best.len) best = { len: r.len + 1, next: v };
+    }
+    onStack.delete(u);
+    memo.set(u, best);
+    return best;
+  };
+  // Start from the node that reaches furthest. Ties fall to the earlier node in
+  // section order, which is what keeps the spine stable across unrelated edits.
+  let start = nodeIds[0];
+  let bestLen = -1;
+  for (const id of nodeIds) {
+    const len = walk(id).len;
+    if (len > bestLen) {
+      bestLen = len;
+      start = id;
+    }
+  }
+  const spine: string[] = [];
+  const spineSet = new Set<string>();
+  for (let cur: string | undefined = start; cur && !spineSet.has(cur); cur = memo.get(cur)?.next) {
+    spine.push(cur);
+    spineSet.add(cur);
+  }
+
+  const steps = new Set<string>();
+  for (let i = 0; i + 1 < spine.length; i++) steps.add(`${spine[i]}␟${spine[i + 1]}`);
+
+  // Everything off the spine, by undirected distance, breadth-first from the whole
+  // spine at once so a node two spine nodes could hang from goes to the nearer one.
+  const depthOf = new Map<string, number>(spine.map((id) => [id, 0]));
+  const anchorOf = new Map<string, string>();
+  let frontier = [...spine];
+  while (frontier.length) {
+    const next: string[] = [];
+    for (const cur of frontier) {
+      for (const nb of near.get(cur) ?? []) {
+        if (depthOf.has(nb)) continue;
+        depthOf.set(nb, depthOf.get(cur)! + 1);
+        anchorOf.set(nb, cur);
+        next.push(nb);
+      }
+    }
+    frontier = next;
+  }
+  // A node no edge reaches (only possible if the band and the drawn edge set
+  // disagree) still gets a column, so it is placed beside the spine rather than
+  // dropped from the picture.
+  for (const id of nodeIds) if (!depthOf.has(id)) depthOf.set(id, 1);
+
+  return { spine, depthOf, anchorOf, steps };
+}
+
+/**
+ * The units of one chain band: its spine in the band's own rightmost column,
+ * feeders to the left, each level anchored to the vertical middle of the node it
+ * hangs from.
+ *
+ * The depth is the band's *own* deepest feeder, not the graph's — so every band is
+ * anchored at the left margin and its spine sits just right of the feeders it
+ * actually has. Aligning all the spines to one global column instead left a band
+ * with no feeders stranded at the far right with an empty half-canvas beside it,
+ * and separate components are separate blocks anyway (see the author's sketch).
+ */
+function spineUnits(
+  nodeIds: string[],
+  plan: ChainPlan,
+  heightOf: Map<string, number>,
+  baseY: number,
+): Unit[][] {
+  const maxLocal = Math.max(0, ...plan.depthOf.values());
+  const cols: Unit[][] = Array.from({ length: maxLocal + 1 }, () => []);
+  const yOf = new Map<string, number>();
+  const centre = (id: string) => yOf.get(id)! + heightOf.get(id)! / 2;
+
+  // The spine, stacked straight down from the band's top.
+  let cursor = baseY;
+  for (const id of plan.spine) {
+    yOf.set(id, cursor);
+    cursor += heightOf.get(id)! + ROW_GAP;
+  }
+
+  // Then each feeder level in turn — a level can only be placed once the one it
+  // hangs from has a y, so depth 1 (anchored to the spine) comes before depth 2.
+  for (let d = 1; d <= maxLocal; d++) {
+    const wanted = nodeIds
+      .filter((id) => plan.depthOf.get(id) === d)
+      .map((id) => {
+        const anchor = plan.anchorOf.get(id);
+        return { id, want: anchor ? centre(anchor) : baseY, height: heightOf.get(id)! };
+      });
+    // Order by where each wants to be, then lay the column out in that order so a
+    // feeder sits beside its anchor unless a neighbour already needs that row.
+    wanted.sort((a, b) => a.want - b.want);
+    let cur = -Infinity;
+    for (const u of wanted) {
+      const top = cur === -Infinity ? u.want - u.height / 2 : Math.max(cur, u.want - u.height / 2);
+      yOf.set(u.id, top);
+      cur = top + u.height + ROW_GAP;
+    }
+  }
+
+  for (const id of nodeIds) {
+    const column = maxLocal - plan.depthOf.get(id)!;
+    const height = heightOf.get(id)!;
+    cols[column].push({
+      members: [{ id, indent: 0, height, width: NODE_W, dy: 0 }],
+      height,
+      column,
+      y: yOf.get(id)!,
+    });
+  }
+  return cols;
 }
 
 type Band = { nodeIds: string[]; loose: boolean; title?: string };
