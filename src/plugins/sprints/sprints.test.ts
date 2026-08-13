@@ -676,11 +676,17 @@ test('a row id twice in one collection is a warning, in every collection', () =>
       row('s1', { sprintId: 's1', scopeAtStart: 3, scopeAtClose: 3, completed: 3, carried: 0 }),
     ],
   });
-  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), [
-    { kind: 'duplicate-row-id', collection: 'sprints', rowId: 's1' },
-    { kind: 'duplicate-row-id', collection: 'passes', rowId: 'a:s1' },
-    { kind: 'duplicate-row-id', collection: 'reports', rowId: 's1' },
-  ]);
+  // Filtered to the kind under test: these rows also describe a close that stopped
+  // halfway, which is its own warning, and asserting the whole list would make this test
+  // fail on a finding it is not about.
+  assert.deepEqual(
+    sprintWarnings(file, BEFORE_ANY_WINDOW).filter((w) => w.kind === 'duplicate-row-id'),
+    [
+      { kind: 'duplicate-row-id', collection: 'sprints', rowId: 's1' },
+      { kind: 'duplicate-row-id', collection: 'passes', rowId: 'a:s1' },
+      { kind: 'duplicate-row-id', collection: 'reports', rowId: 's1' },
+    ],
+  );
 
   // Two reports for one sprint under DIFFERENT row ids is the other half: `keyFields`
   // makes the host replace a report rather than add one, so this only arrives by hand,
@@ -707,9 +713,17 @@ test('a history row pointing at no sprint is finally read by something', () => {
       row('b:geloescht', { itemId: 'b', sprintId: 'geloescht', outcome: 'carried', recordedOn: '2026-01-18' }),
     ],
   });
-  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), [
-    { kind: 'pass-without-sprint', rowId: 'b:geloescht', itemId: 'b', sprintId: 'geloescht' },
-  ]);
+  const warnings = sprintWarnings(file, BEFORE_ANY_WINDOW);
+  assert.deepEqual(
+    warnings.filter((w) => w.kind === 'pass-without-sprint'),
+    [{ kind: 'pass-without-sprint', rowId: 'b:geloescht', itemId: 'b', sprintId: 'geloescht' }],
+  );
+  // The pass that DOES point at a sprint is a close that stopped halfway, and that is
+  // reported too: history rows for a sprint still calling itself open.
+  assert.deepEqual(
+    warnings.filter((w) => w.kind === 'close-incomplete'),
+    [{ kind: 'close-incomplete', sprintId: 's1', state: 'planned', passes: 1, report: false }],
+  );
 });
 
 test('an item carried out of an earlier sprint is readable on the sprint that holds it now', () => {
@@ -1063,4 +1077,41 @@ test('an emptied field clears its key rather than storing an empty string', () =
     sprintEditPatch(sprint, [sprint], { ...FORM, name: 'A', capacityUnit: 'bananen' }).patch?.capacityUnit,
     null,
   );
+});
+
+test('a close that stopped halfway is readable from the rows, not only from the session that saw it', () => {
+  // The situation this reports outlives the page that produced it: the rows sit on the
+  // server, the sprint still says it is running, and before this warning existed only the
+  // notice in that one browser tab said so. A reload, another machine or an agent saw
+  // nothing at all.
+  const started = withRows({
+    sprints: [sprintRow('s1', { state: 'active' })],
+    passes: [row('a:s1', { itemId: 'a', sprintId: 's1', outcome: 'done', recordedOn: '2026-01-18' })],
+  });
+  assert.deepEqual(
+    sprintWarnings(started, BEFORE_ANY_WINDOW).filter((w) => w.kind === 'close-incomplete'),
+    [{ kind: 'close-incomplete', sprintId: 's1', state: 'active', passes: 1, report: false }],
+  );
+
+  // The report landed and the state did not: the count says which of the three steps are
+  // done, because that is what tells the reader what a retry will find.
+  const reported = withRows({
+    sprints: [sprintRow('s1', { state: 'active' })],
+    passes: [row('a:s1', { itemId: 'a', sprintId: 's1', outcome: 'done', recordedOn: '2026-01-18' })],
+    reports: [row('s1', { sprintId: 's1', scopeAtStart: 8, scopeAtClose: 8, completed: 8, carried: 0 })],
+  });
+  assert.deepEqual(
+    sprintWarnings(reported, BEFORE_ANY_WINDOW).filter((w) => w.kind === 'close-incomplete'),
+    [{ kind: 'close-incomplete', sprintId: 's1', state: 'active', passes: 1, report: true }],
+  );
+
+  // A finished close is not a fault. Neither is a cancelled sprint carrying its history.
+  for (const state of ['closed', 'cancelled'] as const) {
+    const done = withRows({
+      sprints: [sprintRow('s1', { state })],
+      passes: [row('a:s1', { itemId: 'a', sprintId: 's1', outcome: 'done', recordedOn: '2026-01-18' })],
+      reports: [row('s1', { sprintId: 's1', scopeAtStart: 8, scopeAtClose: 8, completed: 8, carried: 0 })],
+    });
+    assert.deepEqual(sprintWarnings(done, BEFORE_ANY_WINDOW).filter((w) => w.kind === 'close-incomplete'), []);
+  }
 });

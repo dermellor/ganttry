@@ -246,6 +246,25 @@ export type SprintWarning =
        * The row is kept by `readPasses` on purpose („it stays visible"), which is only
        * true if something looks at it. This is that something.
        */
+      /**
+       * A close that started and did not finish: history rows or a frozen report exist
+       * while the sprint still says it is running.
+       *
+       * Derived rather than remembered, and that is the point. The view used to keep a
+       * notice about it for as long as the situation held, which meant the situation was
+       * invisible to anybody who reloaded the page or opened it on another machine — the
+       * rows sat on the server, the sprint said „aktiv", and nothing anywhere said a
+       * close had been interrupted. `closeIncomplete` answers the same question for one
+       * sprint; this reports it for every one, in both surfaces.
+       */
+      kind: 'close-incomplete';
+      sprintId: string;
+      state: SprintState;
+      /** How much of the close landed, so the reader knows what a retry will find. */
+      passes: number;
+      report: boolean;
+    }
+  | {
       kind: 'pass-without-sprint';
       rowId: string;
       itemId: string;
@@ -1105,6 +1124,17 @@ export function sprintWarnings(file: TimelineFile | null | undefined, day: strin
     for (const rowId of repeatedRowIds(file, collection)) {
       out.push({ kind: 'duplicate-row-id', collection, rowId });
     }
+  }
+
+  // A close that stopped halfway, read off the rows rather than remembered by the page.
+  const allPasses = readPasses(file);
+  const allReports = readReports(file);
+  for (const sprint of sprints) {
+    if (sprint.state === 'closed' || sprint.state === 'cancelled') continue;
+    const own = passesOfSprint(allPasses, sprint.id).length;
+    const report = reportOfSprint(allReports, sprint.id) != null;
+    if (!own && !report) continue;
+    out.push({ kind: 'close-incomplete', sprintId: sprint.id, state: sprint.state, passes: own, report });
   }
 
   const known = new Set(sprints.map((sprint) => sprint.id));

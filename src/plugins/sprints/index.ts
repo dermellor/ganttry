@@ -1491,6 +1491,24 @@ function paint(into: HTMLElement): void {
       );
     } else if (warning.kind === 'duplicate-row-id' || warning.kind === 'several-reports-for-one-sprint') {
       pageNotices.push(Callout({ tone: 'warning', role: 'note', text: rowFaultText(warning) }));
+    } else if (warning.kind === 'close-incomplete') {
+      // Derived from the rows, so a reload no longer hides it. The page used to hold a
+      // notice for as long as the situation lasted, which meant it survived a repaint and
+      // not a refresh: the history rows sat on the server, the sprint said „aktiv", and
+      // nobody arriving later could see that a close had stopped halfway.
+      const name = sprints.find((s) => s.id === warning.sprintId)?.name ?? warning.sprintId;
+      // Phrased so the count is not the subject of a verb. „1 Historienzeile sind
+      // geschrieben" was the first attempt, and a sentence that has to decline both a
+      // noun and its verb around a number gets one of the two wrong.
+      const rows = `${warning.passes} ${warning.passes === 1 ? 'Historienzeile' : 'Historienzeilen'}`;
+      const written = warning.report ? `${rows} und Bericht geschrieben` : `${rows} geschrieben, kein Bericht`;
+      pageNotices.push(
+        Callout({
+          tone: 'warning',
+          role: 'note',
+          text: `Abschluss von „${name}" ist unfertig: ${written}, Status „${STATE_LABELS[warning.state]}".`,
+        }),
+      );
     } else if (warning.kind === 'sprint-window-past') {
       // The window ran out and the row did not move with it. Nothing in this product
       // closes a sprint by itself, so the page has to say it: it showed „aktiv", a flat

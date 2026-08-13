@@ -447,6 +447,19 @@ function warningNotes(
           'Gelesen wird der erste; die übrigen sind zweite eingefrorene Zahlen zum selben abgeschlossenen Sprint.',
       );
     }
+    if (warning.kind === 'close-incomplete') {
+      // Same finding as the page reports, out of the same rule: a close writes three
+      // things and cannot do it atomically, so „it stopped after the first" has to be
+      // readable from the rows rather than remembered by whoever was watching.
+      // Same shape as the page's sentence, and phrased the same way for the same reason:
+      // a count as the subject makes the verb decline too, and one of the two ends up wrong.
+      const rows = count(warning.passes, 'Historienzeile', 'Historienzeilen');
+      const written = warning.report ? `${rows} und Bericht geschrieben` : `${rows} geschrieben, kein Bericht`;
+      notes.push(
+        `Der Abschluss von ${label(warning.sprintId)} ist unfertig: ${written}, Status „${warning.state}". ` +
+          'Ein erneuter Abschluss schreibt nichts doppelt.',
+      );
+    }
     if (warning.kind === 'sprint-window-past') {
       // This sentence used to live in `daysLeftNotes`, where only this verb could reach it
       // — the view drew „aktiv" and said nothing about a window that had ended six months

@@ -173,6 +173,12 @@ A velocity number on a page invites exactly the use those warn about.
    that row has since changed its state, window, capacity or unit — the lock exists to
    catch somebody else's write, so the fresh row has to prove it is still the sprint the
    close was decided on.
+
+   **An unfinished close is derived, not remembered.** History rows for a sprint that
+   still calls itself open are a warning like any other, so a reload, another machine or
+   an agent sees it. Holding the sentence in the page that produced it meant the situation
+   outlived its only witness: the rows sat in the file, the sprint said „aktiv", and
+   nothing anywhere said a close had stopped halfway.
 2. **Nothing fires at a sprint boundary.** No scheduler, no lifecycle hook. A sprint that
    ended last Tuesday stays `active` until a person or an agent says otherwise, so the
    only honest answer is to *say* it: `sprintWarnings(file, day)` takes the day as a

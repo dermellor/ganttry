@@ -92,6 +92,10 @@ restated here: a copy is how one of them ends up fixed and the other does not.
   patch answer `409` every time, on exactly the source kind the shipped example uses. The
   re-read is gated by `closeObjection`, which refuses when the row has since changed its
   state, window, capacity or unit, because the lock exists to catch somebody else's write.
+- **An unfinished close is read off the rows, never remembered.** `close-incomplete` is a
+  warning, so both surfaces report it after a plain reload. A notice kept in the page that
+  produced it made the situation invisible to everybody else, which is the opposite of what
+  a record is for.
 - **A closed sprint's figures come from its report, or there are none.** No fallback to a
   live recomputation: that is the freeze rule quietly not holding, and a number that moves
   under a closed sprint is worse than a dash. The missing report is stated as a fault.
