@@ -315,11 +315,7 @@ function build(): HTMLElement {
       el('div', { id: 'member-invite', class: 'member-invite', hidden: true }, [
         Text({
           as: 'p',
-          children: [
-            'Einladungslink für ',
-            el('strong', { class: 'member-invite-for' }),
-            '. Er wird nur dieses eine Mal angezeigt. Die Person kann sich auch einfach unter der normalen Adresse anmelden: die Einladung hängt an ihrer E-Mail-Adresse, nicht am Link.',
-          ],
+          children: ['Einladungslink für ', el('strong', { class: 'member-invite-for' })],
         }),
         el('div', { class: 'member-invite-row' }, [
           TextInput({

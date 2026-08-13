@@ -5,28 +5,24 @@ import { switcherGroups } from './switcherRows';
 import type { View } from './types';
 
 // The badge beside the open timeline's name. These tests pin the wording, because
-// the wording is the whole feature: „nur lesend" is what explains every affordance
-// the viewer does not offer on this source.
+// the wording is the whole feature: „Nur lesend" is what names every affordance the
+// viewer does not offer on this source.
 
-test('an editable source shows no badge and still knows where it writes to', () => {
-  const db = sourceOriginBadge('db', true, 'realtime');
-  assert.equal(db.shown, false);
-  assert.match(db.title, /sofort/);
-
-  assert.match(sourceOriginBadge('db', true, 'poll').title, /Abruf/);
-  assert.match(sourceOriginBadge('db', true, 'none').title, /Neuladen/);
-  assert.match(sourceOriginBadge('local', true, 'none').title, /dorthin geschrieben/);
+test('an editable source shows no badge', () => {
+  const badge = sourceOriginBadge(true);
+  assert.equal(badge.shown, false);
+  assert.equal(badge.label, '');
 });
 
-test('read-only is in the label, not only in the tooltip', () => {
-  // A reader who never hovers still has to learn why nothing can be dragged.
-  const ro = sourceOriginBadge('local', false, 'none');
+test('read-only is a label, and the badge carries nothing else', () => {
+  // A reader who never hovers still has to learn why nothing can be dragged, so it
+  // is a label and not a tooltip. It used to carry a sentence per source kind on
+  // top of that — see „Interface text" in AGENTS.md.
+  const ro = sourceOriginBadge(false);
   assert.equal(ro.shown, true);
   assert.equal(ro.label, 'Nur lesend');
   assert.equal(ro.tone, 'muted');
-  assert.match(ro.title, /Statische Kopie/);
-
-  assert.match(sourceOriginBadge('db', false, 'realtime').title, /nicht bearbeitbar/);
+  assert.deepEqual(Object.keys(ro).sort(), ['label', 'shown', 'tone']);
 });
 
 test('the badge no longer repeats the switcher group it sits under', () => {
@@ -40,9 +36,7 @@ test('the badge no longer repeats the switcher group it sits under', () => {
   const headings = switcherGroups(views, '', 'a').map((g) => g.label);
 
   for (const editable of [true, false]) {
-    for (const kind of ['db', 'local'] as const) {
-      const { label } = sourceOriginBadge(kind, editable, 'none');
-      if (label) assert.ok(!headings.includes(label), `„${label}" ist eine Switcher-Überschrift`);
-    }
+    const { label } = sourceOriginBadge(editable);
+    if (label) assert.ok(!headings.includes(label), `„${label}" ist eine Switcher-Überschrift`);
   }
 });

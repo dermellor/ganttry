@@ -20,6 +20,11 @@ code it explains.
 - A colour literal anywhere except in a `--custom-property:` declaration.
 - A raw px value in `padding`, `margin` or `gap`.
 - A `<button>` that is not `Button` or `IconButton`.
+- Text that is not a heading, a label or a refusal: no subline under a field, no
+  note beside a control, no card explaining a section. `Text`, `FieldNote` and
+  `Callout` exist for what the components need, not as a place to put prose. The
+  rule, what counts as a label, and the check that enforces it are „Interface
+  text" in [`../AGENTS.md`](../AGENTS.md).
 
 **Required**
 

@@ -123,8 +123,6 @@ export type DeclaredSetting = {
   home: SettingHome;
   /** Whether this deployment can change the value here, in the app. */
   editable: boolean;
-  /** Why it cannot, when it cannot. */
-  why?: string;
   /** Does this instance set it at all? Served for every setting. */
   set: boolean;
   /** The effective value — only for settings declared safe to serve. */

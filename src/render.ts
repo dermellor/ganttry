@@ -571,11 +571,10 @@ function clearLoadFailure(): void {
  * unit-tested); this is only the lines that put it on screen. An editable source
  * shows none, so `hidden` is driven by the badge rather than always cleared here.
  */
-function showSourceOrigin(kind: SourceKind, editable: boolean, live: SourceLive): void {
-  const badge = sourceOriginBadge(kind, editable, live);
+function showSourceOrigin(editable: boolean): void {
+  const badge = sourceOriginBadge(editable);
   els.sourceOrigin.textContent = badge.label;
   els.sourceOrigin.dataset.tone = badge.tone;
-  els.sourceOrigin.title = badge.title;
   els.sourceOrigin.hidden = !badge.shown;
 }
 
@@ -643,7 +642,7 @@ export async function renderTimeline(view: View) {
   state.activeSourceLive = sourceLive;
   // Where this timeline comes from, and whether it can be edited, stated in the
   // header instead of being inferred from which affordances are missing.
-  showSourceOrigin(view.source.kind, sourceEditable, sourceLive);
+  showSourceOrigin(sourceEditable);
   // The switcher lists every timeline by its built name; the one that is OPEN has
   // its source loaded, so it can carry the live one. The others stay as built, which
   // is the honest split: nothing has read them.

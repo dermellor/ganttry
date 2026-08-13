@@ -490,7 +490,6 @@ function panel(id: FormTabId, fields: Child): HTMLElement {
  */
 function chipField(spec: {
   label: string;
-  hint?: string;
   inputId: string;
   placeholder: string;
   chipRole: string;
@@ -503,7 +502,6 @@ function chipField(spec: {
 }): HTMLElement {
   return Field({
     label: spec.label,
-    hint: spec.hint,
     htmlFor: spec.inputId,
     full: spec.full,
     control: [
@@ -627,7 +625,6 @@ export function showItemForm(
       }),
       chipField({
         label: 'Tags',
-        hint: '(farbige Marker)',
         inputId: 'f-tags',
         placeholder: 'hinzufügen…',
         chipRole: 'tags-chips',
@@ -680,7 +677,6 @@ export function showItemForm(
     panel('rel', [
       chipField({
         label: 'Übergeordnet',
-        hint: '(Teil von)',
         inputId: 'f-parent',
         placeholder: 'Eintrag suchen…',
         chipRole: 'parent-chip',
@@ -701,7 +697,6 @@ export function showItemForm(
       }),
       chipField({
         label: 'Depends on',
-        hint: '(Einträge verknüpfen)',
         inputId: 'f-deps',
         placeholder: 'Eintrag suchen…',
         chipRole: 'deps-chips',
@@ -710,7 +705,6 @@ export function showItemForm(
       }),
       chipField({
         label: 'JIRA',
-        hint: '(Tickets verlinken)',
         inputId: 'f-jira',
         placeholder: 'Ticket suchen oder Key eingeben (z. B. PROJ-123)…',
         chipRole: 'jira-chips',

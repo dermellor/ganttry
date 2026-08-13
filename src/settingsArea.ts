@@ -95,12 +95,7 @@ async function apiJson(path: string): Promise<any> {
 function valueCell(s: DeclaredSetting): HTMLElement {
   if (s.value == null) {
     return s.set
-      ? Text({
-          text: 'gesetzt',
-          tone: 'muted',
-          className: 'setting-value setting-secret',
-          attrs: { title: 'Der Wert wird nicht ausgeliefert' },
-        })
+      ? Text({ text: 'gesetzt', tone: 'muted', className: 'setting-value setting-secret' })
       : Text({ text: 'nicht gesetzt', tone: 'muted', className: 'setting-value' });
   }
   if (s.value === 'true') return Text({ text: 'an', tone: 'accent', className: 'setting-value' });
@@ -116,17 +111,14 @@ function valueCell(s: DeclaredSetting): HTMLElement {
 }
 
 /**
- * One row. `showWhy` is false once the same reason has already been stated in
- * this group.
+ * One row: label, variable name, value, and the badge naming where the value lives.
  *
- * Repeating „In der Umgebung dieser Instanz gesetzt" under twelve consecutive
- * rows does not make the reason more visible, it makes it wallpaper — and an
- * area people skim past is the failure this one is designed against. Stated once
- * per group it still answers the question, and a setting whose reason differs
- * from its neighbours' states its own, which is exactly when the sentence
- * carries information. Every row keeps it on the tag's tooltip regardless.
+ * The „Herkunft" column carried a sentence per group as well („In der Umgebung
+ * dieser Instanz gesetzt, nicht hier.") plus the same sentence on every badge's
+ * tooltip. The badge is the label for that fact; the sentence was explanation on top
+ * of it (see „Interface text" in AGENTS.md).
  */
-function settingRow(s: DeclaredSetting, showWhy: boolean): HTMLElement {
+function settingRow(s: DeclaredSetting): HTMLElement {
   return TableRow({
     className: 'setting-row',
     children: [
@@ -141,16 +133,10 @@ function settingRow(s: DeclaredSetting, showWhy: boolean): HTMLElement {
       }),
       TableCell({ children: valueCell(s) }),
       TableCell({
-        children: [
-          Badge({
-            label: HOME_LABEL[s.home] ?? s.home,
-            tone: s.home === 'env' ? 'neutral' : 'muted',
-            attrs: s.why ? { title: s.why } : undefined,
-          }),
-          showWhy && s.why
-            ? Text({ as: 'p', text: s.why, tone: 'muted', size: 'xs', className: 'setting-why' })
-            : null,
-        ],
+        children: Badge({
+          label: HOME_LABEL[s.home] ?? s.home,
+          tone: s.home === 'env' ? 'neutral' : 'muted',
+        }),
       }),
     ],
   });
@@ -167,14 +153,7 @@ function settingsGroups(settings: DeclaredSetting[]): HTMLElement[] {
   }
 
   return [...groups].map(([group, rows]) => {
-    // Reset per group: a reason stated under „Zugang" is not on screen any more
-    // by the time somebody reads „Daten".
-    const stated = new Set<string>();
-    const body = rows.map((s) => {
-      const first = !!s.why && !stated.has(s.why);
-      if (s.why) stated.add(s.why);
-      return settingRow(s, first);
-    });
+    const body = rows.map((s) => settingRow(s));
     return el('section', { class: 'setting-group' }, [
       Heading({ level: 3, text: group, className: 'setting-group-title' }),
       Table({

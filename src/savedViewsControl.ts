@@ -30,7 +30,6 @@ import {
   Dialog,
   el,
   Field,
-  FieldNote,
   FormActions,
   FormGrid,
   Icon,
@@ -375,14 +374,9 @@ function openViewDialog(view: SavedView): void {
         Field({
           label: 'Sichtbarkeit',
           full: true,
-          control: mayPublish
-            ? shared
-            : // Shown disabled with the reason rather than hidden: „why can I not
-              // share this" is a question an absent control answers with silence.
-              el('div', {}, [
-                shared,
-                FieldNote({ text: 'Teilen setzt Schreibrechte auf dieser Instanz voraus.' }),
-              ]),
+          // Shown disabled rather than hidden, and without a note saying why: the
+          // control's own state is the statement (see „Interface text" in AGENTS.md).
+          control: shared,
         }),
       ],
     }),

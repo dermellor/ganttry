@@ -170,10 +170,6 @@ body.settings-open .ds-Toolbar[data-tone='footer'] {
   font-style: italic;
 }
 
-.settings .setting-why {
-  margin: var(--space-3xs) 0 0;
-}
-
 @media (max-width: 40rem) {
   .settings {
     flex-direction: column;

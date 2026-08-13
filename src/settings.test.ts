@@ -79,12 +79,12 @@ test('whitespace is not a value', () => {
   assert.equal(s.set, false);
 });
 
-test('every declaration carries a reason while it is not editable', () => {
-  // The risk this area is designed against: a page that is mostly values you
-  // cannot change teaches people to ignore it, and once ignored the editable
-  // remainder is missed too. A greyed-out field without a reason is that page.
+test('a declaration carries no prose about itself', () => {
+  // The area shows label, variable name, value and a „Herkunft" badge. It used to
+  // repeat a sentence per group saying where the value lives, which the badge
+  // already says — see „Interface text" in AGENTS.md.
   for (const s of declaredSettings(reader({}))) {
-    if (!s.editable) assert.ok(s.why, `${s.key} is read-only and does not say why`);
+    assert.equal((s as Record<string, unknown>).why, undefined, `${s.key} carries prose`);
   }
 });
 
