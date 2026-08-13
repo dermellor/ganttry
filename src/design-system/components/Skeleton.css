@@ -62,7 +62,7 @@
 .ds-Skeleton-labels span {
   align-self: center;
   height: 10px;
-  margin: 0 14px;
+  margin: 0 var(--space-md);
   border-radius: 5px;
   background: var(--hover);
 }

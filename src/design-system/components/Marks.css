@@ -72,7 +72,8 @@
   width: var(--icon-size-xs);
   height: var(--icon-size-xs);
   padding: 0;
-  margin-right: 3px;
+  /* margin-right stays the pill's own `--space-2xs`: a dot and a pill in the same
+     row of bars have to line up, so the gap is not what changes when text goes. */
   border-radius: var(--mark-radius);
   font-size: 0;
   vertical-align: baseline;

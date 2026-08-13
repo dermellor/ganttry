@@ -552,9 +552,14 @@ something; the full contract and the reasoning are in
   rot.
 
 [`scripts/ci/check-design-system.sh`](scripts/ci/check-design-system.sh) enforces
-what can be checked mechanically and fails CI; its three exemptions are named in
-the script with their reasons. Prose alone does not survive contact with the next
-contributor, which is the same reason the OpenAPI spec has a drift test.
+what can be checked mechanically and fails CI; the exemptions it grants are named
+in the script with their reasons, and the count is deliberately not restated here
+— it drifted from three to four the first time one was added. Prose alone does not
+survive contact with the next contributor, which is the same reason the OpenAPI
+spec has a drift test. A rule here is only worth adding if you prove it fails:
+this file's spacing rule silently checked nothing for its whole life, because its
+pipeline ended in `| true` (see „A check that cannot fail" in
+[`docs/design-system.md`](docs/design-system.md)).
 
 ### Theming
 
