@@ -20,8 +20,13 @@
 // string: turning it into a `ViewMode` needs the registry's legacy lookup, and
 // that decision stays at the one call site that already makes it.
 
-import { filterSelectionFromPair, isFilterSelectionActive, type FilterSelection } from './filterRule';
-import { GROUP_DIM, TYPE_DIM } from './listGrouping';
+import {
+  filterSelectionFromPair,
+  isFilterSelectionActive,
+  withMilestonesNarrowing,
+  type FilterSelection,
+} from './filterRule';
+import { GROUP_DIM } from './listGrouping';
 
 /** What one presentation of one timeline remembers. */
 export type StoredPresentationPrefs = {
@@ -101,9 +106,6 @@ export const DEFAULT_VIEW_PREFS: ViewPrefs = {
   groupBy: GROUP_DIM,
   filters: {},
 };
-
-/** What „nur Meilensteine" means now: the type dimension narrowed to `point`. */
-export const MILESTONES_ONLY_SELECTION: FilterSelection = { [TYPE_DIM]: ['point'] };
 
 function stringList(raw: unknown): string[] | undefined {
   if (!Array.isArray(raw)) return undefined;
@@ -193,14 +195,9 @@ function storedSelection(stored: StoredViewPrefs | undefined): FilterSelection {
   const base = stored.filters
     ? copySelection(stored.filters)
     : filterSelectionFromPair(stored.filterDim, stored.filterValues);
-  // „Nur Meilensteine" was a second narrowing beside the filter and composed with
-  // it, so a stored `true` adds the type dimension rather than replacing what is
-  // there. An explicit type selection wins: it is the newer statement about the
-  // same dimension.
-  if (stored.milestonesOnly && !base[TYPE_DIM]?.length) {
-    return { ...base, ...MILESTONES_ONLY_SELECTION };
-  }
-  return base;
+  // The fold is the shared rule in filterRule.ts: a stored `true` adds the type
+  // dimension rather than replacing what is there.
+  return stored.milestonesOnly ? withMilestonesNarrowing(base) : base;
 }
 
 /** Which presentation a timeline was last looked at in. */
@@ -349,10 +346,9 @@ export function legacyViewPrefs(
       // selection already means: no restriction.
     }
   }
-  // Same fold as a stored per-timeline `milestonesOnly`: the type dimension joins
-  // whatever the filter already narrowed, because the two used to compose.
-  if (raw.milestonesOnly === 'true' && !prefs.filters?.[TYPE_DIM]?.length) {
-    prefs.filters = { ...(prefs.filters ?? {}), ...MILESTONES_ONLY_SELECTION };
+  // Same fold as a stored per-timeline `milestonesOnly`, through the same helper.
+  if (raw.milestonesOnly === 'true') {
+    prefs.filters = withMilestonesNarrowing(prefs.filters ?? {});
   }
   return Object.keys(prefs).length ? prefs : null;
 }

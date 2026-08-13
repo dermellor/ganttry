@@ -1405,14 +1405,17 @@ one — opening a panel with the views this person may see, then the actions on 
 
 `sv=<id>` in the hash, written only while a view is applied, so a plain link stays
 plain. It is what makes „sieh dir das so an wie ich" a link rather than a description,
-and it carries the whole extent under one short key — which the filter itself has
-never done (see „URL state" below and issue #99).
+and it carries the whole bundle under one short key.
 
 An incoming `sv` is **authoritative and re-applied even when that view is already the
 active one**, because the interesting case is exactly that: somebody drifted away from
 it and opened the link again. An id the timeline does not carry is dropped rather than
 reported — a link outlives the view it names, and it still has to open the timeline.
 Deleting a view clears the parameter with it.
+
+The filter now travels on its own too (`f`, see „URL state"), and the two are written
+together only once the display has drifted from the view: while `sv` is accurate it is
+the better statement, because it keeps following the view when its owner edits it.
 
 ## The timeline switcher
 
@@ -1486,21 +1489,67 @@ the location hash so links can be shared and back/forward navigation works.
 Format:
 
 ```
-#view=<id>&item=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&mode=list&sv=<saved view>
+#view=<id>&item=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&mode=list&f=status:Open,Done&sv=<saved view>
 ```
 
-Only non-default values are written (`mode` only when it is not `timeline`, `sv`
-only while a saved view is applied — see „Gespeicherte Ansichten").
+Only non-default values are written (`mode` only when it is not `timeline`, `f` only
+while something is narrowed, `sv` only while a saved view is applied — see
+„Gespeicherte Ansichten"). Switching timelines through the switcher clears `item` and
+`from`/`to`. Hash changes from outside the app (paste, back/forward) re-apply state
+without reload.
+
+### The extent travels: `f`
+
+The extent of a presentation is „private per person, shared by copying the link"
+([`docs/information-architecture.md`](information-architecture.md)), and for a while
+that was true of the visible window and false of the filter: `from`/`to` travelled,
+the selection did not. `f` is the other half
+([`src/filterParam.ts`](../src/filterParam.ts), DOM-free and unit-tested).
+
+The grammar is `dim:v1,v2;dim2:v3`, with each key and each value percent-encoded on
+its own so the three separators are the only literal ones. Three things decided it:
+
+- **It has to carry several dimensions with several values each**, which is what a
+  selection is.
+- **A shared link must not be frightening.** A base64 blob would round-trip perfectly
+  and tell the person pasting it nothing.
+- **A value may contain any separator.** Hence the per-part encoding — and hence the
+  parameter is read out of the **raw** hash rather than through `URLSearchParams`:
+  that decodes percent-escapes first, so `Phase 1, Discovery` would arrive as two
+  values and `a+b` as „a b".
+
+The „Ohne …" bucket travels as its own sentinel rather than as a prettier token,
+because any readable token (`*`, `-`) would collide with a real value of that name.
+
+**An incoming hash is authoritative about the filter**, the way it already was about
+the mode: an absent `f` means „nothing narrowed". That is what makes back reverse a
+narrowing made in the panel, and it is why the panel's own writes push a history entry
+(`syncUrl({ push: true })`) while every other write keeps rewriting the current one —
+without an entry there is nothing for back to return to, and a repaint-driven write
+would leave entries nobody chose. On the initial load the older rule still holds: only
+the parameters the link actually carries win, so a link without `f` opens the timeline
+with the selection it remembers.
+
+A dimension the receiving timeline does not have survives into the state and is dropped
+on the first paint by `pruneFilters`, per dimension — the same pruning a stored
+selection goes through, so one unknown dimension never takes the others with it.
+
+**Beside a saved view, `f` is written only once the display has drifted from it.** `sv`
+is the better statement while it is accurate: it keeps following the view when its
+owner edits it, where a spelled-out selection would pin an old link to yesterday's
+narrowing. Once they differ, the drift is what has to travel, so both are written and
+the explicit selection wins on the way back in — a link carrying both means „that view,
+narrowed like this".
 
 **`m=1` is read and never written.** It carried „nur Meilensteine" while that was a
 control of its own; it now means „narrow the type dimension to Meilenstein", and it
-stays readable because it sits in every link ever shared. Writing it again would
-claim the hash describes the filter, and the filter as a whole has never been in
-there — so an incoming hash is authoritative about the mode and the window, and
-deliberately says nothing about the filter. Reading an absent `m` as „no type
-filter" would clear a selection made in the panel on every back step. Switching
-timelines through the switcher clears `item` and `from`/`to`. Hash changes from
-outside the app (paste, back/forward) re-apply state without reload.
+stays readable because it sits in every link ever shared. Writing it as well would put
+the same narrowing in the hash twice, in two grammars. It also keeps its own, older
+rule: it is one dimension rather than the whole extent, so it **composes** with what is
+already set, while `f` replaces it. A link carrying both is read as `f` plus the type
+dimension where `f` does not name it (`withMilestonesNarrowing` in
+[`src/filterRule.ts`](../src/filterRule.ts), the one home of that fold — the stored
+per-presentation state and the retired instance-wide keys apply the same rule).
 
 `from`/`to` are calendar days like every other date the app stores, so they are
 read as **local** midnight — via `parseUrlWindow`, which both the initial load and
