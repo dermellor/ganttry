@@ -29,6 +29,7 @@ import './styles/settings.css';
 import {
   areaSection,
   createAreaHandle,
+  remountArea,
   showArea,
   wireAreaNav,
   type AreaNodes,
@@ -193,6 +194,16 @@ export function timelineSection(raw: string | undefined | null): TimelineSection
 
 export async function showTimelineSettings(section: TimelineSection | null): Promise<void> {
   await showArea(handle, nodes(), SECTIONS, section, 'tl-settings-open');
+}
+
+/**
+ * Re-read the open section, if any. Called after a timeline is loaded: every section
+ * here describes the OPEN timeline, so switching timelines from the header while the
+ * area is open would otherwise leave them describing the previous one.
+ */
+export async function refreshTimelineSettings(): Promise<void> {
+  if (!state.tlSection) return;
+  await remountArea(handle, nodes());
 }
 
 /**

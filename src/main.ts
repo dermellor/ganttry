@@ -50,6 +50,7 @@ import { normalizeMemberRole, roleAllows } from './access';
 import { settingsSection, showSettings, wireSettingsArea } from './settingsArea';
 import { refreshAppMenu, wireAppMenu } from './appMenu';
 import {
+  refreshTimelineSettings,
   showTimelineSettings,
   timelineSection,
   wireTimelineSettings,
@@ -201,6 +202,11 @@ async function applyView(viewId: string) {
     : undefined;
   if (savedView) applySavedView(savedView);
   else syncSavedViewsControl();
+  // The timeline's own settings describe the timeline that is open, so a switch has to
+  // reach them. The area is applied before the view on the hash-change path (it has
+  // to be — the redraw below would otherwise paint into a hidden container), which
+  // left the sections describing the timeline somebody just navigated away from.
+  void refreshTimelineSettings();
   syncUrl();
 }
 

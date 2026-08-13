@@ -106,6 +106,27 @@ export async function showArea<Id extends string>(
   await def.mount(nodes.body);
 }
 
+/**
+ * Re-run the open section's mount, keeping it open.
+ *
+ * `showArea` returns early when the wanted section is already the mounted one, which
+ * is right for a click on the tab it is already on and wrong for a change of what the
+ * section describes. The timeline's own area is the case: its sections are about the
+ * OPEN timeline, and switching timelines from the header while the area is open left
+ * them describing the previous one — the Plugins section then offered switches for a
+ * document nobody was looking at.
+ */
+export async function remountArea<Id extends string>(
+  handle: AreaHandle<Id>,
+  nodes: AreaNodes,
+): Promise<void> {
+  const def = handle.mounted;
+  if (!def) return;
+  def.unmount?.();
+  nodes.body.replaceChildren();
+  await def.mount(nodes.body);
+}
+
 /** Tear the current section down before another one is mounted over it. */
 export function unmountArea<Id extends string>(handle: AreaHandle<Id>, nodes: AreaNodes): void {
   handle.mounted?.unmount?.();
