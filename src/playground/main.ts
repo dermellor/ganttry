@@ -581,6 +581,29 @@ const menuSection = section(
 const TIMELINE_GLYPH = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="14" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="12" y2="18"/></svg>`;
 const LIST_GLYPH = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/></svg>`;
 
+// The caption as a target: clicking it selects the first segment, which is what
+// a plugin's control does in the app. Wired here so the state is reachable
+// without driving the app into a plugin.
+function segmentedControlWithLabelAction(): HTMLElement {
+  const select = (value: string) => {
+    for (const seg of control.querySelectorAll<HTMLButtonElement>('.ds-Segment')) {
+      seg.setAttribute('aria-pressed', String(seg.dataset.value === value));
+    }
+  };
+  const control = SegmentedControl({
+    label: 'Produkt',
+    onLabelClick: () => select('matrix'),
+    segments: [
+      { value: 'matrix', label: 'Matrix', icon: fromHtml(TIMELINE_GLYPH) },
+      { value: 'cards', label: 'Karten', icon: fromHtml(LIST_GLYPH), selected: true },
+    ],
+  });
+  for (const seg of control.querySelectorAll<HTMLButtonElement>('.ds-Segment')) {
+    seg.addEventListener('click', () => select(seg.dataset.value ?? ''));
+  }
+  return control;
+}
+
 const selectorSection = section(
   'selectors',
   'Tabs · SegmentedControl',
@@ -641,6 +664,7 @@ const selectorSection = section(
           ],
         }),
       ),
+      specimen('SegmentedControl mit klickbarem Label', segmentedControlWithLabelAction()),
       specimen('Separator, horizontal', el('div', { style: 'width:120px' }, Separator())),
       specimen('Separator, vertikal', el('div', { class: 'pg-VRule' }, Separator({ orientation: 'vertical' }))),
     ),

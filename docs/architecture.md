@@ -237,6 +237,14 @@ board" *of that plugin*, so `pluginViewGroup` gives each plugin its own
 `SegmentedControl` carrying the plugin's name inside it, before its first segment.
 That caption is the only thing explaining the icons, so it is not optional.
 
+**The caption is also the way in.** It is the largest target in the control and reads
+as one, so clicking it enters the plugin's first declared view rather than doing
+nothing. While one of that plugin's views is already showing it is inert: throwing a
+user from „Karten" back to „Matrix" for clicking the plugin's own name takes their
+place away instead of saving them a click. `SegmentedControl` renders the caption as
+a button only when a handler is passed; without one it stays inert text and is hidden
+from assistive technology, since it only repeats the group's name.
+
 The unit that is shown, hidden and marked active is therefore the **plugin**, not the
 view: its views arrive and go together, because enablement is per plugin.
 `setActivePluginGroup` marks the owning control while one of its views is active —

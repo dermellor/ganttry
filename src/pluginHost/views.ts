@@ -48,8 +48,21 @@ export function pluginViewGroup(
 ): HTMLElement {
   let group = groups.get(pluginId);
   if (!group) {
+    const firstMode = views[0] ? pluginViewMode(pluginId, views[0].id) : null;
     group = SegmentedControl({
       label: pluginName,
+      // The name is the biggest target in the control and reads as the way into
+      // the plugin, so it enters it: the first view, which is the one the plugin
+      // declares first for that reason. While one of this plugin's views is
+      // already showing, it does nothing — throwing a user back from „Karten" to
+      // „Matrix" for clicking the plugin's own name is a loss of place, not a
+      // shortcut.
+      onLabelClick: firstMode
+        ? () => {
+            if (group?.dataset.active) return;
+            onSelect(firstMode);
+          }
+        : undefined,
       className: 'plugin-view-group',
       attrs: { 'data-plugin': pluginId },
       segments: views.map((view) => {

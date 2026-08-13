@@ -26,6 +26,29 @@
   color: var(--fg-muted);
 }
 
+/* The clickable caption: same quiet type, none of the button chrome, since it has
+   to stay a caption and not become a fourth segment. Only hover and focus say that
+   it is a target. */
+button.ds-SegmentedControl-label {
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  line-height: inherit;
+  align-self: stretch;
+  cursor: pointer;
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+
+button.ds-SegmentedControl-label:hover {
+  background: var(--surface-alt);
+  color: var(--fg);
+}
+
+button.ds-SegmentedControl-label:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-offset) * -1);
+}
+
 /* A hairline between caption and first segment would read as a fourth choice, so
    only the segments are separated from each other. */
 .ds-SegmentedControl-label + .ds-Segment {

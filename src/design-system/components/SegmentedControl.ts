@@ -42,16 +42,32 @@ export type SegmentedControlOptions = {
    * with it.
    */
   label?: string;
+  /**
+   * Makes the caption a button. Given, the caption is a target of its own — the
+   * plugin's name is the largest thing in the control, so it reads as the way
+   * into the plugin, and a click that does nothing reads as a broken control.
+   * Without it the caption stays inert text and is hidden from assistive
+   * technology, since it only repeats the group's name.
+   */
+  onLabelClick?: () => void;
   ariaLabel?: string;
   className?: string;
   attrs?: Attrs;
 };
 
 export function SegmentedControl(options: SegmentedControlOptions): HTMLDivElement {
-  const { segments, label, ariaLabel, className, attrs } = options;
-  const caption = label
-    ? el('span', { class: 'ds-SegmentedControl-label', 'aria-hidden': 'true' }, label)
-    : undefined;
+  const { segments, label, onLabelClick, ariaLabel, className, attrs } = options;
+  let caption: HTMLElement | undefined;
+  if (label && onLabelClick) {
+    caption = el(
+      'button',
+      { type: 'button', class: 'ds-SegmentedControl-label', 'data-action': 'true' },
+      label,
+    );
+    on(caption, { click: onLabelClick });
+  } else if (label) {
+    caption = el('span', { class: 'ds-SegmentedControl-label', 'aria-hidden': 'true' }, label);
+  }
   const children = segments.map((segment) => {
     const node = el(
       'button',
