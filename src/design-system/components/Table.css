@@ -63,7 +63,7 @@
 /* One indent step per level. `.ds-TableRow` in the selector so this outweighs
    the cell padding above rather than fighting it. */
 .ds-TableRow .ds-TableCell[data-indented] {
-  padding-left: calc(var(--space-md) + var(--ds-depth, 0) * 18px);
+  padding-left: calc(var(--space-md) + var(--ds-depth, 0) * var(--space-lg));
 }
 
 /* A row with rows under it reads as their heading, matching what a summary bar

@@ -21,7 +21,7 @@
      active tab breaks the rule instead of sitting above it. */
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  padding: 7px var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
   cursor: pointer;
   white-space: nowrap;
   transition: color var(--motion-fast), border-color var(--motion-fast);

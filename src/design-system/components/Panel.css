@@ -11,7 +11,11 @@
   z-index: var(--z-panel);
   border-left: 1px solid var(--border);
   background: var(--surface);
-  padding: 0 28px var(--space-3xl);
+  /* Named because the header below bleeds by exactly this much: as two copies of
+     `28px` they drifted apart the moment either was touched, and the symptom is a
+     sticky header whose background stops a few pixels short of the panel edge. */
+  --ds-panel-pad: var(--space-2xl);
+  padding: 0 var(--ds-panel-pad) var(--space-3xl);
   overflow-y: auto;
   overscroll-behavior: none;
   box-shadow: var(--shadow-panel);
@@ -27,8 +31,8 @@
   z-index: var(--z-sticky);
   /* Bleeds to the panel's edges so the sticky background covers the full width
      while the content below keeps the panel's padding. */
-  margin: 0 -28px;
-  padding: var(--space-2xl) 28px 14px;
+  margin: 0 calc(-1 * var(--ds-panel-pad));
+  padding: var(--space-2xl) var(--ds-panel-pad) var(--space-md);
   background: var(--surface);
   box-shadow: 0 4px 8px -4px transparent;
   animation: ds-panel-elevate linear both;
@@ -63,8 +67,13 @@
   align-items: center;
   gap: var(--space-2xs);
   min-height: var(--control-lg);
-  /* Keeps the last picker clear of the close button, which shares this line. */
-  padding-right: 40px;
+  /* Keeps the last picker clear of the close button, which shares this line.
+     Derived from that button rather than measured off it: it is an `lg` IconButton
+     inset by `--space-md` (see .ds-Panel-close below), so the clearance is those
+     two added up. The three hand-tuned values this replaced (40px here, 36px and
+     42px on the heading) were all *narrower* than the button, which is why a long
+     name could sit under the „×". */
+  padding-right: calc(var(--control-lg) + var(--space-md));
   /* Air between the picker row and the headline, so the heading reads as its own
      block rather than as a caption stuck under the buttons. An editable headline
      pulls itself up by 4px for its hover surface, so the visible gap is this
@@ -77,7 +86,7 @@
 }
 
 .ds-Panel-header .ds-Heading {
-  padding-right: 36px;
+  padding-right: calc(var(--control-lg) + var(--space-md));
 }
 
 .ds-Panel-header[data-has-tools] .ds-Heading {
@@ -88,8 +97,10 @@
   padding-right: var(--space-xs);
 }
 
+/* An editable headline carries its own hover surface, so its text starts a step
+   further in than the plain one's and needs that step back on the other side. */
 .ds-Panel-header .ds-Heading[contenteditable] {
-  padding-right: 42px;
+  padding-right: calc(var(--control-lg) + var(--space-md) + var(--space-xs));
 }
 
 .ds-Panel-body {

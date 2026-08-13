@@ -35,13 +35,37 @@ code it explains.
 
 The first three of those are checked by
 [`scripts/ci/check-design-system.sh`](../scripts/ci/check-design-system.sh) and
-fail CI. The exemptions it grants are named in the script with their reasons —
-there are four, and each is a place where following the rule would produce worse
-code than breaking it. Two of them are the marks inside a timeline bar (the
-delete affordance and the fold caret): a `<button>` for the hit area and the
+fail CI. The exemptions it grants are named in the script with their reasons, and
+each is a place where following the rule would produce worse code than breaking
+it. Three of them are marks drawn inside the chart (the delete affordance, the
+fold caret, the milestone diamond): a `<button>` for the hit area and the
 keyboard, with every visual property set by the chart's stylesheet. The list's
 fold caret is *not* exempt — it sits in ordinary layout, and it is the
 `TreeToggle` component.
+
+**A check that cannot fail is worse than no check.** The spacing rule was dead
+from the day it was written until 2026-08: its pipeline ended in `| true` instead
+of `|| true`, so every hit was piped into `true` and discarded. The script
+reported `ok` with 61 raw values in the tree, 14 of them inside the design system
+itself — the layer the rule exists to protect. When adding a rule here, prove it
+fails by introducing a violation on purpose, the way the OpenAPI drift test and
+the plugin-isolation check were each verified.
+
+Two things the rule deliberately does *not* forgive, because forgiving them is how
+it stops meaning anything: a raw value named in a custom property (`--card-pad:
+13px` is still not a step on the scale, unlike a colour, where naming the value is
+the whole goal), and a per-file exemption. What it does accept is a value derived
+with `calc()` from a size token, which is the honest form for the cases where the
+number is geometry rather than air — the clearance a heading needs from an
+absolutely positioned close button is that button's box plus its inset, so
+`calc(var(--control-lg) + var(--space-md))` says why where `44px` only said what.
+Where a value genuinely is not spacing, the fix is to stop calling it spacing:
+the overrun line's dash pattern became `--overrun-dash-on` / `--overrun-dash-off`,
+because the second one had been called a „gap" and read as layout air.
+
+Off-scale values found by that first live run were snapped to **the step below**,
+uniformly. Rounding down means no box grows, so nothing outgrew a container or a
+`--control-*` height it had been fitted into.
 
 ## The three layers
 
@@ -124,15 +148,18 @@ it is the one that will be argued about:
 | --- | --- |
 | [`src/styles/timeline.css`](../src/styles/timeline.css) | vis-timeline's own furniture as this app dresses it: `.vis-item`, the item rail, the phase band, the dependency arrows. Not components — a third-party chart's internals. It spends tokens like everything else. |
 | [`src/styles/wysiwyg.css`](../src/styles/wysiwyg.css) | The frame around the Markdown editor. What the text inside it looks like is the `Prose` component, which the reading view uses too. |
-| [`src/styles/app.css`](../src/styles/app.css) | App composition that is not a component. Currently one rule. The bar is deliberately high — two call sites and it becomes a component. |
+| [`src/styles/app.css`](../src/styles/app.css) | App composition that is not a component: how the host frames a plugin's view, the timeline switcher, the saved-view rows. The bar is deliberately high, and the file states it at the top — two call sites and it becomes a component. It has drifted past that bar once already and carries a popover surface it should not ([#149](https://github.com/zeitlines/zeitlines/issues/149)). |
+| [`src/styles/graph.css`](../src/styles/graph.css) | The „Graph" presentation's chart furniture: the pan/zoom viewport, the band frames, the column heads, the edges. The node box itself is the `GraphNode` component. Same split as `timeline.css`. |
 | [`src/styles/members.css`](../src/styles/members.css) | How the „Benutzer" section arranges components it does not own. Imported by `memberAdmin.ts`, so an instance where nobody opens it never downloads it. |
 | [`src/styles/settings.css`](../src/styles/settings.css) | The same, for the settings area around it: two columns, and which chrome steps aside while the area is open. Imported by `settingsArea.ts`. |
 
-A plugin's own stylesheet
-([`pricing.css`](../src/plugins/product-roadmap/pricing.css)) sits in the same
-category: a pricing card is not a generic component, and it should not become
-one to satisfy a rule. What the contract asks of it is that its colours are named
-and its spacing comes from the scale.
+A plugin's own stylesheet sits in the same category, and there is one per plugin
+that draws ([`pricing.css`](../src/plugins/product-roadmap/pricing.css),
+[`sprints.css`](../src/plugins/sprints/sprints.css)): a pricing card is not a
+generic component, and it should not become one to satisfy a rule. What the
+contract asks of them is that their colours are named and their spacing comes from
+the scale — which is the half of this the checker can see, so it is also the half
+that a new plugin gets held to on its first commit.
 
 **One thing belongs here and is not here yet: the Markdown editor.**
 [`src/wysiwyg.ts`](../src/wysiwyg.ts) is a control the item form uses and plugins

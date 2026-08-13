@@ -83,13 +83,28 @@ colour_hits=$(
 # hairline, which is a border's width rather than an amount of air. Negative
 # values are allowed too — a component pulling itself back over its own padding
 # is geometry, not spacing (see the editable headline in Text.css).
+#
+# A value derived with `calc()` from a size token is not a literal either, and
+# that is the escape hatch for the cases where the number is geometry rather than
+# air: the clearance a heading needs from an absolutely positioned close button is
+# the button's own box plus its inset, so `calc(var(--control-lg) + var(--space-md))`
+# states the reason where `44px` only stated the result. Three hand-tuned values
+# in Panel.css (40px, 36px, 42px) were one such rule each, all narrower than the
+# button they were meant to clear.
+#
+# This rule was dead from the day it was written until 2026-08: the pipeline ended
+# in `| true` rather than `|| true`, so every line it found was piped into `true`
+# and discarded, `spacing_hits` was always empty, and the check reported `ok` with
+# 61 raw values in the tree — 14 of them inside the design system itself. Keep the
+# `||`. A `|` here disables the rule silently, which is the worst way for a check
+# to fail.
 
 spacing_hits=$(
   grep -rnE '^[^/*]*\b(padding|margin|gap|row-gap|column-gap)(-(top|right|bottom|left|inline|block))?: *[^;]*[0-9]+px' \
     --include='*.css' src 2>/dev/null |
     # A hairline, and the negative pull-backs.
     grep -vE ': *-?1px' |
-    grep -vE ': *-[0-9]+px' |
+    grep -vE ': *-[0-9]+px' ||
     true
 )
 [ -n "$spacing_hits" ] && report \
