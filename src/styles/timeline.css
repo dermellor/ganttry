@@ -62,7 +62,7 @@
 }
 
 .vis-labelset .vis-label .vis-inner {
-  padding: 6px 10px;
+  padding: var(--space-xs) var(--space-sm);
   font-size: 12px;
   font-weight: 500;
   /* Cap the label column: vis-timeline sizes the left panel to the widest
@@ -82,9 +82,11 @@
    (level-1 → 15px, …) only kick in when vis can resolve the depth; our groups
    get `vis-group-level-unknown-but-gte1`, so none match and the 150px sticks —
    which, under the width cap above, crushes the text to one char per line.
-   Force a sane single indent for every nested child (parents stay at level-0). */
+   Force a sane single indent for every nested child (parents stay at level-0).
+   A step from our scale rather than vis's own 15px: the job is to replace the
+   broken 150px, and matching vis's number to the pixel buys nothing. */
 .vis-ltr .vis-labelset .vis-label.vis-nested-group:not(.vis-group-level-0) .vis-inner {
-  padding-left: 15px !important;
+  padding-left: var(--space-lg) !important;
 }
 
 .vis-foreground .vis-group {
@@ -109,7 +111,7 @@
   /* Glyph inside a mark's box. Shared by every mark so they all draw at one
      size; the box stays `--rail-mark` wide, which is what the slots count. */
   --rail-glyph: 12px;
-  --rail-gap: 2px;
+  --rail-gap: var(--space-3xs);
   --rail-inset: 4px;
   --rail-fade: 14px;
   --rail-slot: calc(var(--rail-mark) + var(--rail-gap));
@@ -125,8 +127,12 @@
      deliberately fine and pale: it is context for the mark, not a second alarm.
      Its *length* comes from overrun.ts as `--overrun`. */
   --overrun-h: 2px;
-  --overrun-dash: 3px;
-  --overrun-gap: 4px;
+  /* The dash pattern of the line, `on` then `off`. Named as a pair rather than
+     `dash` / `gap`: both are lengths of a stroke, so neither is a step on the
+     spacing scale, and calling the second one a „gap" made it read as layout air
+     that check-design-system.sh then flagged for not coming from the scale. */
+  --overrun-dash-on: 3px;
+  --overrun-dash-off: 4px;
   --overrun-dim: 0.5;
   --rail-slots: calc(var(--rail-delete) + var(--rail-marks));
   --rail-w: calc(var(--rail-slots) * var(--rail-slot) + var(--rail-inset));
@@ -205,7 +211,7 @@
 }
 
 .vis-item .vis-item-content {
-  padding: 4px 8px;
+  padding: var(--space-2xs) var(--space-sm);
   font-size: 12px;
 }
 
@@ -566,8 +572,8 @@
   height: var(--overrun-h);
   background: repeating-linear-gradient(
     to right,
-    var(--overdue) 0 var(--overrun-dash),
-    transparent var(--overrun-dash) calc(var(--overrun-dash) + var(--overrun-gap))
+    var(--overdue) 0 var(--overrun-dash-on),
+    transparent var(--overrun-dash-on) calc(var(--overrun-dash-on) + var(--overrun-dash-off))
   );
   opacity: var(--overrun-dim);
   pointer-events: none;
@@ -785,11 +791,14 @@
 }
 
 /* Inside a bar the tag pill runs a shade smaller than it does in a table row:
-   the bar's own text is 12px, and the pill has to stay subordinate to it. */
+   the bar's own text is 12px, and the pill has to stay subordinate to it.
+   Only the type size is overridden. The margin and padding used to be restated
+   here as 5px, one off the component's own `--space-2xs` on both — a hand-tuned
+   copy of the default, so removing them changes the pill by a pixel and removes
+   two properties this file has no business owning. The remaining `font-size` is
+   a missing size variant on Tag (<https://github.com/zeitlines/zeitlines/issues/148>). */
 .vis-item .ds-Tag {
   font-size: 9.5px;
-  margin-right: 5px;
-  padding: 0 5px;
 }
 
 /* Dense view (zoomed out): the pill text is more clutter than signal, so it
@@ -801,7 +810,6 @@
   width: var(--icon-size-xs);
   height: var(--icon-size-xs);
   padding: 0;
-  margin-right: 3px;
   border-radius: var(--mark-radius);
   font-size: 0;
   line-height: 0;
@@ -905,7 +913,7 @@
   height: 22px;
   display: flex;
   align-items: center;
-  padding: 0 10px;
+  padding: 0 var(--space-sm);
   box-sizing: border-box;
   border-radius: 5px;
   background: var(--accent);

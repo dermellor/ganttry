@@ -86,10 +86,11 @@
   overflow-y: auto;
   padding: var(--space-sm);
   border: 1px solid var(--border);
-  /* 8px, matching .filter-menu — the other panel that opens off a control.
-     NOT --mark-radius: that token is the round brand mark's radius (50%), and
+  /* NOT --mark-radius: that token is the round brand mark's radius (50%), and
      applying it to a 280px-wide box turns the panel into an ellipse that clips
-     its own text. */
+     its own text. (This used to cite `.filter-menu` as the panel it matched;
+     that class is long gone, and the surface itself should be the `Popover`
+     component — <https://github.com/zeitlines/zeitlines/issues/149>.) */
   border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--shadow-popover);

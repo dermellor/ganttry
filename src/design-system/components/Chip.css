@@ -5,7 +5,7 @@
   align-items: center;
   gap: var(--space-xs);
   max-width: 100%;
-  padding: 3px var(--space-2xs) 3px var(--space-sm);
+  padding: var(--space-3xs) var(--space-2xs) var(--space-3xs) var(--space-sm);
   background: var(--hover);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -100,7 +100,9 @@
   align-items: center;
   gap: var(--space-2xs);
   min-height: var(--control-lg);
-  padding: 3px var(--space-2xs);
+  /* The box's height comes from `min-height`, so this is only the air around the
+     chips inside it — the smallest step, or a full row of them outgrows the box. */
+  padding: var(--space-3xs) var(--space-2xs);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

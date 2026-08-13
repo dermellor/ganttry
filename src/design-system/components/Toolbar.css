@@ -13,7 +13,9 @@
 
 .ds-Toolbar[data-tone='header'] {
   justify-content: space-between;
-  padding: 14px var(--space-2xl);
+  /* The same vertical inset as the `view` tone directly below it, so the two bars
+     read as one stack of chrome rather than as two rows a hair out of step. */
+  padding: var(--space-md) var(--space-2xl);
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
