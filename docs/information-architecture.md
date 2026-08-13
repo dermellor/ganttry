@@ -108,7 +108,7 @@ for a different part of the screen to set the same thing.
 | „Plugins" panel | footer | 1 + 3 | the catalog belongs in the instance area; the per-timeline half belongs to level 3. The footer entry stays reachable from a timeline, because that is where „why is this view missing" gets asked |
 | Timeline switcher | header, left | 2 | done: search, grouped by origin, the open one marked; the trigger doubles as the statement of which timeline is open |
 | Creating a timeline | nowhere | 2 | needs a create route before it can have an interface |
-| Name, read-only state | header, left | 3 | done: the name with no caption in front of it, and a „Nur lesend" badge only where something is missing. The origin is the switcher's group heading, so a badge repeating it was the same word twice |
+| Name | header, left | 3 | done: the name with no caption in front of it, and nothing between it and its gear. The „Nur lesend" badge that sat there is gone: permanent chrome for a state that does not change while a timeline is open, and on a read-only instance it sat on every one of them. The origin was the switcher's group heading, so the badge's first version said the same word twice |
 | Custom field definitions | the timeline settings route | 3 | done: `#timeline-settings=fields` |
 | Enabled plugins and their config | a `timeline_plugins` row | 3 | timeline settings; stays an INSERT |
 | Name, description, default grouping | the timeline settings route | 3 | done: `#timeline-settings=general`, written through `PATCH /api/source/<id>` |

@@ -25,7 +25,6 @@ import {
   AppMain,
   AppMark,
   AvatarStack,
-  Badge,
   Button,
   Checkbox,
   ContentArea,
@@ -84,7 +83,6 @@ export type AppShellElements = {
   modeListBtn: HTMLButtonElement;
   modeGraphBtn: HTMLButtonElement;
   presence: HTMLElement;
-  sourceOrigin: HTMLElement;
   appMenuBtn: HTMLButtonElement;
   appMenu: HTMLElement;
   appMenuEmpty: HTMLButtonElement;
@@ -308,10 +306,6 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   modeListBtn.id = 'mode-list';
   modeGraphBtn.id = 'mode-graph';
 
-  // Filled by `showSourceOrigin` once a source has loaded, because until then
-  // „Datenbank" or „Lokal" would be a claim about nothing. Hidden rather than
-  // empty: an empty pill reads as a value that failed to arrive.
-  const sourceOrigin = Badge({ label: '', hidden: true, attrs: { id: 'source-origin' } });
   // The way into what is true of this timeline as a whole. It sits with the
   // timeline's own identity rather than next to „Einstellungen" on the right:
   // that one is the instance, and putting the two side by side is what made the
@@ -417,7 +411,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
           ToolbarGroup({
             spacing: 'tight',
             className: 'app-timeline-controls',
-            children: [switcherControl, sourceOrigin, tlSettingsBtn],
+            children: [switcherControl, tlSettingsBtn],
           }),
         ],
       }),
@@ -643,7 +637,6 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       modeListBtn,
       modeGraphBtn,
       presence,
-      sourceOrigin,
       appMenuBtn,
       appMenu,
       appMenuEmpty,

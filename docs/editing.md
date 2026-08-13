@@ -492,25 +492,20 @@ module. **Adding a value picker** needs no menu change at all — flag the field
 
 When the active view points to a **DB-backed** source (the timeline exists in Supabase, so `GET /api/source/<id>` returns it), the viewer is editable. A **local** source (a `data/*.json` file, or a directory of Markdown notes) is editable when a process with filesystem access serves it, which means the dev server; editing a directory patches the individual notes' frontmatter and moves a deleted one to `.trash/` rather than removing it; on a static deploy the same file loads read-only, because there is nothing there to write with. Whether the running build is one or the other was decided when it was built (see „Source kinds" (docs/architecture.md)).
 
-**The header says so when nothing here can be changed**, in a „Nur lesend" badge
-beside the timeline's name. That badge is the answer to „why can I not drag this
-bar", and before it existed the only answer was an *absence*: no „+ Eintrag" button,
-no drag, no „×" — which reads as a broken app rather than as a read-only source. The
-wording lives in [`src/sourceOrigin.ts`](../src/sourceOrigin.ts), DOM-free and
-unit-tested, because the wording is the feature; `render.ts` only puts it on screen
-and takes it down again when a load fails, for the same reason the loading
-placeholder comes down there.
+**The header does not say so.** A „Nur lesend" badge used to sit beside the
+timeline's name, and it is gone along with the `sourceOrigin.ts` that worded it. It
+was permanent chrome for a fact that does not change while a timeline is open, and
+on a read-only instance — a notes directory served with `TIMELINES_LOCAL_READONLY`,
+see [`local-sources.md`](local-sources.md) — it labelled every timeline in the
+switcher, so it never distinguished anything.
 
-**An editable source gets no badge**, and that is the correction of a first version
-which showed „Datenbank" or „Lokal" on every source. Those two words are the
-switcher's own group headings ([`src/switcherRows.ts`](../src/switcherRows.ts)), so
-the badge permanently repeated the heading of the group the open timeline sits
-under, while wedging itself between that name and the gear that opens the timeline's
-settings. Where a source writes to is still carried on the badge's `title` for the
-caller to place; the origin itself is one click away in the switcher, under a
-heading that deliberately does not say „Datei" for a local source (a JSON file *or*
-a directory of notes, and the client is not told which, see
-[`local-sources.md`](local-sources.md)).
+What is left is the absence the badge was written to explain: no „+ Eintrag"
+button, no drag, no „×". That is a real cost, and it is worth knowing before
+somebody re-adds the pill. The version before this one had already lost its origin
+half („Datenbank", „Lokal"), which were the switcher's own group headings
+([`src/switcherRows.ts`](../src/switcherRows.ts)) and therefore the same word
+twice. If read-only needs explaining again, the place for it is where the missing
+action would have been, not in the row that carries the timeline's identity.
 
 - **Drag** an item left/right to move start, drag either edge to resize, drag vertically to switch group. Persists on drop. Both handles sit on the bar's edge; the right one is the narrower of the two because it shares that edge with the rail's „×" (see „Item rail"). Dragging an item that has children onto another track takes its subtree along, and so does the form's **Group** control — see „Parent and children" (docs/items.md) for what „its subtree" covers.
 - **Delete** an item via the „×" mark at the bar's right edge, which appears on hover and while the item is selected — inside the bar on a bar wide enough for it, just outside on a narrow one. Clicking it neither selects the item nor opens its form. See „Item rail".
