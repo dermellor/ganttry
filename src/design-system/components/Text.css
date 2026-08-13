@@ -54,6 +54,11 @@
 .ds-Text[data-tone='danger'] { color: var(--danger); }
 .ds-Text[data-tone='accent'] { color: var(--accent); }
 
+.ds-Text[data-weight='medium'] { font-weight: var(--weight-medium); }
+.ds-Text[data-weight='semibold'] { font-weight: var(--weight-semibold); }
+
+.ds-Text[data-mono] { font-family: var(--font-mono); }
+
 .ds-Text[data-truncate] {
   display: inline-block;
   max-width: 100%;

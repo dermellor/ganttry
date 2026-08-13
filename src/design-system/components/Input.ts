@@ -33,10 +33,17 @@ export type TextInputOptions = CommonOptions & {
   type?: 'text' | 'date' | 'number' | 'search' | 'url' | 'email';
   /** Strips the border and background: the input inside a ChipBox. */
   bare?: boolean;
+  /**
+   * Monospace, a step down in size — for a field holding a machine value the user
+   * reads and copies rather than composes: an invitation link, an id, a token. The
+   * face is what makes a run of characters checkable at a glance, and the size
+   * keeps a long one from wrapping out of its row.
+   */
+  mono?: boolean;
 };
 
 export function TextInput(options: TextInputOptions = {}): HTMLInputElement {
-  const { type = 'text', bare, block = true, invalid, className, attrs, on: listeners, ...rest } = options;
+  const { type = 'text', bare, mono, block = true, invalid, className, attrs, on: listeners, ...rest } = options;
   const node = el('input', {
     type,
     class: classes('ds-Input', className),
@@ -48,7 +55,7 @@ export function TextInput(options: TextInputOptions = {}): HTMLInputElement {
     readonly: rest.readonly,
     required: rest.required,
     'aria-invalid': invalid ? 'true' : undefined,
-    ...data({ bare, block }),
+    ...data({ bare, mono, block }),
     ...attrs,
   });
   on(node, listeners);

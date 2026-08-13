@@ -8,6 +8,7 @@
 // The host builds this, not a plugin — the whole list would be missing exactly
 // when the plugin that renders it fails to load.
 
+import { el, Text } from './design-system';
 import { pluginLines, type PluginLine } from './pluginHost/installed.ts';
 import type { LoadOutcome } from './pluginHost/loader.ts';
 import type { PluginStatus, TimelineFile } from './types';
@@ -40,37 +41,28 @@ export async function loadPluginStatuses(fromConfig: PluginStatus[] | undefined)
   return fromConfig ?? [];
 }
 
-function lineElement(line: PluginLine): HTMLLIElement {
-  const li = document.createElement('li');
-  li.className = 'plugin-line';
-  li.classList.toggle('plugin-line-problem', !line.running);
-
-  const name = document.createElement('span');
-  name.className = 'plugin-line-name';
-  name.textContent = line.name;
-  li.append(name);
-
-  const version = document.createElement('span');
-  version.className = 'plugin-line-version';
-  version.textContent = line.version;
-  li.append(version);
-
-  // Either the plugin is fine and the only open question is whether this timeline
-  // uses it, or it cannot run and the reason is the thing worth reading. Showing
-  // both at once would bury the reason behind a state that no longer matters.
-  const state = document.createElement('span');
-  state.className = 'plugin-line-state';
-  state.textContent = line.running
-    ? line.enabledHere
-      ? t('plugin.active')
-      : t('plugin.inactive')
-    : reasonText(line);
-  // The full sentence carries the specifics a fixed phrase cannot — which version,
-  // which manifest field — so it stays reachable on hover rather than being lost.
-  if (line.problem) state.title = line.problem;
-  li.append(state);
-
-  return li;
+function lineElement(line: PluginLine): HTMLElement {
+  // A plugin that cannot run colours its whole row rather than only its reason: the
+  // name is what the reader is scanning for, so it has to carry the state too. The
+  // row used to carry a `plugin-line-problem` class for a descendant selector that
+  // did this in CSS; with the tone on each `Text` the class styled nothing.
+  const tone = line.running ? undefined : 'danger';
+  return el('li', { class: 'plugin-line' }, [
+    Text({ text: line.name, weight: 'semibold', tone }),
+    Text({ text: line.version, mono: true, tone: tone ?? 'muted' }),
+    // Either the plugin is fine and the only open question is whether this timeline
+    // uses it, or it cannot run and the reason is the thing worth reading. Showing
+    // both at once would bury the reason behind a state that no longer matters.
+    Text({
+      text: line.running ? (line.enabledHere ? t('plugin.active') : t('plugin.inactive')) : reasonText(line),
+      tone: tone ?? 'muted',
+      className: 'plugin-line-state',
+      // The full sentence carries the specifics a fixed phrase cannot — which
+      // version, which manifest field — so it stays reachable on hover rather than
+      // being lost.
+      attrs: line.problem ? { title: line.problem } : undefined,
+    }),
+  ]);
 }
 
 /**
@@ -115,16 +107,11 @@ export function renderPluginList(
   outcomes: readonly LoadOutcome[] = [],
 ): void {
   const lines = pluginLines(installed, (file?.plugins ?? []).map((p) => p.id), outcomes);
-  container.replaceChildren();
   if (!lines.length) {
-    const empty = document.createElement('p');
-    empty.className = 'plugin-empty';
-    empty.textContent = 'Keine Plugins installiert.';
-    container.append(empty);
+    container.replaceChildren(
+      Text({ as: 'p', text: 'Keine Plugins installiert.', tone: 'muted', className: 'plugin-empty' }),
+    );
     return;
   }
-  const list = document.createElement('ul');
-  list.className = 'plugin-list';
-  for (const line of lines) list.append(lineElement(line));
-  container.append(list);
+  container.replaceChildren(el('ul', { class: 'plugin-list' }, lines.map(lineElement)));
 }

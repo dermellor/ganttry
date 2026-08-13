@@ -790,16 +790,12 @@
   outline: none;
 }
 
-/* Inside a bar the tag pill runs a shade smaller than it does in a table row:
-   the bar's own text is 12px, and the pill has to stay subordinate to it.
-   Only the type size is overridden. The margin and padding used to be restated
-   here as 5px, one off the component's own `--space-2xs` on both — a hand-tuned
-   copy of the default, so removing them changes the pill by a pixel and removes
-   two properties this file has no business owning. The remaining `font-size` is
-   a missing size variant on Tag (<https://github.com/zeitlines/zeitlines/issues/148>). */
-.vis-item .ds-Tag {
-  font-size: 9.5px;
-}
+/* The tag pill inside a bar has no rule of its own any more, and that turned out
+   to be the answer rather than a Tag size variant: the whole override was three
+   properties restating the component's defaults a fraction off — 5px against
+   `--space-2xs` for margin and padding, and 9.5px against the component's
+   `--text-2xs`, which is already 10px and already a step below the bar's own 12px
+   text. There was nothing subordinate left to arrange. */
 
 /* Dense view (zoomed out): the pill text is more clutter than signal, so it
    collapses to its coloured dot — the `compact` variant of the Tag component,

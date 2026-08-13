@@ -41,6 +41,9 @@ export function Heading(options: HeadingOptions = {}): HTMLHeadingElement {
 
 export type TextTone = 'default' | 'muted' | 'danger' | 'accent';
 export type TextSize = 'xs' | 'sm' | 'md' | 'base';
+/** Named for the tokens rather than for a use, because both are already in use as
+ *  raw numbers in a dozen stylesheets and neither has one meaning. */
+export type TextWeight = 'medium' | 'semibold';
 
 export type TextOptions = {
   as?: 'span' | 'p' | 'div' | 'small';
@@ -48,6 +51,14 @@ export type TextOptions = {
   children?: Child;
   tone?: TextTone;
   size?: TextSize;
+  /** Heavier than body copy: the subject of a row, next to its details. */
+  weight?: TextWeight;
+  /**
+   * Monospace, for a machine value read rather than composed — a version, an id.
+   * The same face `TextArea` and `TextInput` use for the same reason, so a version
+   * in a list and a version in a field cannot end up two typefaces.
+   */
+  mono?: boolean;
   /** Clips to one line with an ellipsis. Needs a bounded width to do anything. */
   truncate?: boolean;
   /** „No value here", rendered in the italic voice the viewer uses for that. */
@@ -57,12 +68,13 @@ export type TextOptions = {
 };
 
 export function Text(options: TextOptions = {}): HTMLElement {
-  const { as = 'span', text, children, tone, size, truncate, placeholder, className, attrs } = options;
+  const { as = 'span', text, children, tone, size, weight, mono, truncate, placeholder, className, attrs } =
+    options;
   return el(
     as,
     {
       class: classes('ds-Text', className),
-      ...data({ tone, size, truncate, placeholder }),
+      ...data({ tone, size, weight, mono, truncate, placeholder }),
       ...attrs,
     },
     children ?? text,

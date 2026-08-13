@@ -56,7 +56,7 @@
   display: inline-block;
   margin-right: var(--space-2xs);
   padding: 0 var(--space-2xs);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   line-height: 1.5;
@@ -92,12 +92,42 @@
   white-space: nowrap;
 }
 
+/* Border only, deliberately: the one existing call site is a membership's „aktiv",
+   where accent text would restate in colour what the word already says. A badge
+   that wants the accent on its text as well takes `filled`. */
 .ds-Badge[data-tone='accent'] {
   border-color: var(--accent);
 }
 
 .ds-Badge[data-tone='muted'] {
   color: var(--fg-muted);
+}
+
+/* Rides inside a row of running text instead of standing on its own, so it drops
+   to the smallest step and sits on the text's centre line rather than its
+   baseline. */
+.ds-Badge[data-size='sm'] {
+  padding: 0 var(--space-xs);
+  font-size: var(--text-2xs);
+  line-height: 1.6;
+  vertical-align: middle;
+}
+
+/* A word the product defines rather than a value it carries. Separate from `sm`
+   on purpose: „ab 1.0" is the same size and must stay lowercase. */
+.ds-Badge[data-caps] {
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* Filled rather than outlined, for the badge that has to be read before its row.
+   The border keeps its colour so the box is the same size either way — swapping
+   fill for outline must not move the text beside it. */
+.ds-Badge[data-filled] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
 }
 
 /* `display` beats the `hidden` attribute, so a component that sets one has to say

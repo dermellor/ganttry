@@ -61,8 +61,17 @@
   line-height: var(--leading-snug);
 }
 
+/* One selector for both, so the raw-metadata textarea and the invitation-link
+   input cannot drift into two monospace treatments. The input also drops a size
+   step: it holds a single long run of characters on one line, where the textarea
+   wraps. */
 .ds-TextArea[data-mono] {
   font-family: var(--font-mono);
+}
+
+.ds-Input[data-mono]:not(.ds-TextArea) {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
 }
 
 /* ---- Select --------------------------------------------------------------- */

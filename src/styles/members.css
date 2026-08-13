@@ -47,10 +47,11 @@
   margin-top: var(--space-sm);
 }
 
+/* Layout only. The monospace face and its size are the input's `mono` variant,
+   because a field holding a link to copy is a recurring shape rather than
+   something this section invented. */
 .member-invite-row .ds-Input {
   flex: 1;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
 }
 
 /* The Callout above the list is a message about one action, not a page-wide

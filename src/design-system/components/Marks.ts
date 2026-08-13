@@ -142,6 +142,25 @@ export type BadgeOptions = {
   /** `accent` for the state that is working, `muted` for one that is not. */
   tone?: BadgeTone;
   /**
+   * `sm` is the badge that rides inside a dense row rather than standing in its
+   * own cell — behind a feature name in a table, where the row's own text is the
+   * thing being read and the pill has to stay under it.
+   */
+  size?: 'sm' | 'md';
+  /**
+   * Uppercase, letter-spaced, bold: for a badge carrying a word the *product*
+   * defines („Neu"). Deliberately not implied by `sm`, because a badge carrying a
+   * **value** at the same size must not be shouted — „ab 1.0" uppercased reads as
+   * an abbreviation („AB 1.0").
+   */
+  caps?: boolean;
+  /**
+   * Solid accent instead of an outline. For the one badge in a view that has to be
+   * seen before the row it sits in; the fill-versus-outline contrast is what
+   * separates two badges of equal size without giving one a competing hue.
+   */
+  filled?: boolean;
+  /**
    * For a badge whose state is not known yet — the open timeline's origin before
    * its source has loaded. An empty pill reads as a value that failed to arrive,
    * so it is absent instead.
@@ -159,10 +178,15 @@ export type BadgeOptions = {
  * colour from the theme.
  */
 export function Badge(options: BadgeOptions): HTMLSpanElement {
-  const { label, tone = 'neutral', hidden, className, attrs } = options;
+  const { label, tone = 'neutral', size = 'md', caps, filled, hidden, className, attrs } = options;
   return el(
     'span',
-    { class: classes('ds-Badge', className), hidden, ...data({ tone }), ...attrs },
+    {
+      class: classes('ds-Badge', className),
+      hidden,
+      ...data({ tone, size, caps, filled }),
+      ...attrs,
+    },
     label,
   );
 }

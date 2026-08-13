@@ -69,32 +69,12 @@
   gap: var(--space-lg);
 }
 
+/* The positioned ancestor the panel anchors to. It has to be this wrapper rather
+   than the footer: anchored to the footer, the surface would sit wherever that
+   row's box happens to be instead of over the control that opened it. The surface
+   itself is a `Popover` with `side: 'top'` — see appShell.ts. */
 .plugin-panel-wrap {
   position: relative;
-}
-
-/* Anchored above the button rather than below it: the footer is the last row on
-   screen, so a panel opening downwards would be clipped by the viewport. */
-.plugin-panel {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
-  z-index: 40;
-  min-width: 280px;
-  max-width: 420px;
-  max-height: 50vh;
-  overflow-y: auto;
-  padding: var(--space-sm);
-  border: 1px solid var(--border);
-  /* NOT --mark-radius: that token is the round brand mark's radius (50%), and
-     applying it to a 280px-wide box turns the panel into an ellipse that clips
-     its own text. (This used to cite `.filter-menu` as the panel it matched;
-     that class is long gone, and the surface itself should be the `Popover`
-     component — <https://github.com/zeitlines/zeitlines/issues/149>.) */
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  box-shadow: var(--shadow-popover);
-  text-align: left;
 }
 
 .plugin-list {
@@ -114,25 +94,13 @@
   border-top: 1px solid var(--border);
 }
 
-.plugin-line-name {
-  font-weight: 600;
-}
-
-.plugin-line-version {
-  font-family: var(--font-mono);
-  color: var(--fg-muted);
-}
-
-/* The reason a plugin is not running is the sentence worth reading, so it spans
-   both columns instead of being truncated into the version's slot. */
+/* The row's three cells are `Text`s and carry their own weight, face and tone —
+   including the danger tone on a plugin that cannot run, which used to be a
+   descendant selector here. What is left is the one thing that is layout: the
+   reason is the sentence worth reading, so it spans both columns instead of being
+   truncated into the version's slot. */
 .plugin-line-state {
   grid-column: 1 / -1;
-  color: var(--fg-muted);
-}
-
-.plugin-line-problem .plugin-line-name,
-.plugin-line-problem .plugin-line-state {
-  color: var(--danger);
 }
 
 /* A floating layer the host created for a plugin (src/pluginHost/overlay.ts).
@@ -161,10 +129,11 @@
   color: var(--danger);
 }
 
+/* Inset to match a row, so the empty state sits where the first line would. The
+   tone is the `Text`'s. */
 .plugin-empty {
   margin: 0;
   padding: var(--space-xs) var(--space-2xs);
-  color: var(--fg-muted);
 }
 
 

@@ -4,7 +4,9 @@
 // it without importing each other. The click wiring lives in pricingMatrix
 // (wireWork), matching on the `.pm-work-item` class this markup emits.
 
-import { el, escapeHtml, htmlAll, MenuItem } from '../../pluginHost/viewApi';
+// `viewApi` rather than `api`: this module draws, and `pluginHost/api.ts` is the
+// DOM-free half of the contract (see the server-bundle check).
+import { el, escapeHtml, html, MenuItem, MenuSection, Popover } from '../../pluginHost/viewApi';
 import { aggregateWorkState } from './pricing';
 import { statusOrDefault, type StatusKey } from '../../pluginHost/api';
 import type { TimelineFileItem } from '../../types';
@@ -38,24 +40,37 @@ export function workDotHtml(items: TimelineFileItem[]): string {
   // jump to, which is what a MenuItem is. The mark carries the plugin's own
   // traffic-light rather than the product's `--status-*` — see the note beside
   // those custom properties in pricing.css.
-  const pop = htmlAll(
-    items.map((it) => {
-      const s = statusOrDefault(it.status);
-      const when = fmtDate(it);
-      const statusLabel = t(STATUS_KEY[s]);
-      return MenuItem({
-        label: it.content,
-        detail: when ? `${statusLabel} · ${when}` : statusLabel,
-        mark: el('span', { class: `pm-work-item-dot pm-work-${s.toLowerCase()}`, 'aria-hidden': 'true' }),
-        className: 'pm-work-item',
-        attrs: { 'data-item-id': it.id ?? '' },
-      });
+  // The surface is a `Popover` anchored under the dot (`.pm-work` is the positioned
+  // ancestor), and the state above the list is a `MenuSection` caption — which is
+  // what that component's `label` is for: a panel whose sections hold values rather
+  // than actions. Both used to be rules in pricing.css, one of them a second
+  // popover surface and the other a copy of the section label's own type treatment.
+  const stateLabel = t(WORK_KEY[st]);
+  const pop = html(
+    Popover({
+      alignEnd: true,
+      scroll: true,
+      minWidth: 260,
+      maxWidth: 340,
+      children: MenuSection({
+        label: stateLabel,
+        children: items.map((it) => {
+          const s = statusOrDefault(it.status);
+          const when = fmtDate(it);
+          const statusLabel = t(STATUS_KEY[s]);
+          return MenuItem({
+            label: it.content,
+            detail: when ? `${statusLabel} · ${when}` : statusLabel,
+            mark: el('span', { class: `pm-work-item-dot pm-work-${s.toLowerCase()}`, 'aria-hidden': 'true' }),
+            className: 'pm-work-item',
+            attrs: { 'data-item-id': it.id ?? '' },
+          });
+        }),
+      }),
     }),
   );
-  const stateLabel = t(WORK_KEY[st]);
   return (
     `<details class="pm-work"><summary class="pm-work-dot pm-work-${st}" title="${escapeHtml(stateLabel)} — ${escapeHtml(t('work.items', { count: items.length }))}">` +
-    `<span class="pm-work-count">${items.length}</span></summary>` +
-    `<div class="pm-work-pop"><div class="pm-work-pop-head">${escapeHtml(stateLabel)}</div>${pop}</div></details>`
+    `<span class="pm-work-count">${items.length}</span></summary>${pop}</details>`
   );
 }

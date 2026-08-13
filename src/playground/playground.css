@@ -200,8 +200,26 @@
   min-width: 200px;
 }
 
-.pg-StaticPopover {
-  position: static;
+/* `.pg-StaticPopover` used to live here, forcing `position: static` back off a
+   popover so it could be seen at rest. That was the `static` placement variant
+   missing from the component, and the plugin host's overlay layers needed the
+   same thing — see `PopoverPlacement`. */
+
+/* Room above and below the two triggers, so an upward-opening surface has
+   somewhere to land instead of over the section heading. */
+.pg-AnchorRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xl);
+  min-height: 200px;
+}
+
+/* The positioned ancestor wraps the trigger alone: an anchored popover offsets
+   itself by 100% of this box, so wrapping anything else with it would push the
+   surface down by that thing's height too. `.plugin-panel-wrap` is the same
+   element in the app. */
+.pg-Anchor {
+  position: relative;
 }
 
 .pg-StaticList {

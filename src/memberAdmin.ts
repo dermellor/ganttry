@@ -331,6 +331,7 @@ function build(): HTMLElement {
           TextInput({
             id: 'member-invite-url',
             readonly: true,
+            mono: true,
             attrs: { 'aria-label': t('members.inviteLinkField') },
           }),
           Button({ label: t('members.copy'), variant: 'outline', attrs: { id: 'member-invite-copy' } }),
