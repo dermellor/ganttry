@@ -30,6 +30,14 @@ behind it. Packaging it as `@zeitlines/plugin-api` is
 [#15](https://github.com/zeitlines/zeitlines/issues/15); until then, that path is
 the reference.
 
+**It also carries the rules a plugin must not restate.** The item status vocabulary,
+and since **1.6** the calendar and duration arithmetic: `durationToMs`,
+`endFromDuration`, `parseLocalDay`, `shiftDays`, `isoDateOnly`. Use them rather than
+writing your own, and the reason is a bug rather than tidiness: the first plugin that
+computed an item's extent itself resolved a `duration`-only item to its *start*, so its
+burndown described when work began. A rule the viewer places a bar with has to be the
+rule a plugin counts with, or the two disagree wherever they are compared.
+
 ## Choosing an id
 
 **Reverse-DNS, from a domain you own:** `com.acme.sprints`. The validator refuses
