@@ -51,13 +51,14 @@
 
 import { type ItemChange, type ToolHandler, type ToolPlan } from '../../pluginHost/api';
 import type { TimelineFile, TimelineFileItem } from '../../types';
-import { isDayString, sprintOfDay, type SprintRaster } from './raster';
+import { isDayString, type SprintRaster } from './raster';
 import {
   SPRINT_KEY,
   activeSprints,
   assignedSprintId,
   capacityUnitOf,
   carriedInto,
+  dayOffset,
   estimateOf,
   isDone,
   itemsOfSprint,
@@ -75,28 +76,6 @@ import {
   type SprintWarning,
   type SprintWindow,
 } from './sprints';
-
-/**
- * Whole calendar days from `from` to `to`; negative when `to` is earlier, null when
- * either value names no day.
- *
- * FOLD INTO `./sprints.ts`: „how much time is left" is a question about a sprint
- * window, and this is the only arithmetic in this file that is not wording.
- *
- * Built on `sprintOfDay` with a one-day raster rather than on date parsing of its own,
- * and that is the point: a second copy of the day rules is what this plugin's
- * `AGENTS.md` forbids, and the copy would be the one that gets the Europe/Berlin change
- * of 2026-03-29 wrong (`raster.test.ts` pins it). A one-day raster anchored at `from`
- * numbers `to` as its offset plus one, so the offset falls out of the arithmetic that
- * decides every other date question here.
- */
-function dayOffset(from: string, to: string): number | null {
-  const oneDay = (anchor: string): SprintRaster => ({ anchor, lengthDays: 1, velocity: null, scale: [] });
-  const forward = sprintOfDay(oneDay(from), to);
-  if (forward != null) return forward - 1;
-  const backward = sprintOfDay(oneDay(to), from);
-  return backward == null ? null : -(backward - 1);
-}
 
 // ---- wording ----------------------------------------------------------------
 
@@ -467,6 +446,18 @@ function warningNotes(
         `Zu ${label(warning.sprintId)} gibt es mehr als einen Bericht (${warning.rowIds.map(quoted).join(', ')}). ` +
           'Gelesen wird der erste; die übrigen sind zweite eingefrorene Zahlen zum selben abgeschlossenen Sprint.',
       );
+    }
+    if (warning.kind === 'sprint-window-past') {
+      // This sentence used to live in `daysLeftNotes`, where only this verb could reach it
+      // — the view drew „aktiv" and said nothing about a window that had ended six months
+      // earlier. It is a warning now, so both surfaces render the same finding.
+      notes.push(
+        `${label(warning.sprintId)} steht auf „${warning.state}", das Fenster endete am ${warning.window.end} ` +
+          `(vor ${count(warning.days, 'Tag', 'Tagen')}, Stichtag ${warning.day}). Nichts schließt einen Sprint von ` +
+          'selbst, und ein Sprint wird nicht verlängert, sondern geschlossen.',
+      );
+      const computed = computedWindowNote(label(warning.sprintId), warning.window);
+      if (computed) notes.push(computed);
     }
   }
 
@@ -994,17 +985,14 @@ function daysLeftNotes(sprint: Sprint, raster: SprintRaster | null, now: string)
       `${count(toEnd + 1, 'Tag', 'Tage')} bis zum Ende am ${window.end}, den Stichtag ${now} eingeschlossen.`,
     );
   }
-  const over = withSource(
+  // „The window is over and the row still says active" is a `SprintWarning` now
+  // (`sprint-window-past`), not a second sentence here: it was the one question this verb
+  // answered and the view did not, because the only code comparing a window to a day lived
+  // in this file. `warningNotes` renders it, and so does the page.
+  return withSource(
     `Das Fenster von ${sprintLabel(sprint)} endete am ${window.end}, vor ${count(-toEnd, 'Tag', 'Tagen')} ` +
       `(Stichtag ${now}).`,
   );
-  if (sprint.state === 'active') {
-    over.push(
-      `${sprintLabel(sprint)} steht weiterhin auf „active": nichts schließt einen Sprint von selbst, und ein Sprint ` +
-        'wird nicht verlängert, sondern geschlossen.',
-    );
-  }
-  return over;
 }
 
 /**
@@ -1048,7 +1036,9 @@ export const sprintStatus: ToolHandler = ({ file, args, now }): ToolPlan => {
   for (const sprint of targets) notes.push(...statusOf(sprint, sprints, file, raster, now));
 
   const relevant = new Set(targets.map((sprint) => sprint.id));
-  const warnings = sprintWarnings(file).filter((warning) => concerns(warning, relevant));
+  // `now` rather than a clock read inside the rule: the same day this answer's „wie lange
+  // noch" is counted against, so the two halves of one report cannot be about two days.
+  const warnings = sprintWarnings(file, now).filter((warning) => concerns(warning, relevant));
   notes.push(...warningNotes(warnings, sprints, file));
   notes.push(...unaccountedNotes(sprints, file));
   return { notes };

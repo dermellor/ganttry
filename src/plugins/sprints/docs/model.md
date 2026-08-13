@@ -119,7 +119,15 @@ so it lives in the plugin config, not on a sprint row.
   burndown describe when work began. This repo keeps no revision history for items, so
   there is no record of when something became done; moving an item's end date changes
   yesterday's curve. Taiga computes its chart the same way, from completion dates.
-- **For a closed sprint the frozen `series` is the truth**, never a recomputation.
+- **For a closed sprint the frozen `series` is the truth**, never a recomputation. A
+  past sprint with **no** report shows no figures at all rather than live ones: falling
+  back to a recomputation there is the freeze rule quietly not holding, and a number that
+  moves under a closed sprint is worse than a dash.
+- **The chart shrinks its canvas, never grows its type.** Raising the label size in SVG
+  user units on a narrow viewport pushed the y labels outside the viewBox and clipped
+  them. One geometry function answers canvas, plot box and label count from the viewport
+  width, and a resize repaints through it, so the CSS and the label count cannot disagree
+  the way they did when each reacted on its own.
 
 Canon names burndowns and refuses to require them („Various practices exist to forecast
 progress, like burn-downs, burn-ups, or cumulative flows. While proven useful, these do
@@ -154,9 +162,26 @@ A velocity number on a page invites exactly the use those warn about.
 1. **A close is not atomic.** A tool returns item changes, so `roll_over` can move items
    but cannot flip the sprint's `state`, write `passes` or freeze `reports` in the same
    operation. Those are `host.data` calls from the view. An interrupted close leaves
-   items moved with no record of the move.
+   items moved with no record of the move, and the interface names which of the three
+   steps landed rather than claiming the whole thing failed.
+
+   **On a local file source the close also has to re-read its own lock.** A row version
+   there is the file's mtime and it covers the *whole document*, so the close's own six
+   writes invalidate the version it read at page load: sending that one made the final
+   state patch answer `409` every time, on the source kind the shipped example uses. The
+   view therefore re-reads the sprint row immediately before the patch, and refuses when
+   that row has since changed its state, window, capacity or unit — the lock exists to
+   catch somebody else's write, so the fresh row has to prove it is still the sprint the
+   close was decided on.
 2. **Nothing fires at a sprint boundary.** No scheduler, no lifecycle hook. A sprint that
-   ended last Tuesday stays `active` until a person or an agent says otherwise.
+   ended last Tuesday stays `active` until a person or an agent says otherwise, so the
+   only honest answer is to *say* it: `sprintWarnings(file, day)` takes the day as a
+   required argument and reports an active or planned sprint whose window has ended, on
+   the page and in `sprint_status` alike. That argument is the whole reason the rule can
+   be shared — a clock-free warning set could not ask the question, and the comparison
+   lived in the agent verb, where the page could not reach it. A window that comes only
+   from the cadence raster is deliberately excluded: quoting computed dates back as a
+   missed deadline is a false alarm about a plan that has not started.
 3. **No people, so no real capacity.** One number per sprint, not person times day minus
    days off. It cannot answer „who is over-committed".
 4. **No item revision log**, which is why the active burndown is a reconstruction.

@@ -525,9 +525,24 @@ test('now before, inside and after the window are three different answers', () =
   const late = status({ sprint: 'S-3' }, file, '2026-02-20');
   said(late, 'endete am 2026-02-15, vor 5 Tagen');
   // Nothing fires at a sprint boundary in this product, so an active sprint whose window
-  // is over stays active until somebody says otherwise. Saying it is the whole point.
-  said(late, 'steht weiterhin auf „active"');
+  // is over stays active until somebody says otherwise. Saying it is the whole point — and
+  // it is a `SprintWarning` now rather than a sentence only this verb could reach, which is
+  // what lets the page say it too.
+  said(late, '„Sprint 3" (S-3) steht auf „active", das Fenster endete am 2026-02-15 (vor 5 Tagen');
   said(late, 'wird nicht verlängert');
+  // A sprint that is over and says so gets neither: „the window has passed" is only a
+  // finding while the row has not moved with it.
+  didNotSay(status({ sprint: 'S-2' }, file, '2026-02-20'), 'wird nicht verlängert');
+});
+
+test('a planned sprint whose window is entirely past is the same finding', () => {
+  // The other branch into it: nobody activated it, and its window went by. Reported for the
+  // same reason as the active one — nothing in this product moves a sprint's dates or its
+  // state, so a plan that stopped being followed says nothing until this warning does.
+  const file = statusFile();
+  const late = status({ sprint: 'S-4' }, file, '2026-03-10');
+  said(late, '„Sprint 4" (S-4) steht auf „planned", das Fenster endete am 2026-03-01 (vor 9 Tagen');
+  didNotSay(status({ sprint: 'S-4' }, file, '2026-03-01'), 'steht auf „planned", das Fenster endete');
 });
 
 test('an unusable now leaves the remaining time unanswered instead of counting from nothing', () => {

@@ -18,8 +18,12 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import {
+  AXIS_CHAR_UNITS,
+  AXIS_LABEL_UNITS,
   MAX_SPRINT_DAYS,
+  Y_LABEL_CHARS,
   axisMax,
+  chartGeometry,
   frozenSeries,
   idealSeries,
   isWorkingDay,
@@ -671,4 +675,77 @@ test('a short axis labels every day at most once', () => {
   assert.deepEqual(tickIndices(3, 6), [0, 1, 2]);
   assert.deepEqual(tickIndices(1, 6), [0]);
   assert.deepEqual(tickIndices(0, 6), []);
+});
+
+// ---- the geometry, and the stylesheet it has to agree with -------------------
+
+test('the chart shrinks its canvas instead of growing its type', () => {
+  // The desktop chart is unchanged, and that is the baseline every narrower one is derived
+  // from: 720 by 300 user units, seven day labels.
+  const wide = chartGeometry(1600);
+  assert.equal(wide.width, 720);
+  assert.equal(wide.height, 300);
+  assert.equal(wide.labels, 7);
+  assert.deepEqual(chartGeometry(2400), wide, 'the canvas does not grow past the desktop one');
+
+  // A phone gets a smaller canvas, so the same 11 user units of type render at close to
+  // 11 pixels — which is what the CSS breakpoint was reaching for when it enlarged the
+  // labels inside a box nothing widened.
+  const narrow = chartGeometry(380);
+  assert.equal(narrow.width, 320);
+  assert.equal(narrow.labels, 2, 'two dates, not seven collided ones');
+  assert.ok(narrow.height >= 200, 'and not a strip: below 480 the aspect gives way');
+
+  // Pure, and a function of the width alone: no clock, no DOM, no module state. A
+  // non-finite width answers with the desktop canvas rather than NaN geometry.
+  assert.deepEqual(chartGeometry(380), narrow);
+  assert.deepEqual(chartGeometry(NaN), wide);
+});
+
+test('no label can leave the viewBox at any width', () => {
+  // The bug both halves of this fix are for: `sprints.css` raised the axis labels to
+  // --text-xl under 760px while the plot box stayed put, so „8,75" started at x=-2 and
+  // „26,25" at x=-16 — outside the box, clipped, and only visible in a browser.
+  const widest = AXIS_LABEL_UNITS * AXIS_CHAR_UNITS * Y_LABEL_CHARS;
+  for (let width = 320; width <= 2000; width += 20) {
+    const geo = chartGeometry(width);
+    const at = `viewport ${width}`;
+    // A y label is anchored `end` at box.left - 8, so it grows to the LEFT from there.
+    assert.ok(geo.box.left - 8 - widest >= 0, `${at}: a y label reaches past x=0`);
+    assert.ok(geo.box.left + geo.box.width <= geo.width, `${at}: the plot box leaves the canvas`);
+    assert.ok(geo.box.top + geo.box.height < geo.height, `${at}: no room under the baseline for the day labels`);
+    // The day labels sit 18 units under the baseline at --text-xs, so the bottom gutter
+    // has to carry a line of type and not just the tick.
+    assert.ok(geo.height - (geo.box.top + geo.box.height) >= 18 + AXIS_LABEL_UNITS / 2, `${at}: a day label is cut off`);
+    // Both outer day labels are anchored to their edge, so the axis ends inside the box.
+    assert.ok(xForIndex(0, 12, geo.box) >= geo.box.left, at);
+    assert.ok(xForIndex(11, 12, geo.box) <= geo.width, at);
+  }
+});
+
+test('the label count never rises as the window narrows', () => {
+  // The other half: the count used to be read once during a render pass while the CSS
+  // reacted to a resize immediately, so 1600 → 380 kept seven labels and collided them.
+  // One function answers both now, so the two cannot disagree — and monotonicity is what
+  // makes „fewer labels in a narrower window" true rather than approximately true.
+  let previous = 0;
+  for (let width = 320; width <= 2000; width += 10) {
+    const { labels } = chartGeometry(width);
+    assert.ok(labels >= previous, `${width}: ${labels} labels after ${previous}`);
+    assert.ok(labels >= 2 && labels <= 7, `${width}: ${labels}`);
+    previous = labels;
+  }
+});
+
+test('the stylesheet gives the axis labels exactly one size, at no breakpoint', () => {
+  // The geometry above reserves its gutters for `AXIS_LABEL_UNITS`, so a second
+  // `font-size` for these labels — the media query that used to be here is the example —
+  // puts the clipping straight back. Asserted against the file, because prose in a comment
+  // does not survive the next contributor (the same reason the OpenAPI spec has a drift
+  // test).
+  const css = readFileSync(join(import.meta.dirname, 'sprints.css'), 'utf8');
+  const sizes = css.match(/\.sprints-axis-label\s*\{[^}]*\}/g) ?? [];
+  assert.equal(sizes.length, 1, 'more than one rule sets the axis label');
+  assert.ok(sizes[0].includes(`font-size: var(--text-xs)`), sizes[0]);
+  assert.equal(css.includes('@media'), false, 'a breakpoint decides part of the chart again');
 });

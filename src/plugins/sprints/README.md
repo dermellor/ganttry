@@ -223,7 +223,9 @@ the one that goes stale.
 - **Variable sprint lengths in the cadence.** A sprint row may carry its own window, but
   the suggestion behind it has one length.
 - **Anything at a sprint boundary.** There is no scheduler and no lifecycle hook, so a
-  sprint that ended stays active until a person or an agent says otherwise.
+  sprint that ended stays active until a person or an agent says otherwise. Both the
+  page and `sprint_status` say so rather than presenting a months-old sprint as the
+  current one.
 - **A Definition of Done of its own.** The core's item status is the mapping, and canon
   puts the Definition of Done on the product rather than on a sprint.
 - **Cross-timeline sprints.** Plugin rows belong to one timeline.

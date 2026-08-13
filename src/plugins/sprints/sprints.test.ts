@@ -5,30 +5,40 @@ import {
   CAPACITY_UNITS,
   SPRINTS_PLUGIN,
   SPRINT_KEY,
+  SPRINT_STATES,
   activeSprint,
   activeSprints,
   assignedSprintId,
   capacityUnitOf,
   carriedInto,
+  closeIncomplete,
+  closeObjection,
   estimateOf,
+  figuresSource,
   isDone,
   itemsOfSprint,
+  nextSprint,
   passesOfSprint,
   rasterWindow,
   readEstimateUnit,
   readPasses,
   readReports,
   readSprints,
+  recordableItems,
   reportOfSprint,
   reportUnitOf,
   sprintById,
+  sprintEditPatch,
   sprintWarnings,
   sprintWindow,
   suggestedCapacity,
   suggestedSprintId,
+  timelineScope,
   windowContains,
   type Sprint,
+  type SprintEdit,
 } from './sprints';
+import { MIN_CAPACITY } from './manifest';
 import { frozenSeries, sprintDays } from './burndown';
 import { rasterFrom, readSprintConfig } from './raster';
 import type { TimelineFile, TimelineFileItem } from '../../types';
@@ -46,6 +56,17 @@ import type { TimelineFile, TimelineFileItem } from '../../types';
 
 const RASTER = { start: '2026-01-05', lengthDays: 14, velocity: 20 };
 const raster = rasterFrom(readSprintConfig(RASTER));
+
+/**
+ * The day the clock-free warnings are asked for, chosen to be before every window in this
+ * file.
+ *
+ * `sprintWarnings` takes the day because one of its findings compares a window against it
+ * („sprint-window-past"), and a rule that read the clock itself would answer differently in
+ * a test than in the app. A reference day before every window keeps the other assertions
+ * about exactly the warnings they were written for; the day-dependent one has its own tests.
+ */
+const BEFORE_ANY_WINDOW = '2026-01-01';
 
 /** A timeline with this plugin enabled and these rows in its own section. */
 const withRows = (
@@ -68,6 +89,18 @@ const sprintRow = (id: string, over: Record<string, unknown> = {}) =>
   row(id, { name: id.toUpperCase(), state: 'planned', ...over });
 
 const item = (over: Partial<TimelineFileItem> = {}): TimelineFileItem => ({ content: 'x', ...over });
+
+/** An untouched sprint form: every field as an input hands it over, which is a string. */
+const FORM: SprintEdit = {
+  name: '',
+  goal: '',
+  start: '',
+  end: '',
+  state: 'planned',
+  capacity: '',
+  capacityUnit: '',
+  note: '',
+};
 
 const assigned = (id: string, sprintId: string, over: Partial<TimelineFileItem> = {}): TimelineFileItem =>
   item({ id, ...over, metadata: { [SPRINT_KEY]: sprintId, ...(over.metadata ?? {}) } });
@@ -319,7 +352,7 @@ test('a written start is never discarded, and the end it did not write is marked
     { sprints: [sprintRow('s1', { state: 'active', goal: 'A', start: '2026-05-01' })] },
     { items: [assigned('a', 's1', { start: '2026-05-04', metadata: { storyPoints: '5' } })] },
   );
-  assert.deepEqual(sprintWarnings(healthy), []);
+  assert.deepEqual(sprintWarnings(healthy, BEFORE_ANY_WINDOW), []);
 
   // Without a cadence there is no length to compute with, and `lengthDays` is never
   // guessed: a fourteen-day window nobody configured is worse than none.
@@ -472,10 +505,10 @@ test('an active sprint with no goal is warned about, a planned one is not', () =
   const file = withRows({
     sprints: [sprintRow('s1', { state: 'active' }), sprintRow('s2', { state: 'planned' })],
   });
-  assert.deepEqual(sprintWarnings(file), [{ kind: 'active-sprint-without-goal', sprintId: 's1' }]);
+  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), [{ kind: 'active-sprint-without-goal', sprintId: 's1' }]);
 
   const withGoal = withRows({ sprints: [sprintRow('s1', { state: 'active', goal: 'Die Suche steht' })] });
-  assert.deepEqual(sprintWarnings(withGoal), []);
+  assert.deepEqual(sprintWarnings(withGoal, BEFORE_ANY_WINDOW), []);
 });
 
 test('no active sprint at all warns about nothing', () => {
@@ -486,11 +519,11 @@ test('no active sprint at all warns about nothing', () => {
     sprints: [sprintRow('s1', { state: 'closed' }), sprintRow('s2', { state: 'planned' })],
     reports: [row('s1', { sprintId: 's1', scopeAtStart: 8, scopeAtClose: 8, completed: 8, carried: 0 })],
   });
-  assert.deepEqual(sprintWarnings(file), []);
+  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), []);
   // And a timeline with no sprint rows at all says nothing either, rather than
   // complaining about a plugin somebody has only just switched on.
-  assert.deepEqual(sprintWarnings(withRows({})), []);
-  assert.deepEqual(sprintWarnings(null), []);
+  assert.deepEqual(sprintWarnings(withRows({}), BEFORE_ANY_WINDOW), []);
+  assert.deepEqual(sprintWarnings(null, BEFORE_ANY_WINDOW), []);
 });
 
 test('a second active sprint is reported once, with both ids', () => {
@@ -504,7 +537,7 @@ test('a second active sprint is reported once, with both ids', () => {
       sprintRow('s3', { state: 'active' }),
     ],
   });
-  assert.deepEqual(sprintWarnings(file), [
+  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), [
     { kind: 'active-sprint-without-goal', sprintId: 's3' },
     { kind: 'several-active-sprints', sprintIds: ['s1', 's2', 's3'] },
   ]);
@@ -533,7 +566,7 @@ test('an item whose dates fall outside its assigned sprint is named, not moved',
       ],
     },
   );
-  assert.deepEqual(sprintWarnings(file), [
+  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), [
     {
       kind: 'item-outside-sprint-window',
       itemId: 'b',
@@ -564,7 +597,7 @@ test('an item in a sprint with no usable estimate is named, whatever the sprint 
       ],
     },
   );
-  assert.deepEqual(sprintWarnings(file), [
+  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), [
     { kind: 'item-without-estimate', itemId: 'b', content: 'x', sprintId: 's1' },
     { kind: 'item-without-estimate', itemId: 'c', content: 'x', sprintId: 's1' },
   ]);
@@ -575,7 +608,7 @@ test('an assignment naming no row is left to the field, not reported as a sprint
   // nothing, which the select shows as a value with no option. Warning about it here
   // would name a sprint that does not exist.
   const file = withRows({ sprints: [sprintRow('s1', { state: 'planned' })] }, { items: [assigned('a', 'geloescht')] });
-  assert.deepEqual(sprintWarnings(file), []);
+  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), []);
 });
 
 test('two windows covering the same days are a warning that names both sprints', () => {
@@ -592,7 +625,7 @@ test('two windows covering the same days are a warning that names both sprints',
     },
     { items: [assigned('a', 's2', { start: '2026-01-20', metadata: { storyPoints: '5' } })] },
   );
-  assert.deepEqual(sprintWarnings(file), [
+  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), [
     {
       kind: 'overlapping-sprint-windows',
       sprintIds: ['s1', 's2'],
@@ -610,7 +643,7 @@ test('two windows covering the same days are a warning that names both sprints',
       sprintRow('s2', { start: '2026-01-19', end: '2026-02-01' }),
     ],
   });
-  assert.deepEqual(sprintWarnings(touching), []);
+  assert.deepEqual(sprintWarnings(touching, BEFORE_ANY_WINDOW), []);
 });
 
 test('a close before the sprint began is a warning, with both dates', () => {
@@ -619,14 +652,14 @@ test('a close before the sprint began is a warning, with both dates', () => {
   const file = withRows({
     sprints: [sprintRow('s1', { state: 'closed', start: '2026-02-02', end: '2026-02-15', closedOn: '2026-01-30' })],
   });
-  assert.deepEqual(sprintWarnings(file), [
+  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), [
     { kind: 'closed-before-start', sprintId: 's1', start: '2026-02-02', closedOn: '2026-01-30' },
   ]);
   // Closed early but after the start is the normal case, and canon allows it.
   const early = withRows({
     sprints: [sprintRow('s1', { state: 'closed', start: '2026-02-02', end: '2026-02-15', closedOn: '2026-02-11' })],
   });
-  assert.deepEqual(sprintWarnings(early), []);
+  assert.deepEqual(sprintWarnings(early, BEFORE_ANY_WINDOW), []);
 });
 
 test('a row id twice in one collection is a warning, in every collection', () => {
@@ -643,7 +676,7 @@ test('a row id twice in one collection is a warning, in every collection', () =>
       row('s1', { sprintId: 's1', scopeAtStart: 3, scopeAtClose: 3, completed: 3, carried: 0 }),
     ],
   });
-  assert.deepEqual(sprintWarnings(file), [
+  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), [
     { kind: 'duplicate-row-id', collection: 'sprints', rowId: 's1' },
     { kind: 'duplicate-row-id', collection: 'passes', rowId: 'a:s1' },
     { kind: 'duplicate-row-id', collection: 'reports', rowId: 's1' },
@@ -659,7 +692,7 @@ test('a row id twice in one collection is a warning, in every collection', () =>
       row('s1-alt', { sprintId: 's1', scopeAtStart: 3, scopeAtClose: 3, completed: 3, carried: 0 }),
     ],
   });
-  assert.deepEqual(sprintWarnings(twoReports), [
+  assert.deepEqual(sprintWarnings(twoReports, BEFORE_ANY_WINDOW), [
     { kind: 'several-reports-for-one-sprint', sprintId: 's1', rowIds: ['s1', 's1-alt'] },
   ]);
 });
@@ -674,7 +707,7 @@ test('a history row pointing at no sprint is finally read by something', () => {
       row('b:geloescht', { itemId: 'b', sprintId: 'geloescht', outcome: 'carried', recordedOn: '2026-01-18' }),
     ],
   });
-  assert.deepEqual(sprintWarnings(file), [
+  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), [
     { kind: 'pass-without-sprint', rowId: 'b:geloescht', itemId: 'b', sprintId: 'geloescht' },
   ]);
 });
@@ -730,7 +763,7 @@ test('an item with no id is still nameable in a warning', () => {
     { sprints: [sprintRow('s1', { state: 'planned', start: '2026-01-05', end: '2026-01-18' })] },
     { items: [item({ content: 'Ohne Id', start: '2026-02-02', metadata: { [SPRINT_KEY]: 's1' } })] },
   );
-  assert.deepEqual(sprintWarnings(file), [
+  assert.deepEqual(sprintWarnings(file, BEFORE_ANY_WINDOW), [
     {
       kind: 'item-outside-sprint-window',
       itemId: null,
@@ -740,4 +773,294 @@ test('an item with no id is still nameable in a warning', () => {
     },
     { kind: 'item-without-estimate', itemId: null, content: 'Ohne Id', sprintId: 's1' },
   ]);
+});
+
+// ---- the window that has passed ---------------------------------------------
+
+test('an active sprint whose window has ended is a warning, against the day it is asked for', () => {
+  // The one finding here that needs a day, and the reason `sprintWarnings` takes one.
+  // Nothing in this product fires at a sprint boundary, so this is the state a plan drifts
+  // into: the shipped example's active sprint ended in February and the page said „aktiv"
+  // and nothing else, while `sprint_status` said it precisely — the one question the view
+  // and the verb answered differently.
+  const file = withRows({
+    sprints: [sprintRow('s1', { state: 'active', goal: 'A', start: '2026-02-02', end: '2026-02-15' })],
+  });
+  assert.deepEqual(sprintWarnings(file, '2026-02-15'), [], 'the last day is still inside the window');
+  assert.deepEqual(sprintWarnings(file, '2026-02-16'), [
+    {
+      kind: 'sprint-window-past',
+      sprintId: 's1',
+      state: 'active',
+      window: { start: '2026-02-02', end: '2026-02-15', source: 'row' },
+      days: 1,
+      day: '2026-02-16',
+    },
+  ]);
+  // The count is whole days and comes from the same arithmetic every other date question
+  // here goes through, clock change included (`raster.test.ts` pins that).
+  const late = sprintWarnings(file, '2026-08-13');
+  assert.equal(late.length, 1);
+  assert.equal(late[0].kind === 'sprint-window-past' && late[0].days, 179);
+});
+
+test('a planned sprint whose window is past is the same warning, a closed one is not', () => {
+  // Two states reach it and two do not: a closed or cancelled sprint is MEANT to be over,
+  // so reporting its window as passed would warn about every finished sprint forever.
+  const rows = (state: string) => withRows({ sprints: [sprintRow('s1', { state, start: '2026-02-02', end: '2026-02-15' })] });
+  assert.equal(sprintWarnings(rows('planned'), '2026-03-01').filter((w) => w.kind === 'sprint-window-past').length, 1);
+  assert.deepEqual(sprintWarnings(rows('closed'), '2026-03-01'), []);
+  assert.deepEqual(sprintWarnings(rows('cancelled'), '2026-03-01'), []);
+});
+
+test('a window nobody wrote is not late, and a day nobody can read asks nothing', () => {
+  // A row with no dates takes the cadence window at its position, and that is the raster's
+  // *suggestion* rather than a date the team committed to. Quoting it back as a deadline
+  // they missed is the false alarm this function has already been fixed for once, on the
+  // window side — and „the plan has not started" is the normal state of a plan, which is
+  // why „no active sprint" is not a warning either.
+  const cadence = withRows({ sprints: [sprintRow('s1', { state: 'planned' })] });
+  assert.deepEqual(sprintWarnings(cadence, '2026-08-13'), []);
+  // A written start with a computed end IS late: half of that window is the team's own.
+  const half = withRows({ sprints: [sprintRow('s1', { state: 'planned', start: '2026-02-02' })] });
+  const found = sprintWarnings(half, '2026-08-13');
+  assert.equal(found.length, 1);
+  assert.equal(found[0].kind === 'sprint-window-past' && found[0].window.source, 'end-from-cadence');
+  // Every other warning is clock-free, so an unusable day drops this finding and keeps them.
+  const both = withRows({
+    sprints: [sprintRow('s1', { state: 'active', start: '2026-02-02', end: '2026-02-15' })],
+  });
+  for (const day of ['', '   ', 'heute', '2026-13-40']) {
+    assert.deepEqual(sprintWarnings(both, day), [{ kind: 'active-sprint-without-goal', sprintId: 's1' }], day);
+  }
+});
+
+// ---- what the view asks this module -----------------------------------------
+
+test('a past sprint without a report has no figures rather than live ones', () => {
+  // Setting the status to „abgeschlossen" in the form was enough to reach a live
+  // recomputation: the boxes then showed recomputed numbers beside an empty plot, which is
+  // the freeze rule quietly not holding. It is a fault in the data, not a source of
+  // figures, so it is a third answer rather than a fallback to the first.
+  const sprint = (state: string): Sprint => readSprints(withRows({ sprints: [sprintRow('s1', { state })] }))[0];
+  const report = { id: 's1', sprintId: 's1', series: [] };
+  assert.equal(figuresSource(sprint('active'), null), 'live');
+  assert.equal(figuresSource(sprint('active'), report), 'live');
+  assert.equal(figuresSource(sprint('closed'), report), 'frozen');
+  assert.equal(figuresSource(sprint('closed'), null), 'report-missing');
+  assert.equal(figuresSource(sprint('cancelled'), null), 'report-missing');
+});
+
+test('the close refuses when the row it re-reads is no longer the one it decided to close', () => {
+  // The close re-reads the row's version immediately before the state patch, because on a
+  // local file source the version is the FILE's mtime: its own six writes invalidate the
+  // one read at page load. Re-reading must not become a way around the lock, so the fresh
+  // row has to prove it is still the same sprint — the state, the window and the capacity
+  // are what the frozen report was computed from.
+  const decided = readSprints(
+    withRows({ sprints: [sprintRow('s1', { state: 'active', start: '2026-02-02', end: '2026-02-15', capacity: 20 })] }),
+  )[0];
+  const changed = (over: Record<string, unknown>) =>
+    readSprints(
+      withRows({
+        sprints: [
+          sprintRow('s1', { state: 'active', start: '2026-02-02', end: '2026-02-15', capacity: 20, ...over }),
+        ],
+      }),
+    )[0];
+  assert.equal(closeObjection(decided, changed({})), null, 'an untouched row is closed');
+  assert.deepEqual(closeObjection(decided, null), { kind: 'sprint-gone' });
+  assert.deepEqual(closeObjection(decided, changed({ state: 'closed' })), { kind: 'state-changed', state: 'closed' });
+  assert.deepEqual(closeObjection(decided, changed({ end: '2026-02-22' })), { kind: 'window-changed' });
+  assert.deepEqual(closeObjection(decided, changed({ start: '2026-02-03' })), { kind: 'window-changed' });
+  assert.deepEqual(closeObjection(decided, changed({ capacity: 25 })), { kind: 'capacity-changed' });
+  // The unit too: it decides what the frozen figures count, so a changed one makes the
+  // report about to be written a report about something else.
+  assert.deepEqual(closeObjection(decided, changed({ capacityUnit: 'hours' })), { kind: 'capacity-changed' });
+});
+
+test('an unfinished close stays unfinished until the state moves', () => {
+  // What decides how long a notice about a half-finished close stays on screen. Cleared on
+  // the next render, it was a partial close recorded nowhere while its `passes` rows sat on
+  // the server and the sprint still said „aktiv".
+  const half = withRows({
+    sprints: [sprintRow('s1', { state: 'active', goal: 'A', start: '2026-01-05', end: '2026-01-18' })],
+    passes: [row('s1:a', { itemId: 'a', sprintId: 's1', outcome: 'done', recordedOn: '2026-01-18' })],
+  });
+  const read = (file: TimelineFile) =>
+    closeIncomplete(readSprints(file), readPasses(file), readReports(file), 's1');
+  assert.equal(read(half), true);
+  // The report alone counts as well: a sprint with no items writes no history row, so the
+  // report is the only thing a stopped close leaves behind.
+  assert.equal(
+    read(
+      withRows({
+        sprints: [sprintRow('s1', { state: 'active', goal: 'A' })],
+        reports: [row('r1', { sprintId: 's1', completed: 0 })],
+      }),
+    ),
+    true,
+  );
+  // Resolved by the STATE, not by the rows: a retry is idempotent, so the rows of a
+  // finished close are the record rather than damage.
+  assert.equal(
+    read(
+      withRows({
+        sprints: [sprintRow('s1', { state: 'closed', start: '2026-01-05', end: '2026-01-18' })],
+        passes: [row('s1:a', { itemId: 'a', sprintId: 's1', outcome: 'done' })],
+      }),
+    ),
+    false,
+  );
+  // Nothing written yet, and a sprint that is gone entirely: neither is a situation to
+  // keep a notice about.
+  assert.equal(read(withRows({ sprints: [sprintRow('s1', { state: 'active', goal: 'A' })] })), false);
+  assert.equal(read(withRows({ sprints: [sprintRow('s2')] })), false);
+});
+
+test('a close records every item that can be recorded and names the ones that cannot', () => {
+  // `passes` is keyed on the item id, so an item without one has no row: two of them would
+  // collide under one key. The close skipped them silently while `members.length` stayed the
+  // denominator of every sentence it printed.
+  const items = [item({ id: 'a' }), item({ content: 'Ohne Id' }), item({ id: '   ' })];
+  const { recordable, skipped } = recordableItems(items);
+  assert.deepEqual(recordable.map((i) => i.id), ['a']);
+  assert.deepEqual(skipped.map((i) => i.content), ['Ohne Id', 'x']);
+  assert.deepEqual(recordableItems([]), { recordable: [], skipped: [] });
+});
+
+test('a new sprint takes its id and its name from one counter', () => {
+  // Two counters — the first free `sprint-N` for the id, `sprints.length + 1` for the name —
+  // wrote `id: sprint-2` named „Sprint 3" on a timeline holding `sprint-1` and `sprint-5`.
+  assert.deepEqual(nextSprint([]), { id: 'sprint-1', name: 'Sprint 1' });
+  assert.deepEqual(nextSprint(['sprint-1', 'sprint-5']), { id: 'sprint-2', name: 'Sprint 2' });
+  assert.deepEqual(nextSprint(['sprint-1', 'sprint-2', 'sprint-3']), { id: 'sprint-4', name: 'Sprint 4' });
+});
+
+test('the reader state of one timeline is keyed on that timeline', () => {
+  // Sprint ids are minted per timeline (`sprint-1…N`), so one instance-wide key made a
+  // selection in one timeline resolve in the next — the class of key the root AGENTS.md
+  // flags. The host API hands a plugin no timeline id, so the identity comes out of the
+  // snapshot.
+  assert.equal(timelineScope(withRows({ sprints: [sprintRow('s1')] }, { name: 'Lieferplan' })), 'Lieferplan');
+  assert.equal(timelineScope(withRows({ sprints: [sprintRow('s1'), sprintRow('s2')] })), 's1|s2');
+  // No name and no rows is no identity at all, and the empty string says so: a caller
+  // stores nothing under it, because an instance-wide bucket is the bug.
+  assert.equal(timelineScope(withRows({})), '');
+  assert.equal(timelineScope(null), '');
+});
+
+// ---- the edit form's rules --------------------------------------------------
+
+test('the form accepts exactly the capacities the schema and the row reader accept', () => {
+  // The view invented „greater than 0" of its own, so `0.005` passed the form and came back
+  // as `400 row.capacity: below 0.01` — an English field path in a German interface. And a
+  // `number` input hands `.value` back as "" for anything it cannot parse, so „0x10" was
+  // saved as `capacity: null` with nothing said.
+  const sprint = readSprints(withRows({ sprints: [sprintRow('s1', { state: 'planned' })] }))[0];
+  const save = (capacity: string) =>
+    sprintEditPatch(sprint, [sprint], { ...FORM, name: 'Sprint 1', capacity });
+  assert.equal(save('20').patch?.capacity, 20);
+  assert.equal(save(' 20.5 ').patch?.capacity, 20.5);
+  assert.equal(save('0.01').patch?.capacity, MIN_CAPACITY);
+  // An empty field clears the value, which is what `null` means in a patch.
+  assert.equal(save('').patch?.capacity, null);
+  assert.deepEqual(save('0.005').refusal, { kind: 'capacity-below-minimum', value: 0.005 });
+  assert.deepEqual(save('0').refusal, { kind: 'capacity-below-minimum', value: 0 });
+  assert.deepEqual(save('-5').refusal, { kind: 'capacity-below-minimum', value: -5 });
+  // The FORMAT is what is wrong with these two, and 1000 is a perfectly good capacity:
+  // „muss eine Zahl größer als 0 sein" described neither.
+  assert.deepEqual(save('0x10').refusal, { kind: 'capacity-not-a-decimal', value: '0x10' });
+  assert.deepEqual(save('1e3').refusal, { kind: 'capacity-not-a-decimal', value: '1e3' });
+  assert.deepEqual(save('zwanzig').refusal, { kind: 'capacity-not-a-decimal', value: 'zwanzig' });
+});
+
+test('a state the schema does not know is refused rather than replaced', () => {
+  // It used to fall back to the sprint's current state and report „gespeichert", which is a
+  // write that lies about what it wrote.
+  const sprint = readSprints(withRows({ sprints: [sprintRow('s1', { state: 'planned' })] }))[0];
+  assert.deepEqual(sprintEditPatch(sprint, [sprint], { ...FORM, name: 'A', state: 'erledigt' }).refusal, {
+    kind: 'unknown-state',
+    value: 'erledigt',
+  });
+  assert.deepEqual(sprintEditPatch(sprint, [sprint], { ...FORM, name: 'A', state: '' }).refusal, {
+    kind: 'unknown-state',
+    value: '',
+  });
+  for (const state of SPRINT_STATES) {
+    const edit = { ...FORM, name: 'A', state, start: '2026-01-05', end: '2026-01-18' };
+    assert.equal(sprintEditPatch(sprint, [sprint], edit).patch?.state, state);
+  }
+});
+
+test('the form refuses what a sprint may not be: nameless, second active, or running without a window', () => {
+  const file = withRows({
+    sprints: [sprintRow('s1', { state: 'planned' }), sprintRow('s2', { state: 'active', goal: 'A' })],
+  });
+  const sprints = readSprints(file);
+  const edit = (over: Partial<typeof FORM>) => sprintEditPatch(sprints[0], sprints, { ...FORM, name: 'A', ...over });
+  assert.deepEqual(edit({ name: '  ' }).refusal, { kind: 'name-missing' });
+  // At most one active sprint per timeline, and the refusal names the other one: the host
+  // enforces no rule across rows, so this is the plugin's own.
+  assert.deepEqual(edit({ state: 'active', start: '2026-01-05', end: '2026-01-18' }).refusal, {
+    kind: 'second-active-sprint',
+    sprintId: 's2',
+  });
+  // The sprint that IS the active one may be saved while staying active.
+  assert.equal(
+    sprintEditPatch(sprints[1], sprints, { ...FORM, name: 'B', state: 'active', start: '2026-01-05', end: '2026-01-18' })
+      .patch?.state,
+    'active',
+  );
+  assert.deepEqual(edit({ start: '2026-01-18', end: '2026-01-05' }).refusal, { kind: 'end-before-start' });
+  // A fixed window is what makes a sprint one, and it is the precondition for the axis, so
+  // „aktiv" and „ohne Zeitraum" never coexist in stored data. Asked of the sprint that is
+  // already active, so the „second active" refusal above is not what answers.
+  assert.deepEqual(
+    sprintEditPatch(sprints[1], sprints, { ...FORM, name: 'B', state: 'active', start: '2026-01-05' }).refusal,
+    { kind: 'active-without-window' },
+  );
+});
+
+test('an emptied field clears its key rather than storing an empty string', () => {
+  // The host's rule for a patch: `null` removes. Storing "" instead is a value every reader
+  // then has to special-case.
+  const sprint = readSprints(withRows({ sprints: [sprintRow('s1', { state: 'planned' })] }))[0];
+  const { patch } = sprintEditPatch(sprint, [sprint], { ...FORM, name: 'A' });
+  assert.deepEqual(patch, {
+    name: 'A',
+    state: 'planned',
+    goal: null,
+    start: null,
+    end: null,
+    capacity: null,
+    capacityUnit: null,
+    note: null,
+  });
+  const filled = sprintEditPatch(sprint, [sprint], {
+    name: ' A ',
+    goal: ' Ziel ',
+    start: '2026-01-05',
+    end: '2026-01-18',
+    state: 'planned',
+    capacity: '18',
+    capacityUnit: 'hours',
+    note: ' Retro ',
+  });
+  assert.deepEqual(filled.patch, {
+    name: 'A',
+    state: 'planned',
+    goal: 'Ziel',
+    start: '2026-01-05',
+    end: '2026-01-18',
+    capacity: 18,
+    capacityUnit: 'hours',
+    note: 'Retro',
+  });
+  // A unit the schema does not know clears the field instead of being stored: the config's
+  // default is then what the figures are counted in, which is a defined answer.
+  assert.equal(
+    sprintEditPatch(sprint, [sprint], { ...FORM, name: 'A', capacityUnit: 'bananen' }).patch?.capacityUnit,
+    null,
+  );
 });

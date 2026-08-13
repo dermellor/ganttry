@@ -31,7 +31,16 @@
 import { hasPlugin, pluginConfig, statusOrDefault } from '../../pluginHost/api';
 import type { PluginDataRow, TimelineFile, TimelineFileItem } from '../../types';
 import { MIN_CAPACITY, SPRINT_COLLECTIONS, sprintsManifest } from './manifest';
-import { dayOf, rasterFrom, readSprintConfig, shiftDayString, sprintFirstDay, type SprintRaster } from './raster';
+import {
+  dayOf,
+  isDayString,
+  rasterFrom,
+  readSprintConfig,
+  shiftDayString,
+  sprintFirstDay,
+  sprintOfDay,
+  type SprintRaster,
+} from './raster';
 
 /**
  * Stable id of this plugin, read from the manifest so the id exists exactly once. The
@@ -266,6 +275,30 @@ export type SprintWarning =
       kind: 'several-reports-for-one-sprint';
       sprintId: string;
       rowIds: string[];
+    }
+  | {
+      /**
+       * The window is over and the row still says the sprint is running, or still to
+       * come.
+       *
+       * The one finding here that needs a day, and the reason `sprintWarnings` takes
+       * one. Nothing in this product fires at a sprint boundary („What this model cannot
+       * do", 2), so a sprint that ended in February stays `active` until a person or an
+       * agent says otherwise — and until this warning existed, only `sprint_status` said
+       * so, because it was the only code comparing a window to a day. The page then drew
+       * „aktiv", a flat reconstruction and no word about the window, which is the one
+       * question the view and the verb answered differently.
+       */
+      kind: 'sprint-window-past';
+      sprintId: string;
+      /** Only these two reach it: a closed or cancelled sprint is meant to be over. */
+      state: Extract<SprintState, 'planned' | 'active'>;
+      /** The window it is late against, with its source, so a note can say where it came from. */
+      window: SprintWindow;
+      /** Whole days from the window's last day to `day`, always at least 1. */
+      days: number;
+      /** The day it was compared against, so a note can name its reference. */
+      day: string;
     };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -558,6 +591,29 @@ export function sprintWindow(
   return rasterWindow(raster, sprint.position);
 }
 
+/**
+ * Whole calendar days from `from` to `to`; negative when `to` is earlier, null when
+ * either value names no day.
+ *
+ * Here rather than in `tools.ts`, which is where it was written and which asked for the
+ * move in a comment: „how much time is left" is a question about a sprint window, and a
+ * second consumer arrived the moment `sprintWarnings` learned to compare one against a
+ * day. Two copies of it would be two answers around the Europe/Berlin change of
+ * 2026-03-29.
+ *
+ * Built on `sprintOfDay` with a one-day raster rather than on date parsing of its own,
+ * for the same reason: a one-day raster anchored at `from` numbers `to` as its offset
+ * plus one, so the offset falls out of the arithmetic that decides every other date
+ * question in this plugin (`raster.test.ts` pins the clock change).
+ */
+export function dayOffset(from: string, to: string): number | null {
+  const oneDay = (anchor: string): SprintRaster => ({ anchor, lengthDays: 1, velocity: null, scale: [] });
+  const forward = sprintOfDay(oneDay(from), to);
+  if (forward != null) return forward - 1;
+  const backward = sprintOfDay(oneDay(to), from);
+  return backward == null ? null : -(backward - 1);
+}
+
 /** Does a stored date fall inside the window? False for a value that names no day. */
 export function windowContains(window: DayWindow | null | undefined, value: unknown): boolean {
   const day = dayOf(value);
@@ -694,6 +750,222 @@ export function carriedInto(
   return out;
 }
 
+/**
+ * The items of a close that can be recorded, and the ones that cannot.
+ *
+ * `passes` is keyed on the item id and the sprint id, so an item with no id has no row:
+ * two of them would collide under one key. The close used to skip such an item silently
+ * while `members.length` stayed the denominator of every sentence it printed, so „5 von 6
+ * Einträgen" was the closest anybody came to being told.
+ */
+export function recordableItems(items: readonly TimelineFileItem[]): {
+  recordable: TimelineFileItem[];
+  skipped: TimelineFileItem[];
+} {
+  const recordable: TimelineFileItem[] = [];
+  const skipped: TimelineFileItem[] = [];
+  for (const item of items) (text(item.id) ? recordable : skipped).push(item);
+  return { recordable, skipped };
+}
+
+/**
+ * Where a sprint's figures come from.
+ *
+ * Three answers rather than two, and the third is the one that was missing: a past sprint
+ * whose report is absent used to fall through to a live recomputation, so setting the
+ * status to „abgeschlossen" in the form was enough to put recomputed numbers beside an
+ * empty plot — the freeze rule quietly not holding. It is a fault in the data, not a
+ * source of figures, so it is named as one and no figure is shown.
+ */
+export type FiguresSource = 'live' | 'frozen' | 'report-missing';
+
+export function figuresSource(sprint: Sprint, report: SprintReport | null | undefined): FiguresSource {
+  const past = sprint.state === 'closed' || sprint.state === 'cancelled';
+  if (!past) return 'live';
+  return report ? 'frozen' : 'report-missing';
+}
+
+/**
+ * Has a close been started and left unfinished?
+ *
+ * A close is several writes and is not atomic („What this model cannot do", 1), so it can
+ * stop between them: the history rows land, the report or the state does not. This is the
+ * situation a notice about it describes, and therefore what decides how long that notice
+ * has to stay on screen — the reason it is a rule here rather than a flag in the view. A
+ * notice cleared on the next render is a partial close recorded nowhere while `passes`
+ * rows sit on the server and the sprint still says „aktiv".
+ *
+ * Resolved by the state, not by the rows: the retry is idempotent, so the leftover
+ * `passes` and `reports` rows of a finished close are the record rather than damage.
+ */
+export function closeIncomplete(
+  sprints: readonly Sprint[],
+  passes: readonly SprintPass[],
+  reports: readonly SprintReport[],
+  sprintId: string,
+): boolean {
+  const sprint = sprintById(sprints, sprintId);
+  // A sprint that is gone takes the situation with it: there is nothing left to finish.
+  if (!sprint) return false;
+  if (sprint.state === 'closed' || sprint.state === 'cancelled') return false;
+  return passesOfSprint(passes, sprintId).length > 0 || reportOfSprint(reports, sprintId) != null;
+}
+
+/**
+ * Why this sprint must not be closed after all, read off the row as it stands now.
+ *
+ * The close re-reads the row immediately before it patches the state, because on a local
+ * file source the version is the file's mtime: the close's own writes move it, so the
+ * counter read at page load is stale by the time the patch goes out. Re-reading to get a
+ * fresh counter would defeat the lock, though — the lock is there to catch *somebody
+ * else's* write — so the fresh row has to prove it is still the one the reader decided to
+ * close. The state, the window and the capacity are what the frozen figures were computed
+ * from; if any of them moved, the report about to be written describes a different sprint.
+ */
+export type CloseObjection =
+  | { kind: 'sprint-gone' }
+  | { kind: 'state-changed'; state: SprintState }
+  | { kind: 'window-changed' }
+  | { kind: 'capacity-changed' };
+
+export function closeObjection(decided: Sprint, current: Sprint | null | undefined): CloseObjection | null {
+  if (!current) return { kind: 'sprint-gone' };
+  if (current.state !== decided.state) return { kind: 'state-changed', state: current.state };
+  if (current.start !== decided.start || current.end !== decided.end) return { kind: 'window-changed' };
+  if (current.capacity !== decided.capacity || current.capacityUnit !== decided.capacityUnit) {
+    return { kind: 'capacity-changed' };
+  }
+  return null;
+}
+
+/**
+ * The id and the name of a sprint about to be created.
+ *
+ * One counter for both, which is the whole point: the id used to come from the first free
+ * `sprint-N` and the name from `sprints.length + 1`, so a timeline holding `sprint-1` and
+ * `sprint-5` produced a row with the id `sprint-2` named „Sprint 3".
+ */
+export function nextSprint(taken: readonly string[]): { id: string; name: string } {
+  const used = new Set(taken);
+  for (let n = 1; ; n++) {
+    const id = `sprint-${n}`;
+    if (!used.has(id)) return { id, name: `Sprint ${n}` };
+  }
+}
+
+/** The edited fields of one sprint, as the inputs hand them over: strings throughout. */
+export type SprintEdit = {
+  name: string;
+  goal: string;
+  start: string;
+  end: string;
+  state: string;
+  capacity: string;
+  capacityUnit: string;
+  note: string;
+};
+
+/**
+ * Why an edit is not written, as **data**: the view words it in German, and the rule is
+ * here so a second writer cannot word a different rule.
+ */
+export type SprintEditRefusal =
+  | { kind: 'name-missing' }
+  /** A state the schema does not know. Refused rather than replaced by the current one:
+   * silently keeping the old state and reporting „gespeichert" is a write that lies. */
+  | { kind: 'unknown-state'; value: string }
+  | { kind: 'second-active-sprint'; sprintId: string }
+  | { kind: 'end-before-start' }
+  | { kind: 'active-without-window' }
+  /** Not a plain decimal. `"0x10"` and `"1e3"` are both this: the FORMAT is what is
+   * rejected, and „muss eine Zahl größer als 0 sein" misdescribed 1000. */
+  | { kind: 'capacity-not-a-decimal'; value: string }
+  /** Below the bound the schema and the row reader both enforce (`MIN_CAPACITY`). */
+  | { kind: 'capacity-below-minimum'; value: number };
+
+/**
+ * The patch a saved sprint form produces, or the one refusal that stops it.
+ *
+ * Here rather than in the view because every rule in it is the domain's: at most one
+ * active sprint, a fixed window before a sprint may run, the capacity bound the manifest
+ * declares. The view invented a looser capacity rule of its own („greater than 0"), so
+ * `0.005` passed the form and came back from the server as `400 row.capacity: below 0.01`
+ * — an English field path in a German interface.
+ *
+ * `null` clears a key, which is the host's rule for a patch: an emptied input has to
+ * disappear rather than be stored as an empty string every reader then special-cases.
+ */
+export function sprintEditPatch(
+  sprint: Sprint,
+  sprints: readonly Sprint[],
+  edit: SprintEdit,
+): { patch: Record<string, unknown>; refusal?: undefined } | { refusal: SprintEditRefusal; patch?: undefined } {
+  const name = edit.name.trim();
+  if (!name) return { refusal: { kind: 'name-missing' } };
+
+  const state = oneOf(SPRINT_STATES, edit.state);
+  if (!state) return { refusal: { kind: 'unknown-state', value: edit.state } };
+
+  // At most one active sprint per timeline: canon has a new sprint start immediately
+  // after the previous one concludes. The host enforces no cross-row rule, so the
+  // refusal is the plugin's own — and it names the other sprint, because „nicht erlaubt"
+  // without it leaves the reader hunting.
+  if (state === 'active' && sprint.state !== 'active') {
+    const other = sprints.find((s) => s.id !== sprint.id && s.state === 'active');
+    if (other) return { refusal: { kind: 'second-active-sprint', sprintId: other.id } };
+  }
+
+  const start = edit.start.trim();
+  const end = edit.end.trim();
+  if (start && end && start > end) return { refusal: { kind: 'end-before-start' } };
+  // A fixed window is what makes a sprint one, and it is the precondition for the
+  // burndown's axis. Refused before the write, so „aktiv" and „ohne Zeitraum" never
+  // coexist in stored data.
+  if (state === 'active' && !(start && end)) return { refusal: { kind: 'active-without-window' } };
+
+  const capacityText = edit.capacity.trim();
+  let capacity: number | null = null;
+  if (capacityText) {
+    const parsed = decimal(capacityText);
+    if (parsed == null) return { refusal: { kind: 'capacity-not-a-decimal', value: capacityText } };
+    if (parsed < MIN_CAPACITY) return { refusal: { kind: 'capacity-below-minimum', value: parsed } };
+    capacity = parsed;
+  }
+
+  return {
+    patch: {
+      name,
+      state,
+      goal: edit.goal.trim() || null,
+      start: start || null,
+      end: end || null,
+      capacity,
+      capacityUnit: oneOf(CAPACITY_UNITS, edit.capacityUnit) ?? null,
+      note: edit.note.trim() || null,
+    },
+  };
+}
+
+/**
+ * What per-timeline reader state is keyed by, out of the snapshot itself.
+ *
+ * The host API hands a plugin no timeline id, so the identity has to come from what the
+ * plugin holds. It is needed because sprint ids are minted per timeline (`sprint-1…N`):
+ * under one instance-wide key, „which sprint was I looking at" resolved in the next
+ * timeline as well, which is the class of key the root `AGENTS.md` flags. Two timelines
+ * of one name share a bucket, and the read still checks the stored id against the rows,
+ * so the worst case is a selection that does not apply rather than one that misleads.
+ *
+ * The empty string means „no identity", and a caller stores nothing under it: an
+ * instance-wide bucket is the bug, not the fallback.
+ */
+export function timelineScope(file: TimelineFile | null | undefined): string {
+  const name = text(file?.name);
+  if (name) return name;
+  const ids = readSprints(file).map((sprint) => sprint.id);
+  return ids.join('|');
+}
+
 /** How many closed sprints a capacity suggestion averages over. */
 export const VELOCITY_WINDOW = 3;
 
@@ -731,7 +1003,14 @@ export function suggestedCapacity(
  * a sprint boundary, so the plugin cannot know whether a sprint *should* have started;
  * a plan whose first sprint has not begun is the normal state of a plan, and a warning
  * there would fire on every timeline that has one. What canon supports is the opposite
- * direction, and that is the one warned about: a second active sprint.
+ * direction, and that is the one warned about: a second active sprint, and a window that
+ * has run out under a row that still says `active` or `planned`.
+ *
+ * **`day` is what that last one is measured against, and it is an argument rather than a
+ * clock read.** Both callers have one — the verbs are handed `now`, the view has its own
+ * `today()` — and a function that read the clock itself would be the reason a test and
+ * the app disagree. A value that names no day leaves exactly that finding out; every
+ * other warning here is clock-free by construction.
  *
  * The dates check compares the item's start, and its end when it carries one. **A
  * `duration` is deliberately not resolved into an end here**, although the contract now
@@ -742,7 +1021,7 @@ export function suggestedCapacity(
  * every item in a plan that agrees with itself — which is the same false alarm this
  * function was fixed for on the window side.
  */
-export function sprintWarnings(file: TimelineFile | null | undefined): SprintWarning[] {
+export function sprintWarnings(file: TimelineFile | null | undefined, day: string): SprintWarning[] {
   const sprints = readSprints(file);
   if (!sprints.length) return [];
   const raster = rasterOf(file);
@@ -770,6 +1049,33 @@ export function sprintWarnings(file: TimelineFile | null | undefined): SprintWar
         sprintId: sprint.id,
         start: sprint.start,
         closedOn: sprint.closedOn,
+      });
+    }
+  }
+
+  // The window is over and the row has not moved with it. Nothing in this product closes
+  // a sprint by itself, so this is the state a plan drifts into rather than an exception:
+  // the shipped example's active sprint ended in February and the page said „aktiv" and
+  // nothing else.
+  if (isDayString(day)) {
+    for (const sprint of sprints) {
+      if (sprint.state !== 'planned' && sprint.state !== 'active') continue;
+      const window = windows.get(sprint.id);
+      // A window nobody wrote is the raster's *suggestion* („the raster survives as a
+      // suggestion rather than as the truth"), so a row carrying no start of its own is
+      // not late — it is unscheduled, which is the same reason „no active sprint" is not
+      // a warning. Quoting cadence dates back at a team as a deadline they missed is the
+      // false alarm this plugin has already been fixed for once, on the window side.
+      if (!window || window.source === 'cadence' || window.end >= day) continue;
+      const offset = dayOffset(day, window.end);
+      if (offset == null) continue;
+      out.push({
+        kind: 'sprint-window-past',
+        sprintId: sprint.id,
+        state: sprint.state,
+        window,
+        days: -offset,
+        day,
       });
     }
   }

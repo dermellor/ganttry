@@ -86,6 +86,26 @@ restated here: a copy is how one of them ends up fixed and the other does not.
   than a closed one with no record. `keyFields` on both collections makes a retry safe.
   The gap is the host's: a tool returns item changes, so no verb can close a sprint, and
   `docs/model.md` names it rather than hiding it.
+- **A close re-reads its own lock before the last step.** On a local file source a row
+  version is the file's mtime and the lock covers the whole document, so the close's own
+  six writes invalidate the version read at page load: sending that one made the state
+  patch answer `409` every time, on exactly the source kind the shipped example uses. The
+  re-read is gated by `closeObjection`, which refuses when the row has since changed its
+  state, window, capacity or unit, because the lock exists to catch somebody else's write.
+- **A closed sprint's figures come from its report, or there are none.** No fallback to a
+  live recomputation: that is the freeze rule quietly not holding, and a number that moves
+  under a closed sprint is worse than a dash. The missing report is stated as a fault.
+- **The clock is an argument, never read inside a rule.** `sprintWarnings(file, day)`
+  takes the day, which is what lets the page and `sprint_status` answer „this window ended
+  179 days ago" from one rule. It used to live only in the verb, so the page was quieter
+  than the agent about the same timeline. A window that comes only from the cadence is
+  excluded on purpose: computed dates quoted back as a missed deadline are a false alarm
+  about a plan that has not started.
+- **The chart shrinks its canvas, never grows its type.** One geometry function answers
+  canvas, plot box and label count from the viewport width, and a resize repaints through
+  it. Raising the label size in SVG user units instead pushed the y labels outside the
+  viewBox, and the CSS half and the label count then reacted to a resize separately, so
+  they disagreed.
 
 ## Data
 
@@ -168,11 +188,12 @@ view into the hash by itself, so the plain command renders a sprint's page:
 
 ```bash
 npm run dev                                            # or a worktree server
-npm run plugins:preview -- sprints --size 1280x1000
+npm run plugins:preview -- sprints --size 1280x1260
 ```
 
 **The size is not optional here.** The default 1280x720 cuts the burndown off below the
-fold, and a cropped chart is exactly the „renders correctly and still looks like nothing"
+fold, and the page grows with its warnings, so re-check the height after a change that
+adds one; and a cropped chart is exactly the „renders correctly and still looks like nothing"
 the catalogue image exists to catch. Which sprint it shows follows the view's own default
 (the active one). Nothing in CI catches a stale or wrong picture: the check requires the
 file to exist, not to be the right one.

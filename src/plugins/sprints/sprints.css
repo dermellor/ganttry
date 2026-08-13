@@ -162,22 +162,18 @@
   stroke-width: 1;
 }
 
+/* One size at every width, and that is load-bearing rather than a simplification.
+   The size is in the SVG's own user units, so a breakpoint that raised it (this rule
+   had a `--text-xl` twin under 760px) enlarged the labels inside a viewBox nothing
+   widened: „26,25" then started at x=-16, outside the box, and the axis clipped its
+   own numbers. Legibility in a narrow window is answered by shrinking the CANVAS
+   instead — `chartGeometry` (burndown.ts) does that, and computes the gutters and the
+   label count from the same call, so no breakpoint here can get out of step with
+   them. `AXIS_LABEL_UNITS` there is this value. */
 .sprints-axis-label {
   fill: var(--sprints-axis);
   font-family: var(--font-body);
   font-size: var(--text-xs);
-}
-
-/* The chart scales uniformly with its column, so in a narrow window the labels
-   shrink with it: at 330px the 11px of a --text-xs renders as five, which is not a
-   label any more. The size is in the SVG's own user units, so raising it here raises
-   the RENDERED size back to about eleven. The other half of the same fix is in
-   `labelCount` (index.ts), which draws fewer dates at this width so the larger type
-   still fits. */
-@media (max-width: 760px) {
-  .sprints-axis-label {
-    font-size: var(--text-xl);
-  }
 }
 
 .sprints-plan-line {

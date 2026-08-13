@@ -512,6 +512,92 @@ export function splitAtGaps(points: readonly BurndownPoint[], days: readonly str
 
 export type PlotBox = { left: number; top: number; width: number; height: number };
 
+/**
+ * The size the axis labels are drawn at, in the SVG's own user units.
+ *
+ * It is `--text-xs` (11px), set once in `sprints.css` and never at a breakpoint, and this
+ * is the number the gutters below are sized against. Keeping the two in step is what the
+ * geometry is for: the stylesheet used to raise the labels to `--text-xl` under 760px
+ * while nothing widened the box, so „8,75" started at x=-2 and „26,25" at x=-16 — both
+ * outside the viewBox, both clipped.
+ */
+export const AXIS_LABEL_UNITS = 11;
+
+/**
+ * The room reserved around the plot, in user units, and constant at every width.
+ *
+ * Constant is the load-bearing part: the labels do not grow, so a gutter that fits them
+ * once fits them always. `left` holds a y label of up to six characters plus the 8 units
+ * it hangs off the axis by; `bottom` holds the day labels 18 units under the baseline.
+ */
+export const PLOT_GUTTER = { left: 52, right: 16, top: 16, bottom: 40 } as const;
+
+/** The widest y-axis label the axis produces, in characters („1250,75"). */
+export const Y_LABEL_CHARS = 6;
+
+/** What a character of the axis type costs in user units. A digit in the body face is
+ * about 0.6em, and a decimal comma less — so this over-reserves rather than clipping. */
+export const AXIS_CHAR_UNITS = 0.6;
+
+/** The canvas the chart is drawn on, in user units. The maximum is the desktop chart. */
+const UNITS_MAX = 720;
+const UNITS_MIN = 320;
+/** The desktop aspect, kept at every width above the height floor. */
+const UNITS_HEIGHT = 300;
+/** Below this the chart reads as a strip rather than a plot, so the aspect gives way. */
+const HEIGHT_MIN = 200;
+/** What the page's own padding takes off the viewport before the chart gets a column. */
+const PAGE_GUTTER = 64;
+/** The most day labels that fit across the desktop plot without touching. */
+const X_LABELS_MAX = 7;
+/** Two, always: a burndown whose axis names neither end is a chart nobody can date. */
+const X_LABELS_MIN = 2;
+/**
+ * The room one day label („02.03.") claims, in user units: about 36 for the glyphs, and
+ * the rest is the air that keeps two neighbours from touching.
+ */
+const X_LABEL_UNITS = 90;
+
+export type ChartGeometry = {
+  /** The viewBox width, in user units. */
+  width: number;
+  /** The viewBox height, in user units. */
+  height: number;
+  box: PlotBox;
+  /** How many day labels the axis gets. */
+  labels: number;
+};
+
+/**
+ * The chart's geometry for a viewport width: the canvas, the plot box in it, and how
+ * many day labels fit.
+ *
+ * **One function, because the two halves of this used to disagree.** The label count was
+ * read from `innerWidth` during the render pass while the label *size* came from a CSS
+ * breakpoint, so resizing from 1600 to 380 moved the type immediately and left seven
+ * dates in place to collide; and the same breakpoint enlarged the labels without widening
+ * the box, so the y axis clipped its own numbers.
+ *
+ * What replaces both: the labels keep one size in user units and the **canvas** shrinks
+ * with the viewport instead. The SVG scales uniformly (`meet`) into the column it is
+ * given, so a smaller canvas means the same label renders at close to its 11px — which is
+ * what the breakpoint was reaching for — while the gutters, being constant, cannot be
+ * grown out of. The count comes out of the same call, so a resize moves both or neither.
+ */
+export function chartGeometry(viewportWidth: number): ChartGeometry {
+  const room = Number.isFinite(viewportWidth) ? Math.round(viewportWidth) - PAGE_GUTTER : UNITS_MAX;
+  const width = Math.max(UNITS_MIN, Math.min(UNITS_MAX, room));
+  const height = Math.max(HEIGHT_MIN, Math.round((width * UNITS_HEIGHT) / UNITS_MAX));
+  const box: PlotBox = {
+    left: PLOT_GUTTER.left,
+    top: PLOT_GUTTER.top,
+    width: width - PLOT_GUTTER.left - PLOT_GUTTER.right,
+    height: height - PLOT_GUTTER.top - PLOT_GUTTER.bottom,
+  };
+  const labels = Math.max(X_LABELS_MIN, Math.min(X_LABELS_MAX, Math.floor(box.width / X_LABEL_UNITS)));
+  return { width, height, box, labels };
+}
+
 /** The x of one day position inside the plot box. A single day sits in the middle. */
 export function xForIndex(index: number, count: number, box: PlotBox): number {
   if (count <= 1) return round2(box.left + box.width / 2);

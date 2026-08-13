@@ -56,25 +56,34 @@ import {
   type TimelineSnapshot,
 } from '../../pluginHost/api';
 import type { TimelineFileItem } from '../../types';
-import { SPRINT_COLLECTIONS, sprintsManifest } from './manifest';
+import { MIN_CAPACITY, SPRINT_COLLECTIONS, sprintsManifest } from './manifest';
 import { dayOf, type SprintRaster } from './raster';
 import {
   CAPACITY_UNITS,
   type CapacityUnit,
   capacityUnitOf,
   carriedInto,
+  type CloseObjection,
+  closeIncomplete,
+  closeObjection,
   estimateOf,
+  figuresSource,
   isDone,
   itemsOfSprint,
+  nextSprint,
   rasterOf,
   readEstimateUnit,
   readPasses,
   readReports,
   readSprints,
+  recordableItems,
   reportOfSprint,
   reportUnitOf,
   type Sprint,
   SPRINT_STATES,
+  type SprintEdit,
+  type SprintEditRefusal,
+  sprintEditPatch,
   type SprintPass,
   type SprintReport,
   type SprintState,
@@ -82,13 +91,15 @@ import {
   sprintWarnings,
   sprintWindow,
   suggestedCapacity,
+  timelineScope,
 } from './sprints';
 import {
   MAX_SPRINT_DAYS,
   axisMax,
+  type ChartGeometry,
+  chartGeometry,
   frozenSeries,
   idealSeries,
-  parseEstimate,
   polylinePoints,
   reconstructSeries,
   round2,
@@ -100,13 +111,21 @@ import {
   yForValue,
   type BurndownItem,
   type BurndownPoint,
-  type PlotBox,
 } from './burndown';
 
 /** The view id the manifest declares. Anything else is not this plugin's. */
 const VIEW_ID = 'board';
 
-/** Which sprint the reader was last looking at. See the note in `paint`. */
+/**
+ * Which sprint the reader was last looking at, **per timeline**: one key holding
+ * `{ [scope]: sprintId }`, the shape `timelines.viewPrefs` uses for the same reason.
+ *
+ * It used to hold a bare id for the whole instance, and sprint ids are minted per
+ * timeline (`sprint-1…N`), so a selection made in one timeline resolved in the next one.
+ * A legacy bare string therefore reads as „nothing stored" rather than being migrated:
+ * that value IS the cross-timeline resolution being fixed, and what it costs to drop is
+ * one click.
+ */
 const SELECTED_KEY = 'timelines.sprintsSelected';
 
 const STATE_LABELS: Record<SprintState, string> = {
@@ -156,8 +175,33 @@ let versions = new Map<string, number>();
 let section: HTMLElement | null = null;
 let selectedId: string | null = null;
 let editing = false;
-/** Notices that outlive one paint: a partial close has to stay on screen. */
-let notices: { tone: 'danger' | 'warning' | 'info'; text: string }[] = [];
+/** The geometry the last paint drew the chart with. The resize handler compares against it. */
+let geometry: ChartGeometry = chartGeometry(NaN);
+/**
+ * The sprint a close is running for, or null.
+ *
+ * A close is six or seven writes with no lock across them, and the button was live
+ * throughout: a second click wrote everything a second time (idempotent) and then 409ed on
+ * the state patch, leaving the page showing the badge „abgeschlossen" beside a red alert
+ * claiming the sprint was still „aktiv".
+ */
+let closing: string | null = null;
+/**
+ * What the page says about the last write.
+ *
+ * `sticky` is the reason this is not simply cleared on every render: a notice about a
+ * close that stopped halfway has to survive the next repaint, because that repaint arrives
+ * from anybody's change on a DB timeline and the status line is one slot — one ordinary
+ * save later, the partial close was recorded nowhere while its `passes` rows sat on the
+ * server. It names the sprint, so `closeIncomplete` can say when the situation is over.
+ */
+type Notice = {
+  tone: 'danger' | 'warning' | 'info';
+  text: string;
+  /** Keep this notice while an unfinished close of this sprint is still unfinished. */
+  sticky?: string;
+};
+let notices: Notice[] = [];
 
 function host(): HostApi {
   if (!api) throw new Error('sprints: no host API — renderView has not run yet');
@@ -237,11 +281,6 @@ function warningKey(itemId: string | null, content: string): string {
 // ---------------------------------------------------------------------------
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const VIEW_W = 720;
-const VIEW_H = 300;
-const BOX: PlotBox = { left: 48, top: 16, width: 656, height: 244 };
-/** The most day labels that fit across 656 units without touching. */
-const X_LABELS = 7;
 const Y_LINES = 4;
 /**
  * Above this many days the per-day dots are dropped and only the line is drawn:
@@ -269,29 +308,25 @@ function svg(
 
 type ChartInput = {
   days: string[];
-  scope: number;
+  /** Null when nothing says what the scope was: the axis then has no top and no plan line. */
+  scope: number | null;
   plan: BurndownPoint[];
   actual: BurndownPoint[];
   ariaLabel: string;
 };
 
 /**
- * How many day labels to draw.
+ * The geometry this paint draws with: the canvas, the plot box and the label count, all
+ * out of `chartGeometry`.
  *
- * The SVG scales uniformly with its column, so at a narrow width every label shrinks
- * with the chart and seven dates collide into a grey smear. Fewer labels is the half
- * of the answer that belongs here; the other half is the font size, which
- * `sprints.css` bumps at the same breakpoint.
- *
- * Measured against the **viewport** rather than the container, because the container
- * is detached while this renders: the host hands the plugin a staging element and
- * swaps it in when the render settles (src/pluginHost/renderView.ts), so its
- * `clientWidth` is 0 here. The viewport decides the same question closely enough — a
- * chart in a 375px window has room for two dates, not seven.
+ * Measured against the **viewport** rather than the container, because the container is
+ * detached while this renders: the host hands the plugin a staging element and swaps it in
+ * when the render settles (src/pluginHost/renderView.ts), so its `clientWidth` is 0 here.
+ * A resize repaints (see `renderView`), so the answer does not outlive the width it was
+ * computed for.
  */
-function labelCount(doc: Document): number {
-  const width = doc.defaultView?.innerWidth ?? 1200;
-  return Math.max(2, Math.min(X_LABELS, Math.floor(width / 150)));
+function geometryFor(doc: Document): ChartGeometry {
+  return chartGeometry(doc.defaultView?.innerWidth ?? NaN);
 }
 
 /**
@@ -309,6 +344,9 @@ function labelCount(doc: Document): number {
 function chart(doc: Document, input: ChartInput): SVGElement {
   const { days, scope, plan, actual, ariaLabel } = input;
   const max = axisMax(scope, plan, actual);
+  // One geometry for the whole chart: the box the gridlines are drawn in, the box the
+  // points are placed in and the box the labels are counted for have to be the same one.
+  const { width: viewW, height: viewH, box: BOX, labels } = geometry;
   const baseline = BOX.top + BOX.height;
 
   const gridlines: Element[] = [];
@@ -337,7 +375,7 @@ function chart(doc: Document, input: ChartInput): SVGElement {
     if (max === 0) break;
   }
 
-  const ticks = tickIndices(days.length, labelCount(doc));
+  const ticks = tickIndices(days.length, labels);
   const dayLabels = ticks.map((index, at) => {
     // The outer two labels are anchored to their edge rather than centred on it: a
     // centred label on the last day hangs half outside the viewBox and gets clipped,
@@ -387,7 +425,7 @@ function chart(doc: Document, input: ChartInput): SVGElement {
     'svg',
     {
       class: 'sprints-chart-svg',
-      viewBox: `0 0 ${VIEW_W} ${VIEW_H}`,
+      viewBox: `0 0 ${viewW} ${viewH}`,
       preserveAspectRatio: 'xMidYMid meet',
       role: 'img',
       'aria-label': ariaLabel,
@@ -434,6 +472,16 @@ type Figures = {
   frozen: boolean;
 };
 
+/** No figures at all: a past sprint whose report is missing has none, and a recomputation
+ * there would be the freeze rule silently not holding. */
+const NO_FIGURES = (unit: CapacityUnit): Figures => ({
+  scope: null,
+  completed: null,
+  remaining: null,
+  unit,
+  frozen: true,
+});
+
 function liveFigures(sprint: Sprint, members: readonly TimelineFileItem[]): Figures {
   // `scopeAndCompleted` rather than a sum of its own, over the same items the curve
   // is built from: an item with no usable estimate enters neither, because counting
@@ -455,19 +503,24 @@ function liveFigures(sprint: Sprint, members: readonly TimelineFileItem[]): Figu
 }
 
 function figuresFor(sprint: Sprint, members: readonly TimelineFileItem[], report: SprintReport | null): Figures {
-  const isPast = sprint.state === 'closed' || sprint.state === 'cancelled';
-  if (isPast && report) {
-    return {
-      scope: report.scopeAtClose ?? null,
-      completed: report.completed ?? null,
-      remaining: report.carried ?? null,
-      // The unit the figures were counted in, from the report itself where it has one.
-      // The sprint's own `capacityUnit` may have been edited since.
-      unit: reportUnitOf(report, sprint, file),
-      frozen: true,
-    };
+  switch (figuresSource(sprint, report)) {
+    case 'frozen':
+      return {
+        scope: report?.scopeAtClose ?? null,
+        completed: report?.completed ?? null,
+        remaining: report?.carried ?? null,
+        // The unit the figures were counted in, from the report itself where it has one.
+        // The sprint's own `capacityUnit` may have been edited since.
+        unit: reportUnitOf(report, sprint, file),
+        frozen: true,
+      };
+    case 'report-missing':
+      // A fault, and it is stated where the other faults are rather than as a caption
+      // under the boxes — see `paint`.
+      return NO_FIGURES(capacityUnitOf(sprint, file));
+    default:
+      return liveFigures(sprint, members);
   }
-  return liveFigures(sprint, members);
 }
 
 function numberBox(label: string, value: string): HTMLElement {
@@ -576,7 +629,9 @@ function chartBlock(
   }
 
   const isPast = sprint.state === 'closed' || sprint.state === 'cancelled';
-  const plan = idealSeries(days, figures.scope ?? 0);
+  // Null scope draws no plan line, and that is the point: a past sprint with no report
+  // knows no scope, and a plan line at zero would be a figure invented to fill the plot.
+  const plan = idealSeries(days, figures.scope);
   const extras: (Element | null)[] = [];
   let actual: BurndownPoint[] = [];
   // What the second line IS, as its legend key. There used to be a caption under the
@@ -625,9 +680,11 @@ function chartBlock(
     `offen ${figure(figures.remaining)}.`;
 
   return el('figure', { class: 'sprints-chart' }, [
-    chart(doc, { days, scope: figures.scope ?? 0, plan, actual, ariaLabel }),
+    chart(doc, { days, scope: figures.scope, plan, actual, ariaLabel }),
     el('div', { class: 'sprints-legend' }, [
-      legendKey('Plan', 'plan'),
+      // No key for a line that is not drawn: a legend naming an absent plan is the same
+      // mistake as a number box holding a dash.
+      plan.length ? legendKey('Plan', 'plan') : null,
       actualKey ? legendKey(actualKey, 'actual') : null,
     ]),
     ...extras,
@@ -714,7 +771,7 @@ function carriedInLabels(sprintId: string): Map<string, string> {
   return out;
 }
 
-function itemsBlock(sprint: Sprint, members: readonly TimelineFileItem[]): HTMLElement {
+function itemsBlock(sprint: Sprint, members: readonly TimelineFileItem[], figures: Figures): HTMLElement {
   if (!members.length) {
     return el(
       'div',
@@ -748,16 +805,19 @@ function itemsBlock(sprint: Sprint, members: readonly TimelineFileItem[]): HTMLE
       ],
     });
   });
-  return el(
-    'div',
-    { class: 'sprints-items' },
+  return el('div', { class: 'sprints-items' }, [
+    // One word, and only beside frozen figures: the numbers and the curve are the record
+    // of the close, while this table is the item list as it stands now — after a close,
+    // moving two items to Done with new estimates changes every cell here and nothing
+    // there. A sentence explaining the difference is what the deletion pass removed.
+    figures.frozen ? el('div', {}, Badge({ label: 'aktuell', tone: 'neutral' })) : null,
     Table({
       children: [
         TableHead({ columns: ['Eintrag', `Schätzung (${UNIT_LABELS[capacityUnitOf(sprint, file)]})`, 'Status', 'Hinweis'] }),
         el('tbody', {}, rows),
       ],
     }),
-  );
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -795,45 +855,68 @@ function message(error: unknown): string {
  * through `readSprints` and `readReports`, so a row that was just written and one
  * that arrived with the snapshot cannot be two different shapes.
  */
+/** This plugin's rows spliced into the snapshot, so one reader sees one shape. */
+function withRows(rows: Record<string, PluginRow[]>): TimelineSnapshot | null {
+  if (!file) return null;
+  const own = { ...(file.pluginData ?? {}) };
+  own[sprintsManifest.id] = { ...(own[sprintsManifest.id] ?? {}), ...rows };
+  return { ...file, pluginData: own };
+}
+
 async function reload(): Promise<void> {
   const store = data();
-  const [sprintRows, reportRows] = await Promise.all([
+  const [sprintRows, reportRows, passRows] = await Promise.all([
     store.list(SPRINT_COLLECTIONS.sprints),
     store.list(SPRINT_COLLECTIONS.reports),
+    // The history too, and not only for „aus Sprint 2 übertragen": whether a close is
+    // still unfinished is read off these rows, so a reload that left them behind would
+    // keep answering with the state from before the write.
+    store.list(SPRINT_COLLECTIONS.passes),
   ]);
-  // No timeline means the readers would find no plugin entry to read against, and
-  // the rows would silently read as none — worse than showing the previous paint.
-  if (!file) return repaint();
-  const own = { ...(file.pluginData ?? {}) };
-  own[sprintsManifest.id] = {
-    ...(own[sprintsManifest.id] ?? {}),
+  const next = withRows({
     [SPRINT_COLLECTIONS.sprints]: sprintRows,
     [SPRINT_COLLECTIONS.reports]: reportRows,
-  };
-  adopt({ ...file, pluginData: own });
+    [SPRINT_COLLECTIONS.passes]: passRows,
+  });
+  // No timeline means the readers would find no plugin entry to read against, and
+  // the rows would silently read as none — worse than showing the previous paint.
+  if (!next) return repaint();
+  adopt(next);
   repaint();
 }
 
-function uniqueId(prefix: string, taken: readonly string[]): string {
-  const used = new Set(taken);
-  for (let n = 1; ; n++) {
-    const candidate = `${prefix}-${n}`;
-    if (!used.has(candidate)) return candidate;
-  }
+/**
+ * The sprint rows as they stand on the server right now, with their lock counters.
+ *
+ * Through `readSprints` rather than by reading the row's `data` here, for the reason
+ * `reload` re-lists instead of mirroring: a row that was just fetched and one that arrived
+ * with the snapshot must not be two different shapes.
+ */
+async function currentSprints(): Promise<{ sprints: Sprint[]; versions: Map<string, number> } | null> {
+  const rows = await data().list(SPRINT_COLLECTIONS.sprints);
+  const snapshot = withRows({ [SPRINT_COLLECTIONS.sprints]: rows });
+  if (!snapshot) return null;
+  return { sprints: readSprints(snapshot), versions: versionsFrom(rows) };
 }
 
 async function createSprint(): Promise<void> {
-  const id = uniqueId(
-    'sprint',
-    sprints.map((s) => s.id),
-  );
-  const name = `Sprint ${sprints.length + 1}`;
+  // The id and the name from one counter: two counters wrote `id: sprint-2` named
+  // „Sprint 3" on a timeline holding `sprint-1` and `sprint-5`.
+  const { id, name } = nextSprint(sprints.map((s) => s.id));
   try {
+    // `put` without a version is a blind upsert, so the id is checked against the rows as
+    // they are NOW rather than against the ones this page loaded with: two clicks, or two
+    // tabs, otherwise overwrote each other's new sprint with no 409 and nothing said.
+    const current = await currentSprints();
+    if (current?.sprints.some((s) => s.id === id)) {
+      return refuse(`„${id}" ist inzwischen angelegt. Noch einmal „Sprint anlegen" wählen.`);
+    }
     // `planned`, with no window and no goal. Demanding either here would be a row
     // nobody creates before the planning meeting; the goal is warned about once the
     // sprint is active instead.
     const saved = await data().put(SPRINT_COLLECTIONS.sprints, { id, data: { name, state: 'planned' } });
     selectedId = saved.id;
+    remember(saved.id);
     editing = true;
     notices = [];
     host().status(`Sprint „${name}" angelegt`);
@@ -842,17 +925,6 @@ async function createSprint(): Promise<void> {
     fail(`Sprint anlegen fehlgeschlagen: ${message(error)}`);
   }
 }
-
-type SprintEdit = {
-  name: string;
-  goal: string;
-  start: string;
-  end: string;
-  state: string;
-  capacity: string;
-  capacityUnit: string;
-  note: string;
-};
 
 /** A refusal the reader caused: shown where they are looking, and nowhere else. */
 function refuse(text: string): void {
@@ -867,69 +939,63 @@ function refuse(text: string): void {
  * the app's status line, because a realtime update repaints this view and would
  * otherwise take the only record of a half-finished close off the screen. The status
  * line is what the product already has for „what just happened".
+ *
+ * `sticky` names the sprint whose unfinished close the sentence describes: such a notice
+ * outlives the next host render and goes when the situation does, because the status line
+ * is one slot and one ordinary save later it was the only record left.
  */
-function fail(text: string): void {
-  notices = [{ tone: 'danger', text }];
+function fail(text: string, sticky?: string): void {
+  notices = [{ tone: 'danger', text, ...(sticky ? { sticky } : {}) }];
   host().status(text);
   repaint();
 }
 
-/**
- * Save the edited fields. `null` clears a key, which is the host's rule for a patch:
- * an emptied input has to disappear rather than be stored as an empty string every
- * reader then special-cases.
- */
-async function saveSprint(sprint: Sprint, edit: SprintEdit): Promise<void> {
-  const name = edit.name.trim();
-  if (!name) return refuse('Ein Sprint braucht einen Namen.');
-
-  const state = (SPRINT_STATES as readonly string[]).includes(edit.state)
-    ? (edit.state as SprintState)
-    : sprint.state;
-
-  // At most one active sprint per timeline: canon has a new sprint start
-  // immediately after the previous one concludes. The host enforces no cross-row
-  // rule, so the refusal is the plugin's own — and it names the other sprint,
-  // because „nicht erlaubt" without it leaves the reader hunting.
-  if (state === 'active' && sprint.state !== 'active') {
-    const other = sprints.find((s) => s.id !== sprint.id && s.state === 'active');
-    if (other) {
-      return refuse(
-        `„${other.name}" ist bereits aktiv. Eine Zeitleiste hat höchstens einen aktiven Sprint: ` +
-          `erst „${other.name}" abschließen oder abbrechen.`,
+/** The German for a refused edit. The rule is `sprintEditPatch`'s; the sentence is this file's. */
+function editRefusalText(refusal: SprintEditRefusal): string {
+  switch (refusal.kind) {
+    case 'name-missing':
+      return 'Ein Sprint braucht einen Namen.';
+    case 'unknown-state': {
+      const known = SPRINT_STATES.map((key) => STATE_LABELS[key]).join(', ');
+      return `„${refusal.value}" ist kein Status. Möglich sind: ${known}.`;
+    }
+    case 'second-active-sprint': {
+      const other = sprints.find((s) => s.id === refusal.sprintId);
+      const name = other?.name ?? refusal.sprintId;
+      return (
+        `„${name}" ist bereits aktiv. Eine Zeitleiste hat höchstens einen aktiven Sprint: ` +
+        `erst „${name}" abschließen oder abbrechen.`
       );
     }
+    case 'end-before-start':
+      return 'Der letzte Tag liegt vor dem ersten.';
+    case 'active-without-window':
+      return 'Ein aktiver Sprint braucht einen ersten und einen letzten Tag.';
+    case 'capacity-not-a-decimal':
+      // The FORMAT, not the size: „1e3" is refused while 1000 is a perfectly good
+      // capacity, and „muss eine Zahl größer als 0 sein" said the opposite.
+      return `„${refusal.value}" ist keine Dezimalzahl, zum Beispiel 20 oder 20.5.`;
+    case 'capacity-below-minimum':
+      return `Die Kapazität muss mindestens ${numbers.format(MIN_CAPACITY)} betragen.`;
   }
+}
 
-  const start = edit.start.trim();
-  const end = edit.end.trim();
-  if (start && end && start > end) return refuse('Der letzte Tag liegt vor dem ersten.');
-  // A fixed window is what makes a sprint one, and it is the precondition for the
-  // burndown's axis. Refused here rather than after the write, so „aktiv" and „ohne
-  // Zeitraum" never coexist in stored data.
-  if (state === 'active' && !(start && end)) {
-    return refuse('Ein aktiver Sprint braucht einen ersten und einen letzten Tag.');
-  }
-
-  const capacityText = edit.capacity.trim();
-  const capacity = parseEstimate(capacityText);
-  if (capacityText && capacity == null) return refuse('Die Kapazität muss eine Zahl größer als 0 sein.');
-
-  const patch: Record<string, unknown> = {
-    name,
-    state,
-    goal: edit.goal.trim() || null,
-    start: start || null,
-    end: end || null,
-    capacity: capacityText ? capacity : null,
-    capacityUnit: (CAPACITY_UNITS as readonly string[]).includes(edit.capacityUnit) ? edit.capacityUnit : null,
-    note: edit.note.trim() || null,
-  };
+/**
+ * Save the edited fields.
+ *
+ * Every rule the form applies is `sprintEditPatch`'s, so the interface cannot accept a
+ * value the schema and the row reader refuse: it did, and `0.005` came back from the
+ * server as `400 row.capacity: below 0.01` — an English field path in a German interface.
+ * What stays here is the German.
+ */
+async function saveSprint(sprint: Sprint, edit: SprintEdit): Promise<void> {
+  const result = sprintEditPatch(sprint, sprints, edit);
+  if (result.refusal) return refuse(editRefusalText(result.refusal));
   try {
-    await data().patch(SPRINT_COLLECTIONS.sprints, sprint.id, patch, versions.get(sprint.id));
+    await data().patch(SPRINT_COLLECTIONS.sprints, sprint.id, result.patch, versions.get(sprint.id));
     editing = false;
     notices = [];
-    host().status(`Sprint „${name}" gespeichert`);
+    host().status(`Sprint „${result.patch.name as string}" gespeichert`);
     await reload();
   } catch (error) {
     fail(`Speichern fehlgeschlagen: ${message(error)}`);
@@ -949,18 +1015,40 @@ async function saveSprint(sprint: Sprint, edit: SprintEdit): Promise<void> {
  * on the sprint.
  */
 async function closeSprint(sprint: Sprint): Promise<void> {
+  // One close at a time. Without this the button stayed live through six or seven writes:
+  // a second click wrote them all again (idempotent, so no damage) and then 409ed on the
+  // state patch, which left the page carrying the badge „abgeschlossen" and a red alert
+  // saying the sprint was still „aktiv".
+  if (closing) return refuse('Ein Abschluss läuft noch.');
+  closing = sprint.id;
+  repaint();
+  try {
+    await runClose(sprint);
+  } finally {
+    closing = null;
+    repaint();
+  }
+}
+
+async function runClose(sprint: Sprint): Promise<void> {
   const store = data();
   const members = itemsOfSprint(file?.items, sprint.id);
+  // An item with no id cannot be recorded: `passes` is keyed on it, and a row keyed on an
+  // empty string would collide with the next one. Counted apart from the recordable ones,
+  // because `members.length` as the denominator of every sentence was the only hint the
+  // reader got that something had been skipped.
+  const { recordable, skipped } = recordableItems(members);
   const figures = liveFigures(sprint, members);
   const recordedOn = today();
+  const skippedNote = skipped.length
+    ? ` ${skipped.length} ${skipped.length === 1 ? 'Eintrag hat' : 'Einträge haben'} keine Id und stehen in keiner Historienzeile: ` +
+      `${skipped.map(itemLabel).join(', ')}.`
+    : '';
   let written = 0;
   let done = 0;
 
-  for (const item of members) {
-    const itemId = item.id?.trim();
-    // An item with no id cannot be recorded: `passes` is keyed on it, and a row
-    // keyed on an empty string would collide with the next one.
-    if (!itemId) continue;
+  for (const item of recordable) {
+    const itemId = item.id!.trim();
     const estimate = estimateOf(item);
     try {
       await store.put(SPRINT_COLLECTIONS.passes, {
@@ -980,10 +1068,10 @@ async function closeSprint(sprint: Sprint): Promise<void> {
       if (isDone(item)) done++;
     } catch (error) {
       fail(
-        `Abschluss abgebrochen. ${written} von ${members.length} Einträgen stehen in der Historie, ` +
+        `Abschluss abgebrochen. ${written} von ${recordable.length} Einträgen stehen in der Historie, ` +
           `dann schlug „${itemLabel(item)}" fehl (${message(error)}). Kein Report geschrieben, ` +
-          `Status unverändert „${STATE_LABELS[sprint.state]}". ` +
-          'Ein erneuter Abschluss schreibt die vorhandenen Zeilen nicht doppelt.',
+          'der Status ist nicht gesetzt. Ein erneuter Abschluss schreibt die vorhandenen Zeilen nicht doppelt.',
+        sprint.id,
       );
       return;
     }
@@ -1018,33 +1106,78 @@ async function closeSprint(sprint: Sprint): Promise<void> {
   } catch (error) {
     fail(
       `Abschluss abgebrochen. ${written} Historienzeilen sind geschrieben, der Report nicht ` +
-        `(${message(error)}). Status unverändert „${STATE_LABELS[sprint.state]}". ` +
-        'Ein erneuter Abschluss ist gefahrlos.',
+        `(${message(error)}). Der Status ist nicht gesetzt; ein erneuter Abschluss ist gefahrlos.`,
+      sprint.id,
     );
     return;
   }
 
+  // The row's version, read again HERE and not at page load.
+  //
+  // **Why a multi-row action needs this.** On a local file source the version is the
+  // file's mtime and the lock covers the whole document, so the six writes above moved
+  // it: the patch sent the counter this page loaded with and answered 409 every single
+  // time, and the „try again" it advised failed identically because nothing reloaded in
+  // between. On a Postgres source the same sequence succeeded, because there the counter
+  // belongs to the row. Any plugin action that writes more than one row hits this, which
+  // is why it is spelled out rather than fixed quietly.
+  //
+  // Re-reading must not become a way around the lock, though — the lock is there to catch
+  // SOMEBODY ELSE's write. So the fresh row has to prove it is still the one the reader
+  // decided to close, and `closeObjection` is that test.
+  const current = await currentSprints();
+  const fresh = current?.sprints.find((s) => s.id === sprint.id) ?? null;
+  const objection = closeObjection(sprint, fresh);
+  if (objection) {
+    fail(
+      `Historie und Report sind geschrieben, der Status nicht: ${objectionText(objection)} ` +
+        'Der Abschluss ist damit nicht fertig.',
+      sprint.id,
+    );
+    return;
+  }
   try {
     await store.patch(
       SPRINT_COLLECTIONS.sprints,
       sprint.id,
       { state: 'closed', closedOn: recordedOn },
-      versions.get(sprint.id),
+      current?.versions.get(sprint.id),
     );
   } catch (error) {
+    // What the row says now, read rather than remembered: interpolating the state from the
+    // object captured at click time is how the page came to claim „aktiv" under a badge
+    // reading „abgeschlossen".
+    const after = (await currentSprints().catch(() => null))?.sprints.find((s) => s.id === sprint.id) ?? null;
     fail(
       `Historie und Report sind geschrieben, der Status nicht (${message(error)}). ` +
-        `Der Sprint steht weiter auf „${STATE_LABELS[sprint.state]}"; ein erneuter Abschluss setzt ihn.`,
+        (after
+          ? `Der Sprint steht auf „${STATE_LABELS[after.state]}"; ein erneuter Abschluss setzt ihn.`
+          : 'Der Sprint ist nicht mehr zu lesen.'),
+      sprint.id,
     );
     return;
   }
 
   notices = [];
   host().status(
-    `Sprint „${sprint.name}" abgeschlossen: ${done} von ${members.length} Einträgen fertig, ` +
-      `${figure(figures.remaining)} ${UNIT_LABELS[readEstimateUnit(file)]} übernommen`,
+    `Sprint „${sprint.name}" abgeschlossen: ${done} von ${recordable.length} Einträgen fertig, ` +
+      `${figure(figures.remaining)} ${UNIT_LABELS[unit]} übernommen.${skippedNote}`,
   );
   await reload();
+}
+
+/** Why the close stopped before the state patch. The test is `closeObjection`'s. */
+function objectionText(objection: CloseObjection): string {
+  switch (objection.kind) {
+    case 'sprint-gone':
+      return 'Die Zeile ist inzwischen gelöscht.';
+    case 'state-changed':
+      return `Der Sprint steht inzwischen auf „${STATE_LABELS[objection.state]}".`;
+    case 'window-changed':
+      return 'Der Zeitraum ist inzwischen geändert worden.';
+    case 'capacity-changed':
+      return 'Die Kapazität ist inzwischen geändert worden.';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1066,10 +1199,15 @@ function editForm(sprint: Sprint): HTMLElement {
     options: SPRINT_STATES.map((key) => ({ value: key, label: STATE_LABELS[key], selected: key === sprint.state })),
     attrs: { 'aria-label': 'Status' },
   });
+  // A text input rather than a number one, and `inputmode` for the phone keypad.
+  // `type: 'number'` hands `.value` back as `""` for anything the browser cannot parse, so
+  // „0x10" arrived here as an empty field and was saved as `capacity: null` with nothing
+  // said. Its `min` was inert as well — the button calls `submit()` directly, so no
+  // constraint validation ever ran — and it named 0, which is not the bound: `MIN_CAPACITY`
+  // is, and `sprintEditPatch` enforces it.
   const capacityInput = TextInput({
-    type: 'number',
     value: sprint.capacity == null ? '' : String(sprint.capacity),
-    attrs: { 'aria-label': 'Kapazität', min: '0', step: 'any' },
+    attrs: { 'aria-label': 'Kapazität', inputmode: 'decimal' },
   });
   const capacityUnitSelect = Select({
     options: [
@@ -1168,7 +1306,7 @@ function switcherBar(selected: Sprint | null): HTMLElement {
     on: {
       change: (event) => {
         selectedId = (event.currentTarget as HTMLSelectElement).value || null;
-        if (selectedId) localStorage.setItem(SELECTED_KEY, selectedId);
+        if (selectedId) remember(selectedId);
         editing = false;
         notices = [];
         repaint();
@@ -1193,10 +1331,15 @@ function switcherBar(selected: Sprint | null): HTMLElement {
     // Only an active sprint can be closed. A planned one has nothing to record, and
     // an already closed one would be frozen a second time over a moved item list.
     if (selected.state === 'active') {
+      const running = closing === selected.id;
       actions.push(
         Button({
-          label: 'Sprint abschließen',
+          // Disabled while it runs, and the label says which state it is in: the guard in
+          // `closeSprint` refuses the second call, and a button that looks clickable and
+          // silently does nothing is the half of that fix a reader can see.
+          label: running ? 'Wird abgeschlossen …' : 'Sprint abschließen',
           variant: 'outline',
+          disabled: running,
           on: { click: () => void closeSprint(selected) },
         }),
       );
@@ -1231,16 +1374,51 @@ function repaint(): void {
   if (section) paint(section);
 }
 
+/**
+ * The stored selection of THIS timeline, or null.
+ *
+ * A malformed store, a legacy bare id and a full `localStorage` all read as „nothing
+ * stored": a saved sprint choice is worth one click, and none of the three is worth
+ * letting an exception through a paint.
+ */
+function remembered(): string | null {
+  const scope = timelineScope(file);
+  if (!scope) return null;
+  try {
+    const raw = JSON.parse(localStorage.getItem(SELECTED_KEY) ?? 'null');
+    const found = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>)[scope] : null;
+    return typeof found === 'string' && found ? found : null;
+  } catch {
+    return null;
+  }
+}
+
+function remember(sprintId: string): void {
+  const scope = timelineScope(file);
+  // Nothing identifies this timeline, so there is no bucket to write into. Falling back to
+  // an instance-wide one is the bug, not the fallback.
+  if (!scope) return;
+  try {
+    const raw = JSON.parse(localStorage.getItem(SELECTED_KEY) ?? 'null');
+    const store = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+    localStorage.setItem(SELECTED_KEY, JSON.stringify({ ...store, [scope]: sprintId }));
+  } catch {
+    // A full or disabled localStorage must not break switching sprints, the rule
+    // `writeViewPrefsStore` (src/state.ts) already follows for the same store.
+  }
+}
+
 function paint(into: HTMLElement): void {
   const doc = into.ownerDocument;
   section = into;
+  geometry = geometryFor(doc);
 
-  // The selection is per reader rather than per timeline, like the pricing view's
-  // version pin: a stored id this timeline does not have falls back to the active
-  // sprint, so switching timelines lands on something rather than on blank.
+  // The selection is per reader and per timeline (see `SELECTED_KEY`): a stored id this
+  // timeline does not have falls back to the active sprint, so switching timelines lands
+  // on something rather than on blank.
   if (selectedId && !sprints.some((s) => s.id === selectedId)) selectedId = null;
   if (!selectedId) {
-    const stored = localStorage.getItem(SELECTED_KEY);
+    const stored = remembered();
     if (stored && sprints.some((s) => s.id === stored)) selectedId = stored;
   }
   const selected =
@@ -1248,6 +1426,12 @@ function paint(into: HTMLElement): void {
   selectedId = selected?.id ?? null;
 
   const children: (Element | null)[] = [switcherBar(selected)];
+  // Read before the notices are built, because one of them is about these figures: a past
+  // sprint with no report has none, and that belongs with the other faults rather than
+  // under the boxes.
+  const members = selected ? itemsOfSprint(file?.items, selected.id) : [];
+  const report = selected ? reportOfSprint(reports, selected.id) : null;
+  const figures = selected ? figuresFor(selected, members, report) : null;
 
   const pageNotices: Element[] = notices.map((notice) =>
     Callout({ tone: notice.tone, role: 'alert', text: notice.text }),
@@ -1307,16 +1491,48 @@ function paint(into: HTMLElement): void {
       );
     } else if (warning.kind === 'duplicate-row-id' || warning.kind === 'several-reports-for-one-sprint') {
       pageNotices.push(Callout({ tone: 'warning', role: 'note', text: rowFaultText(warning) }));
+    } else if (warning.kind === 'sprint-window-past') {
+      // The window ran out and the row did not move with it. Nothing in this product
+      // closes a sprint by itself, so the page has to say it: it showed „aktiv", a flat
+      // reconstruction and no word about the last day having passed six months ago, while
+      // `sprint_status` said it precisely.
+      const name = sprints.find((s) => s.id === warning.sprintId)?.name ?? warning.sprintId;
+      pageNotices.push(
+        Callout({
+          tone: 'warning',
+          role: 'note',
+          text:
+            `„${name}" steht auf „${STATE_LABELS[warning.state]}", das Fenster endete am ` +
+            `${germanDay(warning.window.end)} (vor ${warning.days} ${warning.days === 1 ? 'Tag' : 'Tagen'}).`,
+        }),
+      );
     }
+  }
+  // „No sprint is active" is not a fault in the data — nothing fires at a sprint boundary,
+  // so a plan whose sprints have not started is a normal plan — but the page falls back to
+  // the first row, which is usually the oldest and closed. Saying nothing left the reader
+  // looking at a closed sprint as though it were the current one, while `sprint_status`
+  // reports the absence.
+  if (sprints.length && !sprints.some((s) => s.state === 'active')) {
+    pageNotices.push(Callout({ tone: 'info', role: 'note', text: 'Kein Sprint ist aktiv.' }));
+  }
+  // A past sprint with no frozen report, with the other faults: it used to fall through to
+  // a live recomputation, so the boxes showed numbers beside an empty plot and read as
+  // current — the model's freeze rule quietly not holding.
+  if (selected && figuresSource(selected, report) === 'report-missing') {
+    pageNotices.push(
+      Callout({
+        tone: 'warning',
+        role: 'note',
+        text: `Zu „${selected.name}" ist kein Bericht gespeichert, deshalb gibt es keine Zahlen dazu.`,
+      }),
+    );
   }
   if (pageNotices.length) children.push(el('div', { class: 'sprints-notices' }, pageNotices));
 
-  if (!selected) {
+  if (!selected || !figures) {
     children.push(emptyState());
   } else {
-    const members = itemsOfSprint(file?.items, selected.id);
-    const report = reportOfSprint(reports, selected.id);
-    const figures = figuresFor(selected, members, report);
     children.push(headerBlock(selected));
     if (editing && canEdit()) children.push(editForm(selected));
     children.push(numbersBlock(selected, figures));
@@ -1337,10 +1553,20 @@ function paint(into: HTMLElement): void {
       );
     }
     children.push(chartBlock(doc, selected, members, figures, report));
-    children.push(itemsBlock(selected, members));
+    children.push(itemsBlock(selected, members, figures));
   }
 
-  into.replaceChildren(el('div', { class: 'sprints-inner' }, children));
+  // The scroll position, carried across the rebuild.
+  //
+  // `.sprints-inner` IS the scroll container, so replacing it puts the reader back at the
+  // top: measured 89.5 before an edit toggle and 0 after. On a DB timeline the host
+  // repaints this view on every change from anybody, so „the page jumps while I read it"
+  // was not even limited to one's own edits. Read before the swap, written after, because
+  // scrollTop on a detached node is 0 and setting it needs the content to be laid out.
+  const top = into.querySelector<HTMLElement>('.sprints-inner')?.scrollTop ?? 0;
+  const inner = el('div', { class: 'sprints-inner' }, children);
+  into.replaceChildren(inner);
+  if (top) inner.scrollTop = top;
 }
 
 /** Read everything this pass draws from, through `sprints.ts` and nothing else. */
@@ -1349,9 +1575,35 @@ function adopt(snapshot: TimelineSnapshot | null): void {
   sprints = readSprints(snapshot);
   reports = readReports(snapshot);
   passes = readPasses(snapshot);
-  warnings = sprintWarnings(snapshot);
+  // The day is passed in rather than read inside the rule: `sprintWarnings` compares a
+  // window against it and would otherwise be a domain function reading a clock.
+  warnings = sprintWarnings(snapshot, today());
   raster = rasterOf(snapshot);
   versions = versionsFrom(rawRows(snapshot, SPRINT_COLLECTIONS.sprints));
+}
+
+/**
+ * A repaint on resize, so the chart's two halves cannot disagree.
+ *
+ * The geometry — canvas, gutters, label count — is computed from the viewport width
+ * (`chartGeometry`), and before this listener the count was decided once during a render
+ * pass and never revised: resizing from 1600 to 380 kept seven labels and collided them.
+ * Attached once, and only repaints when the geometry actually changed, so dragging a window
+ * edge does not rebuild the page on every pixel (which would also fight the scroll
+ * restoration in `paint`).
+ */
+let resizeBound = false;
+
+function bindResize(doc: Document): void {
+  const view = doc.defaultView;
+  if (resizeBound || !view) return;
+  resizeBound = true;
+  view.addEventListener('resize', () => {
+    if (!section) return;
+    const next = chartGeometry(view.innerWidth);
+    if (next.width === geometry.width && next.height === geometry.height && next.labels === geometry.labels) return;
+    repaint();
+  });
 }
 
 /**
@@ -1365,16 +1617,22 @@ function adopt(snapshot: TimelineSnapshot | null): void {
 export async function renderView(container: HTMLElement, viewId: string, hostApi: HostApi): Promise<void> {
   if (viewId !== VIEW_ID) return;
   api = hostApi;
-  // A render pass from the HOST is a new context — a view switch, another timeline,
-  // a realtime update — so a notice about the last write no longer describes what is
-  // on screen. `fail` puts the same sentence in the status line, which is where it
-  // survives. This plugin's own repaints do not come through here.
-  notices = [];
+  // A render pass from the HOST is a new context: a view switch, another timeline, a
+  // realtime update. So an open edit form is closed — it survived a timeline switch and
+  // was found open and pre-filled on a sprint nobody asked to edit — and a notice about
+  // the last write goes, because it no longer describes what is on screen.
+  editing = false;
   const [snapshot, writableNow] = await Promise.all([hostApi.timeline(), hostApi.canWrite()]);
   writable = writableNow;
   adopt(snapshot);
+  // Except a notice about a close that stopped halfway: that one describes the DATA, not
+  // the last click, so it stays until the situation it names is resolved. The status line
+  // is one slot, so one ordinary save later it was the only record of a sprint carrying
+  // `passes` rows, no report and still „aktiv".
+  notices = notices.filter((notice) => notice.sticky && closeIncomplete(sprints, passes, reports, notice.sticky));
   // The host gives every plugin view the same neutral box; how this one fills it is
   // this plugin's stylesheet's business, so it claims its class on the container.
   container.classList.add('sprints-view');
+  bindResize(container.ownerDocument);
   paint(container);
 }
