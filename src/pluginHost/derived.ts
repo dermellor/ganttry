@@ -10,9 +10,16 @@
 // it is no longer in — and nothing in the interface says so, which is the failure
 // mode a stale value always has.
 //
-// A derived value is therefore never stored. It is computed on every build,
-// merged over the item's metadata at the one place each consumer reads field
-// values, and refused by the write path.
+// A derived value is therefore never stored. It is computed on every build and
+// merged over the item's metadata at the one place each consumer reads field values.
+//
+// **The interface cannot write one; the API can.** The item form renders a derived
+// field read-only and `applyCustomFields` skips its key, so nothing a user does
+// stores a value. A `PATCH`, an MCP `update_item` or a hand-edited local file can
+// still put one there, because the generic write path takes `metadata` wholesale and
+// does not know which keys a plugin computes. What that costs is bounded rather than
+// nothing: `withDerived` lets the computed value win, so a stored leftover changes no
+// answer, it just sits in the file until somebody removes it.
 //
 // Two rules the host enforces here, because a plugin cannot enforce them on the
 // others' behalf:

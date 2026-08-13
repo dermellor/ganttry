@@ -23,7 +23,7 @@
 // sequence is testable without a network or a module registry.
 
 import { planFor, verifyIntegrity } from './artifact.ts';
-import { register, type PluginDescriptor, type PluginModule } from './registry.ts';
+import { register, type DeriveFn, type PluginDescriptor, type PluginModule } from './registry.ts';
 import { hasPlugin } from './plugins.ts';
 import { validateManifest, type PluginManifest } from './manifest.ts';
 import type { CustomFieldDef, PluginStatus, TimelineFile } from '../types';
@@ -91,6 +91,7 @@ export function browserDeps(): LoaderDeps {
 type LoadedModule = {
   renderView?: PluginModule['renderView'];
   fields?: (file: TimelineFile | null | undefined) => CustomFieldDef[];
+  derive?: (file: TimelineFile | null | undefined) => DeriveFn | null;
 };
 
 /**
@@ -109,7 +110,35 @@ export function moduleProblems(manifest: PluginManifest, mod: unknown): string[]
     problems.push('the manifest declares views but the artifact exports no renderView()');
   }
   if (m.fields != null && typeof m.fields !== 'function') problems.push('fields must be a function when present');
+  if (m.derive != null && typeof m.derive !== 'function') problems.push('derive must be a function when present');
+  // A field declared `derived` with no `derive` behind it is the one combination
+  // that produces a control which can never hold a value, and it cannot be checked
+  // from the manifest: the declaration lives in `fields(file)`, which is code.
+  // Reported rather than refused, because it depends on the timeline: `fields` may
+  // legitimately return nothing at all for the file this check has no access to.
+  if (m.derive == null && typeof m.fields === 'function') {
+    problems.push(...deriveWithoutValues(m));
+  }
   return problems;
+}
+
+/**
+ * „Declares a derived field but exports no derive" as a problem string, or nothing.
+ *
+ * Probed with no file, which is the only argument this layer has. A plugin that
+ * derives its fields from the timeline returns `[]` here and is not accused.
+ */
+function deriveWithoutValues(m: LoadedModule): string[] {
+  let defs: CustomFieldDef[] = [];
+  try {
+    defs = m.fields?.(null) ?? [];
+  } catch {
+    return [];
+  }
+  const derived = defs.filter((d) => d?.derived).map((d) => d.key);
+  return derived.length
+    ? [`fields declares derived field(s) ${derived.join(', ')} but the artifact exports no derive()`]
+    : [];
 }
 
 /**
@@ -122,9 +151,16 @@ export function moduleProblems(manifest: PluginManifest, mod: unknown): string[]
  * contract today, and letting a plugin decide its own availability would let it
  * put a button in the header on a timeline that never enabled it.
  *
- * Both `fields` and `renderView` are wrapped: a plugin that throws must cost the
- * user its own view, not the timeline. `fields` in particular runs on the item
- * form's path, where an exception would take the form down for every item.
+ * `fields`, `derive` and `renderView` are all wrapped: a plugin that throws must
+ * cost the user its own view, not the timeline. `fields` in particular runs on the
+ * item form's path, where an exception would take the form down for every item.
+ *
+ * **`derive` is wired here, unlike `tools` below**, and the difference is where the
+ * code runs. A derived value is computed in the browser on the same path as
+ * `fields`, so an artifact's `derive` is no new trust question — while a tool runs
+ * in a server process. Leaving it out was worse than a gap: an artifact declaring
+ * `derived: true` would show a read-only control that stays empty forever, which is
+ * exactly the symptom the `^1.5` version gate promises to prevent.
  *
  * **`tools` is deliberately not wired here, and an artifact's tools do not run.**
  * A tool is called by a server process, and executing an installed artifact's
@@ -148,6 +184,26 @@ export function descriptorFor(manifest: PluginManifest, mod: unknown, onError: (
       } catch (e) {
         onError(e);
         return [];
+      }
+    },
+    derive: (file) => {
+      if (!m.derive) return null;
+      try {
+        const fn = m.derive(file);
+        if (typeof fn !== 'function') return null;
+        // The per-item half is wrapped too: it runs once per item on every build, so
+        // one throw there would otherwise cost every item its fields.
+        return (item) => {
+          try {
+            return fn(item) ?? {};
+          } catch (e) {
+            onError(e);
+            return {};
+          }
+        };
+      } catch (e) {
+        onError(e);
+        return null;
       }
     },
     load: async () => ({

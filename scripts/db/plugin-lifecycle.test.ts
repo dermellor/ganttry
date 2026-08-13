@@ -8,7 +8,7 @@ import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
 import { handlePluginApi, handlePluginLifecycle, handlePluginsApi, handlePublicPluginApi } from './plugin-api.ts';
-import { makeManifestSource } from './plugin-manifests.ts';
+import { builtInManifests, makeManifestSource } from './plugin-manifests.ts';
 import { makeMemoryStore, type MemoryStore } from './plugin-store-memory.ts';
 import type { InstalledPlugin } from '../../src/types.ts';
 import type { PluginManifest } from '../../src/pluginHost/manifest.ts';
@@ -131,7 +131,14 @@ describe('the install registry: what it refuses to store', () => {
     assert.equal(res.status, 400);
     assert.equal((res.json as { error: string }).error, 'invalid_manifest');
     assert.equal((await registry('GET')).status, 200);
-    assert.equal(((await registry('GET')).json as { plugins: unknown[] }).plugins.length, 1, 'built-in only');
+    // Against the build's own count rather than a literal: what this asserts is
+    // „nothing was stored", and a hardcoded 1 turns that into a test that fails the
+    // day a second plugin ships in-tree — which is a false alarm about the registry.
+    assert.equal(
+      ((await registry('GET')).json as { plugins: unknown[] }).plugins.length,
+      builtInManifests().length,
+      'built-ins only',
+    );
   });
 
   test('a contract range this host cannot satisfy is refused at install, not at boot', async () => {

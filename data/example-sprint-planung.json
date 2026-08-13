@@ -1,0 +1,264 @@
+{
+  "$schema": "../schema/timeline.schema.json",
+  "name": "Sprint-Planung (Lieferplan)",
+  "description": "Beispiel für das Plugin „Sprints\": ein Lieferplan mit Kadenz. Der Sprint steht an keinem Item, er folgt aus dem Startdatum gegen das Raster (Anker 2026-01-05, 14 Tage). Sprint 3 ist gegen einen Durchsatz von 20 Punkten absichtlich überbucht, ein Item läuft über zwei Sprints, eines beginnt vor dem Anker und eines hat kein Datum. Drei Items tragen keine Schätzung.",
+  "plugins": [
+    {
+      "id": "dev.zeitlines.sprints",
+      "config": {
+        "start": "2026-01-05",
+        "lengthDays": 14,
+        "velocity": 20
+      }
+    }
+  ],
+  "savedViews": [
+    {
+      "id": "nach-sprints",
+      "name": "Nach Sprints",
+      "groupBy": "cf:sprint",
+      "visibility": "instance"
+    }
+  ],
+  "groups": [
+    {
+      "id": "1-plattform",
+      "content": "Plattform"
+    },
+    {
+      "id": "2-app",
+      "content": "App"
+    },
+    {
+      "id": "3-integrationen",
+      "content": "Integrationen"
+    },
+    {
+      "id": "4-qualitaet",
+      "content": "Qualität & Betrieb"
+    }
+  ],
+  "items": [
+    {
+      "id": "P-0",
+      "start": "2025-12-15",
+      "duration": "2w",
+      "content": "Architektur-Spike Datenmodell",
+      "group": "1-plattform",
+      "status": "Done",
+      "icon": "research",
+      "body": "## Spike\n\nLief vor dem Beginn der Kadenz. Ergebnis: Mandantenspalte statt getrennter Schemata.",
+      "metadata": {
+        "owner": "Architektur",
+        "storyPoints": "3",
+        "estimateConfidence": "hoch"
+      }
+    },
+    {
+      "id": "P-1",
+      "start": "2026-01-05",
+      "duration": "2w",
+      "content": "Schema-Migration Mandanten",
+      "group": "1-plattform",
+      "status": "Done",
+      "icon": "build",
+      "metadata": {
+        "owner": "Plattform-Team",
+        "dependsOn": [
+          "P-0"
+        ],
+        "storyPoints": "8",
+        "estimateConfidence": "hoch"
+      }
+    },
+    {
+      "id": "A-1",
+      "start": "2026-01-07",
+      "duration": "1w",
+      "content": "Login-Flow überarbeiten",
+      "group": "2-app",
+      "status": "Done",
+      "metadata": {
+        "owner": "App-Team",
+        "storyPoints": "5",
+        "estimateConfidence": "hoch"
+      }
+    },
+    {
+      "id": "I-1",
+      "start": "2026-01-19",
+      "duration": "2w",
+      "content": "REST-Client für das Fremdsystem",
+      "group": "3-integrationen",
+      "status": "Doing",
+      "body": "## REST-Client\n\nLesen und Schreiben, Token aus dem Vault. Offene Frage: Ratelimit des Anbieters.",
+      "metadata": {
+        "owner": "Integrations-Team",
+        "dependsOn": [
+          "P-1"
+        ],
+        "storyPoints": "13",
+        "estimateConfidence": "mittel"
+      }
+    },
+    {
+      "id": "A-2",
+      "start": "2026-01-26",
+      "duration": "1w",
+      "content": "Fehlerzustände im Formular",
+      "group": "2-app",
+      "status": "Doing",
+      "metadata": {
+        "owner": "App-Team",
+        "storyPoints": "5",
+        "estimateConfidence": "hoch"
+      }
+    },
+    {
+      "id": "Q-1",
+      "start": "2026-01-28",
+      "duration": "1w",
+      "content": "Barrierefreiheits-Audit",
+      "group": "4-qualitaet",
+      "icon": "review",
+      "body": "Externe Prüfung. Umfang steht, der Aufwand für die Nacharbeit ist noch nicht geschätzt.",
+      "metadata": {
+        "owner": "Qualität"
+      }
+    },
+    {
+      "id": "P-2",
+      "start": "2026-02-02",
+      "duration": "2w",
+      "content": "Mandantenfähige Rechteprüfung",
+      "group": "1-plattform",
+      "metadata": {
+        "owner": "Plattform-Team",
+        "dependsOn": [
+          "P-1"
+        ],
+        "storyPoints": "13",
+        "estimateConfidence": "mittel"
+      }
+    },
+    {
+      "id": "A-3",
+      "start": "2026-02-03",
+      "duration": "2w",
+      "content": "Onboarding-Assistent",
+      "group": "2-app",
+      "metadata": {
+        "owner": "App-Team",
+        "storyPoints": "8",
+        "estimateConfidence": "niedrig"
+      }
+    },
+    {
+      "id": "I-2",
+      "start": "2026-02-09",
+      "duration": "1w",
+      "content": "Webhooks für Statuswechsel",
+      "group": "3-integrationen",
+      "metadata": {
+        "owner": "Integrations-Team",
+        "dependsOn": [
+          "I-1"
+        ],
+        "storyPoints": "5",
+        "estimateConfidence": "mittel"
+      }
+    },
+    {
+      "id": "Q-2",
+      "start": "2026-02-11",
+      "duration": "1w",
+      "content": "Lasttest der Suche",
+      "group": "4-qualitaet",
+      "metadata": {
+        "owner": "Qualität",
+        "storyPoints": "8",
+        "estimateConfidence": "niedrig"
+      }
+    },
+    {
+      "id": "A-4",
+      "start": "2026-02-16",
+      "duration": "2w",
+      "content": "Suche mit Filtern",
+      "group": "2-app",
+      "metadata": {
+        "owner": "App-Team",
+        "storyPoints": "8",
+        "estimateConfidence": "mittel"
+      }
+    },
+    {
+      "id": "P-3",
+      "start": "2026-02-27",
+      "content": "Release 1.4",
+      "group": "1-plattform",
+      "type": "point",
+      "icon": "release",
+      "metadata": {
+        "dependsOn": [
+          "P-2",
+          "A-4"
+        ]
+      }
+    },
+    {
+      "id": "I-3",
+      "start": "2026-03-02",
+      "duration": "4w",
+      "content": "Datenmigration Altsystem",
+      "group": "3-integrationen",
+      "body": "## Migration\n\nLäuft über zwei Sprints. Zählt in dem Sprint, in dem sie beginnt, damit die Kapazität sie genau einmal sieht.",
+      "metadata": {
+        "owner": "Integrations-Team",
+        "dependsOn": [
+          "I-2"
+        ],
+        "storyPoints": "13",
+        "estimateConfidence": "niedrig"
+      }
+    },
+    {
+      "id": "Q-3",
+      "start": "2026-03-30",
+      "duration": "1w",
+      "content": "Wiederherstellung aus dem Backup testen",
+      "group": "4-qualitaet",
+      "metadata": {
+        "owner": "Qualität",
+        "dependsOn": [
+          "I-3"
+        ],
+        "storyPoints": "8",
+        "estimateConfidence": "mittel"
+      }
+    },
+    {
+      "id": "A-5",
+      "start": "2026-04-06",
+      "duration": "1w",
+      "content": "Offline-Modus erkunden",
+      "group": "2-app",
+      "icon": "idea",
+      "body": "Vorstudie. Ohne Schätzung, solange der Umfang nicht steht.",
+      "metadata": {
+        "owner": "App-Team"
+      }
+    },
+    {
+      "id": "P-4",
+      "content": "Mehrsprachigkeit im Backend",
+      "group": "1-plattform",
+      "body": "Noch nicht terminiert, deshalb ohne Sprint.",
+      "metadata": {
+        "owner": "Plattform-Team",
+        "storyPoints": "5",
+        "estimateConfidence": "niedrig"
+      }
+    }
+  ]
+}

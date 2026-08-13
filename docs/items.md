@@ -371,8 +371,11 @@ chapter would be describing fields that no longer exist.
 **A field's *value* can be derived too, and then nothing is stored.** A def may
 carry `derived: true`, which says the contributing plugin computes the value per
 item ([`src/pluginHost/derived.ts`](../src/pluginHost/derived.ts)). The form shows
-such a field read-only, the write path leaves its key alone, and it never appears
-in the context menu — there is nothing to set. What it buys is a field that cannot
+such a field read-only, `applyCustomFields` skips its key, and it never appears in
+the context menu — there is nothing to set. The generic write path is not a gate
+(see „A field's value can be the plugin's too" (docs/architecture.md)): a `PATCH` or
+an MCP write can still store a value on the key, and it then changes no answer,
+because the computed value wins wherever a field is read. What it buys is a field that cannot
 go stale: the sprint an item falls into follows from that item's dates, so keeping
 it as a stored copy means a moved item carries a bucket it is no longer in, and
 nothing in the interface distinguishes that from a value somebody chose.

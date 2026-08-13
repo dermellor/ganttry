@@ -229,7 +229,7 @@ Files, all inside the plugin's own folder:
 | File | What |
 | --- | --- |
 | `manifest.ts` | what the plugin declares: id, capabilities, views, tools, config schema, the metadata keys it owns, and the catalogue entry from phase 2 |
-| `descriptor.ts` | the one object the registry takes: the manifest, `matches`/`applies`, `fields`, `tools`, and `load()` |
+| `descriptor.ts` | the one object the registry takes: the manifest, `matches`/`applies`, `fields`, `derive` and `tools`, plus `load()` **if it has a view** — a plugin without one declares no module and gets no chunk |
 | `fields.ts` | derived `CustomFieldDef[]`, gated on the plugin being enabled |
 | `fields.test.ts` | the derivation, tested without a DOM |
 | `tools.ts` | the agent verbs and the domain rules behind them, if any |
@@ -286,7 +286,17 @@ rather than merely shorter. Both moved into its folder
 in the first place costs nothing.
 
 **Exit condition:** `npm run typecheck` shows no new errors, and no file outside the
-plugin folder changed except the one registry line.
+plugin folder changed except **two registrations**, one per process that has to know
+the plugin exists:
+
+| Where | Why it is not optional |
+| --- | --- |
+| [`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts) | the client: fields, derived values, views |
+| [`scripts/db/plugin-manifests.ts`](../scripts/db/plugin-manifests.ts) | the write path: it enforces a plugin's declarations against its manifest, and cannot reach the client registry |
+
+Forgetting the second one is invisible in the interface and refuses the plugin's rows
+and metadata keys on any deploy whose install registry is empty, which is every
+filesystem-only deploy.
 
 ---
 

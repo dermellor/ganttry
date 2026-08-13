@@ -10,6 +10,22 @@ Its own README is the page that documents it.
 Writing one: [docs/plugin-authoring.md](docs/plugin-authoring.md) for the contract,
 [docs/plugin-playbook.md](docs/plugin-playbook.md) for the process.
 
+## delivery-planning
+
+### [Sprints](src/plugins/sprints/README.md)
+
+A sprint raster that follows from the dates: which sprint an item is in is computed, not stored, with capacity checks and a forecast on top.
+
+![Sprints](src/plugins/sprints/preview.png)
+
+| | |
+| --- | --- |
+| Id | `dev.zeitlines.sprints` |
+| Version | 0.1.0 |
+| Keywords | sprint, sprint planning, story points, velocity, capacity, forecast, scrum, self-hosted roadmap |
+| Example | [`src:example-sprint-planung`](data/example-sprint-planung.json) |
+| Agent tools | `check_sprint_capacity`, `rebalance_sprint`, `forecast_completion` |
+
 ## product
 
 ### [Produkt](src/plugins/product-roadmap/README.md)

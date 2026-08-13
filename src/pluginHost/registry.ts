@@ -21,6 +21,7 @@ import { pluginViewMode, type PluginViewMode } from './viewMode';
 import { validateManifest, type ManifestView, type PluginManifest, type ToolDecl } from './manifest';
 import type { ToolHandler } from './tools';
 import { productRoadmapDescriptor } from '../plugins/product-roadmap/descriptor';
+import { sprintsDescriptor } from '../plugins/sprints/descriptor';
 import type { HostApi } from './hostApi';
 
 /**
@@ -120,8 +121,16 @@ export interface PluginDescriptor {
    * render a view into.
    */
   tools?: Record<string, ToolHandler>;
-  /** Dynamic import of the plugin's module — the only edge into its chunk. */
-  load(): Promise<PluginModule>;
+  /**
+   * Dynamic import of the plugin's module — the only edge into its chunk.
+   *
+   * Optional, because a plugin that declares no view has no module to import and
+   * carrying an empty one would cost a chunk that renders nothing. It used to be
+   * required, which forced the first view-less plugin to satisfy the type with a
+   * cast: a declaration the compiler could not check, in the one file that is
+   * supposed to be the plugin's contract with the host.
+   */
+  load?(): Promise<PluginModule>;
 }
 
 const PLUGINS: PluginDescriptor[] = [];
@@ -157,6 +166,9 @@ export function pluginViews(plugin: PluginDescriptor): PluginView[] {
 // loaded at runtime (src/pluginHost/loader.ts). Nothing about product-roadmap is
 // decided here any more.
 register(productRoadmapDescriptor);
+// The second in-tree plugin, and the first with no view: its raster is a derived
+// field, so grouping by it is the rendering (src/plugins/sprints/README.md).
+register(sprintsDescriptor);
 
 /** Every registered plugin, in registration order. */
 /**
@@ -333,7 +345,26 @@ export function mergeFieldDefs(
   contributed: CustomFieldDef[],
 ): CustomFieldDef[] {
   const shadowed = new Set(contributed.map((d) => d.key));
-  return [...stored.filter((d) => !shadowed.has(d.key)), ...contributed];
+  return [
+    ...stored.filter((d) => !shadowed.has(d.key)).map(withoutStoredDerived),
+    ...contributed,
+  ];
+}
+
+/**
+ * A stored definition may not claim `derived`.
+ *
+ * Only a contributing plugin can compute a value, so `derived` on a stored def is a
+ * read-only control that can never hold anything, with nothing in the interface
+ * saying why. The key is reachable: it is part of the committed JSON Schema (that is
+ * what gives a data file completion), so a file, a `PATCH` or a bulk write can carry
+ * it. Dropping it here rather than refusing the whole definition keeps one bad flag
+ * from costing a timeline its field.
+ */
+function withoutStoredDerived(def: CustomFieldDef): CustomFieldDef {
+  if (!def.derived) return def;
+  const { derived: _derived, ...rest } = def;
+  return rest;
 }
 
 // Loaded-module cache, keyed by plugin id so the synchronous repaint paths
@@ -344,6 +375,12 @@ const loaded = new Map<string, PluginModule>();
 export async function ensurePluginLoaded(desc: PluginDescriptor): Promise<PluginModule> {
   const cached = loaded.get(desc.manifest.id);
   if (cached) return cached;
+  // A plugin with no views has no module. Reaching here for one means a view mode
+  // resolved to a plugin that declares none, which is a bug in the caller rather
+  // than something to paper over with an empty module.
+  if (!desc.load) {
+    throw new Error(`plugin "${desc.manifest.id}" declares no view module to load`);
+  }
   const mod = await desc.load();
   loaded.set(desc.manifest.id, mod);
   return mod;

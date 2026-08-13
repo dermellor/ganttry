@@ -12,9 +12,10 @@ Two orthogonal extension axes keep it flexible:
   either supabase-js or native postgres.js, with optional per-source
   connections).
 - **Plugins** decide *what* a timeline carries beyond items and groups: a timeline
-  with no plugin is just timeline + list; the bundled `product-roadmap` plugin
-  adds a pricing matrix and cards plus its own item fields, loaded lazily so a build
-  without it ships neither its code nor its stylesheet.
+  with no plugin is just timeline + list. `product-roadmap` adds a pricing matrix
+  and cards plus its own item fields, loaded lazily so a build without it ships
+  neither its code nor its stylesheet; `sprints` adds a sprint raster whose values
+  are computed rather than stored, and three verbs an agent can call.
 
 ## Features
 
@@ -188,6 +189,9 @@ what the timelines in front of you actually use.
 | Plugin | What it adds |
 | --- | --- |
 | [`product-roadmap`](src/plugins/product-roadmap/) | A pricing matrix and pricing cards, plus Version, Tier and Features fields derived from the pricing model. See its [`README.md`](src/plugins/product-roadmap/README.md). |
+| [`sprints`](src/plugins/sprints/) | A sprint raster: which sprint an item falls into is computed from its dates rather than stored, with Story Points and Confidence beside it, plus capacity, rebalancing and forecast verbs. See its [`README.md`](src/plugins/sprints/README.md). |
+
+The generated catalogue is [`PLUGINS.md`](PLUGINS.md).
 
 Building one: [`docs/plugin-playbook.md`](docs/plugin-playbook.md), starting from
 [`src/plugins/_template/`](src/plugins/_template/).

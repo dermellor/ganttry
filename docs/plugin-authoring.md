@@ -15,7 +15,7 @@ Two files.
 
 ```
 manifest.json    what it declares: id, capabilities, views, collections, config schema
-index.js         one ES module, exporting fields() and/or renderView()
+index.js         one ES module, exporting fields(), derive() and/or renderView()
 ```
 
 That is the whole artifact. It imports nothing, it is not bundled against the
