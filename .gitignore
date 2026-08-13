@@ -4,7 +4,13 @@ public/data/notes.json
 public/data/config.json
 public/data/sources/
 # Build output of a second instance in the same checkout (TIMELINES_DATA_DIR).
+# The `wt-` family is what `dev:worktree:all` writes, one per profile. Both patterns
+# matter for the same reason: a build output directory holds a deployment's actual
+# timelines — a customer roadmap, the contents of somebody's notes folder — and a
+# stray `git add public` would put them in a public history (see „Instance data
+# files" in AGENTS.md, which says the same thing about `data/<subdir>/`).
 public/data-*/
+public/wt-*/
 .vite
 .netlify
 .env

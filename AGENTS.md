@@ -324,6 +324,20 @@ on `WT_PORT` and skips the pre-flight script, so it does not disturb a server
 already running from the main checkout. Several worktrees can run at once by
 counting `WT_PORT` up.
 
+**A worktree server never takes an instance's port.** The instances share one
+checkout precisely so that only their *data* differs; a worktree is a second
+checkout, so parking one on an instance port makes that instance serve a branch
+while its siblings serve `main` — and nothing in the interface says which is
+which. An instance URL that does not answer wants its instance started, not a
+branch parked on its port.
+
+`npm run dev:worktree:all` is the other half of that rule: it starts one preview
+server per instance profile from the current checkout, on the preview pool, each
+with its own `TIMELINES_DATA_DIR`. That is how a branch gets seen against every
+data constellation at once — a database, the shipped examples, a directory the
+user owns — without any instance leaving `main`. `--dry-run` prints the plan and
+starts nothing.
+
 **A dev server started from one checkout does not see another checkout's edits.**
 That includes a worktree: the running app keeps serving the code it was started
 from. Either start a second server from the worktree, or merge first and verify
@@ -336,6 +350,7 @@ touch a local checkout.
 ```bash
 npm install
 npm run dev          # build data + Vite + chokidar watcher on data/
+npm run dev:worktree:all # one preview server per instance profile, from this checkout
 npm run build        # static dist
 npm start            # serve that dist + the API from one Node process (self-hosting)
 npm test             # unit tests (node --test, TZ-pinned to Europe/Berlin)
