@@ -5,22 +5,27 @@ import { join } from 'node:path';
 
 import { groupToRow, rowToGroup } from './timeline-repo.ts';
 
-// Every bug #137 was about had the same shape: a field added to `TimelineFile` and
-// to a row mapper, while one of the hand-written column lists around it was not
-// touched. Nothing failed — the write dropped the value, or the read never asked for
-// it, and the setting looked supported while doing nothing.
+// Two rules about columns, pulling in opposite directions, and both learned the
+// hard way within a day of each other:
 //
-// Three of those slipped through in one sitting while fixing exactly that class of
-// bug: `getTimeline`'s select, `upsertGroup`'s insert/update/returning, and
-// `replaceTimeline`'s group insert. So the guard is a source assertion rather than a
-// convention — the same reasoning as the OpenAPI drift test and
-// check-plugin-isolation, both of which read source instead of trusting discipline.
+//   READS are tolerant. A named column list fails outright when one of its columns
+//   has not been migrated yet, so a schema lag becomes a 500 on the main read path.
+//   That took the production timeline down on 2026-08-13 for a setting nobody had
+//   used, because the deploy carried code that selected `timelines.group_order`
+//   while the migration adding it had only been applied locally.
 //
-// It cannot run against a database: CI has none, deliberately (a contributor after
-// `git clone` has none either). What it can do is compare what the mappers produce
-// against what the statements name.
+//   WRITES are strict. Every column a row mapper produces has to be named, because
+//   a write that silently drops a value loses the setting the user just asked for —
+//   and #137 was exactly that: fields added to the mapper while one of three
+//   hand-written column lists stayed behind.
+//
+// Neither can be left to discipline. Both are source assertions rather than
+// convention, for the same reason as the OpenAPI drift test and
+// check-plugin-isolation: CI has no database on purpose, so nothing else here can
+// notice.
 
 const SOURCE = readFileSync(join(import.meta.dirname, 'timeline-repo.ts'), 'utf8');
+const SUPABASE = readFileSync(join(import.meta.dirname, 'timeline-repo-supabase.ts'), 'utf8');
 
 /** The column names `groupToRow` actually produces, which is the authority. */
 const groupColumns = Object.keys(groupToRow('t', { id: 'g', content: 'G', color: '#fff' }, 0));
@@ -31,17 +36,71 @@ test('groupToRow and rowToGroup agree about every column', () => {
   assert.deepEqual(round, decl, 'a field the row mapper drops is a field the DB never sees');
 });
 
-test('every statement touching timeline_groups names every mapped column', () => {
-  // The three call sites, by the text that makes each identifiable.
-  const statements = [
-    { what: 'getTimeline select', text: sliceAround('from timeline_groups') },
-    { what: 'upsertGroup', text: sliceAround('insert into timeline_groups ${sql(row') },
-    { what: 'replaceTimeline insert', text: sliceAround('insert into timeline_groups ${sql(\n') },
+test('the timeline read is tolerant of a column that has not been migrated', () => {
+  const pg = sliceAround(SOURCE, 'from timelines where id =');
+  assert.ok(
+    /select \*/.test(pg),
+    'timeline-repo.ts getTimeline names columns; an unmigrated one would 500 the whole read',
+  );
+  const supa = sliceAround(SUPABASE, ".from('timelines')\n    .select(");
+  assert.ok(
+    /\.select\('\*'\)/.test(supa),
+    'timeline-repo-supabase.ts getTimeline names columns; same failure through PostgREST',
+  );
+});
+
+// The rule, stated precisely, because „never name columns" is too blunt: `*` is the
+// wrong answer for a picker over every timeline or a watermark polled on an interval,
+// where it would turn a cheap query into an expensive one.
+//
+// It is the reads that ASSEMBLE A TimelineFile that must be tolerant. Those are what
+// a page load depends on, so an unmigrated column there is an outage rather than a
+// missing feature. Narrow reads of long-standing columns elsewhere are fine: the only
+// migration that could break one REMOVES a column, and those are named `*_breaking`
+// and read by a human first.
+//
+// Scoped to `getTimeline` rather than to the tables, which is the lesson of writing
+// this: asserting over every read of `timelines` produced an exemption list that grew
+// by one entry per run — a list that long is a rule nobody can state.
+test('getTimeline names no columns, in either driver', () => {
+  for (const [driver, source] of [['postgres', SOURCE], ['supabase', SUPABASE]] as const) {
+    const body = functionBody(source, 'getTimeline');
+    const named = [
+      // postgres: `select a, b from …`
+      ...(body.match(/select\s+(?!\*)[a-z_]+\s*,/gi) ?? []),
+      // supabase: `.select('a, b')`
+      ...(body.match(/\.select\('(?!\*')[^']*'\)/g) ?? []),
+      // …and the same list hidden behind a constant. `ITEM_SELECT` was exactly that:
+      // a named projection reached through an identifier, which the two patterns above
+      // cannot see. A guard bypassable by indirection is a guard that rots.
+      ...(body.match(/\.select\([A-Z][A-Z_]*\)/g) ?? []),
+      ...(body.match(/sql\.unsafe\([A-Z][A-Z_]*\)/g) ?? []),
+    ];
+    assert.deepEqual(
+      named,
+      [],
+      `${driver} getTimeline names columns (${named.join(' / ')}); an unmigrated one fails the whole read`,
+    );
+  }
+});
+
+/** A function's body, from its declaration to the next top-level `export`. */
+function functionBody(source: string, name: string): string {
+  const at = source.indexOf(`export async function ${name}(`);
+  assert.ok(at > 0, `no ${name} in this driver`);
+  const next = source.indexOf('\nexport ', at + 10);
+  return source.slice(at, next > 0 ? next : source.length);
+}
+
+test('every WRITE to timeline_groups names every mapped column', () => {
+  const writes = [
+    { what: 'upsertGroup', text: sliceAround(SOURCE, 'insert into timeline_groups ${sql(row') },
+    { what: 'replaceTimeline insert', text: sliceAround(SOURCE, 'insert into timeline_groups ${sql(\n') },
   ];
-  for (const { what, text } of statements) {
+  for (const { what, text } of writes) {
     for (const column of groupColumns) {
-      // Two are legitimately not in every statement, and the reasons differ:
-      //   timeline_id  written, never selected back onto the group.
+      // Two are legitimately absent, and the reasons differ:
+      //   timeline_id  named separately as the key, not part of the patched set.
       //   sort         conditional in the mapper on purpose — `upsertGroup` leaves the
       //                existing order alone, so renaming a group cannot reshuffle it.
       if (column === 'timeline_id' || column === 'sort') continue;
@@ -53,16 +112,7 @@ test('every statement touching timeline_groups names every mapped column', () =>
   }
 });
 
-test('getTimeline selects every timelines column the file carries', () => {
-  const select = sliceAround('from timelines where id =');
-  // `graph` and `group_order` were read from a row that never contained them: the
-  // mapper checked `tl.group_order` while the select named six columns without it.
-  for (const column of ['name', 'description', 'group_by', 'group_order', 'graph', 'phases', 'custom_fields']) {
-    assert.ok(select.includes(column), `getTimeline does not select "${column}"`);
-  }
-});
-
-test('replaceTimeline writes every timelines column it reads back', () => {
+test('replaceTimeline writes every timelines column the file carries', () => {
   const at = SOURCE.indexOf('export async function replaceTimeline');
   const body = SOURCE.slice(at, at + 2600);
   for (const column of ['group_by', 'group_order', 'graph', 'phases', 'custom_fields']) {
@@ -70,10 +120,9 @@ test('replaceTimeline writes every timelines column it reads back', () => {
   }
 });
 
-/** The statement a marker sits in: from the marker back to the previous `sql` tag. */
-function sliceAround(marker: string): string {
-  const at = SOURCE.indexOf(marker);
-  assert.ok(at > 0, `marker not found in timeline-repo.ts: ${marker}`);
-  const from = SOURCE.lastIndexOf('sql`', at - 200 > 0 ? at - 200 : 0);
-  return SOURCE.slice(from > 0 ? from : at - 200, at + 400);
+/** The statement a marker sits in: from the marker back to the previous `sql`/`from`. */
+function sliceAround(source: string, marker: string): string {
+  const at = source.indexOf(marker);
+  assert.ok(at > 0, `marker not found: ${marker}`);
+  return source.slice(Math.max(0, at - 200), at + 400);
 }

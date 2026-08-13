@@ -255,6 +255,44 @@ Pure data cleanups are **not** migrations — a one-off script belongs in
 `scripts/`, because a migration is a schema change every database must replay
 forever, while a cleanup is a thing that happened once to one dataset.
 
+### Reads survive a schema lag, writes do not
+
+Deployed code and applied schema are two things that move separately, and on
+2026-08-13 they moved apart: a deploy carried a `getTimeline` that selected
+`timelines.group_order` while the migration adding it had only been applied to a
+throwaway database. Every check was green. The main read path returned `500` to
+every signed-in visitor, and the first detector was a person opening the page.
+
+Three defences, and the first is the only one that holds without discipline.
+
+**A read that assembles a `TimelineFile` names no columns.** `select *`, in both
+drivers, for every table it touches. A column that has not been migrated is then
+simply absent from the row, and the mappers already guard with `!= null`, so the
+timeline loads and the feature waits. A named column list turns the same lag into an
+outage. The saved views got this right first and said so in a comment — „the saved
+views are simply absent until the migration lands" — and the graph settings ignored
+it one function below.
+
+This is **not** „no fallback data" being bent: that principle is about *content*, and
+a tolerant read invents none. It returns a timeline with one setting unset.
+
+**A write names every column it means to store.** The opposite rule, for the opposite
+reason: a write that silently dropped a value would lose the setting somebody just
+asked for. A failing write is honest, attributable and visible to whoever triggered
+it. Both halves are asserted by
+[`scripts/db/timeline-columns.test.ts`](../scripts/db/timeline-columns.test.ts),
+which reads source because CI has no database.
+
+Narrow reads elsewhere may still name columns — the timeline picker and the watermark
+poll do, and `*` there would turn cheap queries into expensive ones. The line is
+whether a page load depends on it.
+
+**A migration must be applied before the code that requires it is deployed.** Where
+that cannot be guaranteed — and with a manual `db:migrate` outside any pipeline, it
+cannot — the tolerant read above is what makes the ordering survivable rather than
+fatal. `npm run db:check -- --strict` refuses when it cannot answer the question at
+all, and the `Smoke` workflow asks the deployment itself whether a read still works.
+
 ### The pending check (`npm run db:check`)
 
 `npm run dev` runs this first, and refuses to start when migrations are pending.
@@ -265,6 +303,17 @@ bug — so the search starts in the wrong file.
 
 It **verifies, it never applies.** Applying stays a deliberate `npm run db:migrate`,
 because a schema change should not happen as a side effect of starting a server.
+
+**`--strict` turns „cannot answer" into a failure.** Without a direct connection this
+check can say nothing: migrations are DDL and the tracking table is not reachable
+through PostgREST, so it warns and exits 0 — which is indistinguishable from a green
+run to anything reading the exit code. That is exactly how it read on 2026-08-13,
+where the warning was printed and taken for a footnote. A pipeline should use
+`--strict`; `npm run dev` deliberately does not, because a developer whose instance
+cannot answer the question still has to be able to start a server.
+
+Same shape of bug as the one below it in this chapter, and worth naming as a shape: a
+check that cannot answer must not answer „fine".
 
 What each state does, all nine verified against a throwaway Postgres:
 

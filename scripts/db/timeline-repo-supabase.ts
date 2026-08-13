@@ -310,9 +310,19 @@ export async function setMemberStatus(
 }
 
 export async function getTimeline(db: SupabaseClient, id: string): Promise<TimelineFile | null> {
+  // `*`, not a column list, and that is the whole point: a named select fails
+  // outright when one of its columns has not been migrated yet, so a schema lag
+  // becomes a 500 on the main read path. On 2026-08-13 that took the production
+  // timeline down for a setting nobody had used yet. With `*` a column that is not
+  // there is simply absent from the row, and every mapper below already guards with
+  // `!= null`, so the timeline loads and the feature waits for its migration.
+  //
+  // Reads are tolerant, writes are not: see „Reads survive a schema lag, writes do
+  // not" (docs/database.md). A write that silently dropped a value would lose the
+  // setting the user just asked for.
   const { data: tl, error: tlErr } = await db
     .from('timelines')
-    .select('id, name, description, group_by, group_order, graph, phases, custom_fields')
+    .select('*')
     .eq('id', id)
     .maybeSingle();
   if (tlErr) throw new Error(`getTimeline: ${tlErr.message}`);
@@ -320,21 +330,21 @@ export async function getTimeline(db: SupabaseClient, id: string): Promise<Timel
 
   const { data: pluginRows, error: plgErr } = await db
     .from('timeline_plugins')
-    .select('plugin_id, config, public')
+    .select('*')
     .eq('timeline_id', id)
     .order('plugin_id', { ascending: true });
   if (plgErr) throw new Error(`getTimeline plugins: ${plgErr.message}`);
 
   const { data: itemRows, error: itemErr } = await db
     .from('timeline_items')
-    .select(ITEM_SELECT)
+    .select('*')
     .eq('timeline_id', id)
     .order('sort', { ascending: true, nullsFirst: true });
   if (itemErr) throw new Error(`getTimeline items: ${itemErr.message}`);
 
   const { data: groupRows, error: grpErr } = await db
     .from('timeline_groups')
-    .select('id, content, nested_groups, show_nested, color, sort')
+    .select('*')  // tolerant; see the note in getTimeline
     .eq('timeline_id', id)
     .order('sort', { ascending: true, nullsFirst: true });
   if (grpErr) throw new Error(`getTimeline groups: ${grpErr.message}`);
@@ -642,7 +652,7 @@ export async function upsertGroup(
   const { data, error } = await db
     .from('timeline_groups')
     .upsert(groupToRow(timelineId, group))
-    .select('id, content, nested_groups, show_nested, color, sort')
+    .select('*')  // tolerant; see the note in getTimeline
     .single();
   if (error) throw new Error(`upsertGroup: ${error.message}`);
   return rowToGroup(data);
