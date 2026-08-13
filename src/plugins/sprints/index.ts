@@ -586,17 +586,14 @@ function chartBlock(
     // keeps moving afterwards, so recomputing rewrites history on every edit.
     const read = frozenSeries(days, report.series);
     actual = read.points;
-    caption =
-      `Eingefroren beim Abschluss${sprint.closedOn ? ` am ${germanDay(sprint.closedOn)}` : ''}. ` +
-      'Diese Kurve wird nicht neu berechnet.';
+    caption = `Eingefroren beim Abschluss${sprint.closedOn ? ` am ${germanDay(sprint.closedOn)}` : ''}.`;
     if (read.outside.length) {
       extras.push(
         Callout({
           tone: 'warning',
           role: 'note',
           text:
-            `Der eingefrorene Verlauf enthält Tage außerhalb des Sprintzeitraums: ${read.outside.join(', ')}. ` +
-            'Sie werden nicht gezeichnet, und sie werden auch nicht korrigiert.',
+            `Der eingefrorene Verlauf enthält Tage außerhalb des Sprintzeitraums: ${read.outside.join(', ')}.`,
         }),
       );
     }
@@ -605,23 +602,20 @@ function chartBlock(
         Callout({
           tone: 'info',
           role: 'note',
-          text: 'Zu diesem abgeschlossenen Sprint ist kein Verlauf gespeichert. Er wird nicht nachträglich berechnet.',
+          text: 'Zu diesem abgeschlossenen Sprint ist kein Verlauf gespeichert.',
         }),
       );
     }
   } else if (isPast) {
-    caption =
-      'Für diesen Sprint gibt es keinen eingefrorenen Verlauf. Ein abgeschlossener Sprint wird nicht neu berechnet, ' +
-      'deshalb bleibt die Kurve leer.';
+    caption = 'Für diesen Sprint gibt es keinen eingefrorenen Verlauf.';
   } else {
     const built = reconstructSeries(days, burndownItems(members), today());
     actual = built.points;
     caption = built.points.length
-      ? 'Rekonstruiert aus Status und Enddatum der Einträge. Für Einträge gibt es keine Änderungshistorie, ' +
-        'deshalb verändert ein verschobenes Enddatum auch den Verlauf von gestern.'
+      ? 'Rekonstruiert aus Status und Enddatum der Einträge.'
       : // Nothing is drawn before the first day, and saying „rekonstruiert" over an
         // empty plot would describe a line that is not there.
-        'Der Sprint hat noch nicht begonnen, deshalb gibt es noch keinen Verlauf. Gezeichnet ist nur der Plan.';
+        'Der Sprint hat noch nicht begonnen.';
     if (built.clampedToStart.length) {
       extras.push(
         Text({
@@ -721,15 +715,9 @@ function rowFaultText(
   warning: Extract<SprintWarning, { kind: 'duplicate-row-id' | 'several-reports-for-one-sprint' }>,
 ): string {
   if (warning.kind === 'duplicate-row-id') {
-    return (
-      `Die Id „${warning.rowId}" kommt in „${warning.collection}" mehrfach vor. ` +
-      'Gelesen wird die erste Zeile; die weiteren sind unsichtbar, nicht zusammengeführt.'
-    );
+    return `Die Id „${warning.rowId}" kommt in „${warning.collection}" mehrfach vor; gelesen wird die erste Zeile.`;
   }
-  return (
-    `Für einen Sprint liegen mehrere Berichte vor (${warning.rowIds.join(', ')}). ` +
-    'Gelesen wird der erste, die übrigen bleiben ungelesen.'
-  );
+  return `Für einen Sprint liegen mehrere Berichte vor (${warning.rowIds.join(', ')}); gelesen wird der erste.`;
 }
 
 /**
@@ -1151,7 +1139,6 @@ function editForm(sprint: Sprint): HTMLElement {
         Field({ label: 'Name', control: nameInput, full: true }),
         Field({
           label: 'Sprint-Ziel',
-          hint: 'Wofür dieser Sprint da ist. Solange er aktiv ist, ist das Ziel der Maßstab für jede Änderung am Umfang.',
           control: goalInput,
           full: true,
         }),
@@ -1162,7 +1149,6 @@ function editForm(sprint: Sprint): HTMLElement {
         Field({ label: 'Einheit', control: capacityUnitSelect }),
         Field({
           label: 'Notiz',
-          hint: 'Ergebnis aus Review und Retro, oder der Grund für einen Abbruch.',
           control: noteInput,
           full: true,
         }),
@@ -1256,8 +1242,8 @@ function emptyState(): HTMLElement {
       size: 'sm',
       tone: 'muted',
       text: canEdit()
-        ? 'Mit „Sprint anlegen" entsteht ein geplanter Sprint. Ziel, Zeitraum und Kapazität kommen danach im Formular dazu.'
-        : 'Diese Zeitleiste nimmt aus der Oberfläche keine Änderungen an. Ein Sprint entsteht dann über den MCP-Aufruf plugin_data_write, den die README dieses Plugins beschreibt.',
+        ? 'Noch kein Sprint angelegt.'
+        : 'Noch kein Sprint angelegt. Diese Zeitleiste nimmt aus der Oberfläche keine Änderungen an.',
     }),
   ]);
 }
@@ -1300,8 +1286,7 @@ function paint(into: HTMLElement): void {
         tone: 'warning',
         role: 'note',
         text:
-          `Mehrere Sprints stehen auf „aktiv": ${names.join(', ')}. ` +
-          'Eine Zeitleiste hat höchstens einen aktiven Sprint.',
+          `Mehrere Sprints stehen auf „aktiv": ${names.join(', ')}.`,
       }),
     );
   }
@@ -1318,8 +1303,7 @@ function paint(into: HTMLElement): void {
           role: 'note',
           text:
             `Die Fenster von „${a}" und „${b}" überlappen sich ` +
-            `(${germanDay(warning.overlap.start)} bis ${germanDay(warning.overlap.end)}). ` +
-            'Der Vorschlag „Sprint nach Datum" nennt für diese Tage den früheren der beiden.',
+            `(${germanDay(warning.overlap.start)} bis ${germanDay(warning.overlap.end)}).`,
         }),
       );
     } else if (warning.kind === 'closed-before-start') {
@@ -1340,7 +1324,7 @@ function paint(into: HTMLElement): void {
           role: 'note',
           text:
             `Eine Historienzeile verweist auf den Sprint „${warning.sprintId}", den es nicht gibt ` +
-            `(Eintrag „${warning.itemId}"). Die Übertragungshistorie dieses Eintrags ist damit unvollständig.`,
+            `(Eintrag „${warning.itemId}").`,
         }),
       );
     } else if (warning.kind === 'duplicate-row-id' || warning.kind === 'several-reports-for-one-sprint') {
@@ -1370,8 +1354,7 @@ function paint(into: HTMLElement): void {
           tone: 'warning',
           role: 'note',
           text:
-            `Ohne verwertbare Schätzung: ${unsized.join(', ')}. ` +
-            'Diese Einträge zählen in keiner Summe und in keiner Kurve mit, und sie werden nicht als 0 gerechnet.',
+            `Ohne verwertbare Schätzung, daher in keiner Summe: ${unsized.join(', ')}.`,
         }),
       );
     }
