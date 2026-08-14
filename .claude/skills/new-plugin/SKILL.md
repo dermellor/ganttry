@@ -71,9 +71,15 @@ Do not run these phases together. Each ends with something the user has to see.
   [#11](https://github.com/zeitlines/zeitlines/issues/11), not something to work
   around.
 - **After phase 1**, show the domain model, the confidence statement with its open
-  questions, the target questions, the baseline and the terminology table. Get
-  agreement on the plugin name and the visible field labels before writing code.
-  They end up in `metadata` keys, which are expensive to rename later.
+  questions, the **harvested** questions with the source and date each came from, the
+  page split by intent, the baseline (or its explicit absence) and the terminology
+  table. Get agreement on the plugin name and the visible field labels before writing
+  code. They end up in `metadata` keys, which are expensive to rename later.
+
+  **Questions invented at a desk do not count**, and that is the failure this stop
+  point exists to catch: they set the vocabulary of the id, the labels, the example
+  data and every page, and a list nobody can trace back to a search result is a guess
+  wearing the clothes of research. Playbook 1.3 says what produces one.
 - **After phase 2**, show the spec, including the agent tools and the catalogue entry.
 - **After phase 4**, deliver the preview image and the manual click path (URL, view,
   exact steps, expected result) and stop. The user tests before anything is merged
@@ -148,10 +154,14 @@ the confidence statement rather than inventing a plausible one.
 
 ## Baseline measurement
 
-Phase 1.4 needs what models answer today. Query what you can reach, and where you
-cannot, hand the user the exact list of questions to run and record their answers
-verbatim. Do not estimate a baseline; an invented before-picture makes phase 6
-meaningless.
+Phase 1.4 needs what models answer today, for the questions 1.3 **harvested**. Query
+what you can reach, and where you cannot, hand the user the exact list to run and
+record their answers verbatim. Do not estimate a baseline; an invented before-picture
+makes phase 6 meaningless, and phase 6 is then skipped explicitly rather than quietly.
+
+The same honesty applies one step earlier: search volume needs a tool with data
+access. Without one there is no volume figure, a proxy is labelled a proxy, and no
+number is presented as demand that is not one.
 
 ## Publication requirements
 
@@ -167,6 +177,7 @@ plugin into a findable one.
 | Agent tool reference | plugin `README.md` | review |
 | Domain confidence and open questions | plugin `README.md` | review |
 | Contribution call naming the open questions | plugin `README.md` | review |
+| A page and a data entry on the site | `zeitlines-web`: `src/pages/plugins/<slug>.astro` + `src/data/plugins.ts` | review; `status` may not say shipped before the plugin is on `main` |
 
 The preview image is the one generated artefact CI cannot regenerate (it needs a
 browser), so a stale one passes the check. Re-render it whenever the view changes.

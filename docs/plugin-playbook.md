@@ -542,7 +542,7 @@ These words mean the same thing in every plugin and are never renamed by one:
 | version | an ordered release marker |
 
 A domain word may be added *next to* a core concept and mapped in the terminology
-table (phase 1.5): a Gewerk is a kind of group, a Wendepunkt is a kind of phase, a
+table (phase 1.6): a Gewerk is a kind of group, a Wendepunkt is a kind of phase, a
 Frist is an item with a rule attached. What must not happen is a plugin that calls a
 group a Gewerk everywhere, because then the same concept has a different name in
 every plugin, and no cross-plugin reasoning, documentation or agent instruction
