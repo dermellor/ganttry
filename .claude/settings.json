@@ -5,7 +5,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'Reminder: if this session will change code, BEFORE the first Edit/Write ask the user (AskUserQuestion) which integration path -- direct-to-main (small low-risk changes) vs worktree+branch+GitHub-issue+PR (larger/riskier features) -- and run git status to catch foreign uncommitted work. Use isolation: worktree for the change work; note the Vite dev server runs from the main checkout and does NOT see worktree edits (run it from the worktree or merge+verify on main). done = committed + pushed + deploy-verified (Netlify green), but push is a separate explicit step -- never auto-push on commit; never end a change-session with uncommitted work. Details: AGENTS.md > Branching, Commits & Session Isolation.'"
+            "command": "echo 'Reminder: if this session will change code, BEFORE the first Edit/Write ask the user (AskUserQuestion) which integration path -- direct-to-main (small low-risk changes) vs worktree+branch+GitHub-issue+PR (larger/riskier features) -- and run git status to catch foreign uncommitted work. Use isolation: worktree for the change work; note the Vite dev server runs from the main checkout and does NOT see worktree edits (run it from the worktree or merge+verify on main). done = committed + pushed + deploy-verified (Netlify green), but push is a separate explicit step -- never auto-push on commit; never end a change-session with uncommitted work. INTERFACE TEXT: headings, labels and refusals only -- never add a subline, a note beside a control, an explanatory card or a tooltip restating a label, not even a short one. Details: AGENTS.md > Branching, Commits & Session Isolation, and AGENTS.md > Interface text.'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && out=$(node scripts/ci/check-ui-text.mjs 2>&1) || { echo \"$out\" >&2; exit 2; }"
           }
         ]
       }

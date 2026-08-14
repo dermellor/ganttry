@@ -51,13 +51,6 @@ export type SettingDeclaration = {
   home: SettingHome;
   editable: boolean;
   /**
-   * Why it cannot be changed here. Carried rather than implied, because an area
-   * that greys a field out without saying why teaches people to ignore it, and
-   * once ignored the editable remainder is missed too. Knowing where a value
-   * comes from is most of what an operator is looking for.
-   */
-  why?: string;
-  /**
    * Whether the VALUE may be served, or only whether it is set.
    *
    * Absent means presence only, and that direction is deliberate: a setting
@@ -84,23 +77,16 @@ export type SettingDeclaration = {
 // change again. The repository's own language stays English (AGENTS.md); the
 // interface is German (CONTRIBUTING.md), and these strings are interface.
 
-const HOST_ENV = 'In der Umgebung dieser Instanz gesetzt, nicht hier.';
-const BUILD_TIME = 'Beim Build festgelegt und im Artefakt eingebacken.';
-
 /**
  * What every section says when the server answers `access_control_disabled`.
  *
- * One sentence rather than one per section: both sections of the area hit the
- * same 503 from the same branch, and two texts for it drift into telling
- * different stories about one refusal — the „Benutzer" screen used to say only
- * that administration was off, without naming the variable that turns it on,
- * which is the single thing the reader needs.
- *
- * It lives beside the declarations because it is the same kind of text: what an
- * operator is told about how this instance is configured.
+ * A refusal, so it stays: both sections of the area hit the same 503 from the same
+ * branch, and one text for it keeps two from telling different stories about one
+ * refusal. It names the variable and stops there — what being off implies for roles
+ * and for the administration screen was explanation on top of the refusal.
  */
 export const ACCESS_CONTROL_OFF_TEXT =
-  'Die Zugriffskontrolle ist auf dieser Instanz aus. Solange sie aus ist, entscheiden Rollen nichts und die Verwaltung bleibt geschlossen: TIMELINES_ACCESS_CONTROL=true schaltet beides ein.';
+  'Die Zugriffskontrolle ist auf dieser Instanz aus: TIMELINES_ACCESS_CONTROL=true schaltet sie ein.';
 
 /**
  * Every setting this instance has.
@@ -118,7 +104,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Zugriffskontrolle',
     home: 'env',
     editable: false,
-    why: HOST_ENV,
     expose: 'value',
     // The gate's own reading, so „an" here and „an" in the API cannot diverge.
     // Only the exact string `true` counts; anything else leaves it off.
@@ -130,7 +115,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Master-Key (erster Administrator)',
     home: 'env',
     editable: false,
-    why: HOST_ENV,
     // Presence only. The address is the one identity that can promote itself
     // past an empty member list, and naming it here would hand anybody who
     // reaches this page the exact account worth attacking.
@@ -141,7 +125,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Anmeldung erforderlich',
     home: 'env',
     editable: false,
-    why: HOST_ENV,
     expose: 'value',
     // The gate compares against the literal `true` (netlify/edge-functions/auth.ts).
     resolve: (raw) => String(raw === 'true'),
@@ -152,7 +135,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Erlaubte Anmelde-Domains',
     home: 'env',
     editable: false,
-    why: HOST_ENV,
     expose: 'value',
   },
   {
@@ -161,7 +143,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Identitäts-Header des Proxys',
     home: 'env',
     editable: false,
-    why: HOST_ENV,
     expose: 'value',
   },
   {
@@ -170,7 +151,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Erlaubte Domains hinter dem Proxy',
     home: 'env',
     editable: false,
-    why: HOST_ENV,
     expose: 'value',
   },
   {
@@ -179,7 +159,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Rolle der Service-Token',
     home: 'env',
     editable: false,
-    why: HOST_ENV,
     expose: 'value',
     resolve: serviceRoleFrom,
   },
@@ -189,7 +168,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Service-Token',
     home: 'env',
     editable: false,
-    why: HOST_ENV,
     // Presence only: it is a bearer credential.
   },
   {
@@ -198,7 +176,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Postgres-Verbindung',
     home: 'env',
     editable: false,
-    why: HOST_ENV,
     // Presence only: a connection string carries its own password.
   },
   {
@@ -207,7 +184,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Supabase-Projekt',
     home: 'env',
     editable: false,
-    why: HOST_ENV,
     // Presence only. The URL alone is not a credential, but the pair is what
     // makes an instance reachable, and „fail closed" decides the doubtful case.
   },
@@ -217,7 +193,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Supabase-Service-Key',
     home: 'env',
     editable: false,
-    why: HOST_ENV,
     // Presence only: it is the service-role key.
   },
   {
@@ -226,7 +201,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Live-Updates',
     home: 'env',
     editable: false,
-    why: HOST_ENV,
     expose: 'value',
   },
   {
@@ -235,7 +209,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Datenverzeichnis',
     home: 'build',
     editable: false,
-    why: BUILD_TIME,
     expose: 'value',
     // `build:data` writes to public/<this>, and vite.config.ts derives the
     // client's fetch prefix from the same value — so an unset variable is the
@@ -248,7 +221,6 @@ export const REGISTRY: readonly SettingDeclaration[] = [
     label: 'Gebaute Datenquellen',
     home: 'build',
     editable: false,
-    why: BUILD_TIME,
     expose: 'value',
   },
 ];
@@ -279,7 +251,6 @@ export function declareSetting(decl: SettingDeclaration, raw: string | undefined
     editable: decl.editable,
     set: value !== '',
   };
-  if (decl.why) out.why = decl.why;
   if (decl.expose === 'value') out.value = decl.resolve ? decl.resolve(value) : value;
   return out;
 }

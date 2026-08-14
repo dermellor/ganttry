@@ -99,7 +99,7 @@ export function renderCardsHtml(
   const p = currentPricing(file);
   const highlights = p.highlights ?? [];
   if (!highlights.length) {
-    return '<p class="pricing-empty">Keine Highlight-Kacheln definiert. In der Matrix sind alle Features sichtbar; für die Kacheln müssen Highlights im Preismodell hinterlegt werden (pricing.highlights).</p>';
+    return '<p class="pricing-empty">Keine Highlight-Kacheln definiert.</p>';
   }
   const sections = sectionsOf(highlights);
 

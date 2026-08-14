@@ -34,7 +34,6 @@ export function showTierForm(tierId: string): void {
     }),
     Field({
       label: 'Preis',
-      hint: '(Freitext, inkl. Währung)',
       htmlFor: 'tr-price',
       full: true,
       control: TextInput({
@@ -46,7 +45,6 @@ export function showTierForm(tierId: string): void {
     }),
     Field({
       label: 'Tagline',
-      hint: '(Segment, unter dem Namen)',
       htmlFor: 'tr-tagline',
       full: true,
       control: TextInput({
@@ -58,7 +56,6 @@ export function showTierForm(tierId: string): void {
     }),
     Field({
       label: 'Use Case',
-      hint: '(Sub-Headline der Karte)',
       htmlFor: 'tr-usecase',
       full: true,
       control: TextInput({

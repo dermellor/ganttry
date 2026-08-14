@@ -38,9 +38,14 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Conventions
 
-Five rules that hold across the whole codebase. Everything else is local to a
+Six rules that hold across the whole codebase. Everything else is local to a
 subsystem and documented there.
 
+- **Interface text is labels, headings and refusals. Nothing else.** No sublines
+  under a field, no note beside a control, no card explaining what a section does,
+  no tooltip restating a badge, no sentence about what a button will do. Not
+  shortened, not moved into a tooltip, not made muted and small: deleted. The full
+  rule and what „refusal" covers is below, in „Interface text".
 - **Comments explain *why*, not *what*.** Most non-obvious rules here carry the
   failure mode they prevent, because that is the part which cannot be recovered
   from reading the code. When you change such a rule, change its reasoning with it.
@@ -67,6 +72,55 @@ subsystem and documented there.
   code. Draw the boundaries between the parts, never inventories of what sits
   behind them, because a figure that lists functions or counts is wrong within a
   month. See [`docs/overview.md`](docs/overview.md) for both.
+
+## Interface text
+
+Three kinds of text may appear in the interface:
+
+- **Headings**, naming a section or a card.
+- **Labels**, naming a control, a value, or a state: „Bezeichnung", „optional",
+  „Nur lesend", „(read-only)", „(Standard)", a placeholder showing the expected
+  format, an `aria-label` on an icon-only button. An empty state naming what is
+  empty („Noch keine eigenen Felder.") is a label for the list it stands in for.
+- **Refusals and results** of something the user just did: a validation message,
+  a save error, „Gespeichert.", „Keine Änderung.", a server's reason for a 503.
+
+Anything else is out, and „out" means deleted rather than shortened, moved into a
+tooltip, or set in muted extra-small type. No subline under a field, no note
+beside a control, no card introducing a section, no sentence about what a button
+is going to do, no tooltip restating the badge it hangs on, no paragraph about
+what removing something will cost.
+
+**Every element has to trace back to a request.** „Somebody might wonder" is not
+one, and neither is a question you thought of while building the control. If a
+control genuinely cannot be understood from its label, the label is wrong; fix the
+label. When information is missing, ask rather than filling the gap with copy.
+
+The reason this is a rule with a checker behind it, rather than a matter of taste:
+prose is the default output of anything writing interface, human or model. Each
+sentence looks reasonable on its own and defensible in review, so they accumulate
+one at a time until the „Felder" section had three explanations above the first
+input and pushed it below the fold, and the settings area repeated one sentence
+under twelve consecutive rows. What got deleted in that sweep is listed at the
+call sites it was removed from.
+
+Two consequences worth stating, because both were found the hard way:
+
+- **A reason belongs in the state of the control, not in a sentence beside it.** A
+  disabled input with „fest, weil benutzt" beside its label says everything the
+  three-line explanation under it said.
+- **A long refusal is still allowed, and it is not written inline.** Validation
+  lives in DOM-free rule modules ([`src/fieldDefs.ts`](src/fieldDefs.ts),
+  [`src/itemExtent.ts`](src/itemExtent.ts),
+  [`src/phaseOverlap.ts`](src/phaseOverlap.ts)) and reaches the interface as a
+  variable, which is also why the checker never sees it.
+
+[`scripts/ci/check-ui-text.mjs`](scripts/ci/check-ui-text.mjs) (`npm run
+ui-text:check`, and a step in CI) fails on any interface string literal longer
+than one sentence or eight words, in a component prop, an HTML attribute or the
+text of markup built as a string. It passed with no exemptions the day it was
+written, because every violation was deleted instead of allowlisted. Its four
+skips are named in the script with their reasons.
 
 ## The name covers the product, not its vocabulary or its instances
 
@@ -366,6 +420,7 @@ npm run schema       # regenerate the JSON Schemas from src/types.ts
 npm run schema:check # verify they match the types + the examples validate (CI)
 npm run openapi      # regenerate openapi.yaml
 npm run openapi:check # verify the committed spec matches routes + types (CI)
+npm run ui-text:check # interface text is labels, headings and refusals (CI)
 npm run plugins:catalogue       # regenerate PLUGINS.md from the plugin manifests
 npm run plugins:catalogue:check # verify it matches, and that every plugin is publishable (CI)
 npm run plugins:preview -- <folder>  # render a plugin's preview.png (needs a running app + Chrome)
@@ -462,8 +517,9 @@ check).
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to
 `main` and on every pull request, over a Node 22 + 24 matrix: `npm ci`,
-`npm test`, `npm run schema:check`, `npm run openapi:check`, the env-var check,
-`npm run build`, then the bundle-split check below.
+`npm test`, `npm run schema:check`, `npm run openapi:check`, the interface-text
+check („Interface text" above), the env-var check, `npm run build`, then the
+bundle-split check below.
 
 **Documented env vars are actually read**
 ([`scripts/ci/check-env-docs.sh`](scripts/ci/check-env-docs.sh)): every variable

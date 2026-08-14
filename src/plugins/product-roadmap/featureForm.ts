@@ -109,7 +109,6 @@ export function showFeatureForm(featureId: string): void {
   const versionDescField = versions.length
     ? Field({
         label: 'Versionsbeschreibungen',
-        hint: '(zusätzlich, je Version)',
         full: true,
         className: 'version-desc-field',
         control: [
@@ -139,7 +138,6 @@ export function showFeatureForm(featureId: string): void {
     }),
     Field({
       label: 'Gruppe',
-      hint: '(Matrix-Abschnitt)',
       htmlFor: 'ft-group',
       control: [
         TextInput({

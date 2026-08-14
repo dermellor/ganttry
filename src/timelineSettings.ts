@@ -58,21 +58,6 @@ function nodes(): AreaNodes {
 }
 
 /**
- * The one thing a read-only source may not do here, said once with its reason
- * instead of a page of dead inputs. Same rule as the instance area: an area that is
- * mostly values you cannot change teaches people to ignore it, so non-editability
- * carries a visible reason.
- */
-function readOnlyNote(): HTMLElement {
-  return Callout({
-    tone: 'warning',
-    text:
-      'Diese Timeline ist hier nicht bearbeitbar, deshalb sind die Werte nur zu lesen. ' +
-      'Woran das liegt, steht im Badge neben ihrem Namen.',
-  });
-}
-
-/**
  * `notice` survives a re-mount. The form rebuilds itself after a save so its
  * „current" values are the stored ones, and that replaced the status element along
  * with everything else — a save that answers with silence reads as a save that
@@ -83,7 +68,7 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
   const file = state.activeSourceFile;
   if (!view || !file) {
     root.replaceChildren(
-      Callout({ text: 'Keine Timeline geladen. Öffne eine und komm zurück.' }),
+      Callout({ text: 'Keine Timeline geladen.' }),
     );
     return;
   }
@@ -151,7 +136,9 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
 
   root.replaceChildren(
     el('div', { class: 'settings-form' }, [
-      editable ? null : readOnlyNote(),
+      // A read-only source shows disabled inputs and no save button. What says so in
+      // words is the „Nur lesend" badge beside the timeline's name, once, and this
+      // section adds nothing to it.
       Field({ label: 'Name', control: name, htmlFor: 'tl-name' }),
       Field({
         label: 'Beschreibung',
@@ -164,14 +151,6 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
         hint: 'Vorgabe',
         control: groupBy,
         htmlFor: 'tl-groupby',
-      }),
-      // The one thing about this field that is not obvious, and it is the reason
-      // somebody would hesitate to touch it: it does not overrule anybody.
-      Text({
-        as: 'p',
-        text: 'Wer selbst gruppiert, behält seine Wahl: die Vorgabe gilt für alle, die noch keine getroffen haben.',
-        tone: 'muted',
-        size: 'xs',
       }),
       el('div', { class: 'settings-actions' }, [save, status]),
     ]),
@@ -187,17 +166,15 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
  * reached for about equally often, and they are not: one is how a timeline gets
  * filled, the other is taken out a handful of times in a timeline's life.
  *
- * What the move costs is that the picture being exported is no longer on screen
- * while the button is — the area replaces the content. So the section says what
- * ends up in the file instead of leaving it to be inferred from a view the
- * reader cannot see, and it exports the timeline's current filter, which is what
- * the button did from the same state.
+ * It exports the timeline's current filter, which is what the button did from the
+ * same state. The section is the button and its status line; it carries no prose
+ * about what lands in the file (see „Interface text" in AGENTS.md).
  */
 function mountExport(root: HTMLElement): void {
   const view = state.activeView;
   if (!view || !state.activeBuild) {
     root.replaceChildren(
-      Callout({ text: 'Keine Timeline geladen. Öffne eine und komm zurück.' }),
+      Callout({ text: 'Keine Timeline geladen.' }),
     );
     return;
   }
@@ -246,23 +223,7 @@ function mountExport(root: HTMLElement): void {
   });
 
   root.replaceChildren(
-    el('div', { class: 'settings-form' }, [
-      Text({
-        as: 'p',
-        text:
-          'Eine einzelne HTML-Datei mit dieser Timeline: Balken, Phasen, Meilensteine und ' +
-          'die Detailtexte, ohne Zugang zur Instanz und ohne Bearbeitung.',
-        tone: 'muted',
-        size: 'sm',
-      }),
-      Text({
-        as: 'p',
-        text: 'Der gesetzte Filter gilt auch für die Datei; Einträge ohne Startdatum fehlen darin, wie in der Timeline.',
-        tone: 'muted',
-        size: 'xs',
-      }),
-      el('div', { class: 'settings-actions' }, [run, status]),
-    ]),
+    el('div', { class: 'settings-form' }, [el('div', { class: 'settings-actions' }, [run, status])]),
   );
 }
 

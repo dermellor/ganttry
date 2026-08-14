@@ -17,6 +17,15 @@ touches it.
   verschränken. Die Frage entfällt nur, wenn der User den Modus in der Nachricht
   bereits explizit genannt hat. Begründung + Kriterien: `AGENTS.md` →
   „Branching, Commits & Session Isolation".
+- **Interface-Text (harte Grenze):** in die Oberfläche kommen nur Überschriften,
+  Labels und Fehler-/Ergebnismeldungen. Keine Subline unter einem Feld, keine
+  Notiz neben einem Control, keine erklärende Karte über einem Abschnitt, kein
+  Tooltip, der ein Label wiederholt — auch nicht kurz, auch nicht `muted`. Wer
+  eine Erklärung vermisst, formuliert das Label um oder fragt nach. Die Regel und
+  was als Label gilt: `AGENTS.md` → „Interface text". Ein `PostToolUse`-Hook in
+  `.claude/settings.json` fährt nach jedem `Edit`/`Write`
+  `scripts/ci/check-ui-text.mjs` und bricht mit Exit 2 ab, sodass ein Verstoß in
+  derselben Session auffällt und nicht erst in CI.
 - **Live-Preview aus Worktree:** ein Dev-Server aus dem Main-Checkout sieht
   Worktree-Edits nicht. Vor visueller Verifikation aus einem Worktree entweder
   einen zweiten Server aus dem Worktree starten (`npm run dev:worktree`) oder

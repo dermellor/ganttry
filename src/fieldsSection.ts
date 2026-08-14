@@ -9,6 +9,13 @@
 // because they are what keeps an edit from destroying data. This module is the form
 // around them: one card per definition, one save for the set (the API patches
 // `customFields` as a unit), and every refusal shown at the field it belongs to.
+//
+// The section shows labels, control states and refusals, and nothing else. It once
+// carried three explanations nobody had asked for — what a removal does to stored
+// values, why a used key is locked, which fields a plugin contributes — each of them
+// added in anticipation of a question, and together they pushed the first input of a
+// new field below the fold. An anticipated question is not a reason to put text on
+// screen; add copy here only when somebody reports being stuck without it.
 
 import {
   Button,
@@ -46,23 +53,6 @@ let notice = '';
 
 function newField(): CustomFieldDef {
   return { key: '', label: '', type: 'text' };
-}
-
-/**
- * A plugin's fields are listed but not editable: they come from the plugin's own
- * `fields(file)` and are not in the file at all, so an input here would edit
- * something that is regenerated on every load. Saying so beats leaving somebody to
- * wonder why the field they see is not in the list.
- */
-function contributedNote(fields: CustomFieldDef[]): HTMLElement | null {
-  if (!fields.length) return null;
-  return Callout({
-    tone: 'info',
-    text:
-      `Dazu kommen ${fields.length} Feld(er) aus aktivierten Plugins: ` +
-      `${fields.map((f) => f.label || f.key).join(', ')}. ` +
-      'Die gehören dem Plugin und werden hier nicht bearbeitet.',
-  });
 }
 
 function fieldCard(
@@ -138,7 +128,6 @@ function fieldCard(
           on: {
             click: () => {
               // The definition goes, the values stay: nothing here touches an item.
-              // What that costs is stated once, at the top of the section.
               draft = draft.filter((_, i) => i !== index);
               rerender();
             },
@@ -149,17 +138,11 @@ function fieldCard(
     Field({ label: 'Bezeichnung', control: label }),
     Field({
       label: 'Schlüssel',
-      hint: keyLocked ? 'fest, weil benutzt' : 'in metadata',
+      // The hint only names the state of a locked input; there is deliberately no
+      // hint on an editable one, and no prose under either.
+      hint: keyLocked ? 'fest, weil benutzt' : undefined,
       control: key,
     }),
-    keyLocked
-      ? Text({
-          as: 'p',
-          text: 'Einträge tragen unter diesem Schlüssel Werte. Ein anderer Schlüssel würde sie alle verwaisen lassen, deshalb ist er fest.',
-          tone: 'muted',
-          size: 'xs',
-        })
-      : null,
     Field({ label: 'Typ', control: type }),
     options
       ? Field({
@@ -185,7 +168,7 @@ export function mountFields(root: HTMLElement): void {
   const view = state.activeView;
   const file = state.activeSourceFile;
   if (!view || !file) {
-    root.replaceChildren(Callout({ text: 'Keine Timeline geladen. Öffne eine und komm zurück.' }));
+    root.replaceChildren(Callout({ text: 'Keine Timeline geladen.' }));
     return;
   }
 
@@ -234,21 +217,6 @@ export function mountFields(root: HTMLElement): void {
 
   root.replaceChildren(
     el('div', { class: 'settings-form' }, [
-      editable
-        ? null
-        : Callout({
-            tone: 'warning',
-            text: 'Diese Timeline ist hier nicht bearbeitbar, deshalb sind die Definitionen nur zu lesen.',
-          }),
-      contributedNote(contributed),
-      // Said once, above everything: what removing a definition does and does not do.
-      Text({
-        as: 'p',
-        text:
-          'Ein entferntes Feld nimmt keine Werte mit: die bleiben in den Einträgen stehen und tauchen wieder auf, wenn du den Schlüssel erneut anlegst.',
-        tone: 'muted',
-        size: 'xs',
-      }),
       ...draft.map((def, index) => fieldCard(def, index, { editable, inUse, problems, rerender })),
       draft.length ? null : Text({ as: 'p', text: 'Noch keine eigenen Felder.', tone: 'muted' }),
       el('div', { class: 'settings-actions' }, [

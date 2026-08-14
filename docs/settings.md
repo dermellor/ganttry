@@ -32,13 +32,11 @@ setting by name and every new one is an interface change. Instead each setting
 declares itself, in [`src/settings.ts`](../src/settings.ts):
 
 ```ts
-{ key, group, label, home: 'env' | 'db' | 'build', editable, why?, expose?, resolve? }
+{ key, group, label, home: 'env' | 'db' | 'build', editable, expose?, resolve? }
 ```
 
 - **`home`** is where the value comes from.
 - **`editable`** is whether this deployment can change it here.
-- **`why`** is the reason when it cannot („In der Umgebung dieser Instanz
-  gesetzt, nicht hier.", „Beim Build festgelegt …").
 - **`expose`** is the read gate, below.
 - **`resolve`** turns the raw value into the effective one, using the parser the
   runtime actually uses.
@@ -172,15 +170,13 @@ An area that is 80% values you cannot change there teaches people to ignore it,
 and once ignored the editable remainder is missed too. A read-only mirror of an
 env file is worse than no page at all, because it looks like it should work.
 
-The mitigation is that non-editability carries a **visible reason** rather than a
-greyed-out field. That is what `why` is for, and it is also what makes the page
-useful to somebody who cannot change anything on it: knowing where a value comes
-from is most of what an operator is looking for.
-
-A reason repeated under twelve consecutive rows is wallpaper, though, so each
-distinct reason is stated **once per group** and carried on every row's tag as a
-tooltip. A setting whose reason differs from its neighbours' states its own,
-which is exactly when the sentence carries information.
+What makes the page useful to somebody who cannot change anything on it is the
+**„Herkunft" column**: knowing where a value comes from is most of what an
+operator is looking for, and the badge is the answer. It used to be a sentence as
+well („In der Umgebung dieser Instanz gesetzt, nicht hier."), stated once per
+group and repeated on every badge's tooltip, carried by a `why` field on the
+declaration. Both are gone: the badge is the label for that fact, and prose on top
+of a label is what „Interface text" in [`../AGENTS.md`](../AGENTS.md) rules out.
 
 ## Sections
 

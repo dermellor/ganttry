@@ -74,6 +74,12 @@ jobs:
       - name: Design-system contract
         run: bash scripts/ci/check-design-system.sh
 
+      # Explanation is what anything generating interface produces by default, and
+      # every single instance of it looks reasonable in review — which is why this
+      # is a check and not a paragraph. Labels, headings and refusals only.
+      - name: Interface text carries no explanation
+        run: node scripts/ci/check-ui-text.mjs
+
       # Nothing else notices a documented env var that no code reads: the schemas
       # cover data files, openapi.yaml covers routes, and no test asserts anything
       # about prose. TIMELINES_NOTES_DIR and TIMELINES_STATIC_ONLY outlived the
