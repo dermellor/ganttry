@@ -380,10 +380,14 @@ test('survives a dependency cycle', () => {
   assert.equal(out.bands.length, 1);
 });
 
+// A second, empty column keeps this out of the single-column chain layout, which
+// is the regime where a same-column relation is drawn as a spine rather than nested
+// (see „the chain layout" below). Nesting is what a same-column relation becomes
+// inside a grouped, multi-column graph.
 test('an edge inside one column keeps its nodes in one band, expressed as nesting', () => {
   const out = layoutGraph(
     graph({
-      columns: columns('a'),
+      columns: columns('a', 'b'),
       nodes: [
         { id: '1', column: 'a' },
         { id: '2', column: 'a' },
@@ -598,6 +602,19 @@ describe('edgePath: which side an edge leaves and enters', () => {
     assert.ok(c1 > sx && c2 > tx, 'both control points push out past the column');
   });
 
+  // A spine step: same column, one box above the other, drawn straight down the
+  // middle instead of bulging out — a stack of side-loops reads as anything but a
+  // chain, which is the whole point of the spine.
+  test('a vertical spine step runs straight down the shared middle', () => {
+    const n = edgePath(node(100, 0, 40), node(100, 200, 40), WIDTH, true).match(/-?[\d.]+/g)!.map(Number);
+    const midX = 100 + NODE_W / 2;
+    assert.equal(n[0], midX, 'leaves the source’s bottom middle');
+    assert.equal(n[1], 40, 'at its bottom edge (0 + 40)');
+    assert.equal(n[6], midX, 'enters the target’s top middle');
+    assert.equal(n[7], 200, 'at its top edge');
+    assert.equal(n[0], n[6], 'and the line is vertical: one x for both ends');
+  });
+
   test('each end is attached at its own vertical middle, not a shared constant', () => {
     const d = edgePath(node(100, 0, 40), node(500, 300, 90), WIDTH);
     const n = d.match(/-?[\d.]+/g)!.map(Number);
@@ -621,6 +638,9 @@ describe('edgePath: which side an edge leaves and enters', () => {
   });
 });
 
+// A second, empty column keeps these out of the single-column chain layout: with
+// one bucket a connected band becomes a spine, and nesting is specifically the
+// multi-column representation of a same-column relation.
 describe('same-column relations become indented units', () => {
   // Drawn as an edge, a same-column relation has to leave the column and come back
   // — a bulge past its own lane, repeated for every pair. Indentation says the same
@@ -628,7 +648,7 @@ describe('same-column relations become indented units', () => {
   test('a child sits under its parent, indented and narrower', () => {
     const out = layoutGraph(
       graph({
-        columns: columns('a'),
+        columns: columns('a', 'b'),
         nodes: [{ id: 'basis', column: 'a' }, { id: 'schluss', column: 'a' }],
         // `basis` is what `schluss` rests on: the dependent goes on top.
         edges: [{ from: 'basis', to: 'schluss', kind: 'depends' }],
@@ -649,7 +669,7 @@ describe('same-column relations become indented units', () => {
   test('containment puts the parent on top, like the list view', () => {
     const out = layoutGraph(
       graph({
-        columns: columns('a'),
+        columns: columns('a', 'b'),
         nodes: [{ id: 'eltern', column: 'a' }, { id: 'kind', column: 'a' }],
         edges: [{ from: 'eltern', to: 'kind', kind: 'parent' }],
       }),
@@ -661,7 +681,7 @@ describe('same-column relations become indented units', () => {
   test('a unit moves as one block, so a grandchild keeps its offset', () => {
     const out = layoutGraph(
       graph({
-        columns: columns('a'),
+        columns: columns('a', 'b'),
         nodes: [
           { id: 'a1', column: 'a' },
           { id: 'a2', column: 'a' },
@@ -686,7 +706,7 @@ describe('same-column relations become indented units', () => {
   test('a cycle in the same column is broken rather than followed', () => {
     const out = layoutGraph(
       graph({
-        columns: columns('a'),
+        columns: columns('a', 'b'),
         nodes: [{ id: 'x', column: 'a' }, { id: 'y', column: 'a' }],
         edges: [
           { from: 'x', to: 'y', kind: 'depends' },
@@ -707,6 +727,214 @@ describe('same-column relations become indented units', () => {
     );
     assert.equal(nodeById(out, 'y').indent, 0);
     assert.equal(nodeById(out, 'y').width, NODE_W);
+  });
+});
+
+describe('the chain layout (single column)', () => {
+  // A single grouping bucket frees the x-axis, so a connected band is drawn as its
+  // longest directed path stacked vertically — arrows down — with the nodes that
+  // feed into it hanging off to the left. See „the chain layout" at the top of the
+  // module. The reveal chains of a manuscript are the case it was built for.
+  const xOf = (out: ReturnType<typeof layoutGraph>, id: string) => nodeById(out, id).x;
+
+  test('a linear chain stacks into one vertical spine, edges pointing down', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: ['r1', 'r2', 'r3', 'r4'].map((id) => ({ id, column: 'rev' })),
+        edges: [
+          { from: 'r1', to: 'r2', kind: 'depends' },
+          { from: 'r2', to: 'r3', kind: 'depends' },
+          { from: 'r3', to: 'r4', kind: 'depends' },
+        ],
+      }),
+    );
+    assert.equal(out.bands.length, 1);
+    assert.equal(out.bands[0].loose, false);
+    // One column: every box shares an x, and none is indented (a spine is not a
+    // nested unit).
+    const xs = ['r1', 'r2', 'r3', 'r4'].map((id) => xOf(out, id));
+    assert.equal(new Set(xs).size, 1, 'the spine is one vertical line');
+    for (const id of ['r1', 'r2', 'r3', 'r4']) assert.equal(nodeById(out, id).indent, 0);
+    // Stacked top→bottom in edge order.
+    const ys = ['r1', 'r2', 'r3', 'r4'].map((id) => nodeById(out, id).y);
+    assert.ok(ys[0] < ys[1] && ys[1] < ys[2] && ys[2] < ys[3], 'in edge order down the column');
+    // The steps are drawn as vertical connectors rather than nested away.
+    assert.equal(out.edges.length, 3);
+    assert.equal(out.edges.every((e) => e.vertical === true), true);
+  });
+
+  test('a feeder sits to the left of the spine node it points into, level with it', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: ['r1', 'r2', 'r3', 'f'].map((id) => ({ id, column: 'rev' })),
+        edges: [
+          { from: 'r1', to: 'r2', kind: 'depends' },
+          { from: 'r2', to: 'r3', kind: 'depends' },
+          // An extra input into the middle of the chain, not its spine predecessor.
+          { from: 'f', to: 'r2', kind: 'depends' },
+        ],
+      }),
+    );
+    const f = nodeById(out, 'f');
+    const r2 = nodeById(out, 'r2');
+    assert.ok(f.x < r2.x, 'the feeder is to the left');
+    assert.equal(r2.x - f.x, COL_GAP + NODE_W, 'by exactly one column');
+    const centre = (n: { y: number; height: number }) => n.y + n.height / 2;
+    assert.ok(Math.abs(centre(f) - centre(r2)) < 1, 'and level with the node it feeds');
+    // The feeder edge is a real line (it crosses columns), not a vertical step.
+    const fed = out.edges.find((e) => e.from === 'f' && e.to === 'r2');
+    assert.ok(fed && !fed.vertical, 'the feeder arrows in, it is not a spine step');
+  });
+
+  test('a feeder of a feeder sits one column further out', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: ['s1', 's2', 's3', 's4', 'f1', 'f2'].map((id) => ({ id, column: 'rev' })),
+        edges: [
+          { from: 's1', to: 's2', kind: 'depends' },
+          { from: 's2', to: 's3', kind: 'depends' },
+          { from: 's3', to: 's4', kind: 'depends' },
+          // Attached to the end of the spine so the feeder chain cannot outgrow it.
+          { from: 'f1', to: 's4', kind: 'depends' },
+          { from: 'f2', to: 'f1', kind: 'depends' },
+        ],
+      }),
+    );
+    assert.ok(xOf(out, 'f2') < xOf(out, 'f1'), 'the deeper feeder is further left');
+    assert.ok(xOf(out, 'f1') < xOf(out, 's4'), 'and the shallow one is left of the spine');
+    assert.equal(xOf(out, 's4') - xOf(out, 'f1'), COL_GAP + NODE_W);
+    assert.equal(xOf(out, 'f1') - xOf(out, 'f2'), COL_GAP + NODE_W);
+  });
+
+  test('two feeders into one spine node stack without overlapping', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: ['s1', 's2', 's3', 'f1', 'f2'].map((id) => ({ id, column: 'rev' })),
+        edges: [
+          { from: 's1', to: 's2', kind: 'depends' },
+          { from: 's2', to: 's3', kind: 'depends' },
+          { from: 'f1', to: 's2', kind: 'depends' },
+          { from: 'f2', to: 's2', kind: 'depends' },
+        ],
+      }),
+    );
+    const f1 = nodeById(out, 'f1');
+    const f2 = nodeById(out, 'f2');
+    assert.equal(f1.x, f2.x, 'both feed the same node from the same column');
+    assert.ok(f1.x < nodeById(out, 's2').x, 'to its left');
+    const [top, bottom] = f1.y < f2.y ? [f1, f2] : [f2, f1];
+    assert.ok(bottom.y >= top.y + top.height, 'and they do not overlap');
+  });
+
+  test('the spine is the longest directed path; a short branch becomes a feeder', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: ['s1', 's2', 's3', 's4', 'b'].map((id) => ({ id, column: 'rev' })),
+        edges: [
+          { from: 's1', to: 's2', kind: 'depends' },
+          { from: 's2', to: 's3', kind: 'depends' },
+          { from: 's3', to: 's4', kind: 'depends' },
+          { from: 's1', to: 'b', kind: 'depends' },
+        ],
+      }),
+    );
+    // The four spine nodes share the rightmost column; the branch is pushed left.
+    const spineX = Math.max(...out.nodes.map((n) => n.x));
+    const onSpine = out.nodes.filter((n) => n.x === spineX).map((n) => n.id).sort();
+    assert.deepEqual(onSpine, ['s1', 's2', 's3', 's4']);
+    assert.ok(nodeById(out, 'b').x < spineX, 'the branch is off the spine');
+  });
+
+  // A band with no feeders anchors its spine at the left margin, even when another
+  // band on the canvas has deep feeders. Aligning every spine to one global column
+  // stranded the feederless band at the far right beside an empty half-canvas.
+  test('a feederless band is not pushed right by another band’s feeders', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: ['s1', 's2', 's3', 'f1', 'f2', 'solo1', 'solo2'].map((id) => ({ id, column: 'rev' })),
+        edges: [
+          // Band A: a spine with a two-level feeder hung off its *last* node, so the
+          // feeder chain cannot outgrow the spine and steal it.
+          { from: 's1', to: 's2', kind: 'depends' },
+          { from: 's2', to: 's3', kind: 'depends' },
+          { from: 'f1', to: 's3', kind: 'depends' },
+          { from: 'f2', to: 'f1', kind: 'depends' },
+          // Band B: a bare two-node chain, no feeders.
+          { from: 'solo1', to: 'solo2', kind: 'depends' },
+        ],
+      }),
+    );
+    // Band B's spine starts at the margin, not at band A's spine column.
+    assert.equal(nodeById(out, 'solo1').x, MARGIN);
+    assert.equal(nodeById(out, 'solo2').x, MARGIN);
+    // Band A still reaches the margin with its deepest feeder.
+    assert.equal(nodeById(out, 'f2').x, MARGIN);
+    assert.ok(nodeById(out, 's3').x > nodeById(out, 'f2').x, 'and its spine sits right of them');
+  });
+
+  test('two disconnected chains in one column are two stacked spines', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: ['a1', 'a2', 'b1', 'b2'].map((id) => ({ id, column: 'rev' })),
+        edges: [
+          { from: 'a1', to: 'a2', kind: 'depends' },
+          { from: 'b1', to: 'b2', kind: 'depends' },
+        ],
+      }),
+    );
+    assert.equal(out.bands.length, 2);
+    assert.equal(out.bands.every((band) => !band.loose), true);
+    assert.ok(nodeById(out, 'a2').y > nodeById(out, 'a1').y);
+    assert.ok(nodeById(out, 'b2').y > nodeById(out, 'b1').y);
+    assert.notEqual(nodeById(out, 'a1').band, nodeById(out, 'b1').band);
+  });
+
+  // A cycle is malformed data; the longest-path walk truncates it rather than
+  // looping, and every node is still placed exactly once.
+  test('a cycle in one column survives, all nodes placed', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: ['1', '2', '3'].map((id) => ({ id, column: 'rev' })),
+        edges: [
+          { from: '1', to: '2', kind: 'depends' },
+          { from: '2', to: '3', kind: 'depends' },
+          { from: '3', to: '1', kind: 'depends' },
+        ],
+      }),
+    );
+    assert.equal(out.nodes.length, 3);
+    assert.equal(out.bands.length, 1);
+  });
+
+  // The property the whole gate rests on: a graph with two or more buckets never
+  // touches the chain code, so no grouped view moves.
+  test('two columns keep the barycenter layout, not the spine', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('a', 'b'),
+        nodes: [
+          { id: 'a1', column: 'a' },
+          { id: 'a2', column: 'a' },
+          { id: 'b1', column: 'b' },
+        ],
+        edges: [
+          { from: 'a1', to: 'a2', kind: 'depends' },
+          { from: 'a2', to: 'b1', kind: 'depends' },
+        ],
+      }),
+    );
+    // a1→a2 is same-column, so it nests (the multi-column representation); the
+    // spine would instead draw it as a vertical line and never indent.
+    assert.equal(nodeById(out, 'a1').indent, INDENT_STEP);
+    assert.equal(out.edges.some((e) => e.vertical), false, 'no vertical spine steps');
   });
 });
 

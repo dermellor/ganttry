@@ -15,7 +15,10 @@
 //     order cannot drift away from the list's section order, and choosing what the
 //     columns mean is the perspective control rather than something this file
 //     decides. („A presentation declares its accessories",
-//     docs/information-architecture.md.)
+//     docs/information-architecture.md.) The one exception is a single bucket:
+//     `layoutGraph` then reads the topology as chains and lays them out as vertical
+//     spines with side feeders (see graphLayout.ts), which is why an edge can come
+//     back flagged `vertical` to be drawn straight down instead of as a side bulge.
 //   • Nodes are HTML, edges are SVG, both inside one transformed canvas. Drawing
 //     the boxes into the SVG as well would mean re-implementing text wrapping and
 //     focus handling for one presentation; keeping them as HTML means a long title
@@ -410,7 +413,7 @@ export function renderGraphView(): void {
     const from = positions.get(edge.from);
     const to = positions.get(edge.to);
     if (!from || !to) continue;
-    const path = svg('path', { d: edgePath(from, to, layout.width), class: 'graph-edge' });
+    const path = svg('path', { d: edgePath(from, to, layout.width, edge.vertical), class: 'graph-edge' });
     path.dataset.kind = edge.kind;
     lines.appendChild(path);
     paths.push({ el: path, from: edge.from, to: edge.to });
