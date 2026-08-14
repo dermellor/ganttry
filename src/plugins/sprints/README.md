@@ -179,6 +179,14 @@ length and no exceptions. A team with a varying cadence is described wrongly by 
 the plugin says so rather than smoothing it over. Canon also names burndowns and refuses
 to require them, so the chart is an aid and never a measurement of a team.
 
+## Where the words on the public page come from
+
+The questions the site page answers were **harvested**, not invented: search results in
+both languages, the pages that answer them today, and what those pages leave out. That
+record, with its date and its two failed page fetches, is
+[`docs/reach.md`](docs/reach.md). It is also where the language decision and the missing
+baseline are written down.
+
 ## Improve this plugin
 
 Six questions decide how good this is, and none can be answered from the code:
