@@ -501,6 +501,19 @@ wrong:
 - **The language decision is recorded.** If the harvest produced German questions and
   the site is English, that gap is a decision somebody made, not something to discover
   later from a missing page.
+- **The page shows the thing.** At least one screenshot of the real interface, from the
+  plugin's own example timeline, with alt text that describes what is in it. A feature
+  page without a picture asks the reader to imagine the product; one with a picture
+  nobody can retake goes stale invisibly, because a stale screenshot still looks like a
+  product.
+
+  The site takes them with a script rather than by hand: a shot is declared as a URL
+  against a running Zeitlines plus a viewport (`src/data/shots.ts`), `npm run shots`
+  drives an installed Chrome over that list, and the PNGs are committed. Two things
+  that phase 4 already knows apply here as well — a shot needs the example data, and
+  anything the URL cannot address (the grouping dimension is per-timeline state) is
+  reached through a saved view the example file ships. `zeitlines-web`'s own `AGENTS.md`
+  → „Screenshots" is the authority, including why the shots are taken at 2x.
 
 **Exit condition:** the plugin README stands on its own for a reader who has never
 seen this repository, `plugins:catalogue:check` is green, and the site page exists with
@@ -643,7 +656,8 @@ research, the spec, the verification and the publication — is unaffected by ei
        uninstall test on every sentence outside the plugin folder;
        check-plugin-isolation green; plugins:catalogue:check green;
        page + data entry in zeitlines-web, status matching reality,
-       FAQ traceable to the harvest, the pages 1.5 named written and linked
+       FAQ traceable to the harvest, the pages 1.5 named written and linked,
+       at least one generated screenshot with alt text
 [ ] 6  Baseline recorded → measurement scheduled (or explicitly skipped);
        committed, pushed, deploy green
 ```
