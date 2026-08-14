@@ -25,7 +25,7 @@
     "export:pricing": "tsx src/plugins/product-roadmap/export.ts",
     "preview": "vite preview",
     "start": "tsx scripts/serve.ts",
-    "test": "TZ=Europe/Berlin node --import tsx --import ./scripts/test/register-css.mjs --test '{src,scripts}/**/*.test.ts'",
+    "test": "TZ=Europe/Berlin node --import tsx --import ./scripts/node-hooks/register-css.mjs --test '{src,scripts}/**/*.test.ts'",
     "typecheck": "tsc --noEmit",
     "tokens": "tsx scripts/design-system/build-tokens.ts",
     "tokens:check": "tsx scripts/design-system/build-tokens.ts --check",
@@ -36,7 +36,7 @@
     "plugins:catalogue": "tsx scripts/plugins/catalogue.ts",
     "plugins:catalogue:check": "tsx scripts/plugins/catalogue.ts --check",
     "plugins:preview": "tsx scripts/plugins/preview.ts",
-    "mcp": "tsx scripts/mcp/server.ts"
+    "mcp": "tsx --import ./scripts/node-hooks/register-css.mjs scripts/mcp/server.ts"
   },
   "engines": {
     "node": ">=22"

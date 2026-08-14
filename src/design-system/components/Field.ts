@@ -30,7 +30,14 @@ export type FieldOptions = {
   hint?: string;
   /** The control. Anything from Input.ts, a ChipBox, a plugin's own widget. */
   control?: Child;
-  /** `id` of the control, so clicking the label focuses it. */
+  /**
+   * `id` of the control, so clicking the label focuses it.
+   *
+   * Optional because the field wires itself when it can: a single control element
+   * with no id of its own gets one, and the label points at it. Pass this when the
+   * control is composite (a ChipBox with an input inside) and only you know which
+   * element the label belongs to.
+   */
   htmlFor?: string;
   /** Spans both columns. */
   full?: boolean;
@@ -41,8 +48,42 @@ export type FieldOptions = {
   attrs?: Attrs;
 };
 
+/**
+ * Per-document counter for the ids this component mints. Not random, so the same
+ * form rendered twice is diffable in a test, and prefixed so it cannot collide with
+ * an id a call site chose.
+ */
+let autoId = 0;
+
+/**
+ * The control this field labels, when there is exactly one element to point at.
+ *
+ * A composite control (a ChipBox holding an input, a pair of buttons) has no single
+ * target, and guessing one would attach the label to the wrapper — which is worse
+ * than not attaching it, because a screen reader then announces a name for something
+ * that cannot receive it. Those call sites pass `htmlFor` themselves.
+ */
+function soleControl(control: Child): HTMLElement | null {
+  return control instanceof HTMLElement && !(control instanceof HTMLDivElement) ? control : null;
+}
+
 export function Field(options: FieldOptions = {}): HTMLDivElement {
-  const { label, hint, control, htmlFor, full, muted, hidden, className, attrs } = options;
+  const { label, hint, control, full, muted, hidden, className, attrs } = options;
+  // The field associates its own label, and that is a fix rather than a convenience:
+  // without it a `<label>` sits as a SIBLING of the control with no `for`, so clicking
+  // it focuses nothing and it contributes nothing to the accessible name. Every call
+  // site that got this right did it by hand with `aria-label`, which duplicates the
+  // visible text, and every one that did not shipped an unnamed control. The plugin
+  // that surfaced it set `aria-label` on eight controls and still had its hints
+  // outside the accessibility tree.
+  const target = soleControl(control);
+  let htmlFor = options.htmlFor;
+  if (label != null && !htmlFor && target) {
+    htmlFor = target.id || `ds-field-${++autoId}`;
+    if (!target.id) target.id = htmlFor;
+  }
+  // The hint is part of the label element, so it is already in the accessible name.
+  // `aria-describedby` would announce it twice.
   return el(
     'div',
     {

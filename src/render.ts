@@ -28,6 +28,7 @@ import {
   resolveGrouping,
   syncGroupByControl,
 } from './grouping';
+import { syncDerivedFieldControls } from './customFields';
 import { syncFilterControl } from './filterControl';
 import { syncSavedViewsControl } from './savedViewsControl';
 import { GROUP_DIM } from './listGrouping';
@@ -510,6 +511,11 @@ export function applyBuildToDataSets(): void {
  * purpose — it holds live vis DataSets and is reconciled rather than redrawn.
  */
 export function repaintActiveView(): void {
+  // A derived field's control is the one part of an open form that this path has to
+  // touch: its value follows from the item, so moving a bar changes it. Without
+  // this the panel keeps the value it was built with while the lane beside it has
+  // already moved — the form contradicting the timeline about the same item.
+  syncDerivedFieldControls(state.activeFormItemId);
   if (state.viewMode === 'list') renderListView();
   else if (state.viewMode === 'graph') renderGraphView();
   // A plugin view is loaded lazily; once entered it is cached, so this repaint

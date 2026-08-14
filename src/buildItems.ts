@@ -3,11 +3,12 @@ import { escapeHtml, htmlAll, Tag } from './design-system';
 import { normalizeIcon } from './icons';
 import { isOverdue, normalizeStatus } from './status';
 import type { StatusKey } from './status';
-import { durationToMs } from './date';
+import { durationToMs, endFromDuration } from './date';
 import { childrenByParent, readParentId, resolveParents } from './itemHierarchy';
 import { CLONE_SEP } from './cloneId';
 import { orderGroups } from './groupOrder';
 import { BACKGROUND_LABEL_CLASS } from './backgroundItemDisplay';
+import { derivedValuesFor } from './pluginHost/derived';
 
 export const UNGROUPED = '_ungrouped';
 
@@ -289,6 +290,15 @@ export type DetailNote = {
   folder: string;
   filename: string;
   frontmatter: Record<string, unknown>;
+  /**
+   * What the enabled plugins computed for this item, for the fields they declared
+   * `derived` ([`./pluginHost/derived.ts`](./pluginHost/derived.ts)). Beside the
+   * stored metadata rather than merged into it, on purpose: `frontmatter` is what
+   * the item *has*, and a write path that cannot tell the two apart would store a
+   * computed value back and turn it into the stale copy the whole seam exists to
+   * avoid. Consumers merge with `withDerived` at the point they read a field.
+   */
+  derived?: Record<string, unknown>;
   body: string;
 };
 
@@ -319,28 +329,11 @@ export function decodeEntities(s: string): string {
 // filter/icons. Re-exported here to keep buildItems' public API stable.
 export { durationToMs };
 
-/**
- * Add a duration (ms) to a start date and return an end string in the SAME
- * calendar frame as the start. Bare `YYYY-MM-DD` starts are interpreted as
- * LOCAL midnight — the way vis-timeline reads bare dates in the viewer — and the
- * result is emitted WITHOUT a `Z`, so it is parsed back in that same local
- * frame. Using `new Date(start).getTime()` + `.toISOString()` here (UTC, with a
- * trailing `Z`) instead makes a duration-derived end land TZ-offset hours past a
- * neighbouring item's local-midnight `start`: in CET/CEST that's 1–2h, so two
- * back-to-back bars overlap by ~8px and read as "touching" at high zoom.
- */
-export function endFromDuration(start: string, ms: number): string | null {
-  const base = new Date(
-    typeof start === 'string' && start.length === 10 ? `${start}T00:00:00` : start,
-  );
-  const t = base.getTime();
-  if (Number.isNaN(t)) return null;
-  const d = new Date(t + ms);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  return time === '00:00:00' ? date : `${date}T${time}`;
-}
+// `endFromDuration` moved to ./date beside `durationToMs`, for two consumers that
+// cannot reach this module: the Deno edge bundle (via phaseOverlap) and a plugin,
+// which may import only the contract barrel. Re-exported here to keep buildItems'
+// public API stable, the same way `durationToMs` is.
+export { endFromDuration };
 
 
 export function detailFromJsonItem(raw: TimelineFileItem & { id: string }): DetailNote {
@@ -829,6 +822,10 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
   const items: TimelineItem[] = [];
   const groupSet = new Map<string, TimelineGroup>();
   const details = new Map<string, DetailNote>();
+  // Once per build, not once per item: the factory is where a plugin computes what
+  // the whole timeline decides (a sprint raster). Null when no plugin derives
+  // anything, which is the common case and then costs nothing per item.
+  const derive = derivedValuesFor(file);
   const dependencies = new Map<string, string[]>();
   const rawParents = new Map<string, string>();
 
@@ -885,7 +882,11 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
       status: normalizeStatus(raw.status),
       tags: readTags(raw.metadata),
     });
-    details.set(id, detailFromJsonItem({ ...raw, id }));
+    const detail = detailFromJsonItem({ ...raw, id });
+    // The plugin sees the item as the file states it, which is the same shape its
+    // tools get — so one rule can serve both the field and the verb.
+    if (derive) detail.derived = derive(raw);
+    details.set(id, detail);
   }
 
   const hasGroupBy = view.groupBy || file.items.some((i) => i.group);

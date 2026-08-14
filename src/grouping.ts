@@ -18,6 +18,7 @@ import {
   type SectionContext,
 } from './listGrouping';
 import { isFilterSelectionActive, passesFilters } from './filterRule';
+import { withDerived } from './pluginHost/derived';
 
 // The synthetic-id vocabulary lives in cloneId.ts (DOM-free) so a consumer that
 // only needs the display-id → item-id mapping does not have to import this
@@ -28,9 +29,13 @@ import { CLONE_SEP, GROUP_PREFIX } from './cloneId';
 
 // Frontmatter/metadata of a build item, keyed by id. Shared by the list
 // sectioning and the timeline regroup so both read custom-field values the same
-// way.
+// way — and, since #131, the one place where a plugin's *derived* values join the
+// stored ones. Grouping, the filter's dimensions, the filter's values and the
+// timeline's lanes all come through here, so a derived field becomes a perspective
+// and an extent without any of them knowing that it is computed.
 export function metaOf(id: string): Record<string, unknown> | undefined {
-  return state.activeBuild?.details.get(id)?.frontmatter as Record<string, unknown> | undefined;
+  const note = state.activeBuild?.details.get(id);
+  return withDerived(note?.frontmatter as Record<string, unknown> | undefined, note?.derived);
 }
 
 export function sectionContext(groups: { id: string; content: string }[]): SectionContext {

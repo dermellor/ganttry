@@ -1,4 +1,4 @@
-// Module hooks that let `node --test` import a component.
+// Module hooks that let a Node entry point import a module graph reaching a component.
 //
 // A design-system component imports its own stylesheet — that colocation is what
 // makes a build carry only the CSS for what it renders, which the plugin
@@ -10,6 +10,13 @@
 // component and losing the splitting. This resolves any `.css` specifier to an
 // empty module: nothing under test asserts on styles, and a test that wanted to
 // would need a browser, not a stub.
+//
+// **Two consumers, which is why this no longer lives under `scripts/test/`.** The
+// MCP server needs it too: it reaches every plugin descriptor (to list their verbs),
+// a descriptor imports the plugin contract barrel, and that barrel re-exports the
+// Markdown editor, which imports CSS. Without the hook `npm run mcp` died on
+// ERR_UNKNOWN_FILE_EXTENSION before printing anything, so no agent could reach a
+// plugin's tools at all.
 //
 // Vite's `?raw` asset imports need the equivalent bridge. The AppMark component
 // embeds the product SVG so exported HTML stays self-contained; serving a fake

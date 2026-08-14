@@ -338,6 +338,9 @@
         },
         "contextMenu": {
           "type": "boolean"
+        },
+        "derived": {
+          "type": "boolean"
         }
       },
       "required": [

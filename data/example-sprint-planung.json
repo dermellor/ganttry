@@ -1,0 +1,453 @@
+{
+  "$schema": "../schema/timeline.schema.json",
+  "name": "Sprint-Planung (Lieferplan)",
+  "description": "Beispiel für das Plugin „Sprints\": ein Lieferplan mit Kadenz. Die Sprints sind Zeilen mit Ziel, Kapazität und eingefrorenem Ergebnis; die Zuordnung steht am Item (`metadata.sprint`), das Raster (Anker 2026-01-05, 14 Tage) liefert daneben den Vorschlag „Sprint nach Datum\". Zwei Sprints sind geschlossen und tragen Verlauf und Bericht, Sprint 3 ist aktiv und absichtlich ohne Ziel, Sprint 5 hat noch keine Daten und bekommt sein Fenster aus dem Raster. „Barrierefreiheits-Audit\" wurde aus Sprint 2 mitgenommen und liegt jetzt in Sprint 3, ohne umgeplant zu sein: Zuordnung und Datum widersprechen sich sichtbar. Sprint 3 ist gegen eine Kapazität von 20 Punkten überbucht, ein Item läuft über zwei Sprints, eines beginnt vor dem Anker, eines hat kein Datum, und drei tragen keine Schätzung.",
+  "plugins": [
+    {
+      "id": "dev.zeitlines.sprints",
+      "public": true,
+      "config": {
+        "start": "2026-01-05",
+        "lengthDays": 14,
+        "velocity": 20,
+        "estimateUnit": "points"
+      }
+    }
+  ],
+  "pluginData": {
+    "dev.zeitlines.sprints": {
+      "sprints": [
+        {
+          "id": "sprint-1",
+          "data": {
+            "name": "Sprint 1",
+            "goal": "Das mandantenfähige Datenmodell steht in der Datenbank",
+            "start": "2026-01-05",
+            "end": "2026-01-18",
+            "state": "closed",
+            "closedOn": "2026-01-18",
+            "capacity": 20,
+            "note": "Review: Die Migration lief ohne Ausfall. Retro: Der Spike vorab hat die Schätzung getragen."
+          }
+        },
+        {
+          "id": "sprint-2",
+          "data": {
+            "name": "Sprint 2",
+            "goal": "Das Fremdsystem lässt sich lesen und schreiben",
+            "start": "2026-01-19",
+            "end": "2026-02-01",
+            "state": "closed",
+            "closedOn": "2026-02-01",
+            "capacity": 20,
+            "note": "Review: Der Client steht. Das Audit wurde nicht angefangen und wandert weiter. Im Verlauf steht es als „carried\", im Bericht steht trotzdem „carried: 0\": mitgenommen wurde ein Eintrag ohne Schätzung, und der Bericht zählt Punkte. Beide Angaben sind richtig."
+          }
+        },
+        {
+          "id": "sprint-3",
+          "data": {
+            "name": "Sprint 3",
+            "start": "2026-02-02",
+            "end": "2026-02-15",
+            "state": "active",
+            "capacity": 20
+          }
+        },
+        {
+          "id": "sprint-4",
+          "data": {
+            "name": "Sprint 4",
+            "goal": "Die Suche ist mit Filtern benutzbar",
+            "start": "2026-02-16",
+            "end": "2026-03-01",
+            "state": "planned",
+            "capacity": 18
+          }
+        },
+        {
+          "id": "sprint-5",
+          "data": {
+            "name": "Sprint 5",
+            "goal": "Die Altdaten sind übernommen",
+            "state": "planned"
+          }
+        }
+      ],
+      "passes": [
+        {
+          "id": "P-1:sprint-1",
+          "data": {
+            "itemId": "P-1",
+            "sprintId": "sprint-1",
+            "outcome": "done",
+            "recordedOn": "2026-01-18",
+            "estimateAtClose": 8
+          }
+        },
+        {
+          "id": "A-1:sprint-1",
+          "data": {
+            "itemId": "A-1",
+            "sprintId": "sprint-1",
+            "outcome": "done",
+            "recordedOn": "2026-01-18",
+            "estimateAtClose": 5
+          }
+        },
+        {
+          "id": "I-1:sprint-2",
+          "data": {
+            "itemId": "I-1",
+            "sprintId": "sprint-2",
+            "outcome": "done",
+            "recordedOn": "2026-02-01",
+            "estimateAtClose": 13
+          }
+        },
+        {
+          "id": "A-2:sprint-2",
+          "data": {
+            "itemId": "A-2",
+            "sprintId": "sprint-2",
+            "outcome": "done",
+            "recordedOn": "2026-02-01",
+            "estimateAtClose": 5
+          }
+        },
+        {
+          "id": "Q-1:sprint-2",
+          "data": {
+            "itemId": "Q-1",
+            "sprintId": "sprint-2",
+            "outcome": "carried",
+            "recordedOn": "2026-02-01"
+          }
+        }
+      ],
+      "reports": [
+        {
+          "id": "sprint-1",
+          "data": {
+            "sprintId": "sprint-1",
+            "scopeAtStart": 13,
+            "scopeAtClose": 13,
+            "completed": 13,
+            "carried": 0,
+            "unit": "points",
+            "series": [
+              { "day": "2026-01-05", "remaining": 13 },
+              { "day": "2026-01-06", "remaining": 13 },
+              { "day": "2026-01-07", "remaining": 13 },
+              { "day": "2026-01-08", "remaining": 13 },
+              { "day": "2026-01-09", "remaining": 13 },
+              { "day": "2026-01-10", "remaining": 13 },
+              { "day": "2026-01-11", "remaining": 13 },
+              { "day": "2026-01-12", "remaining": 13 },
+              { "day": "2026-01-13", "remaining": 13 },
+              { "day": "2026-01-14", "remaining": 8 },
+              { "day": "2026-01-15", "remaining": 8 },
+              { "day": "2026-01-16", "remaining": 8 },
+              { "day": "2026-01-17", "remaining": 8 },
+              { "day": "2026-01-18", "remaining": 0 }
+            ]
+          }
+        },
+        {
+          "id": "sprint-2",
+          "data": {
+            "sprintId": "sprint-2",
+            "scopeAtStart": 18,
+            "scopeAtClose": 18,
+            "completed": 18,
+            "carried": 0,
+            "unit": "points",
+            "series": [
+              { "day": "2026-01-19", "remaining": 18 },
+              { "day": "2026-01-20", "remaining": 18 },
+              { "day": "2026-01-21", "remaining": 18 },
+              { "day": "2026-01-22", "remaining": 18 },
+              { "day": "2026-01-23", "remaining": 18 },
+              { "day": "2026-01-24", "remaining": 18 },
+              { "day": "2026-01-25", "remaining": 18 },
+              { "day": "2026-01-26", "remaining": 18 },
+              { "day": "2026-01-27", "remaining": 18 },
+              { "day": "2026-01-28", "remaining": 18 },
+              { "day": "2026-01-29", "remaining": 18 },
+              { "day": "2026-01-30", "remaining": 18 },
+              { "day": "2026-01-31", "remaining": 18 },
+              { "day": "2026-02-01", "remaining": 0 }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "savedViews": [
+    {
+      "id": "nach-sprints",
+      "name": "Nach Sprints",
+      "groupBy": "cf:sprint",
+      "visibility": "instance"
+    },
+    {
+      "id": "nach-datum",
+      "name": "Nach Sprint-Fenster",
+      "groupBy": "cf:sprintByDate",
+      "visibility": "instance"
+    }
+  ],
+  "groups": [
+    {
+      "id": "1-plattform",
+      "content": "Plattform"
+    },
+    {
+      "id": "2-app",
+      "content": "App"
+    },
+    {
+      "id": "3-integrationen",
+      "content": "Integrationen"
+    },
+    {
+      "id": "4-qualitaet",
+      "content": "Qualität & Betrieb"
+    }
+  ],
+  "items": [
+    {
+      "id": "P-0",
+      "start": "2025-12-15",
+      "duration": "2w",
+      "content": "Architektur-Spike Datenmodell",
+      "group": "1-plattform",
+      "status": "Done",
+      "icon": "research",
+      "body": "## Spike\n\nLief vor dem Beginn der Kadenz, deshalb ohne Sprint. Ergebnis: Mandantenspalte statt getrennter Schemata.",
+      "metadata": {
+        "owner": "Architektur",
+        "storyPoints": "3",
+        "estimateConfidence": "hoch"
+      }
+    },
+    {
+      "id": "P-1",
+      "start": "2026-01-05",
+      "duration": "2w",
+      "content": "Schema-Migration Mandanten",
+      "group": "1-plattform",
+      "status": "Done",
+      "icon": "build",
+      "metadata": {
+        "owner": "Plattform-Team",
+        "dependsOn": [
+          "P-0"
+        ],
+        "sprint": "sprint-1",
+        "storyPoints": "8",
+        "estimateConfidence": "hoch"
+      }
+    },
+    {
+      "id": "A-1",
+      "start": "2026-01-07",
+      "duration": "1w",
+      "content": "Login-Flow überarbeiten",
+      "group": "2-app",
+      "status": "Done",
+      "metadata": {
+        "owner": "App-Team",
+        "sprint": "sprint-1",
+        "storyPoints": "5",
+        "estimateConfidence": "hoch"
+      }
+    },
+    {
+      "id": "I-1",
+      "start": "2026-01-19",
+      "duration": "2w",
+      "content": "REST-Client für das Fremdsystem",
+      "group": "3-integrationen",
+      "status": "Done",
+      "body": "## REST-Client\n\nLesen und Schreiben, Token aus dem Vault. Im Review abgenommen, das Ratelimit des Anbieters ist dokumentiert.",
+      "metadata": {
+        "owner": "Integrations-Team",
+        "dependsOn": [
+          "P-1"
+        ],
+        "sprint": "sprint-2",
+        "storyPoints": "13",
+        "estimateConfidence": "mittel"
+      }
+    },
+    {
+      "id": "A-2",
+      "start": "2026-01-26",
+      "duration": "1w",
+      "content": "Fehlerzustände im Formular",
+      "group": "2-app",
+      "status": "Done",
+      "metadata": {
+        "owner": "App-Team",
+        "sprint": "sprint-2",
+        "storyPoints": "5",
+        "estimateConfidence": "hoch"
+      }
+    },
+    {
+      "id": "Q-1",
+      "start": "2026-01-28",
+      "duration": "1w",
+      "content": "Barrierefreiheits-Audit",
+      "group": "4-qualitaet",
+      "icon": "review",
+      "body": "Externe Prüfung. Aus Sprint 2 mitgenommen (`carried`) und in Sprint 3 zugeordnet, ohne die Termine anzufassen: die Zuordnung gilt, der Widerspruch zum Datum wird angezeigt und nicht stillschweigend aufgelöst. Der Aufwand für die Nacharbeit ist weiter nicht geschätzt.",
+      "metadata": {
+        "owner": "Qualität",
+        "sprint": "sprint-3"
+      }
+    },
+    {
+      "id": "P-2",
+      "start": "2026-02-02",
+      "duration": "2w",
+      "content": "Mandantenfähige Rechteprüfung",
+      "group": "1-plattform",
+      "metadata": {
+        "owner": "Plattform-Team",
+        "dependsOn": [
+          "P-1"
+        ],
+        "sprint": "sprint-3",
+        "storyPoints": "13",
+        "estimateConfidence": "mittel"
+      }
+    },
+    {
+      "id": "A-3",
+      "start": "2026-02-03",
+      "duration": "2w",
+      "content": "Onboarding-Assistent",
+      "group": "2-app",
+      "metadata": {
+        "owner": "App-Team",
+        "sprint": "sprint-3",
+        "storyPoints": "8",
+        "estimateConfidence": "niedrig"
+      }
+    },
+    {
+      "id": "I-2",
+      "start": "2026-02-09",
+      "duration": "1w",
+      "content": "Webhooks für Statuswechsel",
+      "group": "3-integrationen",
+      "metadata": {
+        "owner": "Integrations-Team",
+        "dependsOn": [
+          "I-1"
+        ],
+        "sprint": "sprint-3",
+        "storyPoints": "5",
+        "estimateConfidence": "mittel"
+      }
+    },
+    {
+      "id": "Q-2",
+      "start": "2026-02-11",
+      "duration": "1w",
+      "content": "Lasttest der Suche",
+      "group": "4-qualitaet",
+      "metadata": {
+        "owner": "Qualität",
+        "sprint": "sprint-3",
+        "storyPoints": "8",
+        "estimateConfidence": "niedrig"
+      }
+    },
+    {
+      "id": "A-4",
+      "start": "2026-02-16",
+      "duration": "2w",
+      "content": "Suche mit Filtern",
+      "group": "2-app",
+      "metadata": {
+        "owner": "App-Team",
+        "sprint": "sprint-4",
+        "storyPoints": "8",
+        "estimateConfidence": "mittel"
+      }
+    },
+    {
+      "id": "P-3",
+      "start": "2026-02-27",
+      "content": "Release 1.4",
+      "group": "1-plattform",
+      "type": "point",
+      "icon": "release",
+      "body": "Ein Release ist keine Sprintarbeit, deshalb ohne Zuordnung. Das Raster schlägt Sprint 4 vor.",
+      "metadata": {
+        "dependsOn": [
+          "P-2",
+          "A-4"
+        ]
+      }
+    },
+    {
+      "id": "I-3",
+      "start": "2026-03-02",
+      "duration": "4w",
+      "content": "Datenmigration Altsystem",
+      "group": "3-integrationen",
+      "body": "## Migration\n\nLäuft über zwei Sprintfenster. Sprint 5 trägt noch keine Daten, sein Fenster kommt aus dem Raster.",
+      "metadata": {
+        "owner": "Integrations-Team",
+        "dependsOn": [
+          "I-2"
+        ],
+        "sprint": "sprint-5",
+        "storyPoints": "13",
+        "estimateConfidence": "niedrig"
+      }
+    },
+    {
+      "id": "Q-3",
+      "start": "2026-03-30",
+      "duration": "1w",
+      "content": "Wiederherstellung aus dem Backup testen",
+      "group": "4-qualitaet",
+      "body": "Terminiert, aber noch keinem Sprint zugeordnet: es gibt noch keine Zeile, deren Fenster diesen Tag enthält.",
+      "metadata": {
+        "owner": "Qualität",
+        "dependsOn": [
+          "I-3"
+        ],
+        "storyPoints": "8",
+        "estimateConfidence": "mittel"
+      }
+    },
+    {
+      "id": "A-5",
+      "start": "2026-04-06",
+      "duration": "1w",
+      "content": "Offline-Modus erkunden",
+      "group": "2-app",
+      "icon": "idea",
+      "body": "Vorstudie. Ohne Schätzung, solange der Umfang nicht steht, und ohne Sprint.",
+      "metadata": {
+        "owner": "App-Team"
+      }
+    },
+    {
+      "id": "P-4",
+      "content": "Mehrsprachigkeit im Backend",
+      "group": "1-plattform",
+      "body": "Noch nicht terminiert und keinem Sprint zugeordnet.",
+      "metadata": {
+        "owner": "Plattform-Team",
+        "storyPoints": "5",
+        "estimateConfidence": "niedrig"
+      }
+    }
+  ]
+}

@@ -223,6 +223,9 @@ describe('descriptorFor', () => {
   test('a throwing renderView is reported, contained, and replaced by the reason', async () => {
     const errors: unknown[] = [];
     const d = descriptorFor(MANIFEST, { renderView: () => { throw new Error('render boom'); } }, (e) => errors.push(e));
+    // `load` is optional on the contract (a view-less plugin has no module), but the
+    // loader always builds one for an artifact — asserting that is the point here.
+    assert.ok(d.load, 'the loader gives every artifact a module to load');
     const mod = await d.load();
 
     // A container that knows its own document, which is what the host uses
@@ -243,5 +246,44 @@ describe('descriptorFor', () => {
     // as a broken page rather than a broken plugin.
     assert.equal(appended.length, 1);
     assert.match((appended[0] as any).textContent, /konnte nicht dargestellt werden/);
+  });
+});
+
+describe('a derived field on an installed artifact', () => {
+  // Field-only on purpose: a manifest declaring views would add „exports no
+  // renderView" to every problem list here and hide what these cases are about.
+  const DERIVED_MANIFEST: PluginManifest = { ...FIELDS_ONLY, apiVersion: '^1.5' };
+  const file = { items: [], plugins: [{ id: FIELDS_ONLY.id }] } as any;
+  const fields = () => [{ key: 'sprint', label: 'Sprint', type: 'select' as const, derived: true }];
+
+  test('the artifact`s derive is wired, so the field actually carries a value', () => {
+    // Left unwired, an artifact declaring `derived: true` showed a read-only control
+    // that stayed empty forever — the symptom the `^1.5` gate promises to prevent,
+    // produced by the host rather than by the plugin.
+    const d = descriptorFor(DERIVED_MANIFEST, { fields, derive: () => (item: any) => ({ sprint: item.start }) }, () => {});
+    const derive = d.derive?.(file);
+    assert.ok(derive, 'a descriptor built from an artifact exposes its derive');
+    assert.deepEqual(derive({ content: 'x', start: '2026-03-04' }), { sprint: '2026-03-04' });
+  });
+
+  test('a throwing derive costs the plugin its values, not the build', () => {
+    const errors: unknown[] = [];
+    const perItem = descriptorFor(DERIVED_MANIFEST, { fields, derive: () => () => { throw new Error('boom'); } }, (e) => errors.push(e));
+    assert.deepEqual(perItem.derive?.(file)?.({ content: 'x' }), {});
+    const factory = descriptorFor(DERIVED_MANIFEST, { fields, derive: () => { throw new Error('boom'); } }, (e) => errors.push(e));
+    assert.equal(factory.derive?.(file), null);
+    assert.equal(errors.length, 2, 'both throws are reported rather than swallowed');
+  });
+
+  test('a derived field with no derive behind it is reported', () => {
+    // Not refusable from the manifest: the declaration lives in `fields(file)`, which
+    // is code. So it is a problem string, and the install surfaces it.
+    const problems = moduleProblems(DERIVED_MANIFEST, { fields });
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /derived field\(s\) sprint/);
+  });
+
+  test('a plugin whose fields depend on the timeline is not accused', () => {
+    assert.deepEqual(moduleProblems(DERIVED_MANIFEST, { fields: () => [] }), []);
   });
 });

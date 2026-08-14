@@ -634,7 +634,10 @@ export function showItemForm(
         listRole: 'tags-list',
         full: true,
       }),
-      renderCustomFields(metadata),
+      // The derived half comes from the build rather than from the item: it is
+      // computed, so the form has no business recomputing it and every reason to
+      // show exactly what the grouping and the lanes are using.
+      renderCustomFields(metadata, state.activeBuild?.details.get(id)?.derived ?? {}),
       Disclosure({
         summary: 'Erweitert',
         open: !!metaJson,

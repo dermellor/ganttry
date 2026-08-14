@@ -219,6 +219,17 @@ export type CustomFieldDef = {
   // `text` field has no fixed option set for a menu to offer, so the flag is
   // ignored on one (`contextMenuFields` in customFields.ts owns that rule).
   contextMenu?: boolean;
+  // The plugin that contributed this field computes its value per item, so nothing
+  // is stored in `metadata[key]` and nobody edits it: the form shows it read-only
+  // and the write path leaves the key alone
+  // ([`src/pluginHost/derived.ts`](src/pluginHost/derived.ts)). Only a contributed
+  // field may claim it — a stored definition has no code behind it, so a derived one
+  // would be a field with no value at all, which is why `mergeFieldDefs` drops the
+  // flag from a stored def rather than trusting the file. What it prevents is a value that
+  // *follows* from the item (the sprint its dates fall into) being kept as a copy:
+  // the copy survives the item moving, and a stale bucket is indistinguishable
+  // from a chosen one.
+  derived?: boolean;
 };
 
 

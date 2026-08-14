@@ -17,7 +17,7 @@
 import type { PluginDescriptor } from '../../pluginHost/api';
 import { hasPlugin } from '../../pluginHost/api';
 import { exampleManifest } from './manifest';
-import { EXAMPLE_PLUGIN, exampleFields } from './fields';
+import { EXAMPLE_PLUGIN, exampleDerive, exampleFields } from './fields';
 import { exampleTools } from './tools';
 
 export const exampleDescriptor: PluginDescriptor = {
@@ -34,6 +34,11 @@ export const exampleDescriptor: PluginDescriptor = {
   applies: (file) => hasPlugin(file, EXAMPLE_PLUGIN),
 
   fields: exampleFields,
+
+  // The values behind the fields declared `derived: true`. Delete this line, and
+  // `exampleDerive` with it, if no field here is computed — a factory that returns
+  // values for keys nothing declared is dropped by the host anyway.
+  derive: exampleDerive,
 
   // The domain rules, keyed by the tool name the manifest declares. Delete this
   // line if the plugin has no verbs; a handler with no declaration stays

@@ -51,7 +51,10 @@ const CHROME_CANDIDATES = [
   '/usr/bin/chromium-browser',
 ].filter((p): p is string => !!p);
 
-const VIEWPORT = { width: 1280, height: 720 };
+// 16:9 by default, which suits a plugin whose picture is the timeline. A view that is
+// taller than wide gets cut off in it, and a cropped chart is exactly the „renders
+// correctly and still looks like nothing" this image exists to catch — hence `--size`.
+const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
 
 function fail(message: string): never {
   console.error(`[preview] ${message}`);
@@ -85,16 +88,31 @@ async function manifestOf(folder: string): Promise<PluginManifest> {
  * view when it has one.
  *
  * The view mode is the addressable `plugin:<id>:<viewId>` the header writes into
- * the hash, so a field-only plugin falls back to the timeline — which is the
- * correct picture for it, since its fields show up in the item form and the
- * grouping rather than in a view.
+ * the hash, so a field-only plugin falls back to the timeline.
+ *
+ * For such a plugin that is often the wrong picture, and `--param` is the way out.
+ * A plugin whose point is a *perspective* on the item list — a derived field you
+ * group by — renders as an ordinary timeline here, because the grouping dimension
+ * is deliberately not in the hash (it is per-timeline display state, see „Where the
+ * display state lives" in docs/editing.md). What IS addressable is a saved view,
+ * so such a plugin ships one in its example and names it:
+ *
+ *   npm run plugins:preview -- sprints --param savedView=nach-sprints
+ *
+ * Generic on purpose: the flag carries a hash parameter, and the script stays free
+ * of any knowledge about which plugin wants which one.
  */
-function previewUrl(base: string, manifest: PluginManifest): string {
+function previewUrl(base: string, manifest: PluginManifest, extra: string[]): string {
   const example = manifest.catalogue?.example;
   if (!example) fail(`${manifest.id} declares no catalogue.example, so there is nothing to render`);
   const parts = [`view=${encodeURIComponent(example)}`];
   const view = manifest.views?.[0];
   if (view) parts.push(`mode=${encodeURIComponent(`plugin:${manifest.id}:${view.id}`)}`);
+  for (const param of extra) {
+    const [key, ...rest] = param.split('=');
+    if (!key || !rest.length) fail(`--param wants key=value, got "${param}"`);
+    parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(rest.join('='))}`);
+  }
   return `${base.replace(/\/+$/, '')}/#${parts.join('&')}`;
 }
 
@@ -109,13 +127,28 @@ async function reachable(url: string): Promise<boolean> {
 
 const args = process.argv.slice(2).filter((a) => a !== '--');
 const folder = args.find((a) => !a.startsWith('-'));
-if (!folder) fail('usage: npm run plugins:preview -- <plugin-folder> [--url http://localhost:3120]');
+if (!folder) {
+  fail(
+    'usage: npm run plugins:preview -- <plugin-folder> [--url http://localhost:3120] ' +
+      '[--param key=value …] [--size 1280x900]',
+  );
+}
 
 const urlFlag = args.indexOf('--url');
 const base = urlFlag >= 0 ? args[urlFlag + 1] : `http://localhost:${process.env.TIMELINES_PORT ?? '3120'}`;
+const extra = args.flatMap((a, i) => (a === '--param' && args[i + 1] ? [args[i + 1]] : []));
+
+const sizeFlag = args.indexOf('--size');
+const VIEWPORT = ((): { width: number; height: number } => {
+  if (sizeFlag < 0) return DEFAULT_VIEWPORT;
+  const raw = args[sizeFlag + 1] ?? '';
+  const m = /^(\d{3,4})x(\d{3,4})$/.exec(raw);
+  if (!m) fail(`--size wants WIDTHxHEIGHT, got "${raw}"`);
+  return { width: Number(m![1]), height: Number(m![2]) };
+})();
 
 const manifest = await manifestOf(folder);
-const url = previewUrl(base, manifest);
+const url = previewUrl(base, manifest, extra);
 
 if (!(await reachable(base))) {
   fail(

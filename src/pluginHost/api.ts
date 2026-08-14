@@ -130,6 +130,28 @@ export type { PluginModule } from './registry';
 export type { PluginDescriptor } from './registry';
 
 /**
+ * The per-item half of a derived field: what `descriptor.derive(file)` returns.
+ *
+ * Exported for the same reason `PluginDescriptor` is — a plugin's own `fields.ts`
+ * is where the rule lives, and it should be able to name the type of the function
+ * it hands back without reaching into the registry.
+ */
+export type { DeriveFn, DerivedValues } from './registry';
+
+/**
+ * Calendar-day and duration arithmetic, from the core's own module.
+ *
+ * Exported because the alternative is every date-shaped plugin restating it, and the
+ * first one that did got it wrong in a way only its own example revealed: an item
+ * carrying `duration` instead of `end` burned on the day it *started*, so a burndown
+ * described when work began. `durationToMs` plus `endFromDuration` is the pair that
+ * resolves an item's real extent, and they are the same functions the viewer places
+ * bars with — which is the point, since a plugin that computes a different end than
+ * the one drawn on screen is wrong wherever the two are compared.
+ */
+export { durationToMs, endFromDuration, isoDateOnly, parseLocalDay, shiftDays } from '../date';
+
+/**
  * What a plugin's tools receive and return, and the checks the host puts around
  * them. `validateToolPlan` is exported so a plugin's own tests can assert that a
  * rule produces a plan the host will accept, rather than finding out through a

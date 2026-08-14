@@ -16,7 +16,7 @@
 // belongs behind the descriptor's dynamic `load()`, or the plugin's code ends up in
 // the generic bundle and the lazy split is gone.
 
-import { hasPlugin, pluginConfig } from '../../pluginHost/api';
+import { hasPlugin, pluginConfig, type DeriveFn } from '../../pluginHost/api';
 import { exampleManifest } from './manifest';
 import type { CustomFieldDef, TimelineFile } from '../../types';
 
@@ -33,6 +33,14 @@ export const EXAMPLE_PLUGIN = exampleManifest.id;
  * the manifest's `metadataKeys`, which is what lets an uninstall clean it up.
  */
 export const EXAMPLE_META_KEY = 'example';
+
+/**
+ * The key of the *derived* field. Nothing is stored under it — the value is
+ * computed on every build (`exampleDerive`) — so it is deliberately NOT in the
+ * manifest's `metadataKeys`: that list is what an uninstall purges, and there is
+ * nothing on an item to purge.
+ */
+export const EXAMPLE_DERIVED_KEY = 'exampleDerived';
 
 /** The config bag shape, read off the plugin's `timeline_plugins` row. */
 type ExampleConfig = {
@@ -71,5 +79,38 @@ export function exampleFields(file: TimelineFile | null | undefined): CustomFiel
       contextMenu: true,
       options: choices.map((value) => ({ value })),
     },
+    {
+      // A *derived* field: the plugin computes the value, so the form shows it
+      // read-only and nothing is ever stored on this key. Delete it, and
+      // `exampleDerive` with it, if every field here is something a user picks.
+      key: EXAMPLE_DERIVED_KEY,
+      label: 'Example (derived)',
+      type: 'select',
+      derived: true,
+      options: choices.map((value) => ({ value })),
+    },
   ];
+}
+
+/**
+ * The values behind a `derived: true` field. Delete both this and the descriptor's
+ * `derive` line if the plugin has none.
+ *
+ * Use it when the value *follows* from the item rather than being chosen: which
+ * sprint its dates fall into, which cohort its start belongs to. Storing such a
+ * value means the item can move out from under it, and a stale bucket looks exactly
+ * like a chosen one — which is the bug this replaces, not a style preference.
+ *
+ * Two things the shape is asking for. Whatever the whole timeline decides (the
+ * raster, the cohort boundaries) is computed **here**, once per build; the function
+ * returned is pure over one item, so the rule is unit-testable in this folder and
+ * can be reused by a tool handler. The host drops any key this plugin did not
+ * declare `derived`, so returning more than the declaration is not a way in.
+ */
+export function exampleDerive(file: TimelineFile | null | undefined): DeriveFn | null {
+  if (!file || !hasPlugin(file, EXAMPLE_PLUGIN)) return null;
+  const { choices } = readConfig(file);
+  if (!choices?.length) return null;
+  // A stand-in rule: the real one belongs in a module of its own next to its test.
+  return (item) => ({ [EXAMPLE_DERIVED_KEY]: item.start ? choices[0] : undefined });
 }

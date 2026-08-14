@@ -83,7 +83,9 @@ export function fieldOptionColor(def: CustomFieldDef, value: string): string {
  * never has to reason about field types.
  */
 export function contextMenuFields(): CustomFieldDef[] {
-  return getCustomFields().filter((f) => f.contextMenu && f.type !== 'text');
+  // A derived field is out for the same reason it is read-only in the form: the
+  // menu's whole job is setting a value, and here there is nothing to set.
+  return getCustomFields().filter((f) => f.contextMenu && f.type !== 'text' && !f.derived);
 }
 
 // Read a stored value as string[] regardless of scalar/array shape, so a
@@ -102,6 +104,9 @@ export function initCustomFieldState(meta: Record<string, unknown>): void {
   const next: Record<string, string[]> = {};
   for (const def of getCustomFields()) {
     if (def.type !== 'multi-select') continue;
+    // A derived multi-select is displayed, never edited, so it gets no chip state:
+    // an entry here is what `applyCustomFields` writes back from.
+    if (def.derived) continue;
     next[def.key] = readFieldValues(meta, def.key);
   }
   state.formCustomMulti = next;
@@ -116,7 +121,14 @@ export function initCustomFieldState(meta: Record<string, unknown>): void {
 // among the timeline's own and nothing said they belonged together — or where
 // they came from. The sections are ordinary nodes inside the same <form>, so
 // FormData, applyCustomFields and isManagedMetaKey are untouched by the grouping.
-export function renderCustomFields(meta: Record<string, unknown>): Element[] {
+// `derived` is what the plugins computed for THIS item (the build's
+// `DetailNote.derived`). It is passed in rather than looked up here so the form
+// shows the same values the grouping does: both read one build, and a second
+// lookup path is how the two would come to disagree.
+export function renderCustomFields(
+  meta: Record<string, unknown>,
+  derived: Record<string, unknown> = {},
+): Element[] {
   const defs = getCustomFields();
   if (!defs.length) return [];
 
@@ -127,9 +139,9 @@ export function renderCustomFields(meta: Record<string, unknown>): Element[] {
   }
 
   return [
-    ...defs.filter((d) => !d.group).map((def) => fieldNode(def, meta)),
+    ...defs.filter((d) => !d.group).map((def) => fieldNode(def, meta, derived)),
     ...[...sections].map(([legend, fields]) =>
-      Fieldset({ legend, children: fields.map((def) => fieldNode(def, meta)) }),
+      Fieldset({ legend, children: fields.map((def) => fieldNode(def, meta, derived)) }),
     ),
   ];
 }
@@ -138,13 +150,34 @@ export function renderCustomFields(meta: Record<string, unknown>): Element[] {
 // `def.width: 'full'` maps onto the Field component's own `full` prop, so a
 // definition — a plugin's or the timeline's — controls its width the same way
 // the built-in fields do.
-function fieldNode(def: CustomFieldDef, meta: Record<string, unknown>): HTMLElement {
+function fieldNode(
+  def: CustomFieldDef,
+  meta: Record<string, unknown>,
+  derived: Record<string, unknown>,
+): HTMLElement {
   const shared = {
     label: def.label || def.key,
     full: def.width === 'full',
     className: 'cf-field',
     attrs: { 'data-cf-key': def.key },
   };
+
+  // A derived field is shown, not edited: its value follows from the item, so an
+  // editable control would offer a change the next build discards. Deliberately
+  // NOT `data-cf-control`, so `applyCustomFields` has nothing to read even if the
+  // guard there is ever lost — the two together are what keeps a computed value
+  // out of `metadata`.
+  if (def.derived) {
+    const values = readFieldValues(derived, def.key);
+    return Field({
+      ...shared,
+      control: TextInput({
+        value: values.map((v) => optionLabel(def, v)).join(', '),
+        readonly: true,
+        attrs: { 'data-cf-derived': def.key },
+      }),
+    });
+  }
 
   if (def.type === 'multi-select') {
     return Field({
@@ -186,6 +219,27 @@ function fieldNode(def: CustomFieldDef, meta: Record<string, unknown>): HTMLElem
     ...shared,
     control: TextInput({ value: current, attrs: { 'data-cf-control': def.key } }),
   });
+}
+
+/**
+ * Refresh the read-only controls of the derived fields in the open item form.
+ *
+ * Called from the repaint path, and deliberately the only thing there that reaches
+ * into a live form: a derived value changes when the *item* changes, so dragging a
+ * bar or editing a date changes it while the form stands open. It writes nothing
+ * the user typed and creates no controls — an input that is not there yet gets its
+ * value when the form is built.
+ */
+export function syncDerivedFieldControls(itemId: string | null): void {
+  const derived = itemId ? state.activeBuild?.details.get(itemId)?.derived : undefined;
+  for (const node of document.querySelectorAll<HTMLInputElement>('[data-cf-derived]')) {
+    const key = node.dataset.cfDerived;
+    const def = key ? getCustomFields().find((f) => f.key === key) : undefined;
+    if (!def) continue;
+    node.value = readFieldValues(derived ?? {}, def.key)
+      .map((v) => optionLabel(def, v))
+      .join(', ');
+  }
 }
 
 // ---- multi-select chip editor (one per multi-select field) -----------------
@@ -324,6 +378,11 @@ export function wireCustomFields(form: HTMLFormElement): void {
 export function applyCustomFields(form: HTMLFormElement, meta: Record<string, unknown>): void {
   for (const def of getCustomFields()) {
     const key = def.key;
+    // A derived field has no stored value, and writing one would be worse than a
+    // no-op: from then on the item carries a copy that outlives the reason for it
+    // (a sprint the item has since moved out of), which nothing in the interface
+    // distinguishes from a value somebody chose.
+    if (def.derived) continue;
     if (def.type === 'multi-select') {
       // Via writeListMeta so a stored empty array survives a read — see there.
       writeListMeta(meta, key, (state.formCustomMulti[key] ?? []).filter(Boolean));

@@ -115,7 +115,9 @@ timeline with no plugin is just timeline + list.
 
 A `PluginDescriptor` exposes a cheap synchronous `matches(file)` predicate, a
 `label` (its display name), the `views` it declares, the item `fields(file)` it
-contributes, and a **`load()` that is a dynamic `import()`**. The core
+contributes, and — when it has a view — a **`load()` that is a dynamic `import()`**.
+A plugin whose contribution is fields, values and verbs declares none, and then has
+no module and no chunk at all (`src/plugins/sprints/`). The core
 (`main.ts`, `render.ts`) only ever touches the descriptor's data, so it has **no
 static import of any plugin *view* module**: Rollup code-splits each plugin into
 its own chunk, and a generic build downloads none of it. The plugin imports its own
@@ -125,6 +127,35 @@ stylesheet. Both halves are asserted by
 takes its markers out of each plugin's own stylesheet rather than from a list in
 the script — a hardcoded list is a plugin fact in a core file, and it goes stale
 silently.
+
+**A field's value can be the plugin's too, not only its options.** A def with
+`derived: true` says the plugin computes the value per item, through
+`derive(file)` — a factory called once per build whose returned function runs per
+item ([`src/pluginHost/derived.ts`](../src/pluginHost/derived.ts)). The values ride
+along on the build (`DetailNote.derived`) and are joined to the stored metadata by
+`withDerived` at each read point: `metaOf` for grouping, the filter and the
+timeline's lanes, the item form for its read-only control, and `contextOf` in the
+MCP saved-view tools so an agent sees the same dimension a person does.
+
+Two reasons it is not simply written into `metadata`. A value that *follows* from
+the item survives the item moving if it is stored, and a stale bucket is
+indistinguishable from a chosen one — which is the bug the seam exists for. And
+keeping the two bags apart is what keeps the item form from persisting the computed
+half: it renders such a field read-only and `applyCustomFields` skips its key.
+
+**The generic write path is not a gate, and saying so is part of the design.** A
+`PATCH`, an MCP `update_item` or a hand-edited local file can put a value on a derived
+key, because that path takes `metadata` wholesale and does not know which keys a
+plugin computes. Adding that knowledge would mean the write path resolving plugin
+fields per item on every write. What the current arrangement costs instead is
+bounded: the computed value wins in `withDerived`, so a stored leftover changes no
+answer anywhere and is a tidy-up rather than a wrong bucket.
+
+The host enforces the rest, because a plugin cannot do it for the others: a plugin
+fills only the keys it declared derived, the first declaration of a key owns it, a
+rule that throws costs that plugin its values rather than the whole build, and a
+*stored* definition claiming `derived` has the flag dropped — there is no code behind
+a stored def, so the flag would only produce a control that can never hold anything.
 
 **The manifest is what the host reads before running anything.**
 [`src/pluginHost/manifest.ts`](../src/pluginHost/manifest.ts) defines it: id, name,

@@ -23,10 +23,19 @@ import type { InstalledPlugin, PluginStatus } from '../../src/types';
 import type { PluginManifest } from '../../src/pluginHost/manifest';
 import { manifestOf, pluginStatus } from '../../src/pluginHost/installed.ts';
 import { productRoadmapManifest } from '../../src/plugins/product-roadmap/manifest.ts';
+import { sprintsManifest } from '../../src/plugins/sprints/manifest.ts';
 import type { TimelineRepo } from './repo.ts';
 
-/** The manifests compiled into this build. */
-const BUILT_IN: PluginManifest[] = [productRoadmapManifest];
+/**
+ * The manifests compiled into this build.
+ *
+ * An in-tree plugin has to be listed here as well as registered in
+ * `src/pluginHost/registry.ts`: the client registry is not reachable from the write
+ * path, and a plugin missing here has no manifest to enforce its declarations
+ * against — so its rows and its metadata keys are refused on a deploy where the
+ * install registry is empty, while the interface shows the plugin working.
+ */
+const BUILT_IN: PluginManifest[] = [productRoadmapManifest, sprintsManifest];
 
 /** Every manifest the build ships, whatever the registry says. */
 export function builtInManifests(): PluginManifest[] {

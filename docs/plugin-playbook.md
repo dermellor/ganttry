@@ -58,6 +58,13 @@ Answer four questions before writing anything:
    from the timeline's own data or from the plugin's config is the cheapest possible
    plugin: it flows into the item form, grouping, filtering and the context menu with
    no further work.
+
+   **Ask the same question about the value.** If the value follows from the item
+   rather than being chosen — the sprint its dates fall into, the cohort its start
+   belongs to — declare the field `derived: true` and implement `derive(file)`
+   („A field's value can be the plugin's too" (architecture.md)). Nothing is stored,
+   so the value cannot outlive its reason; the alternative is a copy on the item that
+   a drag silently invalidates. It needs `apiVersion: "^1.5"`.
 2. **Does it need data of its own?** Item-level values live in `metadata[key]` and
    need nothing. Rows of its own are declared as `collections` in the manifest and
    stored generically by the host — a plugin never ships a migration. See
@@ -121,34 +128,67 @@ been reviewed by a practitioner or has not been thought about hard enough.
 **Exit condition for 1.1 and 1.2:** the domain model and the confidence statement
 exist in writing. They go into the plugin's `README.md` in phase 5.
 
-### 1.3 Collect target questions
+### 1.3 Harvest the questions, do not invent them
 
 Generative engines answer questions; being the answer requires knowing the question.
 This runs **before** the plugin is named, because the vocabulary decided here goes
 into the plugin id, the field labels and the example data. Deciding it afterwards
 means renaming labels that are already stored on items.
 
-Three to five, in the form somebody actually types into a model, in **English and
-German** (the interface and the users are German, the documentation and the wider
-search space are English):
+**The questions come from evidence, and the evidence is written down.** Three to five
+sentences invented at a desk feel like research and are not: they are the same
+guess as naming a field „Aufwand", one level up, and they set the vocabulary of
+everything downstream. So for each candidate question, do the work that produces it:
 
-- `Alternative to <tool> for <job>`
-- `<category> tool that is self-hosted`
-- `Gantt chart with <capability>`
-- `Roadmap tool without <common drawback>`
+| Step | What it produces |
+| --- | --- |
+| Search the obvious queries for the domain, in **English and German** | the queries that have an answer page at all, and the ones that do not |
+| Read the „People also ask" / related-questions block on those results | the phrasings people actually use, which are rarely the ones a builder writes |
+| Open the pages that currently answer them, three or four of them | what the answer looks like today: which sections, which tables, what an engine can lift out of it |
+| Note what those pages **omit** | the gap this plugin can own, which is the only defensible reason to write another page |
 
-Be specific: "self-hosted roadmap tool with sprints" beats "project management".
+Record each question with **where it came from and the date**, because a SERP is a
+measurement of one day. A question nobody can trace back is treated as an invention.
+
+**Say what you could not measure.** Search volume needs a tool with data access; if
+there is none, there is no volume figure, and a proxy (result counts, autocomplete,
+how many pages exist) is labelled as a proxy. A number presented as demand when it is
+a proxy is worse than no number, because it survives into the decision that follows.
+
+Be specific: „self-hosted roadmap tool with sprints" beats „project management".
 A plugin covers a niche; its reach comes from answering one narrow question
 completely rather than a broad one vaguely.
 
 ### 1.4 Measure the baseline
 
-Put the same questions to several models and record what they answer **today**:
+Put the harvested questions to several models and record what they answer **today**:
 which tools get named, in what order, with which words. This is the before-picture
 that phase 6 compares against, and it is also the fastest way to learn which
 vocabulary the answers are written in.
 
-### 1.5 Build the terminology table
+Whoever runs this needs access to those models. An agent that cannot reach one says
+so and hands over the exact list rather than estimating: an invented before-picture
+makes phase 6 meaningless, and phase 6 is then **skipped explicitly** rather than
+quietly.
+
+### 1.5 Decide which pages the material justifies
+
+The harvest answers questions of different kinds, and one page cannot serve them all.
+Split them before writing anything, because the split decides how many pages there
+are and what each one is for:
+
+| Intent | The page it wants |
+| --- | --- |
+| „what is X / how do I do X" | the plugin's own page: what it contributes, how it works |
+| „X versus Y", „alternative to Y" | a comparison, and only where phase 1.1 already produced sourced facts about Y |
+| „how do I run <a real job> with this" | a use case, told as the job rather than as the feature |
+
+A comparison page is where the domain research pays for itself a second time: the
+product documentation read in 1.1 is exactly the material such a page needs, and
+leaving it in the repository means writing the weakest version of it later from
+memory. The claim rules below govern every line of it.
+
+### 1.6 Build the terminology table
 
 | Our word | The common word | Used where |
 | --- | --- | --- |
@@ -166,7 +206,7 @@ that mapping belongs in the table. Renaming a core concept in one plugin means t
 same thing has five names across fifty plugins, which is good for one search result
 and bad for everything else. See „Core vocabulary" below.
 
-### 1.6 Claim rules
+### 1.7 Claim rules
 
 These are binding, not stylistic:
 
@@ -180,9 +220,10 @@ These are binding, not stylistic:
 - Do not overstate the domain model. The confidence statement from 1.2 is the
   binding version, and marketing copy may not contradict it.
 
-**Exit condition:** domain model, confidence statement, target questions, the
-baseline recording and the terminology table exist in writing. They go into the
-plugin's `README.md` in phase 5.
+**Exit condition:** domain model, confidence statement, the harvested questions with
+their sources and date, the page split, the baseline recording (or its explicit
+absence) and the terminology table exist in writing. They go into the plugin's
+`README.md` in phase 5, and the questions go into the site page's FAQ in 5.4.
 
 ---
 
@@ -222,7 +263,7 @@ Files, all inside the plugin's own folder:
 | File | What |
 | --- | --- |
 | `manifest.ts` | what the plugin declares: id, capabilities, views, tools, config schema, the metadata keys it owns, and the catalogue entry from phase 2 |
-| `descriptor.ts` | the one object the registry takes: the manifest, `matches`/`applies`, `fields`, `tools`, and `load()` |
+| `descriptor.ts` | the one object the registry takes: the manifest, `matches`/`applies`, `fields`, `derive` and `tools`, plus `load()` **if it has a view** — a plugin without one declares no module and gets no chunk |
 | `fields.ts` | derived `CustomFieldDef[]`, gated on the plugin being enabled |
 | `fields.test.ts` | the derivation, tested without a DOM |
 | `tools.ts` | the agent verbs and the domain rules behind them, if any |
@@ -279,7 +320,17 @@ rather than merely shorter. Both moved into its folder
 in the first place costs nothing.
 
 **Exit condition:** `npm run typecheck` shows no new errors, and no file outside the
-plugin folder changed except the one registry line.
+plugin folder changed except **two registrations**, one per process that has to know
+the plugin exists:
+
+| Where | Why it is not optional |
+| --- | --- |
+| [`src/pluginHost/registry.ts`](../src/pluginHost/registry.ts) | the client: fields, derived values, views |
+| [`scripts/db/plugin-manifests.ts`](../scripts/db/plugin-manifests.ts) | the write path: it enforces a plugin's declarations against its manifest, and cannot reach the client registry |
+
+Forgetting the second one is invisible in the interface and refuses the plugin's rows
+and metadata keys on any deploy whose install registry is empty, which is every
+filesystem-only deploy.
 
 ---
 
@@ -395,8 +446,78 @@ A hand-maintained list in the root README is fine at three plugins and is a wall
 links at fifty. The catalogue is what a reader browses and what a crawler indexes,
 so the entry fields are a publication requirement and not metadata hygiene.
 
+### 5.4 The page on the website
+
+**A plugin is not published until it has a page on <https://zeitlines.dev>.** The
+catalogue in this repository is read by somebody who is already here; the site is where
+somebody arrives with a kind of planning to do, and it is what `llms.txt` hands an
+answer engine. Skipping it means the work exists and nothing outside a GitHub tree says
+so, which is the „correct and invisible" failure this whole phase is about.
+
+The site is a **separate repository** (`zeitlines-web`, Astro, `output: 'static'`,
+deployed by Netlify on push). Two edits there, and its own `AGENTS.md` is the authority
+on how:
+
+| Where | What |
+| --- | --- |
+| `src/data/plugins.ts` | one `PluginEntry`: slug, id, title, `seoTitle`, description, domain, what it contributes, `status`, lane. It feeds the catalogue index, the footer and `llms.txt`, so a plugin missing from it is missing from all three |
+| `src/pages/plugins/<slug>.astro` | the page, through the `Doc` layout, with an **FAQ** — those entries become `FAQPage` structured data, so the questions have to be the ones people ask |
+
+Three rules that repository enforces and this one has to respect:
+
+- **`status` may not say `shipped` before the plugin is on `main` here.** The site
+  deploys on push, so a page that ships first is a page that lies. Land the plugin, then
+  the page.
+- **Every claim has to be true of the software today**, checked against this repository
+  rather than against an earlier version of the site. No invented numbers, and nothing
+  in the present tense that is still an open issue.
+- **No JavaScript, no third-party request, no image work.** A plugin page is prose,
+  tables and an FAQ; the `preview.png` from phase 4 stays in the catalogue here.
+
+The page is not a copy of the README. The README documents a plugin for somebody who has
+it; the page answers why anybody would want it, in the words they would search with —
+which is what phase 1.3 harvested, and the reason that phase runs before the naming.
+
+**What the page owes the harvest**, and each of these is a way the first version went
+wrong:
+
+- **The FAQ entries are harvested questions, with their date.** They become `FAQPage`
+  structured data, so an invented question is an invented claim about what people ask.
+  A question that cannot be traced to 1.3 does not go on the page.
+- **The heading and the first paragraph are written for the person searching**, not for
+  the person who built it. A plugin id is not a headline, and „X as things of their own"
+  is a sentence only its author types.
+- **Every section's first sentence answers its own heading.** That is what an engine
+  lifts; a section that warms up for two sentences gets summarised into nothing.
+- **The pages 1.5 decided on all get written, and they link each other.** One page per
+  intent, plus the links that make them findable from the catalogue index, the use
+  cases, the agent page and any sibling plugin the material touches. A page nothing
+  links to is a page nothing sends anybody to.
+- **The comparison material from 1.1 goes on the site.** Sourced facts about how other
+  products model the same domain are the strongest content the research produced;
+  leaving them in the repository means writing a weaker version later from memory. The
+  claim rules from 1.7 govern every line, so a statement about another product carries
+  its source and its date or it does not get written.
+- **The language decision is recorded.** If the harvest produced German questions and
+  the site is English, that gap is a decision somebody made, not something to discover
+  later from a missing page.
+- **The page shows the thing.** At least one screenshot of the real interface, from the
+  plugin's own example timeline, with alt text that describes what is in it. A feature
+  page without a picture asks the reader to imagine the product; one with a picture
+  nobody can retake goes stale invisibly, because a stale screenshot still looks like a
+  product.
+
+  The site takes them with a script rather than by hand: a shot is declared as a URL
+  against a running Zeitlines plus a viewport (`src/data/shots.ts`), `npm run shots`
+  drives an installed Chrome over that list, and the PNGs are committed. Two things
+  that phase 4 already knows apply here as well — a shot needs the example data, and
+  anything the URL cannot address (the grouping dimension is per-timeline state) is
+  reached through a saved view the example file ships. `zeitlines-web`'s own `AGENTS.md`
+  → „Screenshots" is the authority, including why the shots are taken at 2x.
+
 **Exit condition:** the plugin README stands on its own for a reader who has never
-seen this repository, and `plugins:catalogue:check` is green.
+seen this repository, `plugins:catalogue:check` is green, and the site page exists with
+its `status` matching reality.
 
 ---
 
@@ -434,7 +555,7 @@ These words mean the same thing in every plugin and are never renamed by one:
 | version | an ordered release marker |
 
 A domain word may be added *next to* a core concept and mapped in the terminology
-table (phase 1.5): a Gewerk is a kind of group, a Wendepunkt is a kind of phase, a
+table (phase 1.6): a Gewerk is a kind of group, a Wendepunkt is a kind of phase, a
 Frist is an item with a rule attached. What must not happen is a plugin that calls a
 group a Gewerk everywhere, because then the same concept has a different name in
 every plugin, and no cross-plugin reasoning, documentation or agent instruction
@@ -521,8 +642,9 @@ research, the spec, the verification and the publication — is unaffected by ei
 
 ```
 [ ] 0  Shape named (fields / data / view / tools); no core file in the plan
-[ ] 1  Domain model, confidence + open questions, target questions,
-       baseline recording, terminology table (core vocabulary respected)
+[ ] 1  Domain model, confidence + open questions, questions HARVESTED from
+       SERPs with sources + date, page split by intent, baseline recording
+       (or explicitly skipped), terminology table (core vocabulary respected)
 [ ] 2  Spec written: fields, tools, view, config, data, catalogue entry,
        and what it does not do
 [ ] 3  Reverse-DNS id, apiVersion (^1.3 with tools); manifest, descriptor,
@@ -532,7 +654,10 @@ research, the spec, the verification and the publication — is unaffected by ei
        preview.png; click path incl. how the plugin gets switched on
 [ ] 5  Plugin README incl. tools, confidence and contribution call;
        uninstall test on every sentence outside the plugin folder;
-       check-plugin-isolation green; plugins:catalogue:check green
+       check-plugin-isolation green; plugins:catalogue:check green;
+       page + data entry in zeitlines-web, status matching reality,
+       FAQ traceable to the harvest, the pages 1.5 named written and linked,
+       at least one generated screenshot with alt text
 [ ] 6  Baseline recorded → measurement scheduled (or explicitly skipped);
        committed, pushed, deploy green
 ```
