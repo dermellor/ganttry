@@ -24,6 +24,7 @@ export const DE: Record<keyof typeof EN, string> = {
   'app.settings.timeline.close': 'Timeline-Einstellungen schließen',
   'app.signOut': 'Abmelden',
   'app.noInstanceActions': 'Keine Instanz-Aktionen',
+  'app.loadingConfig': 'Lade Konfiguration…',
   'app.loading': 'Wird geladen …',
   'app.plugins.state': 'Installierte Plugins und ihr Zustand',
 
@@ -110,6 +111,8 @@ export const DE: Record<keyof typeof EN, string> = {
   'settings.unset': 'nicht gesetzt',
   'settings.set': 'gesetzt',
   'settings.default': '(Standard)',
+  'settings.column.setting': 'Einstellung',
+  'settings.column.value': 'Wert',
   'settings.origin': 'Herkunft',
   'settings.on': 'an',
   'settings.off': 'aus',

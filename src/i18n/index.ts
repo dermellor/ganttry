@@ -76,9 +76,19 @@ function remember(locale: Locale): void {
  * `adoptServerLocale` reconciles when the row arrives, which is a no-op in the
  * overwhelmingly common case that they agree.
  */
-export function initLocale(opts: { instanceDefault?: unknown } = {}): Locale {
+export function initLocale(opts: { chosen?: unknown; instanceDefault?: unknown } = {}): Locale {
   instanceDefault = normalizeLocale(opts.instanceDefault);
-  current = resolveLocale({ chosen: stored(), instanceDefault });
+  // The profile's answer outranks the device's when the caller has one, because
+  // it is the same person's choice made somewhere more durable. It is passed in
+  // rather than fetched here so that boot can ask for it alongside the config it
+  // already waits on — see `bootstrap` in main.ts. Fetching it *after* the first
+  // paint is what produced a visible re-render into the other language on every
+  // existing user's first visit, which is worse than the round trip it saved.
+  const chosen = normalizeLocale(opts.chosen) ?? stored();
+  current = resolveLocale({ chosen, instanceDefault });
+  // Remembered so the next load paints from the device without waiting for the
+  // profile at all. This is what makes the pre-paint fetch a one-time cost.
+  remember(current);
   applyDocumentLang();
   return current;
 }

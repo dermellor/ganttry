@@ -229,3 +229,20 @@ body.settings-open .ds-Toolbar[data-tone='footer'] {
   align-items: center;
   gap: var(--space-2xs);
 }
+
+/* „Konto": the language picker sizes to its two segments.
+ *
+ * `Field` gives its control the full column, which is right for a text input and
+ * wrong for a two-segment control — it draws a border the width of the page with
+ * the choices huddled at one end, which reads as a broken input rather than as a
+ * setting. `fit-content` rather than a fixed width, so adding a third language
+ * still sizes to its content.
+ *
+ * `justify-self: start` was the first attempt and does nothing here: `.ds-Field`
+ * is not a grid container, so the property computes to `start` and is ignored.
+ * That is why „does my rule apply?" belongs on the rendered box and not on the
+ * computed declaration — the declaration said yes while the border still ran the
+ * width of the page. */
+.settings .account-language .ds-SegmentedControl {
+  width: fit-content;
+}

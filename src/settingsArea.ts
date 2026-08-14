@@ -34,6 +34,7 @@ import {
 import {
   areaSection,
   createAreaHandle,
+  invalidateArea,
   showArea,
   wireAreaNav,
   type AreaNodes,
@@ -41,6 +42,7 @@ import {
 } from './areaFrame';
 import './styles/settings.css';
 import { mountMemberAdmin, unmountMemberAdmin } from './memberAdmin';
+import { LOCALE_CHANGED, mountAccount } from './accountSection';
 import { t } from './i18n';
 import { els, state, syncUrl } from './state';
 import type { DeclaredSetting } from './types';
@@ -53,7 +55,7 @@ import type { DeclaredSetting } from './types';
  * though the labels beside them are German. A separate slug would also make this
  * module import-cycle with `state.ts`, which writes the hash.
  */
-export type SettingsSection = 'instance' | 'members';
+export type SettingsSection = 'instance' | 'members' | 'account';
 
 type SectionDef = AreaSection<SettingsSection>;
 
@@ -163,7 +165,7 @@ function settingsGroups(settings: DeclaredSetting[]): HTMLElement[] {
       Table({
         className: 'setting-table',
         children: [
-          TableHead({ columns: ['Einstellung', 'Wert', 'Herkunft'] }),
+          TableHead({ columns: [t('settings.column.setting'), t('settings.column.value'), t('settings.origin')] }),
           el('tbody', {}, body),
         ],
       }),
@@ -172,7 +174,7 @@ function settingsGroups(settings: DeclaredSetting[]): HTMLElement[] {
 }
 
 async function mountInstance(root: HTMLElement): Promise<void> {
-  root.replaceChildren(Text({ as: 'p', text: 'Wird geladen …', tone: 'muted', placeholder: true }));
+  root.replaceChildren(Text({ as: 'p', text: t('app.loading'), tone: 'muted', placeholder: true }));
   try {
     const { settings } = (await apiJson('/api/settings')) as { settings: DeclaredSetting[] };
     root.replaceChildren(
@@ -200,6 +202,11 @@ async function mountInstance(root: HTMLElement): Promise<void> {
 const sections = (): readonly SectionDef[] => [
   { id: 'instance', label: t('settings.section.instance'), mount: mountInstance },
   { id: 'members', label: t('settings.section.members'), mount: mountMemberAdmin, unmount: unmountMemberAdmin },
+  // „Konto" last, because the two before it are about the deployment and this one
+  // is about the reader — and because it is the only section every instance can
+  // offer, so putting it first would push what an operator opened the area for
+  // below a control they may not have come for.
+  { id: 'account', label: t('settings.section.account'), mount: mountAccount },
 ];
 
 /** The first section's id, which the header button opens. Never translated. */
@@ -266,4 +273,18 @@ export function wireSettingsArea(): void {
   wireAreaNav<SettingsSection>(els.settingsNav, openSettings);
   els.settingsClose.addEventListener('click', () => closeSettings());
   els.settingsBtn.addEventListener('click', () => openSettings(FIRST_SECTION));
+  // Switching language repaints the area, because everything in it — the section
+  // nav, the „Herkunft" badges, this section's own heading — is text that just
+  // changed. Repainting only the control that was clicked would leave a German
+  // nav around an English page, which reads as the switch having half worked.
+  //
+  // The rest of the chrome behind the area is not repainted here: it is hidden
+  // while the area is open, and it rebuilds from `t()` on the next render. What
+  // it does not do is rebuild *now*, which is the known limit of this — see
+  // „What a language change does not repaint" (docs/settings.md).
+  window.addEventListener(LOCALE_CHANGED, () => {
+    if (!state.settingsSection) return;
+    invalidateArea(handle);
+    void showSettings(state.settingsSection);
+  });
 }

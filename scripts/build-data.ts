@@ -5,6 +5,7 @@ import { join, relative, basename, dirname, extname, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { envValue } from './db/env.ts';
+import { normalizeLocale } from '../src/i18n/locale.ts';
 import { scanDirectory, timelineDirectories } from './local/scan.ts';
 import { localRoots } from './local/roots.ts';
 import { buildCsp, parseOrigins } from '../src/pluginHost/csp.ts';
@@ -303,7 +304,26 @@ async function buildOnce(): Promise<void> {
   await writeHeaders();
   await collectVendoredPlugins();
   const plugins = await collectPlugins();
-  const mergedConfig = { ...config, defaultView, views, plugins };
+  // The deployment's answer for somebody who has never chosen a language.
+  //
+  // Baked into the built config rather than served from `/api/preferences`,
+  // because it has to be known **before the first paint**. A person's own choice
+  // can arrive a round trip late — the device remembers it and the app paints
+  // from that — but somebody's first ever visit has nothing remembered, so a
+  // default fetched afterwards would paint the product default first and visibly
+  // re-render into the instance's. That flash lands on exactly the deployment
+  // that set the variable because its team does not read English.
+  //
+  // Absent rather than resolved when unset, so the client falls through its own
+  // chain instead of receiving a default that outranks nothing.
+  const defaultLanguage = normalizeLocale(envValue('TIMELINES_DEFAULT_LANGUAGE'));
+  const mergedConfig = {
+    ...config,
+    defaultView,
+    views,
+    plugins,
+    ...(defaultLanguage ? { defaultLanguage } : {}),
+  };
   const configOut = join(OUT_DIR, 'config.json');
   const configChanged = await writeIfChanged(configOut, JSON.stringify(mergedConfig, null, 2));
 

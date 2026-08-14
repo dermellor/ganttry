@@ -12,6 +12,8 @@ import type { MemberRole, MemberStatus } from './access';
 //               access serves it through /api/source/<id>, a static deploy has
 //               nothing to write with and serves the built copy read-only. See
 //               [`docs/local-sources.md`](../docs/local-sources.md).
+import type { Locale } from './i18n/locale.ts';
+
 export type SourceKind = 'db' | 'local';
 
 /**
@@ -615,4 +617,16 @@ export type BuiltConfig = Config & {
    * is what keeps it clear of „No fallback data, ever".
    */
   plugins?: PluginStatus[];
+  /**
+   * `TIMELINES_DEFAULT_LANGUAGE`: the interface language for somebody on this
+   * deployment who has never chosen one.
+   *
+   * In the built config because the client needs it before the first paint. A
+   * person's own choice may arrive a round trip late — the device remembers it —
+   * but a first-ever visit has nothing remembered, and a default fetched
+   * afterwards paints English and then visibly re-renders into the instance's
+   * language. Absent when unset, so the client falls through to the product
+   * default rather than being handed one that outranks nothing.
+   */
+  defaultLanguage?: Locale;
 };

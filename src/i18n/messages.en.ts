@@ -37,6 +37,7 @@ export const EN = {
   'app.settings.timeline.close': 'Close timeline settings',
   'app.signOut': 'Sign out',
   'app.noInstanceActions': 'No instance actions',
+  'app.loadingConfig': 'Loading configuration…',
   'app.loading': 'Loading …',
   'app.plugins.state': 'Installed plugins and their state',
 
@@ -125,6 +126,8 @@ export const EN = {
   'settings.unset': 'not set',
   'settings.set': 'set',
   'settings.default': '(default)',
+  'settings.column.setting': 'Setting',
+  'settings.column.value': 'Value',
   'settings.origin': 'Origin',
   'settings.on': 'on',
   'settings.off': 'off',

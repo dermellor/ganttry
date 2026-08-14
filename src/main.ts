@@ -11,6 +11,7 @@ import 'vis-timeline/styles/vis-timeline-graph2d.css';
 import './styles/timeline.css';
 import './styles/app.css';
 import type { BuiltConfig } from './types';
+import { initLocale, t } from './i18n';
 import {
   onExternalUrlStateChange,
   parseUrlWindow,
@@ -107,6 +108,25 @@ function isTypingTarget(el: EventTarget | null): boolean {
   if (el.isContentEditable) return true;
   const tag = el.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+/**
+ * The language this person stored, or `null` when they never chose one.
+ *
+ * Best-effort by design, like the user directory beside it: a deployment that
+ * cannot answer (no database, no identity, a schema predating the column, a
+ * self-hosted server that does not serve the route) leaves the device's answer
+ * standing. Booting must not depend on a preference existing.
+ */
+async function loadChosenLanguage(): Promise<string | null> {
+  try {
+    const res = await fetch('/api/preferences');
+    if (!res.ok) return null;
+    const data = (await res.json()) as { language?: unknown };
+    return typeof data.language === 'string' ? data.language : null;
+  } catch {
+    return null;
+  }
 }
 
 async function loadConfig(): Promise<BuiltConfig> {
@@ -360,16 +380,29 @@ function applyViewMode(
 }
 
 async function bootstrap() {
-  setStatus('Lade Konfiguration…');
+  // The language, before anything is drawn. Synchronous and from the device only:
+  // the authoritative answer for a signed-in person is a round trip away, and
+  // waiting for it would mean either a blank app or a first paint in the wrong
+  // language followed by a visible re-render — the second is the one people report
+  // as a bug. The device's last answer paints; the two lines further down
+  // reconcile it with the deployment's default and with the profile.
+  initLocale();
+  setStatus(t('app.loadingConfig'));
   // Before the config and the user directory are even in, so the first painted
   // frame shows the placeholder rather than an empty area. renderTimeline()
   // keeps it up for its own source fetch and takes it down when the chart is
   // built, which makes the two loads read as one.
   showTimelineSkeleton(els.timeline);
 
-  const [cfg, currentUser] = await Promise.all([
+  const [cfg, currentUser, chosenLanguage] = await Promise.all([
     loadConfig(),
     loadCurrentUser(),
+    // The language this person chose, asked for **alongside** the config rather
+    // than after it. Boot already waits on three requests in parallel, so a
+    // fourth costs nothing — and asking afterwards is what re-rendered the whole
+    // interface into another language in front of every existing user on their
+    // first visit.
+    loadChosenLanguage(),
     // The user directory an item's Owner resolves against. Loaded once, up front,
     // because both the list's Owner column and the item form's picker read it
     // synchronously; fetching it also registers us in it (see src/users.ts).
@@ -377,6 +410,12 @@ async function bootstrap() {
   ]);
   state.config = cfg;
   state.currentUser = currentUser;
+
+  // Now with all three sources: this person's stored choice, the deployment's
+  // answer for somebody who never chose, and the product default underneath.
+  // Nothing has been drawn in the interface's own language yet — only the status
+  // line, which the first `initLocale` above already painted from the device.
+  initLocale({ chosen: chosenLanguage, instanceDefault: cfg.defaultLanguage });
 
   // Load the plugins the instance installed, BEFORE the first view is applied:
   // their contributed fields and view buttons have to exist by the time a view is

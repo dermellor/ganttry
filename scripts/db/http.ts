@@ -46,7 +46,7 @@ import {
 } from '../../src/access.ts';
 import type { SavedViewCaller } from '../../src/savedViews.ts';
 import { declaredSettings } from '../../src/settings.ts';
-import { normalizeLocale } from '../../src/i18n/locale.ts';
+import { normalizeLocale, resolveLocale, type Locale } from '../../src/i18n/locale.ts';
 
 /** What the runtime resolved before dispatching: connections plus who is asking. */
 export type ApiContext = {
@@ -150,6 +150,27 @@ function json(data: unknown, status = 200, headers?: Record<string, string>): Re
 }
 
 const hasDb = (c: DbConnections): boolean => Boolean(c.sql || c.supabase);
+
+/**
+ * The language to answer this caller in.
+ *
+ * Three sources in the order `resolveLocale` defines: what they chose, what this
+ * deployment answers for somebody who never chose, and the product default. The
+ * lookup is best-effort — a deployment with no database, no identity, or a schema
+ * predating migration 0025 falls through to the deployment's answer rather than
+ * failing a request over a label.
+ */
+async function callerLocale(ctx: ApiContext): Promise<Locale> {
+  const instanceDefault = ctx.env?.('TIMELINES_DEFAULT_LANGUAGE');
+  const repo = resolveRepo(ctx.conns);
+  const email = ctx.caller?.email;
+  if (!repo || !email) return resolveLocale({ instanceDefault });
+  try {
+    return resolveLocale({ chosen: await repo.getUserLanguage(email), instanceDefault });
+  } catch {
+    return resolveLocale({ instanceDefault });
+  }
+}
 
 /** The request's JSON body, or undefined for a bodyless method / empty body. */
 async function readBody(req: Request, method: string): Promise<unknown> {
@@ -470,7 +491,13 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
         503,
       );
     }
-    return json({ settings: declaredSettings(ctx.env) });
+    // In the caller's own language. The label is resolved here rather than sent
+    // as a key precisely so the page never holds a table keyed by setting name —
+    // see „The label is resolved on the server" (src/settings.ts). Which means
+    // this is the one place that has to know who is asking, and forgetting it
+    // does not fail: it serves a page of correct English labels to a German
+    // reader, which reads as „that section is not translated yet".
+    return json({ settings: declaredSettings(ctx.env, await callerLocale(ctx)) });
   }
 
   if (path === '/api/preferences') {
