@@ -236,6 +236,7 @@ are read from `process.env`, then `.env.local`, then any file named by
 | `TIMELINES_ACCESS_CONTROL` | See [`docs/users.md`](docs/users.md) for the whole model and the rollout order. `true` makes the member list decide, both at sign-in and on every `/api/*` call: roles (`admin` / `editor` / `viewer`) and an invitation become the way in, and the domain list stops being consulted. Off by default, because an instance whose member list is not yet populated would refuse everybody. Needs a database. |
 | `TIMELINES_BOOTSTRAP_ADMIN` | With the above: the one address that becomes an admin on first sign-in, even against an empty member list. Without it a fresh instance has nobody who can invite. Keep it set — it is the instance's master key. |
 | `MCP_TOKEN_ROLE` | With the above: the role the `X-MCP-Token` service identity acts with, default `editor`. Set `viewer` for a read-only agent. |
+| `TIMELINES_DEFAULT_LANGUAGE` | `de` or `en`: the interface language for somebody who has not picked one, on this deployment. The language is per person (`#settings=account`), so this decides only the starting point — for a new colleague on an instance whose team works in one language. Unset means the product default, English. An unrecognised value reads as unset rather than failing. |
 
 ## Deploy (Netlify)
 
