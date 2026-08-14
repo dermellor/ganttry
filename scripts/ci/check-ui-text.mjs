@@ -139,6 +139,64 @@ for (const file of files('src')) {
   });
 }
 
+// ---- The catalogues -----------------------------------------------------------
+//
+// Where the interface's text actually lives since #153. Everything above finds a
+// string literal at a *rendering site*, which was the whole interface until the
+// strings moved into `src/i18n/messages.*.ts` — and a check that only looks at call
+// sites would have gone quietly green as they emptied, retiring the rule exactly the
+// way „Interface text" (AGENTS.md) says prose comes back.
+//
+// Checking the catalogue is strictly the better half of this script: it is the
+// complete list rather than whatever a regex matched, it is in one place, and it
+// covers **both** languages — a rule enforced on German only would have let the
+// English translation of a label grow into a sentence unnoticed.
+//
+// `refusal.*` is exempt from the word limit and not from the check. That is the
+// third category the rule always had („Refusals and results of something the user
+// just did"), which was allowed to be a full sentence and used to escape this
+// script for the wrong reason: it sat in a DOM-free rule module rather than at a
+// rendering site, so „is this a refusal?" was answered by where the string
+// happened to live. The prefix makes the claim explicit and greppable, and calling
+// a label `refusal.` to buy room is a visible lie in a diff rather than an
+// invisible one.
+const CATALOGUES = ['src/i18n/messages.en.ts', 'src/i18n/messages.de.ts'];
+
+for (const file of CATALOGUES) {
+  let source;
+  try {
+    source = readFileSync(file, 'utf8');
+  } catch {
+    // The catalogues are the interface's text; a missing one is not a silent pass.
+    problems.push({ file, line: 0, words: 0, sentences: 0, text: 'catalogue is missing' });
+    continue;
+  }
+
+  // `'key': 'text',` including a run broken across lines by the formatter. The
+  // key is captured so the `refusal.` exemption can be applied by name.
+  const entry = /^\s*'([\w.]+)':\s*((?:'(?:[^'\\]|\\.)*')(?:\s*\+\s*'(?:[^'\\]|\\.)*')*),?\s*$/gm;
+  const multiline = /^\s*'([\w.]+)':\s*\n\s*((?:'(?:[^'\\]|\\.)*')(?:\s*\+\s*'(?:[^'\\]|\\.)*')*),?\s*$/gm;
+
+  for (const pattern of [entry, multiline]) {
+    for (const m of source.matchAll(pattern)) {
+      const key = m[1];
+      if (key.startsWith('refusal.')) continue;
+      const text = [...m[2].matchAll(/'((?:[^'\\]|\\.)*)'/g)].map((p) => p[1]).join('');
+      if (!text.trim()) continue;
+      const words = wordCount(text);
+      const sentences = sentenceCount(text);
+      if (words <= MAX_WORDS && sentences <= 1) continue;
+      problems.push({
+        file,
+        line: source.slice(0, m.index).split('\n').length,
+        words,
+        sentences,
+        text: `${key}: ${text}`,
+      });
+    }
+  }
+}
+
 if (problems.length) {
   console.error('check-ui-text: interface text carries explanation\n');
   for (const p of problems) {

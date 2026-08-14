@@ -33,6 +33,8 @@
 // Explicit `.ts`, because this module is reachable from the edge function and
 // Deno resolves specifiers literally (scripts/ci/edge-imports.test.ts).
 import { accessControlEnabled, serviceRoleFrom } from './access.ts';
+import { translate, type MessageKey } from './i18n/catalogue.ts';
+import { DEFAULT_LOCALE, normalizeLocale, type Locale } from './i18n/locale.ts';
 import type { DeclaredSetting, SettingHome } from './types';
 
 /**
@@ -45,9 +47,12 @@ export type SettingDeclaration = {
   /** The environment variable, or the build value's name. Serves as the row id. */
   key: string;
   /** Section heading this row sits under. Ordering follows first appearance. */
-  group: string;
-  /** German, like the rest of the interface — see „user-facing text" below. */
-  label: string;
+  groupKey: MessageKey;
+  /**
+   * The catalogue key for this row's label, resolved into the caller's language
+   * **before it is served** — see „The label is resolved on the server" below.
+   */
+  labelKey: MessageKey;
   home: SettingHome;
   editable: boolean;
   /**
@@ -70,23 +75,23 @@ export type SettingDeclaration = {
   resolve?: (raw: string) => string;
 };
 
-// German because this is interface text, and it travels with the declaration
-// rather than sitting in a lookup table on the client for one reason: a table
-// keyed by setting name is exactly the „the page knows each setting" coupling
-// this module exists to avoid, and it would make every new setting an interface
-// change again. The repository's own language stays English (AGENTS.md); the
-// interface is German (CONTRIBUTING.md), and these strings are interface.
-
-/**
- * What every section says when the server answers `access_control_disabled`.
- *
- * A refusal, so it stays: both sections of the area hit the same 503 from the same
- * branch, and one text for it keeps two from telling different stories about one
- * refusal. It names the variable and stops there — what being off implies for roles
- * and for the administration screen was explanation on top of the refusal.
- */
-export const ACCESS_CONTROL_OFF_TEXT =
-  'Die Zugriffskontrolle ist auf dieser Instanz aus: TIMELINES_ACCESS_CONTROL=true schaltet sie ein.';
+// ---- The label is resolved on the server -----------------------------------
+//
+// A declaration carries a catalogue *key*, and `declaredSettings` resolves it into
+// the caller's language before the row goes over the wire. The served shape
+// (`DeclaredSetting`) is unchanged: it still carries a finished `label` string.
+//
+// That split is what keeps this module's whole point intact. The page must not
+// hold a table keyed by setting name — that is exactly the „the page knows each
+// setting" coupling this module exists to avoid, and shipping a *key* to the
+// client would have rebuilt it, one lookup per new setting. Resolving on the
+// server means the client keeps rendering a string it never has to look up, and a
+// new setting stays one line here.
+//
+// The server can do this because it knows who is asking: `/api/settings` sits
+// behind the auth gate and the caller's row carries their language (migration
+// `0025`). The catalogue is DOM-free and `.ts`-suffixed for the same reason this
+// module is — the Deno edge function and the Node server both import it.
 
 /**
  * Every setting this instance has.
@@ -100,8 +105,8 @@ export const ACCESS_CONTROL_OFF_TEXT =
 export const REGISTRY: readonly SettingDeclaration[] = [
   {
     key: 'TIMELINES_ACCESS_CONTROL',
-    group: 'Zugang',
-    label: 'Zugriffskontrolle',
+    groupKey: 'setting.group.access',
+    labelKey: 'setting.TIMELINES_ACCESS_CONTROL',
     home: 'env',
     editable: false,
     expose: 'value',
@@ -111,8 +116,8 @@ export const REGISTRY: readonly SettingDeclaration[] = [
   },
   {
     key: 'TIMELINES_BOOTSTRAP_ADMIN',
-    group: 'Zugang',
-    label: 'Master-Key (erster Administrator)',
+    groupKey: 'setting.group.access',
+    labelKey: 'setting.TIMELINES_BOOTSTRAP_ADMIN',
     home: 'env',
     editable: false,
     // Presence only. The address is the one identity that can promote itself
@@ -121,8 +126,8 @@ export const REGISTRY: readonly SettingDeclaration[] = [
   },
   {
     key: 'AUTH_REQUIRED',
-    group: 'Zugang',
-    label: 'Anmeldung erforderlich',
+    groupKey: 'setting.group.access',
+    labelKey: 'setting.AUTH_REQUIRED',
     home: 'env',
     editable: false,
     expose: 'value',
@@ -131,32 +136,32 @@ export const REGISTRY: readonly SettingDeclaration[] = [
   },
   {
     key: 'ALLOWED_EMAIL_DOMAINS',
-    group: 'Zugang',
-    label: 'Erlaubte Anmelde-Domains',
+    groupKey: 'setting.group.access',
+    labelKey: 'setting.ALLOWED_EMAIL_DOMAINS',
     home: 'env',
     editable: false,
     expose: 'value',
   },
   {
     key: 'TIMELINES_TRUSTED_IDENTITY_HEADER',
-    group: 'Zugang',
-    label: 'Identitäts-Header des Proxys',
+    groupKey: 'setting.group.access',
+    labelKey: 'setting.TIMELINES_TRUSTED_IDENTITY_HEADER',
     home: 'env',
     editable: false,
     expose: 'value',
   },
   {
     key: 'TIMELINES_ALLOWED_EMAIL_DOMAINS',
-    group: 'Zugang',
-    label: 'Erlaubte Domains hinter dem Proxy',
+    groupKey: 'setting.group.access',
+    labelKey: 'setting.TIMELINES_ALLOWED_EMAIL_DOMAINS',
     home: 'env',
     editable: false,
     expose: 'value',
   },
   {
     key: 'MCP_TOKEN_ROLE',
-    group: 'Automation',
-    label: 'Rolle der Service-Token',
+    groupKey: 'setting.group.automation',
+    labelKey: 'setting.MCP_TOKEN_ROLE',
     home: 'env',
     editable: false,
     expose: 'value',
@@ -164,24 +169,24 @@ export const REGISTRY: readonly SettingDeclaration[] = [
   },
   {
     key: 'MCP_API_TOKEN',
-    group: 'Automation',
-    label: 'Service-Token',
+    groupKey: 'setting.group.automation',
+    labelKey: 'setting.MCP_API_TOKEN',
     home: 'env',
     editable: false,
     // Presence only: it is a bearer credential.
   },
   {
     key: 'TIMELINES_DATABASE_URL',
-    group: 'Daten',
-    label: 'Postgres-Verbindung',
+    groupKey: 'setting.group.data',
+    labelKey: 'setting.TIMELINES_DATABASE_URL',
     home: 'env',
     editable: false,
     // Presence only: a connection string carries its own password.
   },
   {
     key: 'TIMELINES_SUPABASE_URL',
-    group: 'Daten',
-    label: 'Supabase-Projekt',
+    groupKey: 'setting.group.data',
+    labelKey: 'setting.TIMELINES_SUPABASE_URL',
     home: 'env',
     editable: false,
     // Presence only. The URL alone is not a credential, but the pair is what
@@ -189,24 +194,24 @@ export const REGISTRY: readonly SettingDeclaration[] = [
   },
   {
     key: 'TIMELINES_SUPABASE_SERVICE_KEY',
-    group: 'Daten',
-    label: 'Supabase-Service-Key',
+    groupKey: 'setting.group.data',
+    labelKey: 'setting.TIMELINES_SUPABASE_SERVICE_KEY',
     home: 'env',
     editable: false,
     // Presence only: it is the service-role key.
   },
   {
     key: 'TIMELINES_DB_LIVE',
-    group: 'Daten',
-    label: 'Live-Updates',
+    groupKey: 'setting.group.data',
+    labelKey: 'setting.TIMELINES_DB_LIVE',
     home: 'env',
     editable: false,
     expose: 'value',
   },
   {
     key: 'TIMELINES_DATA_DIR',
-    group: 'Daten',
-    label: 'Datenverzeichnis',
+    groupKey: 'setting.group.data',
+    labelKey: 'setting.TIMELINES_DATA_DIR',
     home: 'build',
     editable: false,
     expose: 'value',
@@ -217,11 +222,27 @@ export const REGISTRY: readonly SettingDeclaration[] = [
   },
   {
     key: 'TIMELINES_SOURCES_SUBDIR',
-    group: 'Daten',
-    label: 'Gebaute Datenquellen',
+    groupKey: 'setting.group.data',
+    labelKey: 'setting.TIMELINES_SOURCES_SUBDIR',
     home: 'build',
     editable: false,
     expose: 'value',
+  },
+  {
+    key: 'TIMELINES_DEFAULT_LANGUAGE',
+    groupKey: 'setting.group.access',
+    labelKey: 'setting.TIMELINES_DEFAULT_LANGUAGE',
+    home: 'env',
+    // Not editable here, and that is the same answer every `home: 'env'` row
+    // gives: this page cannot write a hosting dashboard. What *is* editable now
+    // is the per-person choice, and it lives one section over (`#settings=account`)
+    // because it belongs to the reader rather than to the deployment.
+    editable: false,
+    expose: 'value',
+    // The resolver the interface actually uses, so this row cannot claim a
+    // language the app would not render. An unset or misspelt variable shows the
+    // product default rather than the typo — the same reasoning as MCP_TOKEN_ROLE.
+    resolve: (raw) => normalizeLocale(raw) ?? DEFAULT_LOCALE,
   },
 ];
 
@@ -239,14 +260,18 @@ export const REGISTRY: readonly SettingDeclaration[] = [
  * and shape, and an absent field cannot be un-redacted by a client that decides
  * to render it anyway.
  */
-export function declareSetting(decl: SettingDeclaration, raw: string | undefined | null): DeclaredSetting {
+export function declareSetting(
+  decl: SettingDeclaration,
+  raw: string | undefined | null,
+  locale: Locale = DEFAULT_LOCALE,
+): DeclaredSetting {
   // Trimmed before anything else, so a variable set to spaces in a hosting
   // dashboard reads as the typo it is rather than as a configured value.
   const value = (raw ?? '').trim();
   const out: DeclaredSetting = {
     key: decl.key,
-    group: decl.group,
-    label: decl.label,
+    group: translate(locale, decl.groupKey),
+    label: translate(locale, decl.labelKey),
     home: decl.home,
     editable: decl.editable,
     set: value !== '',
@@ -256,12 +281,19 @@ export function declareSetting(decl: SettingDeclaration, raw: string | undefined
 }
 
 /**
- * Read this instance's values into every declaration.
+ * Read this instance's values into every declaration, in the caller's language.
  *
  * `read` is the runtime's own environment accessor — `Deno.env.get`, the Node
  * cascade's `envValue`, or `process.env` in the dev middleware. Passing it in is
  * what keeps this module out of `node:*` and therefore usable in all three.
+ *
+ * `locale` defaults rather than being required, because two of the three runtimes
+ * reach this before they have resolved a caller — and a page of untranslated keys
+ * is a worse answer to „who is asking?" than a page in the product default.
  */
-export function declaredSettings(read: (key: string) => string | undefined | null): DeclaredSetting[] {
-  return REGISTRY.map((decl) => declareSetting(decl, read(decl.key)));
+export function declaredSettings(
+  read: (key: string) => string | undefined | null,
+  locale: Locale = DEFAULT_LOCALE,
+): DeclaredSetting[] {
+  return REGISTRY.map((decl) => declareSetting(decl, read(decl.key), locale));
 }
