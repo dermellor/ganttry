@@ -46,6 +46,7 @@ import {
 } from '../../src/access.ts';
 import type { SavedViewCaller } from '../../src/savedViews.ts';
 import { declaredSettings } from '../../src/settings.ts';
+import { normalizeLocale } from '../../src/i18n/locale.ts';
 
 /** What the runtime resolved before dispatching: connections plus who is asking. */
 export type ApiContext = {
@@ -174,6 +175,7 @@ export const OWNED_API_PATHS = [
   '/api/plugins/*',
   '/api/members',
   '/api/settings',
+  '/api/preferences',
 ] as const;
 
 /**
@@ -469,6 +471,65 @@ export async function handleApiRequest(req: Request, ctx: ApiContext): Promise<R
       );
     }
     return json({ settings: declaredSettings(ctx.env) });
+  }
+
+  if (path === '/api/preferences') {
+    // What this person set for themselves, and the only writable per-person state
+    // the deployment holds. A route of its own rather than a field on `/api/me`:
+    // that one is a *probe* — who am I, what may I do — answered by three
+    // different runtimes with three different implementations, and the
+    // self-hosted server does not answer it at all. Putting a write there would
+    // mean building it three times and shipping it on two of them.
+    //
+    // `read` is the capability, not `manage`: this is the caller's own row. A
+    // `viewer` has to be able to set their own language, or the role that most
+    // needs a readable interface is the one that cannot choose it.
+    const repo = resolveRepo(ctx.conns);
+    const email = ctx.caller?.email ?? null;
+
+    if (method === 'GET') {
+      // No database, or nobody to be: the honest answer is „nothing stored", and
+      // the client then keeps what the device remembers. Not an error — that is
+      // the normal state of a file-backed instance rather than a fault, and the
+      // interface says so where the setting is („Nur auf diesem Gerät").
+      if (!repo || !email) return json({ language: null });
+      try {
+        return json({ language: await repo.getUserLanguage(email) });
+      } catch {
+        // A schema that predates migration 0025 must not take this route down:
+        // the language then reads as unset and the device's answer stands, which
+        // is exactly the behaviour before the column existed. Same reasoning as
+        // the graceful degradation on a schema lag in `9b83832`.
+        return json({ language: null });
+      }
+    }
+
+    if (method === 'PATCH') {
+      if (!email) {
+        return json({ error: 'no_identity', message: 'This deployment does not know who is asking.' }, 400);
+      }
+      const body = (await req.json().catch(() => null)) as { language?: unknown } | null;
+      if (!body || !('language' in body)) return json({ error: 'language required' }, 400);
+      // `null` clears the choice, which is the way back to following the
+      // deployment's default — a different act from picking that default, which
+      // would stop tracking it. Anything else has to be a language this build
+      // actually has messages for, or the row would name one nothing renders.
+      const language = body.language === null ? null : normalizeLocale(body.language);
+      if (body.language !== null && !language) {
+        return json({ error: 'unsupported_language', message: 'This build has no messages for that language.' }, 400);
+      }
+      if (!repo) {
+        // Nowhere to write, and that is not a failure the person should see as
+        // one: the device remembers instead. Reporting `stored: false` lets the
+        // client tell „saved for everyone" from „saved here" without guessing
+        // from the source kind.
+        return json({ language, stored: false });
+      }
+      await repo.setUserLanguage(email, language);
+      return json({ language, stored: true });
+    }
+
+    return json({ error: 'method not allowed' }, 405);
   }
 
   if (path === '/api/users') {

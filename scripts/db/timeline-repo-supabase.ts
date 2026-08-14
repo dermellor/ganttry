@@ -194,6 +194,39 @@ export async function touchUser(db: SupabaseClient, email: string, name?: string
   if (error) throw new Error(`touchUser: ${error.message}`);
 }
 
+// ---- interface language (app_users.language, migration 0025) ---------------
+// The raw column, not a resolved locale: „has not chosen" and „chose English"
+// are different facts, and only the caller knows the instance default to fall
+// back to. See the postgres.js driver for the full reasoning.
+
+export async function getUserLanguage(db: SupabaseClient, email: string): Promise<string | null> {
+  const clean = email.trim().toLowerCase();
+  if (!clean) return null;
+  const { data, error } = await db
+    .from('app_users')
+    .select('language')
+    .ilike('email', clean)
+    .maybeSingle();
+  if (error) throw new Error(`getUserLanguage: ${error.message}`);
+  return (data?.language as string | null) ?? null;
+}
+
+export async function setUserLanguage(
+  db: SupabaseClient,
+  email: string,
+  language: string | null,
+): Promise<void> {
+  const clean = email.trim();
+  if (!clean) return;
+  // `language` is present in the payload even when null, unlike `touchUser`'s
+  // optional name: writing null here is the deliberate „clear my choice", so
+  // PostgREST has to set the column rather than leave it alone.
+  const { error } = await db
+    .from('app_users')
+    .upsert({ email: clean, language }, { onConflict: 'email' });
+  if (error) throw new Error(`setUserLanguage: ${error.message}`);
+}
+
 // ---- membership (app_users, migration 0016) --------------------------------
 // The same rows the directory above serves, read through the columns that decide
 // what a person may do. One table on purpose: see the migration's header.
@@ -1334,6 +1367,8 @@ export function makeSupabaseRepo(db: SupabaseClient): TimelineRepo {
     listTimelines: () => listTimelines(db),
     listUsers: () => listUsers(db),
     touchUser: (email, name) => touchUser(db, email, name),
+    getUserLanguage: (email) => getUserLanguage(db, email),
+    setUserLanguage: (email, language) => setUserLanguage(db, email, language),
     getMember: (email) => getMember(db, email),
     listMembers: () => listMembers(db),
     inviteMember: (input) => inviteMember(db, input),

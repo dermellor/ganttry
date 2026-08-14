@@ -487,6 +487,42 @@ export const ROUTES: RouteDef[] = [
     ],
   },
   {
+    path: '/api/preferences',
+    operations: [
+      {
+        method: 'GET',
+        summary: 'What the caller set for themselves',
+        description:
+          "The caller's own preferences — today the interface language, and the only writable per-person state a deployment holds. `language` is `de`, `en`, or `null` for somebody who has never chosen; `null` is deliberately a different answer from the default, because a caller who has not chosen follows the deployment's `TIMELINES_DEFAULT_LANGUAGE` and stops following it the moment a value is stored.\n\nA deployment with no database, and one that does not know who is asking, both answer `null` rather than an error: that is the normal state of a file-backed instance, not a fault, and the client keeps what the device remembers. A schema predating the `app_users.language` migration answers `null` too, so a migration lag degrades the setting instead of taking the route down.",
+        responses: {
+          ...commonErrors(),
+          '200': {
+            description: 'The stored preferences.',
+            schema: { type: 'object', properties: { language: { type: 'string', nullable: true, enum: ['de', 'en', null] } } },
+          },
+        },
+      },
+      {
+        method: 'PATCH',
+        summary: 'Record a preference',
+        description:
+          "Stores the caller's interface language. `null` clears the choice, which returns them to following the deployment's default — not the same act as picking that default, which would stop tracking it.\n\nNeeds `read` rather than `manage`: this is the caller's own row, and a `viewer` who cannot set their own language would be the role that most needs a readable interface being the one that cannot choose it. A language this build has no messages for is refused rather than stored, so a row can never name one nothing renders. `stored` reports whether it reached a database, which is what lets the interface distinguish a preference that reached the database from one only this device knows.",
+        requestBody: {
+          description: 'The preference to set.',
+          schema: { type: 'object', required: ['language'], properties: { language: { type: 'string', nullable: true, enum: ['de', 'en', null] } } },
+        },
+        responses: {
+          ...commonErrors(),
+          '200': {
+            description: 'What was stored.',
+            schema: { type: 'object', properties: { language: { type: 'string', nullable: true }, stored: { type: 'boolean' } } },
+          },
+          '400': { description: 'No identity, a missing `language`, or a language this build has no messages for.' },
+        },
+      },
+    ],
+  },
+  {
     path: '/api/me',
     operations: [
       {

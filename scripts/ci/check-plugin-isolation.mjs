@@ -72,7 +72,7 @@ const LITERAL_ALLOWLIST = new Map([
  */
 const REPO_METHODS = [
   'listTimelines', 'getTimeline', 'getWatermark',
-  'listUsers', 'touchUser',
+  'listUsers', 'touchUser', 'getUserLanguage', 'setUserLanguage',
   'getMember', 'listMembers', 'inviteMember', 'updateMemberRole', 'setMemberStatus',
   'replaceTimeline', 'updateMeta', 'updatePhases',
   'addItem', 'updateItem', 'getItem', 'deleteItem',

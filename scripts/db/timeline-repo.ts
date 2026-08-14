@@ -224,6 +224,44 @@ export async function touchUser(sql: Sql, email: string, name?: string | null): 
           last_seen_at = now()`;
 }
 
+// ---- interface language (app_users.language, migration 0025) ---------------
+// The one per-person preference the deployment stores. It sits on the directory
+// row rather than in a preferences table because that is where per-person facts
+// already live, and one nullable column does not earn a table of its own.
+//
+// Reading returns the **raw** column rather than a resolved locale: „has not
+// chosen" and „chose English" are different facts, and only the caller knows the
+// instance default to fall back to (src/i18n/locale.ts, `resolveLocale`). A repo
+// method that resolved here would have to read the environment, which is exactly
+// what this layer does not do.
+
+export async function getUserLanguage(sql: Sql, email: string): Promise<string | null> {
+  const clean = email.trim().toLowerCase();
+  if (!clean) return null;
+  const [row] = await sql`select language from app_users where lower(email) = ${clean}`;
+  return row?.language ?? null;
+}
+
+/**
+ * Record somebody's choice.
+ *
+ * An upsert, not an update: on an instance with access control **off** there is no
+ * invitation flow, so the row is created by `touchUser` on first read — and a
+ * person who switches language before anything has touched them would otherwise
+ * update nothing and get no error, which reads as „the setting does not stick".
+ *
+ * `null` clears the choice, which is the way back to following the deployment's
+ * own default. That is not the same as writing the default in: a stored value
+ * stops tracking `TIMELINES_DEFAULT_LANGUAGE` the moment an operator changes it.
+ */
+export async function setUserLanguage(sql: Sql, email: string, language: string | null): Promise<void> {
+  const clean = email.trim();
+  if (!clean) return;
+  await sql`
+    insert into app_users (email, language) values (${clean}, ${language})
+    on conflict (email) do update set language = ${language}`;
+}
+
 // ---- membership (app_users, migration 0016) --------------------------------
 // The same rows the directory above serves, read through the columns that decide
 // what a person may do. One table on purpose: see the migration's header.
@@ -1220,6 +1258,8 @@ export function makePostgresRepo(sql: Sql): TimelineRepo {
     listTimelines: () => listTimelines(sql),
     listUsers: () => listUsers(sql),
     touchUser: (email, name) => touchUser(sql, email, name),
+    getUserLanguage: (email) => getUserLanguage(sql, email),
+    setUserLanguage: (email, language) => setUserLanguage(sql, email, language),
     getMember: (email) => getMember(sql, email),
     listMembers: () => listMembers(sql),
     inviteMember: (input) => inviteMember(sql, input),

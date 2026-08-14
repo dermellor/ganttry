@@ -57,6 +57,15 @@
   function = "timelines-api"
   path = "/api/settings"
 
+# The caller's own preferences — today the interface language (#153). The same
+# function again: it needs the database to read and write the row, and it is the
+# one per-person setting a deployment stores. `read`, not `manage`: it is the
+# caller's own row, and a viewer who cannot set their own language is the role
+# that most needs a readable interface being the one that cannot choose it.
+[[edge_functions]]
+  function = "timelines-api"
+  path = "/api/preferences"
+
 # PUBLIC pricing model for external marketing pages (Astro). No auth (see
 # auth.ts excludedPath); serves only the pricing model, never roadmap items.
 # Kept as-is while product-roadmap's data still lives in the pricing_* tables;
