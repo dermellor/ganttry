@@ -73,3 +73,15 @@ The site is English. Half of these questions were harvested in German, and the G
 results are answered by directories rather than by pages with a position, which makes
 that the weaker-defended half. No German page exists and none is planned here; this
 paragraph is the record of that being a decision rather than an oversight.
+
+**The product's interface is German, and the harvest missed that as a question.** There
+is no translation layer in Zeitlines: the strings are German literals in the code, the
+split is deliberate (`CONTRIBUTING.md`), and even the timeline sort is pinned to German
+collation. So an English page showing English prose around a German interface invites a
+reader to expect something they will not get, which is why the sprints page now states
+it beside the first screenshot and in the answer about what running it needs.
+
+„Is the interface available in English" is a question a reader will have and this harvest
+did not surface, because it was run on the domain („sprint tool", „burndown") rather
+than on the product. The next harvest asks it, and until there is an answer in code the
+pages carry the fact rather than the hope.
