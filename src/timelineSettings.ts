@@ -17,6 +17,7 @@ import {
   Button,
   Callout,
   Field,
+  Heading,
   Select,
   setSelectOptions,
   Text,
@@ -34,10 +35,17 @@ import {
   type AreaSection,
 } from './areaFrame';
 import { els, state, syncUrl } from './state';
-import { groupByChoices, timelineMetaDraft, timelineMetaPatch } from './timelineMeta';
+import {
+  graphGroupChoices,
+  groupByChoices,
+  groupOrderChoices,
+  timelineMetaDraft,
+  timelineMetaPatch,
+} from './timelineMeta';
 import { apiUpdateMeta } from './editor';
 import { mountFieldsSection, unmountFields } from './fieldsSection';
 import { filterBuildForDisplay, renderTimeline, timelineItems } from './render';
+import { UNGROUPED } from './buildItems';
 import { t } from './i18n';
 
 /**
@@ -88,6 +96,32 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
   setSelectOptions(groupBy, groupByChoices(file).map((c) => ({ value: c.value, label: c.label })));
   groupBy.value = current.groupBy;
 
+  const groupOrder = Select({ id: 'tl-grouporder', disabled: !editable });
+  setSelectOptions(groupOrder, groupOrderChoices());
+  groupOrder.value = current.groupOrder;
+
+  // A read-only source shows these disabled rather than hiding them: a setting that
+  // is read by the code and shown nowhere is the bug #137 was filed for, and „you
+  // may not change this here" is a different statement from „this does not exist".
+  // The **unfiltered** build's groups, not the displayed ones: which groups a
+  // timeline has is a property of the timeline, and reading the filtered set would
+  // drop the option for a group the reader has switched off right now — the same
+  // reasoning `groupByChoices` follows one field above.
+  const discovered = state.activeBuild?.groups ?? [];
+  const bandRootGroup = Select({ id: 'tl-graph-roots', disabled: !editable });
+  setSelectOptions(
+    bandRootGroup,
+    graphGroupChoices(file, discovered, current.bandRootGroup, UNGROUPED),
+  );
+  bandRootGroup.value = current.bandRootGroup;
+
+  const referenceGroup = Select({ id: 'tl-graph-refs', disabled: !editable });
+  setSelectOptions(
+    referenceGroup,
+    graphGroupChoices(file, discovered, current.referenceGroup, UNGROUPED),
+  );
+  referenceGroup.value = current.referenceGroup;
+
   const status = Text({
     as: 'p',
     text: notice,
@@ -107,6 +141,9 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
       name: name.value,
       description: description.value,
       groupBy: groupBy.value,
+      groupOrder: groupOrder.value,
+      bandRootGroup: bandRootGroup.value,
+      referenceGroup: referenceGroup.value,
     });
     // „Nothing changed" is said rather than swallowed: a save button that answers a
     // click with silence reads as a save that failed.
@@ -152,6 +189,25 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
         hint: t('form.preset'),
         control: groupBy,
         htmlFor: 'tl-groupby',
+      }),
+      Field({
+        label: t('timeline.settings.groupOrder'),
+        control: groupOrder,
+        htmlFor: 'tl-grouporder',
+      }),
+      // A heading rather than „Graph: …" twice in the labels: the two settings
+      // below only steer that one presentation, and naming it once is what lets
+      // each label be about its group instead of repeating where it lands.
+      Heading({ level: 3, text: t('timeline.settings.graph'), className: 'setting-group-title' }),
+      Field({
+        label: t('timeline.settings.graph.bandRoots'),
+        control: bandRootGroup,
+        htmlFor: 'tl-graph-roots',
+      }),
+      Field({
+        label: t('timeline.settings.graph.references'),
+        control: referenceGroup,
+        htmlFor: 'tl-graph-refs',
       }),
       el('div', { class: 'settings-actions' }, [save, status]),
     ]),
