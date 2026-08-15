@@ -102,6 +102,15 @@ jobs:
       - name: No plugin has a privilege a third party lacks
         run: node scripts/ci/check-plugin-isolation.mjs
 
+      # The other direction: the SERVER must not carry the interface. A Netlify
+      # Function is bundled by esbuild, which has no loader for a `.css` import, so
+      # a server module that reaches one takes every deploy down — while the site
+      # keeps serving the last good one and the smoke test still answers. That gap
+      # cost a day of unshipped merges; this closes it in CI, which is the only
+      # place that sees it before Netlify does.
+      - name: The server bundle carries no interface
+        run: npm run server-bundle:check
+
       # Non-blocking for now: the repo carries 2 pre-existing type errors (missing
       # @types/ws, one library signature mismatch). It was 7 until the notes
       # pipeline went, taking the four Dirent ones in its directory walk with it,

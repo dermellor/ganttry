@@ -16,7 +16,7 @@ import {
   Select,
   TextArea,
   TextInput,
-} from '../../pluginHost/api';
+} from '../../pluginHost/viewApi';
 import type { PricingFeature } from './types';
 import { apiAddFeature, apiUpdateFeature, apiDeleteFeature, apiMoveFeature } from './api';
 import { applyRow, dropRow, dropRowsWhere, orderRows, patchRows } from './store';

@@ -19,7 +19,7 @@ import {
   Text,
   TextInput,
   type Child,
-} from '../../pluginHost/api';
+} from '../../pluginHost/viewApi';
 import { file, status } from './host';
 import { apiSetTierValue } from './api';
 import { applyRow, dropRow } from './store';
