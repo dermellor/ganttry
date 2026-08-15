@@ -57,6 +57,7 @@ import {
   ToolbarGroup,
   ViewSection,
 } from './design-system';
+import { t } from './i18n';
 
 /** The nodes the app wires behaviour to. `state.ts` re-exports this as `els`. */
 export type AppShellElements = {
@@ -159,7 +160,11 @@ type DetailPanelParts = {
 function detailPanel(interactive: boolean): DetailPanelParts {
   const detailTitle = Heading({ level: 2, attrs: { id: 'detail-title' } });
   const detailTools = PanelTools({ hidden: true, attrs: { id: 'detail-tools' } });
-  const header = PanelHeader({ title: detailTitle, tools: interactive ? detailTools : undefined });
+  const header = PanelHeader({
+    title: detailTitle,
+    tools: interactive ? detailTools : undefined,
+    closeLabel: t('form.close'),
+  });
   const detailMeta = DescriptionList({ attrs: { id: 'detail-meta' } });
   // The exported page only ever shows a rendered note, so there the body it
   // writes into *is* a `Prose`. In the app the same element also holds the edit
@@ -212,7 +217,7 @@ export type SettingsFrame = {
 function settingsFrame(id: string, title: string, closeLabel: string): SettingsFrame {
   const nav = Tabs({
     orientation: 'vertical',
-    ariaLabel: 'Bereiche',
+    ariaLabel: t('view.areas'),
     className: 'settings-nav',
     attrs: { id: `${id}-nav` },
   });
@@ -246,7 +251,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // and grouped by origin, neither of which a select can do, and the trigger doubles
   // as the statement of which document you are in (see src/timelineSwitcher.ts).
   const switcherBtn = Button({
-    label: 'Timeline',
+    label: t('view.timeline'),
     variant: 'trigger',
     attrs: {
       id: 'switcher-btn',
@@ -257,7 +262,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   });
   const switcherSearch = TextInput({
     id: 'switcher-search',
-    placeholder: 'Suchen…',
+    placeholder: t('app.search'),
     bare: true,
     attrs: { autocomplete: 'off', role: 'combobox', 'aria-controls': 'switcher-list', 'aria-expanded': 'true' },
   });
@@ -268,7 +273,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   );
   const switcherList = SuggestList({
     hidden: true,
-    ariaLabel: 'Timelines',
+    ariaLabel: t('app.timelines'),
     attrs: { id: 'switcher-list' },
   });
   // No caption: the trigger shows a timeline's name and opens a list grouped by
@@ -288,12 +293,12 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     // (`config.views[]`, `?view=`), so the interface must not spend the same word on
     // the way one is drawn. See „What this leaves alone" in
     // docs/information-architecture.md.
-    ariaLabel: 'Darstellung',
+    ariaLabel: t('view.presentation'),
     attrs: { id: 'mode-toggle' },
     segments: [
-      { value: 'timeline', label: 'Timeline', icon: fromHtml(TIMELINE_ICON), selected: true },
-      { value: 'list', label: 'Liste', icon: fromHtml(LIST_ICON) },
-      { value: 'graph', label: 'Graph', icon: fromHtml(GRAPH_ICON) },
+      { value: 'timeline', label: t('view.timeline'), icon: fromHtml(TIMELINE_ICON), selected: true },
+      { value: 'list', label: t('view.list'), icon: fromHtml(LIST_ICON) },
+      { value: 'graph', label: t('view.graph'), icon: fromHtml(GRAPH_ICON) },
     ],
   });
   // Where each plugin's own control goes: beside the built-in switch, not inside it.
@@ -323,11 +328,11 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     // `--ui-icon-*` is for — and being the only glyph outside icons.css is how this
     // one stayed a sun through several passes over the header.
     icon: Icon({ name: 'gear', chrome: true, size: 'md', standalone: true }),
-    ariaLabel: 'Einstellungen dieser Timeline',
+    ariaLabel: t('app.settings.timeline'),
     boxSize: 'md',
     attrs: { id: 'tl-settings-btn', hidden: true },
   });
-  const presence = AvatarStack({ ariaLabel: 'Online', hidden: true, attrs: { id: 'presence' } });
+  const presence = AvatarStack({ ariaLabel: t('app.online'), hidden: true, attrs: { id: 'presence' } });
   // The instance's own controls, behind one trigger at the trailing edge.
   //
   // „Einstellungen" was an outline button sitting in the row itself, which was
@@ -344,7 +349,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // regardless of what is behind it, so the menu is findable on an instance where
   // neither applies (see refreshAppMenu in src/appMenu.ts).
   const settingsBtn = MenuItem({
-    label: 'Einstellungen',
+    label: t('app.settings'),
     attrs: { id: 'settings-btn', hidden: true },
   });
   // A navigation rather than a fetch: the gate answers with a 302 that also clears
@@ -352,7 +357,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // where there is no session to end — a static deploy and the dev server have no
   // gate, and an entry that 404s is worse than none.
   const logoutBtn = MenuItem({
-    label: 'Abmelden',
+    label: t('app.signOut'),
     attrs: { id: 'logout-btn', hidden: true },
   });
   // What the menu says when neither row applies, which is the normal state of an
@@ -362,14 +367,14 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // the alternative (hiding the trigger too) makes the whole menu invisible on
   // every instance it is developed on.
   const appMenuEmpty = MenuItem({
-    label: 'Keine Instanz-Aktionen',
+    label: t('app.noInstanceActions'),
     none: true,
     disabled: true,
     attrs: { id: 'app-menu-empty', hidden: true },
   });
   const appMenu = Menu({
     hidden: true,
-    ariaLabel: 'Menü',
+    ariaLabel: t('app.menu'),
     alignEnd: true,
     minWidth: 180,
     attrs: { id: 'app-menu' },
@@ -377,7 +382,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   });
   const appMenuBtn = IconButton({
     icon: Icon({ name: 'menu', chrome: true, size: 'md', standalone: true }),
-    ariaLabel: 'Menü',
+    ariaLabel: t('app.menu'),
     boxSize: 'md',
     attrs: {
       id: 'app-menu-btn',
@@ -387,9 +392,9 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     },
   });
   const addBtn = Button({
-    label: '+ Eintrag',
+    label: t('item.create'),
     variant: 'outline',
-    ariaLabel: 'Neuen Eintrag hinzufügen',
+    ariaLabel: t('item.create.aria'),
     attrs: { id: 'add-btn', hidden: true },
   });
 
@@ -449,12 +454,12 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   const savedViewsToggle = Button({
     variant: 'trigger',
     icon: Icon({ name: 'view', chrome: true, size: 'sm', standalone: true }),
-    ariaLabel: 'Gespeicherte Ansichten',
+    ariaLabel: t('savedView.plural'),
     attrs: { id: 'saved-views-toggle', 'aria-haspopup': 'true', 'aria-expanded': 'false' },
   });
   const savedViewsMenu = Popover({
     role: 'group',
-    ariaLabel: 'Gespeicherte Ansichten',
+    ariaLabel: t('savedView.plural'),
     scroll: true,
     hidden: true,
     attrs: { id: 'saved-views-menu' },
@@ -473,7 +478,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // which accessories apply (see main.ts), so each of them has to be hideable on
   // its own.
   const groupByControl = ToolbarControl({
-    label: 'Gruppieren',
+    label: t('view.grouping'),
     attrs: { id: 'groupby-control' },
     children: groupBy,
   });
@@ -481,13 +486,13 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // once, so picking one was a step that bought nothing and a limit that cost the
   // combination of two narrowings (see src/filterControl.ts).
   const filterToggle = Button({
-    label: 'Alle Werte',
+    label: t('filter.all'),
     variant: 'trigger',
     attrs: { id: 'filter-toggle', 'aria-haspopup': 'true', 'aria-expanded': 'false', hidden: true },
   });
   const filterMenu = Popover({
     role: 'group',
-    ariaLabel: 'Filterwerte',
+    ariaLabel: t('view.filterValues'),
     scroll: true,
     hidden: true,
     attrs: { id: 'filter-menu' },
@@ -496,7 +501,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     // Not a `<label>`: the trigger is a button, and a label element pointing at it
     // would duplicate its own accessible name.
     labelled: false,
-    label: 'Filter',
+    label: t('view.filter'),
     attrs: { id: 'filter-control' },
     children: ToolbarAnchor({ children: [filterToggle, filterMenu] }),
   });
@@ -537,7 +542,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
 
   const timeline = ViewSection({
         tone: 'chart',
-        ariaLabel: 'Timeline',
+        ariaLabel: t('view.timeline'),
         // `timeline` is the chart adapter's own hook: src/styles/timeline.css
         // scopes vis-timeline's furniture — the item rail, the status marks, the
         // phase band — to it. Not a design-system class, and deliberately so
@@ -547,7 +552,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       });
   const listBody = ScrollArea({ attrs: { id: 'list-body' } });
   const list = ViewSection({
-    ariaLabel: 'Liste',
+    ariaLabel: t('view.list'),
     hidden: true,
     attrs: { id: 'list' },
     children: listBody,
@@ -557,7 +562,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // scrollbar over a surface that already answers the drag gesture is two ways to
   // move one picture.
   const graph = ViewSection({
-    ariaLabel: 'Graph',
+    ariaLabel: t('view.graph'),
     hidden: true,
     attrs: { id: 'graph' },
   });
@@ -573,11 +578,11 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // is true of the open timeline. Built from one function rather than twice, since
   // the second one arrived by copying the first in the draft and the copies had
   // already drifted apart by a heading level.
-  const instanceArea = settingsFrame('settings', 'Einstellungen', 'Einstellungen schließen');
+  const instanceArea = settingsFrame('settings', t('app.settings'), t('app.settings.close'));
   const timelineArea = settingsFrame(
     'timeline-settings',
     'Timeline-Einstellungen',
-    'Timeline-Einstellungen schließen',
+    t('app.settings.timeline.close'),
   );
 
   const main = AppMain({
@@ -589,9 +594,9 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // in the footer rather than in a settings screen because the answer is usually
   // wanted while looking at a timeline that is missing something.
   const pluginsBtn = Button({
-    label: 'Plugins',
+    label: t('app.plugins'),
     variant: 'link',
-    ariaLabel: 'Installierte Plugins und ihr Zustand',
+    ariaLabel: t('app.plugins.state'),
     attrs: { id: 'plugins-btn', 'aria-haspopup': 'true', 'aria-expanded': 'false' },
   });
   const pluginsPanel = el('div', {
@@ -688,7 +693,7 @@ export function exportShellHtml(title: string): string {
     children: [
       ViewSection({
         tone: 'chart',
-        ariaLabel: 'Timeline',
+        ariaLabel: t('view.timeline'),
         // `timeline` is the chart adapter's own hook: src/styles/timeline.css
         // scopes vis-timeline's furniture — the item rail, the status marks, the
         // phase band — to it. Not a design-system class, and deliberately so

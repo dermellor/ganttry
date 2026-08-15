@@ -5,8 +5,9 @@
 
 import type { TimelineItem } from './buildItems';
 import { ITEM_STATUSES } from './status';
-import { ITEM_TYPES } from './itemType';
+import { itemTypes } from './itemType';
 import type { CustomFieldDef } from './types';
+import { t } from './i18n';
 
 export const GROUP_DIM = 'group';
 export const TAG_DIM = 'tag';
@@ -86,13 +87,13 @@ export function groupByOptions(
   entries: TimelineItem[],
   customFields: CustomFieldDef[],
 ): GroupByOption[] {
-  const opts: GroupByOption[] = [{ key: GROUP_DIM, label: 'Gruppe' }];
-  if (entries.some((it) => (it.tags?.length ?? 0) > 0)) opts.push({ key: TAG_DIM, label: 'Tag' });
-  if (entries.some((it) => it.status)) opts.push({ key: STATUS_DIM, label: 'Status' });
+  const opts: GroupByOption[] = [{ key: GROUP_DIM, label: t('dimension.group') }];
+  if (entries.some((it) => (it.tags?.length ?? 0) > 0)) opts.push({ key: TAG_DIM, label: t('dimension.tag') });
+  if (entries.some((it) => it.status)) opts.push({ key: STATUS_DIM, label: t('dimension.status') });
   // On evidence, like Status: a timeline whose items are all ranges has one
   // bucket here, and narrowing to „the only kind there is" does nothing. Two
   // distinct kinds is exactly the case „nur Meilensteine" existed for.
-  if (new Set(entries.map((it) => it.type)).size > 1) opts.push({ key: TYPE_DIM, label: 'Typ' });
+  if (new Set(entries.map((it) => it.type)).size > 1) opts.push({ key: TYPE_DIM, label: t('dimension.type') });
   for (const f of customFields) opts.push({ key: `${CF_PREFIX}${f.key}`, label: dimensionLabel(f) });
   return opts;
 }
@@ -102,7 +103,7 @@ export function groupByOptions(
 // declares nothing and is ordered by first appearance.
 function declaredOrder(dim: string, ctx: SectionContext): { value: string; label?: string }[] {
   if (dim === STATUS_DIM) return ITEM_STATUSES.map((s) => ({ value: s.key, label: s.label }));
-  if (dim === TYPE_DIM) return ITEM_TYPES.map((t) => ({ value: t.key, label: t.label }));
+  if (dim === TYPE_DIM) return itemTypes().map((it) => ({ value: it.key, label: it.label }));
   if (dim.startsWith(CF_PREFIX)) {
     return ctx.customFields.find((f) => `${CF_PREFIX}${f.key}` === dim)?.options ?? [];
   }
@@ -112,7 +113,7 @@ function declaredOrder(dim: string, ctx: SectionContext): { value: string; label
 // Human label of the "Ohne …" fallback bucket for the active dimension.
 function emptyBucketLabel(dim: string, options: GroupByOption[]): string {
   const opt = options.find((o) => o.key === dim);
-  return `Ohne ${opt ? opt.label : 'Gruppe'}`;
+  return t('filter.emptyBucket', { field: opt ? opt.label : t('dimension.group') });
 }
 
 // Split entries (assumed start-sorted) into ordered sections for the active

@@ -44,7 +44,13 @@
 // first date-shaped plugin had to restate the rules, and its reconstruction of a
 // burndown burned every `duration`-only item on the day it started, because resolving
 // an item's real end was the one piece the contract did not carry.
-export const HOST_API_VERSION = { major: 1, minor: 6 } as const;
+// 1.7 added `pluginMessages`, plus the host's locale-aware `formatDay`,
+// `formatNumber` and `compare`, when the interface language became a per-person
+// setting (#153). Additive: a plugin that declares neither keeps running and
+// keeps showing the one language it was written in, which is the behaviour every
+// plugin had before this existed. A plugin whose text should follow the reader
+// says `^1.7`, because on an older host `pluginMessages` is not there to import.
+export const HOST_API_VERSION = { major: 1, minor: 7 } as const;
 
 export type ApiVersion = { major: number; minor: number };
 

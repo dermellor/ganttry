@@ -49,9 +49,9 @@ import {
   type SelectOption,
   type SelectOptionGroup,
 } from './design-system';
-import { TIMELINE_ICONS } from './icons';
+import { timelineIcons } from './icons';
 import { ITEM_STATUSES, statusOrDefault, statusToStore, type StatusKey } from './status';
-import { ITEM_TYPES, type ItemTypeKey } from './itemType';
+import { itemTypes, type ItemTypeKey } from './itemType';
 import { findItemIndex, isoDateOnly } from './editor';
 import { applyFieldPick, writeListMeta } from './fieldValue';
 import { createMarkdownEditor, type MarkdownEditor } from './wysiwyg';
@@ -84,6 +84,7 @@ import {
 import { rebuildAndApply } from './render';
 import { focusDetailTitle, hideDetail, setDetailTitle, setDetailTitleText } from './detailPanel';
 
+import { compare, formatDateTime, locale, t } from './i18n';
 // Build the group <select> options. Parent groups (those with nestedGroups) are
 // containers only, so they render as a non-selectable <optgroup> heading and
 // only their leaf children appear as options — an item can never be assigned to
@@ -267,19 +268,27 @@ function svgMark(body: string): () => Element {
     );
 }
 
-const ICON_SPEC: PickerSpec = {
-  name: 'icon',
-  title: 'Icon',
-  layout: 'grid',
-  options: [
-    { value: '', label: 'kein Icon', mark: () => el('span', {}, '—') },
-    ...TIMELINE_ICONS.map(({ key, label }) => ({
-      value: key,
-      label,
-      mark: () => Icon({ name: key, standalone: true }),
-    })),
-  ],
-};
+// The three specs are **functions**, and that is the whole reason they changed
+// shape. As constants they were filled on import — before `initLocale()` has
+// decided the language — so every label in the header's picker row froze into
+// whichever language the page happened to boot in while the rest of the form
+// followed the setting. That reads as a broken switch rather than as a constant;
+// see „Never call `t()` at module scope" in src/i18n/index.ts.
+function iconSpec(): PickerSpec {
+  return {
+    name: 'icon',
+    title: t('form.icon'),
+    layout: 'grid',
+    options: [
+      { value: '', label: t('form.noIcon'), mark: () => el('span', {}, '—') },
+      ...timelineIcons().map(({ key, label }) => ({
+        value: key,
+        label,
+        mark: () => Icon({ name: key, standalone: true }),
+      })),
+    ],
+  };
+}
 
 // The mark *is* the temporal shape the option produces: a diamond for a
 // milestone, a bar for a range, a dashed band for a background phase.
@@ -296,34 +305,42 @@ const TYPE_MARKS: Record<ItemTypeKey, string> = {
   box: '<rect x="7" y="7" width="10" height="10" rx="1.5" />',
 };
 
-const TYPE_SPEC: PickerSpec = {
-  name: 'type',
-  title: 'Type',
-  layout: 'list',
-  options: [
-    { value: '', label: 'Automatisch', mark: svgMark('<path d="M6 3.5v5M3.5 6h5M16 13v7M12.5 16.5h7" />') },
-    ...ITEM_TYPES.map(({ key, label }) => ({
-      value: key,
-      label: key === 'background' ? `${label} (Hintergrund)` : label,
-      mark: svgMark(TYPE_MARKS[key]),
-    })),
-  ],
-};
+function typeSpec(): PickerSpec {
+  return {
+    name: 'type',
+    title: 'Type',
+    layout: 'list',
+    options: [
+      { value: '', label: t('itemType.auto'), mark: svgMark('<path d="M6 3.5v5M3.5 6h5M16 13v7M12.5 16.5h7" />') },
+      ...itemTypes().map(({ key, label }) => ({
+        value: key,
+        label: key === 'background' ? t('itemType.background.long') : label,
+        mark: svgMark(TYPE_MARKS[key]),
+      })),
+    ],
+  };
+}
 
 // Derived from ITEM_STATUSES so src/status.ts stays the single source of truth;
-// the dot takes its colour per value from CSS (`--status-<key>`).
-const STATUS_SPEC: PickerSpec = {
-  name: 'status',
-  title: 'Status',
-  layout: 'list',
-  options: ITEM_STATUSES.map(({ key, label }) => ({
-    value: key,
-    label,
-    mark: () => StatusDot({ status: key }),
-  })),
-};
+// the dot takes its colour per value from CSS (`--status-<key>`). Its labels are
+// the stored keys themselves and are deliberately not translated — see
+// src/i18n/storedValues.test.ts.
+function statusSpec(): PickerSpec {
+  return {
+    name: 'status',
+    title: 'Status',
+    layout: 'list',
+    options: ITEM_STATUSES.map(({ key, label }) => ({
+      value: key,
+      label,
+      mark: () => StatusDot({ status: key }),
+    })),
+  };
+}
 
-const PICKERS: PickerSpec[] = [ICON_SPEC, TYPE_SPEC, STATUS_SPEC];
+function pickers(): PickerSpec[] {
+  return [iconSpec(), typeSpec(), statusSpec()];
+}
 
 function pickOption(spec: PickerSpec, value: string): PickOption {
   return spec.options.find((o) => o.value === value) ?? spec.options[0];
@@ -382,7 +399,7 @@ function renderPickerTools(item: TimelineFileItem): void {
     type: item.type ?? '',
     status: statusOrDefault(item.status),
   };
-  els.detailTools.replaceChildren(...PICKERS.map((spec) => pickerNode(spec, current[spec.name])));
+  els.detailTools.replaceChildren(...pickers().map((spec) => pickerNode(spec, current[spec.name])));
   els.detailTools.hidden = false;
   els.detail.querySelector('.ds-Panel-header')?.setAttribute('data-has-tools', '');
 }
@@ -460,7 +477,7 @@ function wirePickDismiss(): void {
 
 function tabStrip(): HTMLElement {
   return Tabs({
-    ariaLabel: 'Felder',
+    ariaLabel: t('form.tabs'),
     children: FORM_TABS.map(({ id, label }) =>
       Tab({
         label,
@@ -609,7 +626,7 @@ export function showItemForm(
       chipField({
         label: 'Owner',
         inputId: 'f-owner-search',
-        placeholder: 'Person suchen…',
+        placeholder: t('form.owner.search'),
         chipRole: 'owner-chip',
         listRole: 'owner-list',
         alignEnd: true,
@@ -626,7 +643,7 @@ export function showItemForm(
       chipField({
         label: 'Tags',
         inputId: 'f-tags',
-        placeholder: 'hinzufügen…',
+        placeholder: t('form.add'),
         chipRole: 'tags-chips',
         listRole: 'tags-list',
         full: true,
@@ -636,7 +653,7 @@ export function showItemForm(
       // show exactly what the grouping and the lanes are using.
       renderCustomFields(metadata, state.activeBuild?.details.get(id)?.derived ?? {}),
       Disclosure({
-        summary: 'Erweitert',
+        summary: t('form.advanced'),
         open: !!metaJson,
         children: Field({
           label: 'Other metadata (JSON)',
@@ -671,7 +688,7 @@ export function showItemForm(
           id: 'f-duration',
           name: 'duration',
           value: durationValue,
-          placeholder: 'nur ohne End-Datum',
+          placeholder: t('form.milestoneOnly'),
         }),
       }),
       FieldError({ hidden: true, attrs: { 'data-role': 'extent-error' } }),
@@ -679,9 +696,9 @@ export function showItemForm(
 
     panel('rel', [
       chipField({
-        label: 'Übergeordnet',
+        label: t('item.parent'),
         inputId: 'f-parent',
-        placeholder: 'Eintrag suchen…',
+        placeholder: t('item.search'),
         chipRole: 'parent-chip',
         listRole: 'parent-list',
         full: true,
@@ -689,7 +706,7 @@ export function showItemForm(
       // Read-only: a child is linked from its own form, so this field shows the
       // subtree rather than editing it. Hidden until there is one.
       Field({
-        label: 'Untereinträge',
+        label: t('item.children'),
         full: true,
         hidden: true,
         attrs: { 'data-role': 'children-field' },
@@ -701,7 +718,7 @@ export function showItemForm(
       chipField({
         label: 'Depends on',
         inputId: 'f-deps',
-        placeholder: 'Eintrag suchen…',
+        placeholder: t('item.search'),
         chipRole: 'deps-chips',
         listRole: 'deps-list',
         full: true,
@@ -709,7 +726,7 @@ export function showItemForm(
       chipField({
         label: 'JIRA',
         inputId: 'f-jira',
-        placeholder: 'Ticket suchen oder Key eingeben (z. B. PROJ-123)…',
+        placeholder: t('form.jira.search'),
         chipRole: 'jira-chips',
         listRole: 'jira-list',
         full: true,
@@ -718,7 +735,7 @@ export function showItemForm(
 
     FormActions({
       centered: true,
-      children: Button({ label: 'Löschen', variant: 'danger', attrs: { 'data-action': 'delete' } }),
+      children: Button({ label: t('form.delete'), variant: 'danger', attrs: { 'data-action': 'delete' } }),
     }),
     auditBlock(item),
   ]);
@@ -767,7 +784,7 @@ export function showItemForm(
   // what explains the hairline bar on the timeline.
   showExtentError(
     form,
-    isReversedExtent(item.start, item.end) ? describeReversedExtent(item.start, item.end) : null,
+    isReversedExtent(item.start, item.end) ? describeReversedExtent(item.start, item.end, locale()) : null,
   );
   form.addEventListener('change', syncExtentBounds);
   // A point (Meilenstein) has no extent. End/Duration stay editable: entering
@@ -827,9 +844,9 @@ export function showItemForm(
   });
 
   wireFormTabs(form);
-  wirePicker(ICON_SPEC);
-  wirePicker(TYPE_SPEC, onTypePick);
-  wirePicker(STATUS_SPEC);
+  wirePicker(iconSpec());
+  wirePicker(typeSpec(), onTypePick);
+  wirePicker(statusSpec());
   wirePickDismiss();
   wireBodyEditor(form);
   wireJiraAutosuggest(form);
@@ -871,19 +888,21 @@ export function showItemForm(
 // the deployed site has no need for edit-attribution noise and local edits are
 // the only ones stamped `local`.
 
-const auditDateFmt = new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
-
+// Through the shared formatter rather than a module-scope `Intl.DateTimeFormat`.
+// The constant this replaces was built on import in `de-DE` and could not follow
+// the language setting — the same freeze `t()` at module scope causes, in the
+// half nobody looks at (see the header of src/i18n/format.ts).
 function formatAuditDate(iso?: string): string {
   if (!iso) return '';
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : auditDateFmt.format(d);
+  return Number.isNaN(d.getTime()) ? '' : formatDateTime(d);
 }
 
 function auditRow(term: string, by?: string, iso?: string, version?: number): DescriptionListEntry | null {
   const when = formatAuditDate(iso);
   if (!when && !by) return null;
   const parts: Child[] = [];
-  if (by) parts.push('von ', el('strong', {}, by));
+  if (by) parts.push(`${t('audit.by')} `, el('strong', {}, by));
   if (when) parts.push(parts.length ? ' · ' : '', when);
   if (version != null) parts.push(' · ', `v${version}`);
   return { term, value: parts };
@@ -900,11 +919,11 @@ function auditEntries(item: TimelineFileItem): DescriptionListEntry[] {
     : [];
   if (!import.meta.env.DEV) return entries;
   const rows = [
-    auditRow('Erstellt', item.createdBy, item.createdAt),
-    auditRow('Aktualisiert', item.updatedBy, item.updatedAt, item.version),
+    auditRow(t('audit.created'), item.createdBy, item.createdAt),
+    auditRow(t('audit.updated'), item.updatedBy, item.updatedAt, item.version),
   ].filter((row): row is DescriptionListEntry => row != null);
   // Nothing known yet (e.g. a freshly added item before its first save round-trip).
-  return [...entries, ...(rows.length ? rows : [{ term: 'Metadaten', value: 'noch nicht gespeichert' }])];
+  return [...entries, ...(rows.length ? rows : [{ term: t('audit.metadata'), value: t('item.unsaved') }])];
 }
 
 function auditBlock(item: TimelineFileItem): HTMLElement | null {
@@ -954,6 +973,7 @@ function renderJiraChips(form: HTMLFormElement): void {
         label: iss.summary || undefined,
         title: iss.summary || iss.key,
         removable: true,
+        removeLabel: t('form.remove'),
         onRemove: () => {
           state.formJiraIssues.splice(i, 1);
           renderJiraChips(form);
@@ -1105,6 +1125,7 @@ function wireParentPicker(form: HTMLFormElement, selfId: string): void {
               label: depLabel(state.formParent),
               title: state.formParent,
               removable: true,
+              removeLabel: t('form.remove'),
               attrs: { 'data-clear-parent': '' },
             }),
           ]
@@ -1211,11 +1232,19 @@ function renderChildren(form: HTMLFormElement, selfId: string): void {
     { start: self?.start, end: self?.end },
     childIds.map((cid) => ({ start: byId.get(cid)?.start, end: byId.get(cid)?.end })),
   );
-  const parts: string[] = [];
-  if (before) parts.push(`beginnen am ${formatDay(before)}`);
-  if (after) parts.push(`laufen bis ${formatDay(after)}`);
-  note.hidden = parts.length === 0;
-  note.textContent = parts.length ? `Untereinträge ${parts.join(' und ')}.` : '';
+  // Three whole sentences rather than one assembled around „und": a conjunction
+  // glued in at the call site pins the word order to German, and the sentence
+  // reads as a translation in every other language the moment it moves.
+  const overflow =
+    before && after
+      ? t('item.children.overflow.both', { before: formatDay(before), after: formatDay(after) })
+      : before
+        ? t('item.children.overflow.before', { before: formatDay(before) })
+        : after
+          ? t('item.children.overflow.after', { after: formatDay(after) })
+          : '';
+  note.hidden = !overflow;
+  note.textContent = overflow;
 }
 
 // "2026-07-16" → "16.07.2026". Same reading as the list view's dates; anything
@@ -1243,6 +1272,7 @@ function renderDepChips(form: HTMLFormElement): void {
         label: depLabel(depId),
         title: depId,
         removable: true,
+        removeLabel: t('form.remove'),
         onRemove: () => {
           state.formDependsOn.splice(i, 1);
           renderDepChips(form);
@@ -1424,9 +1454,9 @@ function wireOwnerPicker(form: HTMLFormElement): void {
         mark: owner.known && owner.user ? userAvatar(owner.user, 'sm') : undefined,
         label: owner.label,
         unlinked: !owner.known,
-        title: owner.known ? owner.raw : `${owner.raw} — nicht mit einem Benutzer verknüpft`,
+        title: owner.known ? owner.raw : t('form.owner.unlinked', { value: owner.raw }),
         removable: true,
-        removeLabel: 'Owner entfernen',
+        removeLabel: t('form.owner.remove'),
         onRemove: () => setOwner(''),
       }),
     );
@@ -1461,10 +1491,10 @@ function wireOwnerPicker(form: HTMLFormElement): void {
       const { status } = directoryState();
       const msg =
         status === 'unavailable'
-          ? 'Benutzerverzeichnis nicht erreichbar'
+          ? t('form.owner.unreachable')
           : status === 'empty'
-            ? 'Noch keine Benutzer erfasst'
-            : 'Kein Treffer';
+            ? t('form.owner.empty')
+            : t('form.noMatch');
       list.replaceChildren(SuggestEmpty({ text: msg }));
       list.hidden = false;
       return;
@@ -1531,7 +1561,7 @@ function collectTimelineTags(): string[] {
       if (!out.includes(t)) out.push(t);
     }
   }
-  return out.sort((a, b) => a.localeCompare(b, 'de'));
+  return out.sort(compare());
 }
 
 // Renders the tag chip list into the form, each coloured by its resolved tag
@@ -1898,14 +1928,14 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
   // Keep the caption and the timeline selection in sync with the live content
   // (rebuildAndApply reloads the DataSet, which drops the selection). Text only:
   // setDetailTitle would tear down the header's picker row mid-edit.
-  setDetailTitleText(item.content || '(unbenannt)');
+  setDetailTitleText(item.content || t('item.untitled'));
   try {
     state.timeline?.setSelection([id]);
   } catch {
     /* item may be filtered out of the current view */
   }
-  showExtentError(form, extentReversed ? describeReversedExtent(startVal, endVal) : null);
-  if (metaError) setStatus('Metadata JSON ungültig — Änderung nicht übernommen');
+  showExtentError(form, extentReversed ? describeReversedExtent(startVal, endVal, locale()) : null);
+  if (metaError) setStatus(t('refusal.metadata.invalid'));
 }
 
 /**
@@ -1978,7 +2008,7 @@ export function deleteItem(id: string): void {
   const idx = findItemIndex(state.activeSourceFile, id);
   if (idx === -1) return;
   const item = state.activeSourceFile.items[idx];
-  if (!confirm(`„${item.content}" wirklich löschen?`)) return;
+  if (!confirm(t('item.delete.confirm', { label: item.content ?? '' }))) return;
   state.activeSourceFile.items.splice(idx, 1);
   rebuildAndApply();
   schedulePersist();

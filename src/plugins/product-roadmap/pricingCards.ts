@@ -12,7 +12,14 @@ import type { TimelineFile } from '../../types';
 import type { PricingHighlight, PricingTier } from './types';
 import { currentPricing } from './compose';
 
-const DEFAULT_SECTION = 'Weitere';
+import { t } from './messages';
+
+// A function rather than a constant: the section a highlight falls into when it
+// names none is a label, and a `const` here would be read once on import — before
+// the host has resolved a language — freezing one in for the life of the tab.
+function defaultSection(): string {
+  return t('section.other');
+}
 
 // Green circle-check (included) and grey left arrow (inheritance) — same glyphs
 // as the /render output; the arrow points left toward the tier it inherits from.
@@ -28,7 +35,7 @@ function sectionsOf(highlights: PricingHighlight[]): { section: string; items: P
   const order: string[] = [];
   const by = new Map<string, PricingHighlight[]>();
   for (const h of highlights) {
-    const s = h.section?.trim() || DEFAULT_SECTION;
+    const s = h.section?.trim() || defaultSection();
     if (!by.has(s)) {
       by.set(s, []);
       order.push(s);
@@ -50,9 +57,9 @@ function highlightBadge(
   selected: string | null,
   labels?: Record<string, string>,
 ): string {
-  if (r.isNew) return '<span class="pricing-badge-new">Neu</span>';
+  if (r.isNew) return `<span class="pricing-badge-new">${escapeHtml(t('badge.new'))}</span>`;
   if (!selected && r.introducedVersion)
-    return `<span class="pricing-badge-version">ab ${escapeHtml(versionLabel(labels, r.introducedVersion))}</span>`;
+    return `<span class="pricing-badge-version">${escapeHtml(t('version.fromShort'))} ${escapeHtml(versionLabel(labels, r.introducedVersion))}</span>`;
   return '';
 }
 
@@ -99,7 +106,7 @@ export function renderCardsHtml(
   const p = currentPricing(file);
   const highlights = p.highlights ?? [];
   if (!highlights.length) {
-    return '<p class="pricing-empty">Keine Highlight-Kacheln definiert.</p>';
+    return `<p class="pricing-empty">${escapeHtml(t('empty.highlights'))}</p>`;
   }
   const sections = sectionsOf(highlights);
 
@@ -123,7 +130,7 @@ export function renderCardsHtml(
           const lines: string[] = [];
           if (inheritedCount > 0 && prev) {
             lines.push(
-              `<li class="pc-feat pc-arrow">${ARROW_SVG}<span>Alles aus <span class="pc-pill">${escapeHtml(prev.name)}</span></span></li>`,
+              `<li class="pc-feat pc-arrow">${ARROW_SVG}<span>${escapeHtml(t('card.allFrom'))} <span class="pc-pill">${escapeHtml(prev.name)}</span></span></li>`,
             );
           }
           for (const r of changed) {
@@ -135,7 +142,7 @@ export function renderCardsHtml(
 
       const suit = tier.useCase || tier.tagline || '';
       const targetBlock = tier.targetGroup
-        ? `<p class="pc-section-label">Zielgruppe</p><p class="pc-target">${escapeHtml(tier.targetGroup)}</p>`
+        ? `<p class="pc-section-label">${escapeHtml(t('tier.targetGroup'))}</p><p class="pc-target">${escapeHtml(tier.targetGroup)}</p>`
         : '';
       return (
         `<article class="pc-card">` +

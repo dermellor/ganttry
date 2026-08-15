@@ -22,6 +22,7 @@ import {
 import type { PricingFeature, PricingTier } from './types';
 import type { TimelineFileItem } from '../../types';
 
+import { setLocale } from '../../i18n';
 const doc: PricingDoc = {
   timelineId: 'demo/roadmap',
   name: 'Example Timeline',
@@ -45,12 +46,17 @@ const doc: PricingDoc = {
 };
 
 test('renders frontmatter with generated marker + timeline id', () => {
+  // The frontmatter is language-independent, the callout beneath it is not: the
+  // document's own words follow the reader since #153. Pinning the language keeps
+  // this test about „is there a generated marker", which is what it asks.
+  setLocale('de');
   const md = pricingToMarkdown(doc, { updated: '2026-07-15' });
   assert.match(md, /^---\ngenerated: true\nsource: timelines\ntimeline: demo\/roadmap\nupdated: 2026-07-15\n---/);
   assert.match(md, /Automatisch generiert/);
 });
 
 test('matrix header lists tiers and a price row', () => {
+  setLocale('de');
   const md = pricingToMarkdown(doc, { updated: '2026-07-15' });
   assert.match(md, /\| Feature \| Medium \| Enterprise \|/);
   assert.match(md, /\| \*\*Preis\*\* \| 74,95 €\/Monat \| ab 449,95 € \|/);
@@ -99,7 +105,13 @@ test('pipes in names and values are escaped inside cells', () => {
   assert.match(md, /ja \\\| nein/);
 });
 
-test('with versions: adds an "Ab Version" column carrying per-feature version', () => {
+test('with versions: adds a version column carrying the per-feature version', () => {
+  // The language is set explicitly because this pins the *shape* of the export —
+  // that a column appears at all, and what it carries — not the word in its
+  // heading. Asserting the default's wording would make this fail the day the
+  // product default changes, which is a fact about the interface and not about
+  // the export.
+  setLocale('de');
   const md = pricingToMarkdown(
     {
       timelineId: 't',
@@ -121,7 +133,8 @@ test('with versions: adds an "Ab Version" column carrying per-feature version', 
   assert.match(md, /\| Immer \| ✓ \|  \|/); // no version → blank cell
 });
 
-test('without versions: no "Ab Version" column', () => {
+test('without versions: no version column', () => {
+  setLocale('de');
   const md = pricingToMarkdown(doc, { updated: '2026-07-15' });
   assert.doesNotMatch(md, /Ab Version/);
 });
@@ -581,6 +594,9 @@ test('pricingToMarkdown: feature row shows the resolved (fully-evolved) name', (
 });
 
 test('empty pricing renders a placeholder, no matrix', () => {
+  // Explicit rather than inherited from a test that ran earlier: both assertions
+  // are on catalogue text, so a reordering would otherwise decide the language.
+  setLocale('de');
   const md = pricingToMarkdown(
     { timelineId: 't', pricing: { features: [], tiers: [] } },
     { updated: '2026-07-15' },

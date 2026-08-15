@@ -144,3 +144,20 @@ Prerequisites: `TIMELINES_SUPABASE_URL` / `TIMELINES_SUPABASE_SERVICE_KEY` **and
 `AUTH_REQUIRED=true` must be set, or `timelines-api` does not take effect. If
 `MCP_API_TOKEN` is unset the bypass is inactive and the site stays gated behind
 the Google login for everyone.
+
+## Agent-facing text is English, all of it
+
+A tool's `title` and `description` are read by a model and have always been
+English. The **notes** a tool returns are relayed to a person, so „which language"
+became a real question once the interface stopped having one answer (#153). The
+rule is English, unconditionally.
+
+One language for the whole tool surface, rather than notes that follow a reader
+while the descriptions beside them do not. A model relaying a note can translate
+it for whoever it is talking to; it cannot reliably parse a note in a language its
+tool surface does not otherwise speak. And a service token has no person behind it
+to have a preference, so any other rule would need a second answer for that case
+anyway.
+
+This is a decision, not an oversight, and it is the one place in the product where
+text deliberately does **not** follow `#settings=account`.

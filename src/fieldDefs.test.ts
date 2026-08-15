@@ -44,26 +44,40 @@ test('every problem is reported, not just the first', () => {
 });
 
 test('a duplicate key names the field it collides with', () => {
-  const problems = validateFieldDefs([def(), def({ label: 'Zweites' })]);
+  // The locale is explicit here and in the three below. These tests pin the
+  // *rule* — which definition is refused and which field it names — and the
+  // wording is only how that is observed, so asking for one language keeps them
+  // from breaking the day the product default changes.
+  const problems = validateFieldDefs([def(), def({ label: 'Zweites' })], [], 'de');
   assert.equal(problems.length, 1);
   assert.equal(problems[0].index, 1);
   assert.match(problems[0].message, /schon vergeben \(Feld 1\)/);
 });
 
+test('the same refusal answers in the language it was asked in', () => {
+  // The half the four below cannot show: one rule, two languages, and the field
+  // number carried through the placeholder rather than concatenated around it.
+  const de = validateFieldDefs([def(), def({ label: 'Zweites' })], [], 'de');
+  const en = validateFieldDefs([def(), def({ label: 'Zweites' })], [], 'en');
+  assert.match(de[0].message, /schon vergeben \(Feld 1\)/);
+  assert.match(en[0].message, /already taken \(field 1\)/);
+  assert.equal(de[0].index, en[0].index);
+});
+
 test('a key with its own control in the form is refused', () => {
-  const problems = validateFieldDefs([def({ key: 'owner', type: 'text', options: undefined })]);
+  const problems = validateFieldDefs([def({ key: 'owner', type: 'text', options: undefined })], [], 'de');
   assert.match(problems[0].message, /eigenes Feld/);
 });
 
 test('a key a plugin contributes is refused rather than silently ignored', () => {
   // mergeFieldDefs lets the contributed definition win, so a stored one on the same
   // key would never appear — an edit that looks like it did not take.
-  const problems = validateFieldDefs([def({ key: 'version' })], ['version']);
+  const problems = validateFieldDefs([def({ key: 'version' })], ['version'], 'de');
   assert.match(problems[0].message, /von einem Plugin/);
 });
 
 test('a choice without values cannot choose', () => {
-  const problems = validateFieldDefs([def({ options: [] })]);
+  const problems = validateFieldDefs([def({ options: [] })], [], 'de');
   assert.match(problems[0].message, /ohne Werte/);
   // A text field needs none.
   assert.deepEqual(validateFieldDefs([def({ type: 'text', options: [] })]), []);
@@ -115,12 +129,19 @@ test('a stored value the definition dropped keeps a row of its own', () => {
   // Without it the select shows the empty row, and leaving the panel commits that
   // empty over the stored value: one removed option cleared the field on every item
   // that carried it. This was reproduced against the real form before the fix.
-  const rows = selectRowsFor({ options: [{ value: 'Scale' }] }, 'Free');
+  // The locale is explicit for the reason the refusal tests above ask for one: what
+  // is pinned is that the dropped value keeps a marked row, and the wording is only
+  // how that is observed.
+  const rows = selectRowsFor({ options: [{ value: 'Scale' }] }, 'Free', 'de');
   assert.deepEqual(rows, [
     { value: '', label: '— —', selected: false },
     { value: 'Scale', label: 'Scale', selected: false },
     { value: 'Free', label: 'Free (nicht in der Liste)', selected: true },
   ]);
+  assert.equal(
+    selectRowsFor({ options: [{ value: 'Scale' }] }, 'Free', 'en').at(-1)?.label,
+    'Free (not in the list)',
+  );
 });
 
 test('a declared value gets no extra row, and no value selects the empty one', () => {

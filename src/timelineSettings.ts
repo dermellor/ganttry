@@ -38,6 +38,7 @@ import { groupByChoices, timelineMetaDraft, timelineMetaPatch } from './timeline
 import { apiUpdateMeta } from './editor';
 import { mountFieldsSection, unmountFields } from './fieldsSection';
 import { filterBuildForDisplay, renderTimeline, timelineItems } from './render';
+import { t } from './i18n';
 
 /**
  * A section id, which is also verbatim what `#timeline-settings=<id>` carries.
@@ -68,7 +69,7 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
   const file = state.activeSourceFile;
   if (!view || !file) {
     root.replaceChildren(
-      Callout({ text: 'Keine Timeline geladen.' }),
+      Callout({ text: t('timeline.none') }),
     );
     return;
   }
@@ -96,7 +97,7 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
     attrs: { id: 'tl-save-status', role: 'status' },
   });
   const save = Button({
-    label: 'Speichern',
+    label: t('form.save'),
     variant: 'outline',
     attrs: { id: 'tl-save', hidden: !editable },
   });
@@ -110,10 +111,10 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
     // „Nothing changed" is said rather than swallowed: a save button that answers a
     // click with silence reads as a save that failed.
     if (!patch) {
-      status.textContent = 'Keine Änderung.';
+      status.textContent = t('timeline.noChange');
       return;
     }
-    status.textContent = 'Wird gespeichert …';
+    status.textContent = t('form.saving');
     save.disabled = true;
     void apiUpdateMeta(view.source.id, patch)
       .then(async () => {
@@ -126,7 +127,7 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
         // second save would diff against the state before the first. The
         // confirmation is handed to the new form rather than written into the old
         // one, which the re-mount would throw away.
-        mountGeneral(root, 'Gespeichert.');
+        mountGeneral(root, t('timeline.saved'));
       })
       .catch((e: unknown) => {
         status.textContent = e instanceof Error ? e.message : String(e);
@@ -139,16 +140,16 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
       // A read-only source shows disabled inputs and no save button. What says so in
       // words is the „Nur lesend" badge beside the timeline's name, once, and this
       // section adds nothing to it.
-      Field({ label: 'Name', control: name, htmlFor: 'tl-name' }),
+      Field({ label: t('form.name'), control: name, htmlFor: 'tl-name' }),
       Field({
-        label: 'Beschreibung',
-        hint: 'optional',
+        label: t('form.description'),
+        hint: t('field.optional'),
         control: description,
         htmlFor: 'tl-description',
       }),
       Field({
-        label: 'Gruppierung beim Öffnen',
-        hint: 'Vorgabe',
+        label: t('timeline.settings.grouping'),
+        hint: t('form.preset'),
         control: groupBy,
         htmlFor: 'tl-groupby',
       }),
@@ -174,7 +175,7 @@ function mountExport(root: HTMLElement): void {
   const view = state.activeView;
   if (!view || !state.activeBuild) {
     root.replaceChildren(
-      Callout({ text: 'Keine Timeline geladen.' }),
+      Callout({ text: t('timeline.none') }),
     );
     return;
   }
@@ -191,7 +192,7 @@ function mountExport(root: HTMLElement): void {
   // Not gated on editability: exporting is reading, and a read-only timeline is
   // the one most likely to be passed on as a file.
   const run = Button({
-    label: 'Als HTML herunterladen',
+    label: t('timeline.settings.export'),
     variant: 'outline',
     attrs: { id: 'tl-export' },
   });
@@ -199,7 +200,7 @@ function mountExport(root: HTMLElement): void {
   run.addEventListener('click', () => {
     if (!state.activeView || !state.activeBuild) return;
     run.disabled = true;
-    status.textContent = 'Wird erzeugt …';
+    status.textContent = t('export.generating');
     // The chunk carries vis-timeline and marked as raw text, so it is loaded on
     // the click rather than with the app — the same lazy import the button had.
     void import('./export')
@@ -212,10 +213,12 @@ function mountExport(root: HTMLElement): void {
           view: state.activeView!,
           build: { ...build, items: timelineItems(filtered.items), groups: filtered.groups },
         });
-        status.textContent = 'Datei erzeugt.';
+        status.textContent = t('export.done');
       })
       .catch((e: unknown) => {
-        status.textContent = `Export fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`;
+        status.textContent = t('refusal.export.failed', {
+          message: e instanceof Error ? e.message : String(e),
+        });
       })
       .finally(() => {
         run.disabled = false;
@@ -227,19 +230,27 @@ function mountExport(root: HTMLElement): void {
   );
 }
 
-const SECTIONS: readonly AreaSection<TimelineSection>[] = [
-  { id: 'general', label: 'Allgemein', mount: mountGeneral },
-  { id: 'fields', label: 'Felder', mount: mountFieldsSection, unmount: unmountFields },
-  { id: 'export', label: 'Export', mount: mountExport },
-];
+/**
+ * A function, not a constant. The section list *was* a module-scope constant with
+ * `t()` in it — the exact bug `check-ui-text.mjs` grew a check for: filled on
+ * import, before `initLocale()`, so the nav froze into one language while every
+ * section body followed the setting. See „`t()` at module scope" in that script.
+ */
+function sections(): readonly AreaSection<TimelineSection>[] {
+  return [
+    { id: 'general', label: t('timeline.settings.general'), mount: mountGeneral },
+    { id: 'fields', label: t('timeline.settings.fields'), mount: mountFieldsSection, unmount: unmountFields },
+    { id: 'export', label: t('timeline.settings.export.section'), mount: mountExport },
+  ];
+}
 
 /** The section a hash value names, defaulting to the first. */
 export function timelineSection(raw: string | undefined | null): TimelineSection {
-  return areaSection(SECTIONS, raw);
+  return areaSection(sections(), raw);
 }
 
 export async function showTimelineSettings(section: TimelineSection | null): Promise<void> {
-  await showArea(handle, nodes(), SECTIONS, section, 'tl-settings-open');
+  await showArea(handle, nodes(), sections(), section, 'tl-settings-open');
 }
 
 /**
@@ -269,5 +280,5 @@ export function closeTimelineSettings(): void {
 export function wireTimelineSettings(): void {
   wireAreaNav<TimelineSection>(els.tlSettingsNav, openTimelineSettings);
   els.tlSettingsClose.addEventListener('click', () => closeTimelineSettings());
-  els.tlSettingsBtn.addEventListener('click', () => openTimelineSettings(SECTIONS[0].id));
+  els.tlSettingsBtn.addEventListener('click', () => openTimelineSettings(sections()[0].id));
 }

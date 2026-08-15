@@ -157,6 +157,20 @@ export interface TimelineRepo {
    */
   touchUser(email: string, name?: string | null): Promise<void>;
 
+  // interface language (`app_users.language`, migration 0025) — the one
+  // per-person preference a deployment stores.
+  /**
+   * The language this person chose, or null when they never have.
+   *
+   * The **raw** column, deliberately not a resolved locale: „has not chosen" and
+   * „chose English" are different facts, and resolving the first needs the
+   * instance default, which is environment and therefore not this layer's to
+   * read. See `resolveLocale` (src/i18n/locale.ts).
+   */
+  getUserLanguage(email: string): Promise<string | null>;
+  /** Record a choice; `null` clears it, back to following the instance default. */
+  setUserLanguage(email: string, language: string | null): Promise<void>;
+
   // membership (`app_users`, migration 0016) — the same rows the directory
   // serves, read through the columns that say what a person may do. Nothing
   // enforces these yet; the dispatcher starts consulting them behind

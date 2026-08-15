@@ -16,6 +16,7 @@ import { clearItemPresence, setItemPresence } from './itemPresence';
 import { state, els, setStatus, PERSIST_THROTTLE_MS, isAnyFormOpen } from './state';
 import { refreshActiveSourceInPlace, renderTimeline } from './render';
 import { applyItemForm, refreshItemAudit } from './itemForm';
+import { t } from './i18n';
 
 export function schedulePersist(): void {
   if (state.saveTimer) clearTimeout(state.saveTimer);
@@ -167,14 +168,14 @@ export async function persist(): Promise<void> {
       const canon = canonicalItem(it);
       const prev = state.savedItems.get(it.id);
       if (prev === undefined) {
-        setStatus('Speichere…');
+        setStatus(t('sync.saving'));
         const saved = await apiAddItem(sourceId, it);
         adoptAudit(it, saved);
         state.savedItems.set(it.id, canonicalItem(it));
         if (saved.version != null) state.savedItemVersions.set(it.id, saved.version);
         adoptDocumentVersion(saved);
       } else if (prev !== canon) {
-        setStatus('Speichere…');
+        setStatus(t('sync.saving'));
         const patch = buildItemPatch(it);
         const saved = await apiUpdateItem(sourceId, it.id, patch, state.savedItemVersions.get(it.id));
         adoptAudit(it, saved);
@@ -187,7 +188,7 @@ export async function persist(): Promise<void> {
     // Deletions.
     for (const oldId of [...state.savedItems.keys()]) {
       if (!currentIds.has(oldId)) {
-        setStatus('Speichere…');
+        setStatus(t('sync.saving'));
         await apiDeleteItem(sourceId, oldId);
         state.savedItems.delete(oldId);
         state.savedItemVersions.delete(oldId);
@@ -197,23 +198,23 @@ export async function persist(): Promise<void> {
     // Phases (replaced as a unit — small, rarely edited).
     const phasesJson = JSON.stringify(file.phases ?? []);
     if (phasesJson !== state.savedPhasesJson) {
-      setStatus('Speichere…');
+      setStatus(t('sync.saving'));
       await apiPutPhases(sourceId, file.phases ?? []);
       state.savedPhasesJson = phasesJson;
     }
 
-    setStatus(`Gespeichert · ${file.items.length} items`);
+    setStatus(t('sync.saved', { count: file.items.length }));
   } catch (err) {
     if (err instanceof ConflictError) {
       // Someone edited the same item concurrently — reload authoritative state.
-      setStatus('Konflikt: extern geändert, lade neu…');
+      setStatus(t('sync.conflict'));
       state.persisting = false;
       state.persistAgain = false;
       if (state.activeView) await renderTimeline(state.activeView);
       return;
     }
     console.error(err);
-    setStatus(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    setStatus(t('refusal.save.failed', { message: err instanceof Error ? err.message : String(err) }));
   } finally {
     state.persisting = false;
     if (state.persistAgain) {
@@ -321,7 +322,7 @@ export function setupRealtime(): void {
     }
     // Don't clobber a form the user is editing — just flag it.
     if (change.table === 'timeline_items' && change.id === state.activeFormItemId) {
-      setStatus('Dieser Eintrag wurde extern geändert — beim Speichern wird neu geladen.');
+      setStatus(t('refusal.conflict.item'));
       return;
     }
     // Pricing child-table changes (features/tiers/values/highlights) re-read the

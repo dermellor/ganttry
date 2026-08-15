@@ -245,7 +245,10 @@ describe('descriptorFor', () => {
     // Whatever the plugin managed to paint is cleared: a half-painted view reads
     // as a broken page rather than a broken plugin.
     assert.equal(appended.length, 1);
-    assert.match((appended[0] as any).textContent, /konnte nicht dargestellt werden/);
+    // The reference catalogue's wording: this file asks for no language, so the
+    // failure box answers in `DEFAULT_LOCALE`. What is pinned is that the box says
+    // *which* plugin failed, not the sentence.
+    assert.match((appended[0] as any).textContent, /could not be rendered/);
   });
 });
 

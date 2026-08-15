@@ -91,6 +91,7 @@ import { repaintPluginView } from './pluginHost/views';
 import { notifyTimelineChanged } from './pluginHost/changes';
 import { showPhaseFormByIndex, handlePhaseEdit } from './phaseForm';
 import { hideTimelineSkeleton, showTimelineSkeleton } from './timelineSkeleton';
+import { locale, t } from './i18n';
 
 // Render-internal handles. `timeline` mirrors state.timeline (kept in sync on
 // every assignment) so other modules can read the current instance while this
@@ -548,11 +549,22 @@ export function statusFor(view: View, build: BuildResult): string {
   // the moment it shipped. Naming what is missing where survives the next
   // presentation; listing the others does not.
   const dateless = filtered.items.length - timelineItems(filtered.items).length;
-  const datelessHint = dateless > 0 ? ` · ${dateless} ohne Start (nicht in der Timeline)` : '';
+  const datelessHint = dateless > 0 ? ` · ${t('timeline.datelessHint', { count: dateless })}` : '';
   // The live name, not the built one: a rename reaches the source at once while
   // `config.json` keeps the name the build discovered (see src/timelineMeta.ts).
   const name = timelineName(view, state.activeSourceFile);
-  return `${filtered.items.length} items in „${name}" · ${filtered.groups.length} groups${datelessHint}`;
+  // Assembled from counted nouns rather than written as one sentence with two
+  // numbers in it: „1 Einträge in … · 1 Gruppen" is what the single-sentence
+  // version produces, and it produces it in both languages.
+  return t('timeline.status', {
+    items: t(filtered.items.length === 1 ? 'timeline.items.one' : 'timeline.items.other', {
+      count: filtered.items.length,
+    }),
+    name,
+    groups: t(filtered.groups.length === 1 ? 'timeline.groups.one' : 'timeline.groups.other', {
+      count: filtered.groups.length,
+    }),
+  }) + datelessHint;
 }
 
 /**
@@ -624,7 +636,7 @@ export async function renderTimeline(view: View) {
       // placeholder up would promise a timeline that is never going to arrive.
       hideTimelineSkeleton(els.timeline);
       const message = err instanceof Error ? err.message : String(err);
-      setStatus(`Konnte Quelle ${view.source.id} nicht laden: ${message}`);
+      setStatus(t('refusal.source.loadFailed', { id: view.source.id, message }));
       // And say it where the eye actually is. The status line alone leaves a
       // blank content area, which reads as „the app is broken" rather than as
       // „this did not load" — the failure looked silent even though it was not.
@@ -761,7 +773,23 @@ export async function renderTimeline(view: View) {
     // it, which a track carrying a summary bar and its children needs anyway.
     margin: { item: { horizontal: 6, vertical: ITEM_MARGIN_VERTICAL }, axis: axisMargin },
     orientation: { axis: 'top', item: 'top' },
-    locale: 'de',
+    // The month and weekday names on the axis, which used to be pinned to `de`
+    // and stayed German for an English reader — the one part of the chrome no
+    // catalogue can reach, because vis draws it from its own tables.
+    //
+    // The bare primary subtag, deliberately NOT `INTL_TAG`: vis looks the value up
+    // in two tables that key on `de` / `en` (its own `options.locales`, and
+    // moment's registered locales, of which the standalone bundle carries `de` and
+    // English-by-default). `de-DE` misses `options.locales` and logs a warning
+    // before falling back to English, which would make the „fix" flip the axis to
+    // the wrong language on the reader who asked for German. `Intl` keeps the
+    // region; vis does not get one.
+    //
+    // vis applies this to moment **globally** (its own TODO says so), so the axis
+    // follows a language change on the next `renderTimeline` — which is what
+    // `LOCALE_CHANGED` triggers. There is nothing to register: `moment.locale('de')`
+    // resolves inside the standalone bundle, verified in the running app.
+    locale: locale(),
     tooltip: { followMouse: false, overflowMethod: 'cap' },
     zoomMin: 1000 * 60 * 60 * 6,
     zoomMax: 1000 * 60 * 60 * 24 * 365 * 30,
@@ -1327,7 +1355,7 @@ export function createItem(start: Date | string | null | undefined, group?: stri
 
   const newItem: TimelineFileItem & { id: string } = {
     id: newId,
-    content: 'Neuer Eintrag',
+    content: t('item.new'),
     group: groupId,
     status: DEFAULT_STATUS,
   };

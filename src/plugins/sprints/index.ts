@@ -15,8 +15,8 @@
 // „done" means, what counts as an estimate, what a warning is: all of it comes from
 // `./sprints.ts`, because `sprint_status` answers the same questions for an agent
 // and two copies of one rule is how the chart's scope and the agent's scope end up
-// different numbers, each looking right on its own. This file words those answers
-// in German and draws them.
+// different numbers, each looking right on its own. This file draws those answers, in
+// the language the reader chose: every word it shows comes from `./messages.ts`.
 //
 // **Two numbers this view will never show**, both settled with sources in
 // „Velocity: computed, never displayed as a metric":
@@ -58,6 +58,8 @@ import {
 import type { TimelineFileItem } from '../../types';
 import { MIN_CAPACITY, SPRINT_COLLECTIONS, sprintsManifest } from './manifest';
 import { dayOf, type SprintRaster } from './raster';
+import { formatDay, formatNumber } from '../../pluginHost/api';
+import { t } from './messages';
 import {
   CAPACITY_UNITS,
   type CapacityUnit,
@@ -128,20 +130,27 @@ const VIEW_ID = 'board';
  */
 const SELECTED_KEY = 'timelines.sprintsSelected';
 
-const STATE_LABELS: Record<SprintState, string> = {
-  planned: 'geplant',
-  active: 'aktiv',
-  closed: 'abgeschlossen',
-  cancelled: 'abgebrochen',
-};
+// The four states and the three units as **labels**, built on call rather than
+// held in a constant: a module-scope table is evaluated on import, before the host
+// has resolved a language, and would pin whichever one happened to be in force.
+//
+// The keys they are indexed by are the **stored** ids and never move. `tools.ts`
+// keeps its own state table, in English, because a note is read by a different
+// audience (docs/mcp.md).
+const stateLabel = (state: SprintState): string =>
+  ({
+    planned: t('state.planned'),
+    active: t('state.active'),
+    closed: t('state.closed'),
+    cancelled: t('state.cancelled'),
+  })[state];
 
-const UNIT_LABELS: Record<CapacityUnit, string> = {
-  points: 'Punkte',
-  hours: 'Stunden',
-  items: 'Einträge',
-};
+const unitLabel = (unit: CapacityUnit): string =>
+  ({ points: t('unit.points'), hours: t('unit.hours'), items: t('unit.items') })[unit];
 
-const numbers = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 });
+// Numbers follow the reader too, so a capacity is not written `1.234,5` under
+// English labels. `formatNumber` comes from the host for exactly that reason.
+const numbers = { format: (n: number) => formatNumber(n) };
 
 /** The mark for a figure the data does not carry. Never a 0, which reads as measured. */
 const NO_FIGURE = '–';
@@ -243,13 +252,25 @@ function today(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-/** `2026-03-02` as `02.03.2026`, or the value itself when it names no day. */
-function germanDay(value: string | undefined | null): string | null {
+/**
+ * A stored day as the reader's language writes it, or the value itself when it
+ * names no day.
+ *
+ * It used to be `germanDay` and produced `02.03.2026` unconditionally, which is
+ * one of the hardcodings #153 was about: an English reader got English labels
+ * over German dates. `formatDay` comes from the host, so a plugin's dates and the
+ * core's agree on one convention instead of each picking its own.
+ *
+ * Parsed as a *local* day rather than through `new Date(value)`: the latter reads
+ * a bare `YYYY-MM-DD` as UTC midnight, which renders as the previous day for
+ * anybody west of Greenwich.
+ */
+function readableDay(value: string | undefined | null): string | null {
   if (!value) return null;
   const day = dayOf(value);
   if (!day) return value;
-  const [year, month, dd] = day.split('-');
-  return `${dd}.${month}.${year}`;
+  const [year, month, dd] = day.split('-').map(Number);
+  return formatDay(new Date(year, month - 1, dd));
 }
 
 /**
@@ -259,7 +280,7 @@ function germanDay(value: string | undefined | null): string | null {
  * each one up.
  */
 function itemLabel(item: TimelineFileItem): string {
-  return item.content?.trim() || item.id?.trim() || '(ohne Titel)';
+  return item.content?.trim() || item.id?.trim() || t('sprint.untitled');
 }
 
 /**
@@ -389,7 +410,7 @@ function chart(doc: Document, input: ChartInput): SVGElement {
     });
     // Day and month only: the year is on the sprint's own window line above, and
     // repeating it seven times across the axis is what makes the labels collide.
-    node.textContent = (germanDay(days[index]) ?? '').slice(0, 6);
+    node.textContent = (readableDay(days[index]) ?? '').slice(0, 6);
     return node;
   });
 
@@ -538,17 +559,22 @@ function numbersBlock(sprint: Sprint, figures: Figures): HTMLElement {
   // The figures' own unit, not the timeline's default: a closed sprint's numbers come
   // out of its frozen report, which carries the unit they were counted in. Reading the
   // config here labelled a frozen count of entries as points.
-  const unit = UNIT_LABELS[figures.unit];
+  const unit = unitLabel(figures.unit);
   const boxes = [
-    numberBox(`Umfang (${unit})`, figure(figures.scope)),
-    numberBox('Abgeschlossen', figure(figures.completed)),
-    numberBox('Offen', figure(figures.remaining)),
+    numberBox(t('figure.scope', { unit }), figure(figures.scope)),
+    numberBox(t('figure.completed'), figure(figures.completed)),
+    numberBox(t('figure.remaining'), figure(figures.remaining)),
   ];
   // Only when the sprint carries one. A „Kapazität: –" box invites the reader to
   // treat the dash as a number, and there is no team constant to fall back on: what
   // a team can take varies with absences and with a shortened sprint.
   if (sprint.capacity != null) {
-    boxes.push(numberBox(`Kapazität (${UNIT_LABELS[capacityUnitOf(sprint, file)]})`, numbers.format(sprint.capacity)));
+    boxes.push(
+      numberBox(
+        t('figure.capacity', { unit: unitLabel(capacityUnitOf(sprint, file)) }),
+        numbers.format(sprint.capacity),
+      ),
+    );
   }
   return el('div', { class: 'sprints-numbers' }, boxes);
 }
@@ -561,16 +587,16 @@ function numbersBlock(sprint: Sprint, figures: Figures): HTMLElement {
 function windowText(sprint: Sprint): string | null {
   const window = sprintWindow(sprint, raster);
   if (!window) return null;
-  const from = germanDay(window.start) ?? '';
-  const to = germanDay(window.end) ?? '';
-  const range = `${from.slice(0, 6)} bis ${to}`;
+  const from = readableDay(window.start) ?? '';
+  const to = readableDay(window.end) ?? '';
+  const range = t('window.range', { from: from.slice(0, 6), to });
   // Said rather than hidden, and the three cases are different statements: a window
   // the row does not carry at all moves when the rows are reordered, while a written
   // start with a computed end does not. Labelling the second as „from the cadence"
   // claimed the row's own start was invented.
   if (window.source === 'row') return range;
-  if (window.source === 'end-from-cadence') return `${range} (Ende aus der Sprintlänge)`;
-  return `${range} (aus dem Raster der Konfiguration)`;
+  if (window.source === 'end-from-cadence') return t('window.endFromLength', { range });
+  return t('window.fromRaster', { range });
 }
 
 function headerBlock(sprint: Sprint): HTMLElement {
@@ -578,7 +604,7 @@ function headerBlock(sprint: Sprint): HTMLElement {
     el('div', { class: 'sprints-title-row' }, [
       Heading({ level: 2, text: sprint.name }),
       Badge({
-        label: STATE_LABELS[sprint.state],
+        label: stateLabel(sprint.state),
         tone: sprint.state === 'active' ? 'accent' : sprint.state === 'planned' ? 'neutral' : 'muted',
       }),
     ]),
@@ -594,11 +620,17 @@ function headerBlock(sprint: Sprint): HTMLElement {
     // no product enforces one. Nullable in storage, stated here while the sprint
     // runs, which is the only way to be true to both.
     children.push(
-      Callout({ tone: 'warning', role: 'note', text: 'Dieser Sprint ist aktiv und hat kein Sprint-Ziel.' }),
+      Callout({ tone: 'warning', role: 'note', text: t('warn.noGoal') }),
     );
   }
   if (sprint.closedOn) {
-    children.push(Text({ text: `Abgeschlossen am ${germanDay(sprint.closedOn)}`, tone: 'muted', size: 'sm' }));
+    children.push(
+      Text({
+        text: t('sprint.closedOn', { day: readableDay(sprint.closedOn) ?? '' }),
+        tone: 'muted',
+        size: 'sm',
+      }),
+    );
   }
   if (sprint.note) children.push(Text({ as: 'p', text: sprint.note, size: 'sm' }));
 
@@ -622,9 +654,7 @@ function chartBlock(
     return Callout({
       tone: 'info',
       role: 'note',
-      text: window
-        ? `Der Zeitraum dieses Sprints ist länger als ${MAX_SPRINT_DAYS} Tage. Dafür wird keine Tagesachse gezeichnet: ein Sprint dauert einen Monat oder weniger.`
-        : 'Ohne Anfang und Ende gibt es keine Tagesachse, deshalb zeichnet dieser Sprint kein Burndown.',
+      text: window ? t('refusal.windowTooLong', { days: MAX_SPRINT_DAYS }) : t('warn.noBurndown'),
     });
   }
 
@@ -645,14 +675,15 @@ function chartBlock(
     // keeps moving afterwards, so recomputing rewrites history on every edit.
     const read = frozenSeries(days, report.series);
     actual = read.points;
-    actualKey = sprint.closedOn ? `Eingefroren am ${germanDay(sprint.closedOn)}` : 'Eingefroren';
+    actualKey = sprint.closedOn
+      ? t('chart.frozenOn', { day: readableDay(sprint.closedOn) ?? '' })
+      : t('chart.frozen');
     if (read.outside.length) {
       extras.push(
         Callout({
           tone: 'warning',
           role: 'note',
-          text:
-            `Der eingefrorene Verlauf enthält Tage außerhalb des Sprintzeitraums: ${read.outside.join(', ')}.`,
+          text: t('refusal.frozenOutside', { days: read.outside.join(', ') }),
         }),
       );
     }
@@ -661,7 +692,7 @@ function chartBlock(
         Callout({
           tone: 'info',
           role: 'note',
-          text: 'Zu diesem abgeschlossenen Sprint ist kein Verlauf gespeichert.',
+          text: t('empty.noHistory'),
         }),
       );
     }
@@ -671,20 +702,24 @@ function chartBlock(
     const built = reconstructSeries(days, burndownItems(members), today());
     actual = built.points;
     // Nothing is drawn before the first day, so there is nothing to name then either.
-    actualKey = built.points.length ? 'Rekonstruiert' : null;
+    actualKey = built.points.length ? t('chart.reconstructed') : null;
   }
 
-  const unit = UNIT_LABELS[figures.unit];
-  const ariaLabel =
-    `Burndown ${sprint.name}: ${days.length} Tage, Umfang ${figure(figures.scope)} ${unit}, ` +
-    `offen ${figure(figures.remaining)}.`;
+  const unit = unitLabel(figures.unit);
+  const ariaLabel = t('chart.aria', {
+    name: sprint.name,
+    days: days.length,
+    scope: figure(figures.scope),
+    unit,
+    remaining: figure(figures.remaining),
+  });
 
   return el('figure', { class: 'sprints-chart' }, [
     chart(doc, { days, scope: figures.scope, plan, actual, ariaLabel }),
     el('div', { class: 'sprints-legend' }, [
       // No key for a line that is not drawn: a legend naming an absent plan is the same
       // mistake as a number box holding a dash.
-      plan.length ? legendKey('Plan', 'plan') : null,
+      plan.length ? legendKey(t('chart.plan'), 'plan') : null,
       actualKey ? legendKey(actualKey, 'actual') : null,
     ]),
     ...extras,
@@ -714,9 +749,9 @@ function burndownItems(members: readonly TimelineFileItem[]): BurndownItem[] {
 /**
  * The warnings for one sprint's items, keyed by item, worded for a reader.
  *
- * `sprintWarnings` decides *what* a warning is and hands it over as data; the German
- * is this file's. That split is why `sprint_status` can word the same finding for an
- * agent without the two drifting apart.
+ * `sprintWarnings` decides *what* a warning is and hands it over as data; the sentence
+ * a person reads is this view's, out of `./messages.ts`. That split is why
+ * `sprint_status` can word the same finding for an agent without the two drifting apart.
  */
 function itemWarnings(sprintId: string): Map<string, string[]> {
   const out = new Map<string, string[]>();
@@ -729,10 +764,13 @@ function itemWarnings(sprintId: string): Map<string, string[]> {
     if (warning.kind === 'item-outside-sprint-window' && warning.sprintId === sprintId) {
       add(
         warningKey(warning.itemId, warning.content),
-        `Termine außerhalb des Sprints (${germanDay(warning.window.start)} bis ${germanDay(warning.window.end)})`,
+        t('warn.outsideWindow', {
+          from: readableDay(warning.window.start) ?? '',
+          to: readableDay(warning.window.end) ?? '',
+        }),
       );
     } else if (warning.kind === 'item-without-estimate' && warning.sprintId === sprintId) {
-      add(warningKey(warning.itemId, warning.content), 'keine verwertbare Schätzung');
+      add(warningKey(warning.itemId, warning.content), t('warn.noEstimate'));
     }
   }
   return out;
@@ -750,9 +788,9 @@ function rowFaultText(
   warning: Extract<SprintWarning, { kind: 'duplicate-row-id' | 'several-reports-for-one-sprint' }>,
 ): string {
   if (warning.kind === 'duplicate-row-id') {
-    return `Die Id „${warning.rowId}" kommt in „${warning.collection}" mehrfach vor; gelesen wird die erste Zeile.`;
+    return t('refusal.duplicateRowId', { rowId: warning.rowId, collection: warning.collection });
   }
-  return `Für einen Sprint liegen mehrere Berichte vor (${warning.rowIds.join(', ')}); gelesen wird der erste.`;
+  return t('refusal.severalReports', { rowIds: warning.rowIds.join(', ') });
 }
 
 /**
@@ -766,7 +804,7 @@ function carriedInLabels(sprintId: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const entry of carriedInto(sprints, passes, file?.items ?? [], sprintId)) {
     const from = sprints.find((s) => s.id === entry.fromSprintId);
-    out.set(entry.itemId, `aus „${from?.name ?? entry.fromSprintId}" übertragen`);
+    out.set(entry.itemId, t('items.carriedIn', { from: from?.name ?? entry.fromSprintId }));
   }
   return out;
 }
@@ -776,7 +814,7 @@ function itemsBlock(sprint: Sprint, members: readonly TimelineFileItem[], figure
     return el(
       'div',
       { class: 'sprints-items' },
-      Callout({ tone: 'info', role: 'note', text: 'Diesem Sprint ist kein Eintrag zugeordnet.' }),
+      Callout({ tone: 'info', role: 'note', text: t('empty.noMembers') }),
     );
   }
   const perItem = itemWarnings(sprint.id);
@@ -810,10 +848,17 @@ function itemsBlock(sprint: Sprint, members: readonly TimelineFileItem[], figure
     // of the close, while this table is the item list as it stands now — after a close,
     // moving two items to Done with new estimates changes every cell here and nothing
     // there. A sentence explaining the difference is what the deletion pass removed.
-    figures.frozen ? el('div', {}, Badge({ label: 'aktuell', tone: 'neutral' })) : null,
+    figures.frozen ? el('div', {}, Badge({ label: t('sprint.current'), tone: 'neutral' })) : null,
     Table({
       children: [
-        TableHead({ columns: ['Eintrag', `Schätzung (${UNIT_LABELS[capacityUnitOf(sprint, file)]})`, 'Status', 'Hinweis'] }),
+        TableHead({
+          columns: [
+            t('items.entry'),
+            t('items.estimate', { unit: unitLabel(capacityUnitOf(sprint, file)) }),
+            t('sprint.status'),
+            t('items.note'),
+          ],
+        }),
         el('tbody', {}, rows),
       ],
     }),
@@ -909,7 +954,10 @@ async function createSprint(): Promise<void> {
     // tabs, otherwise overwrote each other's new sprint with no 409 and nothing said.
     const current = await currentSprints();
     if (current?.sprints.some((s) => s.id === id)) {
-      return refuse(`„${id}" ist inzwischen angelegt. Noch einmal „Sprint anlegen" wählen.`);
+      // The whole sentence, quotes included, comes from the key. Wrapping the id
+      // in „…" here and appending the rest is how a message ends up half in one
+      // language's punctuation and half in another's.
+      return refuse(t('refusal.alreadyCreated', { id }));
     }
     // `planned`, with no window and no goal. Demanding either here would be a row
     // nobody creates before the planning meeting; the goal is warned about once the
@@ -919,10 +967,10 @@ async function createSprint(): Promise<void> {
     remember(saved.id);
     editing = true;
     notices = [];
-    host().status(`Sprint „${name}" angelegt`);
+    host().status(t('status.created', { name }));
     await reload();
   } catch (error) {
-    fail(`Sprint anlegen fehlgeschlagen: ${message(error)}`);
+    fail(t('refusal.createFailed', { error: message(error) }));
   }
 }
 
@@ -950,33 +998,29 @@ function fail(text: string, sticky?: string): void {
   repaint();
 }
 
-/** The German for a refused edit. The rule is `sprintEditPatch`'s; the sentence is this file's. */
+/** The wording for a refused edit. The rule is `sprintEditPatch`'s; the sentence is this file's. */
 function editRefusalText(refusal: SprintEditRefusal): string {
   switch (refusal.kind) {
     case 'name-missing':
-      return 'Ein Sprint braucht einen Namen.';
+      return t('refusal.nameMissing');
     case 'unknown-state': {
-      const known = SPRINT_STATES.map((key) => STATE_LABELS[key]).join(', ');
-      return `„${refusal.value}" ist kein Status. Möglich sind: ${known}.`;
+      const known = SPRINT_STATES.map((key) => stateLabel(key)).join(', ');
+      return t('refusal.unknownState', { value: refusal.value, known });
     }
     case 'second-active-sprint': {
       const other = sprints.find((s) => s.id === refusal.sprintId);
-      const name = other?.name ?? refusal.sprintId;
-      return (
-        `„${name}" ist bereits aktiv. Eine Zeitleiste hat höchstens einen aktiven Sprint: ` +
-        `erst „${name}" abschließen oder abbrechen.`
-      );
+      return t('refusal.secondActive', { name: other?.name ?? refusal.sprintId });
     }
     case 'end-before-start':
-      return 'Der letzte Tag liegt vor dem ersten.';
+      return t('refusal.lastBeforeFirst');
     case 'active-without-window':
-      return 'Ein aktiver Sprint braucht einen ersten und einen letzten Tag.';
+      return t('refusal.activeNeedsDays');
     case 'capacity-not-a-decimal':
       // The FORMAT, not the size: „1e3" is refused while 1000 is a perfectly good
       // capacity, and „muss eine Zahl größer als 0 sein" said the opposite.
-      return `„${refusal.value}" ist keine Dezimalzahl, zum Beispiel 20 oder 20.5.`;
+      return t('refusal.capacityNotDecimal', { value: refusal.value });
     case 'capacity-below-minimum':
-      return `Die Kapazität muss mindestens ${numbers.format(MIN_CAPACITY)} betragen.`;
+      return t('refusal.capacityBelowMinimum', { min: numbers.format(MIN_CAPACITY) });
   }
 }
 
@@ -986,7 +1030,7 @@ function editRefusalText(refusal: SprintEditRefusal): string {
  * Every rule the form applies is `sprintEditPatch`'s, so the interface cannot accept a
  * value the schema and the row reader refuse: it did, and `0.005` came back from the
  * server as `400 row.capacity: below 0.01` — an English field path in a German interface.
- * What stays here is the German.
+ * What stays here is the wording, out of `messages.ts`.
  */
 async function saveSprint(sprint: Sprint, edit: SprintEdit): Promise<void> {
   const result = sprintEditPatch(sprint, sprints, edit);
@@ -995,10 +1039,10 @@ async function saveSprint(sprint: Sprint, edit: SprintEdit): Promise<void> {
     await data().patch(SPRINT_COLLECTIONS.sprints, sprint.id, result.patch, versions.get(sprint.id));
     editing = false;
     notices = [];
-    host().status(`Sprint „${result.patch.name as string}" gespeichert`);
+    host().status(t('status.saved', { name: result.patch.name as string }));
     await reload();
   } catch (error) {
-    fail(`Speichern fehlgeschlagen: ${message(error)}`);
+    fail(t('refusal.saveFailed', { error: message(error) }));
   }
 }
 
@@ -1019,7 +1063,7 @@ async function closeSprint(sprint: Sprint): Promise<void> {
   // a second click wrote them all again (idempotent, so no damage) and then 409ed on the
   // state patch, which left the page carrying the badge „abgeschlossen" and a red alert
   // saying the sprint was still „aktiv".
-  if (closing) return refuse('Ein Abschluss läuft noch.');
+  if (closing) return refuse(t('refusal.closeRunning'));
   closing = sprint.id;
   repaint();
   try {
@@ -1041,7 +1085,7 @@ async function runClose(sprint: Sprint): Promise<void> {
   const figures = liveFigures(sprint, members);
   const recordedOn = today();
   const skippedNote = skipped.length
-    ? ` ${skipped.length} ${skipped.length === 1 ? 'Eintrag hat' : 'Einträge haben'} keine Id und stehen in keiner Historienzeile: ` +
+    ? ` ${t('warn.skipped', { count: skipped.length })}: ` +
       `${skipped.map(itemLabel).join(', ')}.`
     : '';
   let written = 0;
@@ -1068,9 +1112,8 @@ async function runClose(sprint: Sprint): Promise<void> {
       if (isDone(item)) done++;
     } catch (error) {
       fail(
-        `Abschluss abgebrochen. ${written} von ${recordable.length} Einträgen stehen in der Historie, ` +
-          `dann schlug „${itemLabel(item)}" fehl (${message(error)}). Kein Report geschrieben, ` +
-          'der Status ist nicht gesetzt. Ein erneuter Abschluss schreibt die vorhandenen Zeilen nicht doppelt.',
+        `${t('refusal.closeAborted', { written, total: recordable.length, item: itemLabel(item), error: message(error) })} ` +
+          t('refusal.closeAbortedTail'),
         sprint.id,
       );
       return;
@@ -1104,9 +1147,14 @@ async function runClose(sprint: Sprint): Promise<void> {
       },
     });
   } catch (error) {
+    // The counted noun is its own phrase (`close.rows`), not a number dropped into this
+    // sentence: „1 Historienzeilen sind geschrieben" is what the inline version shipped,
+    // because a count in the middle of a clause declines the noun and the verb both.
     fail(
-      `Abschluss abgebrochen. ${written} Historienzeilen sind geschrieben, der Report nicht ` +
-        `(${message(error)}). Der Status ist nicht gesetzt; ein erneuter Abschluss ist gefahrlos.`,
+      t('refusal.reportNotWritten', {
+        rows: t('close.rows', { count: written }),
+        error: message(error),
+      }),
       sprint.id,
     );
     return;
@@ -1130,8 +1178,8 @@ async function runClose(sprint: Sprint): Promise<void> {
   const objection = closeObjection(sprint, fresh);
   if (objection) {
     fail(
-      `Historie und Report sind geschrieben, der Status nicht: ${objectionText(objection)} ` +
-        'Der Abschluss ist damit nicht fertig.',
+      `${t('refusal.statusNotSetReason', { reason: objectionText(objection) })} ` +
+        t('refusal.closeUnfinished'),
       sprint.id,
     );
     return;
@@ -1149,10 +1197,10 @@ async function runClose(sprint: Sprint): Promise<void> {
     // reading „abgeschlossen".
     const after = (await currentSprints().catch(() => null))?.sprints.find((s) => s.id === sprint.id) ?? null;
     fail(
-      `Historie und Report sind geschrieben, der Status nicht (${message(error)}). ` +
+      `${t('refusal.statusNotSetError', { error: message(error) })} ` +
         (after
-          ? `Der Sprint steht auf „${STATE_LABELS[after.state]}"; ein erneuter Abschluss setzt ihn.`
-          : 'Der Sprint ist nicht mehr zu lesen.'),
+          ? t('refusal.stateNowIs', { state: stateLabel(after.state) })
+          : t('refusal.unreadable')),
       sprint.id,
     );
     return;
@@ -1160,8 +1208,15 @@ async function runClose(sprint: Sprint): Promise<void> {
 
   notices = [];
   host().status(
-    `Sprint „${sprint.name}" abgeschlossen: ${done} von ${recordable.length} Einträgen fertig, ` +
-      `${figure(figures.remaining)} ${UNIT_LABELS[unit]} übernommen.${skippedNote}`,
+    // „von {count} Einträgen" as its own phrase, for the reason the aborted close above
+    // states: „0 von 1 Einträgen fertig" is what a hardcoded plural produces.
+    t('refusal.closeDone', {
+      name: sprint.name,
+      done,
+      entries: t('close.ofEntries', { count: recordable.length }),
+      carried: figure(figures.remaining),
+      unit: unitLabel(unit),
+    }) + skippedNote,
   );
   await reload();
 }
@@ -1170,13 +1225,13 @@ async function runClose(sprint: Sprint): Promise<void> {
 function objectionText(objection: CloseObjection): string {
   switch (objection.kind) {
     case 'sprint-gone':
-      return 'Die Zeile ist inzwischen gelöscht.';
+      return t('refusal.rowDeleted');
     case 'state-changed':
-      return `Der Sprint steht inzwischen auf „${STATE_LABELS[objection.state]}".`;
+      return t('refusal.stateChanged', { state: stateLabel(objection.state) });
     case 'window-changed':
-      return 'Der Zeitraum ist inzwischen geändert worden.';
+      return t('refusal.windowChanged');
     case 'capacity-changed':
-      return 'Die Kapazität ist inzwischen geändert worden.';
+      return t('refusal.capacityChanged');
   }
 }
 
@@ -1191,13 +1246,13 @@ function objectionText(objection: CloseObjection): string {
 // ---------------------------------------------------------------------------
 
 function editForm(sprint: Sprint): HTMLElement {
-  const nameInput = TextInput({ value: sprint.name, block: true, attrs: { 'aria-label': 'Name' } });
-  const goalInput = TextArea({ value: sprint.goal ?? '', rows: 2, block: true, attrs: { 'aria-label': 'Sprint-Ziel' } });
-  const startInput = TextInput({ type: 'date', value: sprint.start ?? '', attrs: { 'aria-label': 'Erster Tag' } });
-  const endInput = TextInput({ type: 'date', value: sprint.end ?? '', attrs: { 'aria-label': 'Letzter Tag' } });
+  const nameInput = TextInput({ value: sprint.name, block: true, attrs: { 'aria-label': t('sprint.name') } });
+  const goalInput = TextArea({ value: sprint.goal ?? '', rows: 2, block: true, attrs: { 'aria-label': t('sprint.goal') } });
+  const startInput = TextInput({ type: 'date', value: sprint.start ?? '', attrs: { 'aria-label': t('sprint.firstDay') } });
+  const endInput = TextInput({ type: 'date', value: sprint.end ?? '', attrs: { 'aria-label': t('sprint.lastDay') } });
   const stateSelect = Select({
-    options: SPRINT_STATES.map((key) => ({ value: key, label: STATE_LABELS[key], selected: key === sprint.state })),
-    attrs: { 'aria-label': 'Status' },
+    options: SPRINT_STATES.map((key) => ({ value: key, label: stateLabel(key), selected: key === sprint.state })),
+    attrs: { 'aria-label': t('sprint.status') },
   });
   // A text input rather than a number one, and `inputmode` for the phone keypad.
   // `type: 'number'` hands `.value` back as `""` for anything the browser cannot parse, so
@@ -1207,24 +1262,29 @@ function editForm(sprint: Sprint): HTMLElement {
   // is, and `sprintEditPatch` enforces it.
   const capacityInput = TextInput({
     value: sprint.capacity == null ? '' : String(sprint.capacity),
-    attrs: { 'aria-label': 'Kapazität', inputmode: 'decimal' },
+    attrs: { 'aria-label': t('sprint.capacity'), inputmode: 'decimal' },
   });
   const capacityUnitSelect = Select({
     options: [
       {
         value: '',
-        label: `wie konfiguriert (${UNIT_LABELS[readEstimateUnit(file)]})`,
+        label: t('unit.asConfigured', { unit: unitLabel(readEstimateUnit(file)) }),
         selected: !sprint.capacityUnit,
       },
       ...CAPACITY_UNITS.map((key) => ({
         value: key,
-        label: UNIT_LABELS[key],
+        label: unitLabel(key),
         selected: key === sprint.capacityUnit,
       })),
     ],
-    attrs: { 'aria-label': 'Einheit der Kapazität' },
+    attrs: { 'aria-label': t('sprint.capacityUnit') },
   });
-  const noteInput = TextArea({ value: sprint.note ?? '', rows: 2, block: true, attrs: { 'aria-label': 'Notiz' } });
+  const noteInput = TextArea({
+    value: sprint.note ?? '',
+    rows: 2,
+    block: true,
+    attrs: { 'aria-label': t('sprint.note') },
+  });
 
   // The one use velocity has in this plugin: a suggestion for a sprint that carries
   // no capacity, which is what Linear's capacity dial does. It is a hint on an input
@@ -1232,7 +1292,7 @@ function editForm(sprint: Sprint): HTMLElement {
   const suggestion = sprint.capacity == null ? suggestedCapacity(sprints, reports) : null;
   const capacityHint =
     suggestion != null
-      ? `Vorschlag aus den letzten abgeschlossenen Sprints: ${numbers.format(round2(suggestion))}.`
+      ? t('sprint.capacitySuggestion', { value: numbers.format(round2(suggestion)) })
       : undefined;
 
   const submit = () =>
@@ -1252,27 +1312,27 @@ function editForm(sprint: Sprint): HTMLElement {
     { class: 'sprints-form' },
     FormGrid({
       children: [
-        Field({ label: 'Name', control: nameInput, full: true }),
+        Field({ label: t('sprint.name'), control: nameInput, full: true }),
         Field({
-          label: 'Sprint-Ziel',
+          label: t('sprint.goal'),
           control: goalInput,
           full: true,
         }),
-        Field({ label: 'Erster Tag', control: startInput }),
-        Field({ label: 'Letzter Tag', control: endInput }),
-        Field({ label: 'Status', control: stateSelect }),
-        Field({ label: 'Kapazität', hint: capacityHint, control: capacityInput }),
-        Field({ label: 'Einheit', control: capacityUnitSelect }),
+        Field({ label: t('sprint.firstDay'), control: startInput }),
+        Field({ label: t('sprint.lastDay'), control: endInput }),
+        Field({ label: t('sprint.status'), control: stateSelect }),
+        Field({ label: t('sprint.capacity'), hint: capacityHint, control: capacityInput }),
+        Field({ label: t('sprint.unit'), control: capacityUnitSelect }),
         Field({
-          label: 'Notiz',
+          label: t('sprint.note'),
           control: noteInput,
           full: true,
         }),
         FormActions({
           children: [
-            Button({ label: 'Speichern', variant: 'primary', on: { click: submit } }),
+            Button({ label: t('save'), variant: 'primary', on: { click: submit } }),
             Button({
-              label: 'Abbrechen',
+              label: t('cancel'),
               variant: 'outline',
               on: {
                 click: () => {
@@ -1299,10 +1359,10 @@ function switcherBar(selected: Sprint | null): HTMLElement {
     block: false,
     options: sprints.map((s) => ({
       value: s.id,
-      label: `${s.name} (${STATE_LABELS[s.state]})`,
+      label: `${s.name} (${stateLabel(s.state)})`,
       selected: s.id === selected?.id,
     })),
-    attrs: { 'aria-label': 'Sprint' },
+    attrs: { 'aria-label': t('sprint') },
     on: {
       change: (event) => {
         selectedId = (event.currentTarget as HTMLSelectElement).value || null;
@@ -1318,7 +1378,7 @@ function switcherBar(selected: Sprint | null): HTMLElement {
   if (canEdit() && selected) {
     actions.push(
       Button({
-        label: editing ? 'Bearbeiten beenden' : 'Sprint bearbeiten',
+        label: editing ? t('sprint.editDone') : t('sprint.edit'),
         variant: 'outline',
         on: {
           click: () => {
@@ -1337,7 +1397,7 @@ function switcherBar(selected: Sprint | null): HTMLElement {
           // Disabled while it runs, and the label says which state it is in: the guard in
           // `closeSprint` refuses the second call, and a button that looks clickable and
           // silently does nothing is the half of that fix a reader can see.
-          label: running ? 'Wird abgeschlossen …' : 'Sprint abschließen',
+          label: running ? t('sprint.closing') : t('sprint.close'),
           variant: 'outline',
           disabled: running,
           on: { click: () => void closeSprint(selected) },
@@ -1346,26 +1406,24 @@ function switcherBar(selected: Sprint | null): HTMLElement {
     }
   }
   if (canEdit()) {
-    actions.push(Button({ label: 'Sprint anlegen', variant: 'primary', on: { click: () => void createSprint() } }));
+    actions.push(Button({ label: t('sprint.create'), variant: 'primary', on: { click: () => void createSprint() } }));
   }
 
   return el('div', { class: 'sprints-bar' }, [
-    sprints.length ? ToolbarControl({ label: 'Sprint', children: select }) : null,
+    sprints.length ? ToolbarControl({ label: t('sprint'), children: select }) : null,
     el('div', { class: 'sprints-bar-actions' }, actions),
   ]);
 }
 
 function emptyState(): HTMLElement {
   return el('div', { class: 'sprints-notices' }, [
-    Callout({ tone: 'info', role: 'note', text: 'In dieser Zeitleiste gibt es noch keinen Sprint.' }),
-    Text({
-      as: 'p',
-      size: 'sm',
-      tone: 'muted',
-      text: canEdit()
-        ? 'Noch kein Sprint angelegt.'
-        : 'Noch kein Sprint angelegt. Diese Zeitleiste nimmt aus der Oberfläche keine Änderungen an.',
-    }),
+    Callout({ tone: 'info', role: 'note', text: t('empty.noSprint') }),
+    // One empty state, whether or not this timeline takes changes. The read-only
+    // variant used to add „This timeline takes no changes from the interface." —
+    // an explanation of why the button beside it is absent, which „Interface text"
+    // (AGENTS.md) says to delete rather than shorten. A read-only source already
+    // says so in the switcher, and the button is simply not there.
+    Text({ as: 'p', size: 'sm', tone: 'muted', text: t('empty.noSprintYet') }),
   ]);
 }
 
@@ -1447,8 +1505,9 @@ function paint(into: HTMLElement): void {
       Callout({
         tone: 'warning',
         role: 'note',
-        text:
-          `Mehrere Sprints stehen auf „aktiv": ${names.join(', ')}.`,
+        // The state through `stateLabel`, so the sentence and the badge beside it cannot
+        // end up naming the same state in two words.
+        text: t('refusal.severalActive', { state: stateLabel('active'), names: names.join(', ') }),
       }),
     );
   }
@@ -1464,8 +1523,7 @@ function paint(into: HTMLElement): void {
           tone: 'warning',
           role: 'note',
           text:
-            `Die Fenster von „${a}" und „${b}" überlappen sich ` +
-            `(${germanDay(warning.overlap.start)} bis ${germanDay(warning.overlap.end)}).`,
+            t('warn.overlap', { a, b, from: readableDay(warning.overlap.start) ?? '', to: readableDay(warning.overlap.end) ?? '' }),
         }),
       );
     } else if (warning.kind === 'closed-before-start') {
@@ -1474,9 +1532,11 @@ function paint(into: HTMLElement): void {
         Callout({
           tone: 'warning',
           role: 'note',
-          text:
-            `„${name}" ist am ${germanDay(warning.closedOn)} abgeschlossen worden, ` +
-            `also vor seinem eigenen Beginn am ${germanDay(warning.start)}.`,
+          text: t('refusal.closedBeforeStart', {
+            name,
+            closedOn: readableDay(warning.closedOn) ?? '',
+            start: readableDay(warning.start) ?? '',
+          }),
         }),
       );
     } else if (warning.kind === 'pass-without-sprint') {
@@ -1484,9 +1544,10 @@ function paint(into: HTMLElement): void {
         Callout({
           tone: 'warning',
           role: 'note',
-          text:
-            `Eine Historienzeile verweist auf den Sprint „${warning.sprintId}", den es nicht gibt ` +
-            `(Eintrag „${warning.itemId}").`,
+          text: t('refusal.passWithoutSprint', {
+            sprintId: warning.sprintId,
+            itemId: warning.itemId,
+          }),
         }),
       );
     } else if (warning.kind === 'duplicate-row-id' || warning.kind === 'several-reports-for-one-sprint') {
@@ -1499,14 +1560,17 @@ function paint(into: HTMLElement): void {
       const name = sprints.find((s) => s.id === warning.sprintId)?.name ?? warning.sprintId;
       // Phrased so the count is not the subject of a verb. „1 Historienzeile sind
       // geschrieben" was the first attempt, and a sentence that has to decline both a
-      // noun and its verb around a number gets one of the two wrong.
-      const rows = `${warning.passes} ${warning.passes === 1 ? 'Historienzeile' : 'Historienzeilen'}`;
-      const written = warning.report ? `${rows} und Bericht geschrieben` : `${rows} geschrieben, kein Bericht`;
+      // noun and its verb around a number gets one of the two wrong. The counted noun is
+      // therefore its own catalogue entry with a `.one` and an `.other`, in both languages.
+      const rows = t('close.rows', { count: warning.passes });
+      const written = warning.report
+        ? t('close.written.withReport', { rows })
+        : t('close.written.noReport', { rows });
       pageNotices.push(
         Callout({
           tone: 'warning',
           role: 'note',
-          text: `Abschluss von „${name}" ist unfertig: ${written}, Status „${STATE_LABELS[warning.state]}".`,
+          text: t('warn.closeUnfinished', { name, written, state: stateLabel(warning.state) }),
         }),
       );
     } else if (warning.kind === 'sprint-window-past') {
@@ -1520,8 +1584,7 @@ function paint(into: HTMLElement): void {
           tone: 'warning',
           role: 'note',
           text:
-            `„${name}" steht auf „${STATE_LABELS[warning.state]}", das Fenster endete am ` +
-            `${germanDay(warning.window.end)} (vor ${warning.days} ${warning.days === 1 ? 'Tag' : 'Tagen'}).`,
+            t('warn.windowPast', { name, state: stateLabel(warning.state), end: readableDay(warning.window.end) ?? '', count: warning.days }),
         }),
       );
     }
@@ -1532,7 +1595,7 @@ function paint(into: HTMLElement): void {
   // looking at a closed sprint as though it were the current one, while `sprint_status`
   // reports the absence.
   if (sprints.length && !sprints.some((s) => s.state === 'active')) {
-    pageNotices.push(Callout({ tone: 'info', role: 'note', text: 'Kein Sprint ist aktiv.' }));
+    pageNotices.push(Callout({ tone: 'info', role: 'note', text: t('empty.noneActive') }));
   }
   // A past sprint with no frozen report, with the other faults: it used to fall through to
   // a live recomputation, so the boxes showed numbers beside an empty plot and read as
@@ -1542,7 +1605,7 @@ function paint(into: HTMLElement): void {
       Callout({
         tone: 'warning',
         role: 'note',
-        text: `Zu „${selected.name}" ist kein Bericht gespeichert, deshalb gibt es keine Zahlen dazu.`,
+        text: t('refusal.reportMissing', { name: selected.name }),
       }),
     );
   }
@@ -1559,14 +1622,13 @@ function paint(into: HTMLElement): void {
         (w): w is Extract<SprintWarning, { kind: 'item-without-estimate' }> =>
           w.kind === 'item-without-estimate' && w.sprintId === selected.id,
       )
-      .map((w) => w.content || w.itemId || '(ohne Titel)');
+      .map((w) => w.content || w.itemId || t('sprint.untitled'));
     if (unsized.length) {
       children.push(
         Callout({
           tone: 'warning',
           role: 'note',
-          text:
-            `Ohne verwertbare Schätzung, daher in keiner Summe: ${unsized.join(', ')}.`,
+          text: t('refusal.noEstimateSum', { items: unsized.join(', ') }),
         }),
       );
     }

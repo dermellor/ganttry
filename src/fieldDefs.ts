@@ -15,11 +15,34 @@
 
 import type { CustomFieldDef, CustomFieldOption, CustomFieldType, TimelineFileItem } from './types';
 
-export const FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
-  { value: 'text', label: 'Text' },
-  { value: 'select', label: 'Auswahl' },
-  { value: 'multi-select', label: 'Mehrfachauswahl' },
-];
+import { translate, type MessageKey } from './i18n/catalogue.ts';
+import { DEFAULT_LOCALE, type Locale } from './i18n/locale.ts';
+
+/** The three shapes a field can have. Stored on the definition; never a label. */
+export const FIELD_TYPE_VALUES: readonly CustomFieldType[] = ['text', 'select', 'multi-select'];
+
+const FIELD_TYPE_KEY: Record<CustomFieldType, MessageKey> = {
+  text: 'field.type.text',
+  select: 'field.type.select',
+  'multi-select': 'field.type.multiSelect',
+};
+
+/**
+ * The `<select>` rows for a field's type, in a language.
+ *
+ * A function rather than the constant table it was: a table is filled on import,
+ * before a reader's language is known, and this module is also read by the server
+ * — so the locale comes in as an argument here for the reason `validateFieldDefs`
+ * takes one (see below).
+ */
+export function fieldTypeRows(
+  locale: Locale = DEFAULT_LOCALE,
+): { value: CustomFieldType; label: string }[] {
+  return FIELD_TYPE_VALUES.map((value) => ({
+    value,
+    label: translate(locale, FIELD_TYPE_KEY[value]),
+  }));
+}
 
 /**
  * Metadata keys with a control of their own. A field on one of these would be a
@@ -100,7 +123,14 @@ export type FieldDefProblem = { index: number; message: string };
 export function validateFieldDefs(
   defs: readonly CustomFieldDef[],
   pluginKeys: readonly string[] = [],
+  locale: Locale = DEFAULT_LOCALE,
 ): FieldDefProblem[] {
+  // The locale is a parameter rather than read from module state, because this
+  // module is shared with the server: the browser knows who is looking, and the
+  // write path does not. A default that resolves to the product language keeps
+  // every existing caller working and keeps the module free of client state —
+  // the same arrangement `declaredSettings` uses, and for the same reason.
+  const m = (key: MessageKey, vars?: Record<string, string | number>) => translate(locale, key, vars);
   const problems: FieldDefProblem[] = [];
   const seen = new Map<string, number>();
   const plugin = new Set(pluginKeys);
@@ -108,31 +138,24 @@ export function validateFieldDefs(
   defs.forEach((def, index) => {
     const key = def.key.trim();
     if (!key) {
-      problems.push({ index, message: 'Ohne Schlüssel kann das Feld nichts speichern.' });
+      problems.push({ index, message: m('refusal.field.keyMissing') });
     } else if (!KEY_SHAPE.test(key)) {
-      problems.push({
-        index,
-        message:
-          'Der Schlüssel darf nur Buchstaben, Ziffern, „-" und „_" enthalten und muss mit einem Buchstaben beginnen.',
-      });
+      problems.push({ index, message: m('refusal.field.keyShape') });
     } else if (RESERVED_FIELD_KEYS.includes(key)) {
-      problems.push({ index, message: `„${key}" hat schon ein eigenes Feld im Formular.` });
+      problems.push({ index, message: m('refusal.field.keyReserved', { key }) });
     } else if (plugin.has(key)) {
-      problems.push({
-        index,
-        message: `„${key}" kommt von einem Plugin. Ein gespeichertes Feld darauf würde nie erscheinen.`,
-      });
+      problems.push({ index, message: m('refusal.field.keyFromPlugin', { key }) });
     } else if (seen.has(key)) {
-      problems.push({ index, message: `„${key}" ist schon vergeben (Feld ${seen.get(key)! + 1}).` });
+      problems.push({ index, message: m('refusal.field.keyTaken', { key, index: seen.get(key)! + 1 }) });
     } else {
       seen.set(key, index);
     }
 
     if (!def.label.trim()) {
-      problems.push({ index, message: 'Ohne Bezeichnung weiß niemand, was das Feld meint.' });
+      problems.push({ index, message: m('refusal.field.labelMissing') });
     }
     if (hasOptions(def.type) && !(def.options ?? []).length) {
-      problems.push({ index, message: 'Eine Auswahl ohne Werte kann nichts auswählen.' });
+      problems.push({ index, message: m('refusal.field.optionsMissing') });
     }
   });
 
@@ -199,6 +222,7 @@ export function keyEditable(key: string, inUse: ReadonlySet<string>): boolean {
 export function selectRowsFor(
   def: Pick<CustomFieldDef, 'options'>,
   current: string,
+  locale: Locale = DEFAULT_LOCALE,
 ): { value: string; label: string; selected: boolean }[] {
   const declared = def.options ?? [];
   const rows = [
@@ -212,7 +236,11 @@ export function selectRowsFor(
   if (current && !declared.some((o) => o.value === current)) {
     // Marked rather than shown bare: „Free" beside three other values reads as one
     // of them, and the next person wonders why it is not in the definition.
-    rows.push({ value: current, label: `${current} (nicht in der Liste)`, selected: true });
+    rows.push({
+      value: current,
+      label: translate(locale, 'field.valueNotListed', { value: current }),
+      selected: true,
+    });
   }
   return rows;
 }

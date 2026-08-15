@@ -29,6 +29,7 @@ import { menuPosition, submenuPosition } from './menuPosition';
 import { state, isEditableView } from './state';
 import { ITEM_STATUSES, statusOrDefault, type StatusKey } from './status';
 import type { TimelineFileItem } from './types';
+import { t } from './i18n';
 
 // What the menu can do. Passed in from render.ts rather than imported here, the
 // same way the rail takes its `deleteItem` — the mutations live next to their
@@ -162,7 +163,7 @@ function submenusFor(item: TimelineFileItem): Submenu[] {
     if (!multi) {
       rows.unshift({
         value: '',
-        label: 'kein Wert',
+        label: t('form.noValue'),
         mark: () => el('span', {}, '—'),
         checked: current.length === 0,
       });
@@ -232,7 +233,7 @@ function menuChildren(subs: Submenu[]): Element[] {
           attrs: { role: 'menuitem', 'data-action': 'duplicate' },
         }),
         MenuItem({
-          label: 'Löschen',
+          label: t('form.delete'),
           mark: GLYPH_DELETE(),
           danger: true,
           attrs: { role: 'menuitem', 'data-action': 'delete' },

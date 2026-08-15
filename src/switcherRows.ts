@@ -10,6 +10,7 @@
 // would only cover by accident.
 
 import type { SourceKind, View } from './types';
+import { compare, t } from './i18n';
 
 export type SwitcherRow = {
   view: View;
@@ -23,11 +24,17 @@ export type SwitcherGroup = {
   rows: SwitcherRow[];
 };
 
-/** The heading a group of sources gets, in the words the origin badge uses. */
-export const ORIGIN_GROUP_LABEL: Record<SourceKind, string> = {
-  db: 'Datenbank',
-  local: 'Lokal',
-};
+/**
+ * The heading a group of sources gets.
+ *
+ * A function rather than the `Record` it used to be: a constant is filled on
+ * import, before the reader's language is resolved, and would pin both headings
+ * to whatever the page booted in (see „Never call `t()` at module scope" in
+ * [`src/i18n/index.ts`](./i18n/index.ts)).
+ */
+export function originGroupLabel(kind: SourceKind): string {
+  return kind === 'db' ? t('switcher.origin.db') : t('switcher.origin.local');
+}
 
 /**
  * Fold the accents and the case out of a string for matching. „Roadmap" has to be
@@ -52,6 +59,11 @@ export function matchesQuery(view: View, query: string): boolean {
   // „Launch-Roadmap" without the parts having to be adjacent.
   const haystack = `${fold(view.name)} ${fold(view.id)}`;
   return q.split(/\s+/).every((part) => haystack.includes(part));
+}
+
+/** Names in the reader's collation, not in German's. */
+function byName(a: string, b: string): number {
+  return compare()(a, b);
 }
 
 /**
@@ -86,16 +98,18 @@ export function switcherGroups(
   for (const kind of order) {
     const rows = byKind.get(kind);
     if (!rows?.length) continue;
-    rows.sort((a, b) => a.view.name.localeCompare(b.view.name, 'de'));
-    groups.push({ kind, label: ORIGIN_GROUP_LABEL[kind] ?? kind, rows });
+    rows.sort((a, b) => byName(a.view.name, b.view.name));
+    groups.push({ kind, label: originGroupLabel(kind), rows });
   }
   // A kind this build does not know about still gets listed, under its own name:
   // dropping it would hide timelines that exist (see `SourceKind` — the next one is
   // a new adapter, not a mistake).
   for (const [kind, rows] of byKind) {
     if (order.includes(kind)) continue;
-    rows.sort((a, b) => a.view.name.localeCompare(b.view.name, 'de'));
-    groups.push({ kind, label: ORIGIN_GROUP_LABEL[kind] ?? kind, rows });
+    rows.sort((a, b) => byName(a.view.name, b.view.name));
+    // No heading in the catalogue for a kind nothing here knows: its own name is
+    // the honest label, and inventing one would name it wrong.
+    groups.push({ kind, label: kind, rows });
   }
   return groups;
 }

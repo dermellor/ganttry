@@ -31,7 +31,7 @@ The committed example is [`data/example-sprint-planung.json`](../../../data/exam
 sixteen items across four tracks, five sprints (two closed with a frozen report, one
 active without a goal, two planned), and one item deliberately assigned to a sprint
 whose window its dates fall outside. Open the **Sprint** presentation for a sprint's own
-page; the saved views „Nach Sprints" and „Nach Datum" group the timeline by the
+page; the saved views „By sprint" and „By sprint window" group the timeline by the
 assignment and by the suggestion.
 
 ![A sprint's page: goal, numbers and burndown](preview.png)

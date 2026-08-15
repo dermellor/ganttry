@@ -98,8 +98,8 @@ function quoted(value: unknown): string {
 }
 
 /**
- * A counted noun in German. Notes are interface text an agent relays verbatim, and
- * „1 Einträge" is the kind of wrongness that makes the whole answer read as machine
+ * A counted noun. A note is relayed verbatim by whoever called the tool, and
+ * „1 entries" is the kind of wrongness that makes the whole answer read as machine
  * output nobody checked.
  */
 function count(n: number, one: string, many: string): string {
@@ -108,7 +108,7 @@ function count(n: number, one: string, many: string): string {
 
 /** What a person recognises the item by. The id is the fallback, never the first choice. */
 function nameOf(item: TimelineFileItem): string {
-  return item.content?.trim() || item.id?.trim() || '(ohne Titel)';
+  return item.content?.trim() || item.id?.trim() || '(untitled)';
 }
 
 function nameList(items: readonly TimelineFileItem[]): string {
@@ -120,7 +120,7 @@ function nameList(items: readonly TimelineFileItem[]): string {
  * only an id addresses an item in a follow-up call.
  */
 function idList(items: readonly TimelineFileItem[]): string {
-  return items.map((item) => item.id?.trim() || `(ohne Id: ${nameOf(item)})`).join(', ');
+  return items.map((item) => item.id?.trim() || `(no id: ${nameOf(item)})`).join(', ');
 }
 
 /** A sprint in a note: the name a person reads plus the id a follow-up call needs. */
@@ -145,56 +145,52 @@ function computedWindowNote(label: string, window: SprintWindow): string | null 
   if (window.source === 'row') return null;
   if (window.source === 'end-from-cadence') {
     return (
-      `Das Ende dieses Fensters (${window.end}) steht nicht auf ${label}: es ist aus dem geschriebenen Anfang und ` +
-      'der Kadenzlänge berechnet. Ein Sprint hat eine feste Länge, geschrieben ist hier aber nur der Anfang.'
+      `The end of this window (${window.end}) is not written on ${label}: it is computed from the written start and ` +
+      'the cadence length. A sprint has a fixed length, but only its start is written here.'
     );
   }
   return (
-    `Dieses Fenster (${window.start} bis ${window.end}) steht nicht auf ${label}: es kommt aus dem Raster der ` +
-    'Konfiguration, an der Position dieser Zeile, und verschiebt sich deshalb, wenn die Zeilen umsortiert werden.'
+    `This window (${window.start} to ${window.end}) is not written on ${label}: it comes from the raster in the ` +
+    'configuration, at this row’s position, and therefore moves when the rows are reordered.'
   );
 }
 
 /**
  * The state as interface text.
  *
- * The stored value is one of four English ids, and a note is read by a person: an answer
- * that mixes „aktiv" and „active" reads as two systems talking past each other.
+ * The stored value is one of four English ids, and a note is read by a person.
+ *
+ * **This copy is the agent-facing one and is English**, like the rest of the tool
+ * surface (docs/mcp.md). The interface has its own, in `index.ts`, which follows the
+ * reader's language. Two tables for what looks like one fact is right here rather
+ * than a duplication to collapse: they answer for two different audiences, and the
+ * day they stopped agreeing is the day this one stopped being a translation.
  */
 const STATE_LABELS: Record<SprintState, string> = {
-  planned: 'geplant',
-  active: 'aktiv',
-  closed: 'abgeschlossen',
-  cancelled: 'abgebrochen',
+  planned: 'planned',
+  active: 'active',
+  closed: 'closed',
+  cancelled: 'cancelled',
 };
 
 /**
  * The unit a number in a note is counted in, declined for that number.
  *
  * The singular is not decoration: counting entries made a scope of exactly 1 an everyday
- * case, and „davon offen 1 Einträge" is the kind of wrongness that makes the whole
- * answer read as machine output nobody checked. Same reason `count` exists.
+ * case, and „1 entries open" is the kind of wrongness that makes the whole answer read
+ * as machine output nobody checked. Same reason `count` exists.
  */
 function unitLabel(unit: CapacityUnit, value: number): string {
   const one = atPrintedResolution(value) === 1;
-  if (unit === 'hours') return one ? 'Stunde' : 'Stunden';
-  if (unit === 'items') return one ? 'Eintrag' : 'Einträge';
-  return one ? 'Punkt' : 'Punkte';
+  if (unit === 'hours') return one ? 'hour' : 'hours';
+  if (unit === 'items') return one ? 'entry' : 'entries';
+  return one ? 'point' : 'points';
 }
 
-/**
- * The same unit after „von" or „mit".
- *
- * Two forms rather than one, because German declines: „13 Punkte" and „von 20 Punkten"
- * are both right and „von 20 Punkte" is not. The number it agrees with is the one it
- * follows, which is why it is an argument.
- */
-function unitDative(unit: CapacityUnit, value: number): string {
-  const one = atPrintedResolution(value) === 1;
-  if (unit === 'hours') return one ? 'Stunde' : 'Stunden';
-  if (unit === 'items') return one ? 'Eintrag' : 'Einträgen';
-  return one ? 'Punkt' : 'Punkten';
-}
+// A second, dative form of the unit used to live here. It existed because German
+// declines — „13 Punkte" but „von 20 Punkten" — and English does not, so the notes
+// moving to English (docs/mcp.md) collapsed the two into `unitLabel`. Kept as a
+// note rather than silently dropped: the next language with cases needs it back.
 
 /**
  * A value at the resolution the notes print it at.
@@ -220,7 +216,7 @@ function points(value: number): string {
  *
  * Comparing the raw floats let the verdict contradict the two numbers beside it:
  * `"0.1"` + `"0.2"` is 0.30000000000000004, so a capacity of 0.3 produced „0.3 von 0.3
- * Punkten (überbucht)". Both sides are compared where they are shown, so a reader can
+ * points (over capacity)". Both sides are compared where they are shown, so a reader can
  * always check the verdict against the figures it is printed with.
  */
 function overCapacity(sum: number, capacity: number): boolean {
@@ -236,8 +232,8 @@ function overCapacity(sum: number, capacity: number): boolean {
 function unusableSumNote(sum: number, where: string): string | null {
   if (Number.isFinite(sum)) return null;
   return (
-    `${where}: Die Summe der Schätzungen ist keine darstellbare Zahl mehr (${String(sum)}). ` +
-    'Solange einzelne Schätzungen so groß sind, ist keine Kapazitätsaussage möglich; die Werte gehören korrigiert.'
+    `${where}: the sum of the estimates is no longer a representable number (${String(sum)}). ` +
+    'While single estimates are that large no capacity statement is possible; the values need correcting.'
   );
 }
 
@@ -249,7 +245,7 @@ type Scope = { sum: number; missing: TimelineFileItem[] };
  *
  * **„items" counts entries, and that is the whole fix here.** A sprint with
  * `capacityUnit: 'items'` and a capacity of 3, holding two items of 8 and 13 points,
- * was reported as „Umfang 21 von 3 Einträgen (überbucht)": a story-point sum compared
+ * was reported as „scope 21 of 3 entries (over capacity)": a story-point sum compared
  * against a count of entries, declared over budget by an arithmetic nobody performed.
  *
  * Nothing is missing from such a count, so `missing` is empty for it: an entry is one
@@ -269,12 +265,12 @@ function scopeOf(items: readonly TimelineFileItem[], unit: CapacityUnit): Scope 
   return { sum, missing };
 }
 
-/** „ohne verwertbare Schätzung: …", or nothing when every item carries one. */
+/** „without a usable estimate: …", or nothing when every item carries one. */
 function missingEstimateNote(where: string, missing: readonly TimelineFileItem[]): string | null {
   if (!missing.length) return null;
   return (
-    `${where}: ohne verwertbare Schätzung: ${nameList(missing)}. ` +
-    `Eine Summe, in der ${count(missing.length, 'Eintrag fehlt', 'Einträge fehlen')}, ist keine Kapazitätsaussage.`
+    `${where}: without a usable estimate: ${nameList(missing)}. ` +
+    `A sum in which ${count(missing.length, 'entry is missing', 'entries are missing')} is not a capacity statement.`
   );
 }
 
@@ -342,8 +338,8 @@ function windowNotes(sprint: Sprint, raster: SprintRaster | null, items: readonl
   const window = sprintWindow(sprint, raster);
   if (!window) {
     return [
-      `${sprintLabel(sprint)} hat kein Fenster: weder trägt die Zeile start und end, noch gibt es ein Raster, das ` +
-        'eines beisteuert. Ob die Daten eines Eintrags der Zuordnung widersprechen, ist damit nicht prüfbar.',
+      `${sprintLabel(sprint)} has no window: the row carries neither start nor end, and no raster contributes ` +
+        'one. Whether an entry’s dates contradict its assignment is therefore not checkable.',
     ];
   }
   const outside = items.filter((item) => datesDisagree(window, item));
@@ -352,17 +348,17 @@ function windowNotes(sprint: Sprint, raster: SprintRaster | null, items: readonl
   const undated = items.filter((item) => !isDayString(item.start) && !outside.includes(item));
   if (outside.length) {
     notes.push(
-      `Die eigenen Daten widersprechen der Zuordnung zu ${sprintLabel(sprint)} (${window.start} bis ${window.end}): ` +
-        `${nameList(outside)} (${idList(outside)}). Weder die Daten noch die Zuordnung werden geändert: das eine ` +
-        'überschreibt einen Plan, das andere eine Zusage, und beides hat ein Mensch entschieden.',
+      `The entries’ own dates contradict their assignment to ${sprintLabel(sprint)} (${window.start} to ${window.end}): ` +
+        `${nameList(outside)} (${idList(outside)}). Neither the dates nor the assignment are changed: one ` +
+        'would overwrite a plan, the other a commitment, and a person decided both.',
     );
     const computed = computedWindowNote(sprintLabel(sprint), window);
     if (computed) notes.push(computed);
   }
   if (undated.length) {
     notes.push(
-      `Ohne Startdatum und daher an keiner Stelle des Fensters: ${nameList(undated)} (${idList(undated)}). ` +
-        'Die Zuordnung gilt trotzdem, ein Vergleich mit dem Fenster ist nicht möglich.',
+      `Without a start date and therefore at no point in the window: ${nameList(undated)} (${idList(undated)}). ` +
+        'The assignment still holds; a comparison with the window is not possible.',
     );
   }
   return notes;
@@ -372,7 +368,7 @@ function windowNotes(sprint: Sprint, raster: SprintRaster | null, items: readonl
 
 /** What a warning calls the item it is about. The content first, the id as a fallback. */
 function warnedName(warning: { content: string; itemId: string | null }): string {
-  return `„${warning.content.trim() || warning.itemId?.trim() || '(ohne Titel)'}"`;
+  return `„${warning.content.trim() || warning.itemId?.trim() || '(untitled)'}"`;
 }
 
 /**
@@ -397,8 +393,8 @@ function warningNotes(
   for (const warning of warnings) {
     if (warning.kind === 'active-sprint-without-goal') {
       notes.push(
-        `${label(warning.sprintId)} ist aktiv und hat kein Sprint-Ziel. Das Ziel ist das Kriterium, an dem während ` +
-          'des Sprints über Änderungen entschieden wird, und der einzige Grund, einen Sprint abzubrechen.',
+        `${label(warning.sprintId)} is active and has no sprint goal. The goal is the criterion by which changes ` +
+          'are decided during the sprint, and the only reason to abort one.',
       );
     }
     if (warning.kind === 'several-active-sprints') {
@@ -406,45 +402,45 @@ function warningNotes(
       // be reported, never prevented: „A new Sprint starts immediately after the
       // conclusion of the previous Sprint".
       notes.push(
-        `${count(warning.sprintIds.length, 'Sprint ist', 'Sprints sind')} gleichzeitig aktiv ` +
-          `(${warning.sprintIds.map(label).join(', ')}). Es kann nur einen aktiven Sprint geben; die übrigen ` +
-          'gehören geschlossen oder auf „planned" zurückgesetzt.',
+        `${count(warning.sprintIds.length, 'sprint is', 'sprints are')} active at the same time ` +
+          `(${warning.sprintIds.map(label).join(', ')}). There can be only one active sprint; the rest ` +
+          'need closing or resetting to „planned".',
       );
     }
     if (warning.kind === 'overlapping-sprint-windows') {
       // Both ids, because the fault is the pair and neither row is wrong on its own.
       notes.push(
-        `Die Fenster von ${label(warning.sprintIds[0])} und ${label(warning.sprintIds[1])} überschneiden sich ` +
-          `(${warning.overlap.start} bis ${warning.overlap.end}). Ein Sprint beginnt, wenn der vorige endet, und ` +
-          'für einen Eintrag in diesen Tagen nennt „Sprint nach Datum" die frühere Zeile, während die Zuordnung ' +
-          'auf die spätere zeigt: der Widerspruch ist dann in keiner der beiden Zeilen zu sehen.',
+        `The windows of ${label(warning.sprintIds[0])} and ${label(warning.sprintIds[1])} overlap ` +
+          `(${warning.overlap.start} to ${warning.overlap.end}). A sprint begins when the previous one ends, and ` +
+          'for an entry in those days „sprint by date" names the earlier row while the assignment ' +
+          'points at the later one: the contradiction is then visible in neither row.',
       );
     }
     if (warning.kind === 'closed-before-start') {
       notes.push(
-        `${label(warning.sprintId)} ist am ${warning.closedOn} abgeschlossen worden und beginnt am ` +
-          `${warning.start}, also danach. Eines der beiden Daten ist falsch, und welches, sagt keine Zahl hier: ` +
-          'der eingefrorene Verlauf liegt damit außerhalb des Fensters, in dem er gezeichnet würde.',
+        `${label(warning.sprintId)} was closed on ${warning.closedOn} and begins on ` +
+          `${warning.start}, which is after it. One of the two dates is wrong, and no number here says which: ` +
+          'the frozen history therefore lies outside the window it would be drawn in.',
       );
     }
     if (warning.kind === 'pass-without-sprint') {
       notes.push(
-        `Der Verlaufseintrag ${quoted(warning.rowId)} nennt den Sprint ${quoted(warning.sprintId)}, den es nicht ` +
-          `gibt (Eintrag ${quoted(warning.itemId)}). Er zählt damit in keinem Sprint und wird auch nicht ` +
-          'gelöscht: gehört er zu einem umbenannten Sprint, ist die Id zu korrigieren, sonst die Zeile zu entfernen.',
+        `History row ${quoted(warning.rowId)} names sprint ${quoted(warning.sprintId)}, which does not ` +
+          `exist (entry ${quoted(warning.itemId)}). It therefore counts in no sprint, and it is not ` +
+          'deleted either: if it belongs to a renamed sprint, correct the id; otherwise remove the row.',
       );
     }
     if (warning.kind === 'duplicate-row-id') {
       notes.push(
-        `Die Sammlung „${warning.collection}" trägt die Id ${quoted(warning.rowId)} mehr als einmal. Gelesen wird ` +
-          'die erste Zeile, jede weitere existiert nur noch in der Datei: sie steht in keiner Auswahl, in keiner ' +
-          'Summe und in keinem Bericht.',
+        `Collection „${warning.collection}" carries the id ${quoted(warning.rowId)} more than once. The first ` +
+          'row is read; every further one exists only in the file: it is in no selection, no ' +
+          'sum and no report.',
       );
     }
     if (warning.kind === 'several-reports-for-one-sprint') {
       notes.push(
-        `Zu ${label(warning.sprintId)} gibt es mehr als einen Bericht (${warning.rowIds.map(quoted).join(', ')}). ` +
-          'Gelesen wird der erste; die übrigen sind zweite eingefrorene Zahlen zum selben abgeschlossenen Sprint.',
+        `There is more than one report for ${label(warning.sprintId)} (${warning.rowIds.map(quoted).join(', ')}). ` +
+          'The first is read; the rest are second frozen numbers for the same closed sprint.',
       );
     }
     if (warning.kind === 'close-incomplete') {
@@ -453,11 +449,11 @@ function warningNotes(
       // readable from the rows rather than remembered by whoever was watching.
       // Same shape as the page's sentence, and phrased the same way for the same reason:
       // a count as the subject makes the verb decline too, and one of the two ends up wrong.
-      const rows = count(warning.passes, 'Historienzeile', 'Historienzeilen');
-      const written = warning.report ? `${rows} und Bericht geschrieben` : `${rows} geschrieben, kein Bericht`;
+      const rows = count(warning.passes, 'history row', 'history rows');
+      const written = warning.report ? `${rows} and report written` : `${rows} written, no report`;
       notes.push(
-        `Der Abschluss von ${label(warning.sprintId)} ist unfertig: ${written}, Status „${warning.state}". ` +
-          'Ein erneuter Abschluss schreibt nichts doppelt.',
+        `The close of ${label(warning.sprintId)} is unfinished: ${written}, status „${warning.state}". ` +
+          'Closing again writes nothing twice.',
       );
     }
     if (warning.kind === 'sprint-window-past') {
@@ -465,9 +461,9 @@ function warningNotes(
       // — the view drew „aktiv" and said nothing about a window that had ended six months
       // earlier. It is a warning now, so both surfaces render the same finding.
       notes.push(
-        `${label(warning.sprintId)} steht auf „${warning.state}", das Fenster endete am ${warning.window.end} ` +
-          `(vor ${count(warning.days, 'Tag', 'Tagen')}, Stichtag ${warning.day}). Nichts schließt einen Sprint von ` +
-          'selbst, und ein Sprint wird nicht verlängert, sondern geschlossen.',
+        `${label(warning.sprintId)} is „${warning.state}", and its window ended on ${warning.window.end} ` +
+          `(${count(warning.days, 'day', 'days')} ago, as of ${warning.day}). Nothing closes a sprint by ` +
+          'itself, and a sprint is not extended but closed.',
       );
       const computed = computedWindowNote(label(warning.sprintId), warning.window);
       if (computed) notes.push(computed);
@@ -488,10 +484,10 @@ function warningNotes(
     if (outside.length) {
       const window = outside[0].kind === 'item-outside-sprint-window' ? outside[0].window : null;
       notes.push(
-        `Die eigenen Daten widersprechen der Zuordnung zu ${label(sprintId)}` +
-          `${window ? ` (${window.start} bis ${window.end})` : ''}: ` +
-          `${outside.map(warnedName).join(', ')}. Weder die Daten noch die Zuordnung werden geändert: das eine ` +
-          'überschreibt einen Plan, das andere eine Zusage, und beides hat ein Mensch entschieden.',
+        `The entries’ own dates contradict their assignment to ${label(sprintId)}` +
+          `${window ? ` (${window.start} to ${window.end})` : ''}: ` +
+          `${outside.map(warnedName).join(', ')}. Neither the dates nor the assignment are changed: one ` +
+          'would overwrite a plan, the other a commitment, and a person decided both.',
       );
       // The window this contradiction is measured against may be one nobody wrote.
       const computed = window ? computedWindowNote(label(sprintId), window) : null;
@@ -499,16 +495,16 @@ function warningNotes(
     }
     if (missing.length) {
       // A sprint counted in entries has a complete scope without these estimates, so the
-      // „diese Summe ist keine Kapazitätsaussage" sentence would be false there — the
+      // „this sum is not a capacity statement" sentence would be false there — the
       // missing estimate is still worth naming, for a different reason.
       const sprint = sprintById(sprints, sprintId);
       const counted = sprint != null && capacityUnitOf(sprint, file) === 'items';
       notes.push(
-        `${label(sprintId)}: ohne verwertbare Schätzung: ${missing.map(warnedName).join(', ')}. ` +
+        `${label(sprintId)}: without a usable estimate: ${missing.map(warnedName).join(', ')}. ` +
           (counted
-            ? 'Dieser Sprint zählt Einträge, sein Umfang ist damit vollständig; über den Aufwand sagt er nichts.'
-            : `Eine Summe, in der ${count(missing.length, 'Eintrag fehlt', 'Einträge fehlen')}, ist keine ` +
-              'Kapazitätsaussage.'),
+            ? 'This sprint counts entries, so its scope is complete; it says nothing about effort.'
+            : `A sum in which ${count(missing.length, 'entry is missing', 'entries are missing')} is not a ` +
+              'capacity statement.'),
       );
     }
   }
@@ -528,8 +524,8 @@ function requireSprints(file: TimelineFile): Sprint[] {
   const sprints = readSprints(file);
   if (!sprints.length) {
     throw new Error(
-      'Auf dieser Timeline ist kein Sprint angelegt. Die Zuordnung verweist auf die Id einer Zeile der Sammlung ' +
-        '„sprints", die es dafür geben muss: erst einen Sprint anlegen, dann zuordnen.',
+      'No sprint exists on this timeline. The assignment refers to the id of a row in the ' +
+        '„sprints" collection, which has to exist for it: create a sprint first, then assign.',
     );
   }
   return sprints;
@@ -538,17 +534,17 @@ function requireSprints(file: TimelineFile): Sprint[] {
 /** The sprint an argument names, or a refusal that lists the ones that exist. */
 function requireSprint(sprints: readonly Sprint[], raw: unknown, argName: string): Sprint {
   if (raw == null) {
-    throw new Error(`\`${argName}\` fehlt: erwartet ist die Id eines Sprints. Vorhanden: ${sprintChoices(sprints)}.`);
+    throw new Error(`\`${argName}\` is missing: the id of a sprint is expected. Available: ${sprintChoices(sprints)}.`);
   }
   const id = typeof raw === 'string' ? raw.trim() : '';
   if (!id) {
     throw new Error(
-      `${quoted(raw)} ist keine Sprint-Id: erwartet ist die Id einer Zeile der Sammlung „sprints". ` +
-        `Vorhanden: ${sprintChoices(sprints)}.`,
+      `${quoted(raw)} is not a sprint id: the id of a row in the „sprints" collection is expected. ` +
+        `Available: ${sprintChoices(sprints)}.`,
     );
   }
   const found = sprintById(sprints, id);
-  if (!found) throw new Error(`Kein Sprint mit der Id ${quoted(id)}. Vorhanden: ${sprintChoices(sprints)}.`);
+  if (!found) throw new Error(`No sprint with the id ${quoted(id)}. Available: ${sprintChoices(sprints)}.`);
   return found;
 }
 
@@ -567,9 +563,9 @@ function requireSprint(sprints: readonly Sprint[], raw: unknown, argName: string
  * caller believes covered its whole list.
  */
 function itemIdsArg(raw: unknown): { ids: string[]; unusable: unknown[] } {
-  if (raw == null) throw new Error('`items` fehlt: erwartet ist eine Liste von Item-Ids.');
-  if (!Array.isArray(raw)) throw new Error(`${quoted(raw)} ist keine Liste von Item-Ids.`);
-  if (!raw.length) throw new Error('`items` ist leer: ohne Einträge gibt es nichts zuzuordnen.');
+  if (raw == null) throw new Error('`items` is missing: a list of item ids is expected.');
+  if (!Array.isArray(raw)) throw new Error(`${quoted(raw)} is not a list of item ids.`);
+  if (!raw.length) throw new Error('`items` is empty: without entries there is nothing to assign.');
   const ids: string[] = [];
   const unusable: unknown[] = [];
   for (const entry of raw) {
@@ -633,9 +629,9 @@ export const planSprint: ToolHandler = ({ file, args }): ToolPlan => {
     // that holds that sprint's figures — and no note said a report existed. A write with
     // no possible benefit looks exactly like one that worked.
     throw new Error(
-      `${sprintLabel(sprint)} ist ${STATE_LABELS[sprint.state]}: dorthin wird nichts mehr zugeordnet. Die Zahlen ` +
-        'dieses Sprints stehen in seinem eingefrorenen Bericht und werden nicht neu berechnet, eine weitere ' +
-        'Zuordnung würde ihm also nur widersprechen. Nenne einen geplanten oder aktiven Sprint.',
+      `${sprintLabel(sprint)} is ${STATE_LABELS[sprint.state]}: nothing is assigned there any more. This sprint’s ` +
+        'figures stand in its frozen report and are not recalculated, so a further ' +
+        'an assignment would only contradict it. Name a planned or active sprint.',
     );
   }
   const { ids, unusable } = itemIdsArg(args.items);
@@ -668,34 +664,36 @@ export const planSprint: ToolHandler = ({ file, args }): ToolPlan => {
   const notes: string[] = [];
   notes.push(
     assign.length
-      ? `${sprintLabel(sprint)}: ${count(assign.length, 'Eintrag', 'Einträge')} zugeordnet (${nameList(assign)}). ` +
-        'Daten wurden dabei nicht angefasst.'
-      : `${sprintLabel(sprint)}: nichts zugeordnet.`,
+      ? `${sprintLabel(sprint)}: ${count(assign.length, 'entry', 'entries')} assigned (${nameList(assign)}). ` +
+        'No dates were touched in the process.'
+      : `${sprintLabel(sprint)}: nothing assigned.`,
   );
   if (already.length) {
     // Writing the value an item already carries is a patch with no effect, and a plan
     // that reports it looks like a change happened.
-    notes.push(`Bereits ${sprintLabel(sprint)} zugeordnet und daher nicht erneut geschrieben: ${nameList(already)}.`);
+    notes.push(
+      `Already assigned to ${sprintLabel(sprint)} and therefore not written again: ${nameList(already)}.`,
+    );
   }
   if (unknown.length || unusable.length) {
     notes.push(
-      `Nicht auf dieser Timeline und daher nicht zugeordnet: ${[...unknown, ...unusable].map(quoted).join(', ')}. ` +
-        'Eine Id, die kein Eintrag trägt, würde den gesamten Plan ungültig machen, deshalb ist sie nicht darin.',
+      `Not on this timeline and therefore not assigned: ${[...unknown, ...unusable].map(quoted).join(', ')}. ` +
+        'An id no entry carries would invalidate the whole plan, so it is not in it.',
     );
   }
 
   const done = assign.filter(isDone);
   if (done.length) {
     notes.push(
-      `Auch abgeschlossene Arbeit wurde zugeordnet (${nameList(done)}): das ändert kein Datum, verschiebt aber ` +
-        'fertige Arbeit in die Bilanz dieses Sprints. Für den Verlauf zählt der Sprint, in dem sie fertig wurde.',
+      `Finished work was assigned too (${nameList(done)}): that changes no date, but it moves ` +
+        'finished work into this sprint’s balance. For the history, the sprint it was finished in counts.',
     );
   }
 
   notes.push(...windowNotes(sprint, rasterOf(file), [...assign, ...already]));
   notes.push(
-    `Ob der Umfang in ${sprintLabel(sprint)} passt, beantwortet \`sprint_status\`: dieser Aufruf ordnet zu und ` +
-      'rechnet nichts.',
+    `Whether the scope fits in ${sprintLabel(sprint)} is what \`sprint_status\` answers: this call assigns and ` +
+      'computes nothing.',
   );
 
   return { changes, notes };
@@ -708,15 +706,15 @@ function rollOverTarget(sprints: readonly Sprint[], source: Sprint, args: Record
   const wantsBacklog = args.toBacklog;
   if (wantsBacklog != null && typeof wantsBacklog !== 'boolean') {
     throw new Error(
-      `${quoted(wantsBacklog)} ist kein Wahrheitswert: \`toBacklog\` ist entweder true oder nicht gesetzt.`,
+      `${quoted(wantsBacklog)} is not a boolean: \`toBacklog\` is either true or unset.`,
     );
   }
   const backlog = wantsBacklog === true;
   const named = args.toSprint;
   if (backlog && named != null) {
     throw new Error(
-      'Entweder `toSprint` oder `toBacklog`, nicht beides: zwei Ziele sind kein Ziel, und welches gewonnen hätte, ' +
-        'wäre an der Antwort nicht zu sehen.',
+      'Either `toSprint` or `toBacklog`, not both: two targets are no target, and which one would have won ' +
+        'would not be visible in the answer.',
     );
   }
   if (!backlog && named == null) {
@@ -724,24 +722,24 @@ function rollOverTarget(sprints: readonly Sprint[], source: Sprint, args: Record
     // Linear all offer the next sprint instead. A default here would pick one of those
     // philosophies for the caller, silently, on a write.
     throw new Error(
-      'Ohne Ziel wird nichts verschoben: `toSprint` (Id des Zielsprints) oder `toBacklog: true` (Zuordnung ' +
-        'entfernen) muss gesetzt sein. Es gibt hier absichtlich kein Standardziel, weil der Scrum Guide unfertige ' +
-        'Arbeit ins Product Backlog zurücklegt und die verbreiteten Werkzeuge sie in den nächsten Sprint schieben.',
+      'Without a target nothing is moved: `toSprint` (the target sprint’s id) or `toBacklog: true` (remove the ' +
+        'assignment) has to be set. There is deliberately no default target, because the Scrum Guide returns unfinished ' +
+        'work back into the product backlog, and the common tools move it into the next sprint.',
     );
   }
   if (backlog) return null;
   const target = requireSprint(sprints, named, 'toSprint');
   if (target.id === source.id) {
     throw new Error(
-      `Quelle und Ziel sind derselbe Sprint (${sprintLabel(source)}): das wäre ein Schreibvorgang ohne Wirkung.`,
+      `Source and target are the same sprint (${sprintLabel(source)}): that would be a write with no effect.`,
     );
   }
   if (target.state === 'closed' || target.state === 'cancelled') {
     // Unfinished work rolled into a sprint that is over cannot be worked on there, so
     // the write could not help and would look like a roll-over that succeeded.
     throw new Error(
-      `${sprintLabel(target)} ist ${STATE_LABELS[target.state]}: offene Arbeit dorthin zu verschieben hilft nichts. ` +
-        'Nenne einen geplanten oder aktiven Sprint, oder `toBacklog: true`.',
+      `${sprintLabel(target)} is ${STATE_LABELS[target.state]}: moving open work there helps nothing. ` +
+        'Name a planned or active sprint, or `toBacklog: true`.',
     );
   }
   return target;
@@ -764,7 +762,7 @@ export const rollOver: ToolHandler = ({ file, args }): ToolPlan => {
   const members = itemsOfSprint(items, source.id);
 
   if (!members.length) {
-    return { changes: [], notes: [`${sprintLabel(source)} hält keinen Eintrag: es gibt nichts zu verschieben.`] };
+    return { changes: [], notes: [`${sprintLabel(source)} holds no entry: there is nothing to move.`] };
   }
 
   const notes: string[] = [];
@@ -777,7 +775,7 @@ export const rollOver: ToolHandler = ({ file, args }): ToolPlan => {
     else moved.push(item);
   }
 
-  const where = target ? sprintLabel(target) : 'das Backlog';
+  const where = target ? sprintLabel(target) : 'the backlog';
   const changes: ItemChange[] = moved.map((item) => ({
     op: 'update',
     itemId: planItemId(item),
@@ -789,21 +787,21 @@ export const rollOver: ToolHandler = ({ file, args }): ToolPlan => {
 
   notes.push(
     moved.length
-      ? `${sprintLabel(source)}: ${count(moved.length, 'offener Eintrag', 'offene Einträge')} nach ${where} ` +
-        `verschoben (${nameList(moved)}). Kein Datum wurde dabei geändert.`
-      : `${sprintLabel(source)}: kein offener Eintrag verschoben.`,
+      ? `${sprintLabel(source)}: ${count(moved.length, 'open entry', 'open entries')} moved to ${where} ` +
+        `(${nameList(moved)}). No date was changed in the process.`
+      : `${sprintLabel(source)}: no open entry moved.`,
   );
 
   if (done.length) {
     notes.push(
-      `Abgeschlossene Arbeit bleibt in ${sprintLabel(source)} (${nameList(done)}): sie ist dort fertig geworden, und ` +
-        'eine andere Zuordnung würde den Verlauf umschreiben.',
+      `Finished work stays in ${sprintLabel(source)} (${nameList(done)}): it was finished there, and ` +
+        'a different assignment would rewrite the history.',
     );
   }
   if (unaddressable.length) {
     notes.push(
-      `Ohne verwendbare Id und daher nicht verschoben: ${nameList(unaddressable)}. Ein Plan adressiert einen ` +
-        'Eintrag über seine Id; eine leere Id würde den gesamten Plan ungültig machen.',
+      `Without a usable id and therefore not moved: ${nameList(unaddressable)}. A plan addresses an ` +
+        'entry by its id; an empty id would invalidate the whole plan.',
     );
   }
 
@@ -829,9 +827,9 @@ export const rollOver: ToolHandler = ({ file, args }): ToolPlan => {
   }
   if (stranded.length) {
     notes.push(
-      'Hängt an verschobener Arbeit und ist selbst nicht mitverschoben worden (`dependsOn`): ' +
-        `${nameList(stranded)} (${idList(stranded)}). Die Abhängigkeit zeigt jetzt über eine Sprintgrenze zurück; ` +
-        'ein Mitverschieben wäre eine Umschreibung des restlichen Plans aus einem Aufruf.',
+      'Depends on work that moved and did not move with it (`dependsOn`): ' +
+        `${nameList(stranded)} (${idList(stranded)}). The dependency now points back across a sprint boundary; ` +
+        'moving it along would rewrite the rest of the plan out of a single call.',
     );
   }
 
@@ -841,16 +839,16 @@ export const rollOver: ToolHandler = ({ file, args }): ToolPlan => {
     // records the move (./docs/model.md, „A close is not atomic"). An agent that reads
     // „rolled over" as „closed" would leave a sprint that is over standing as active.
     notes.push(
-      'Verschoben wurden nur Zuordnungen: der Status des Sprints bleibt, und es entsteht kein Verlaufseintrag ' +
-        '(`passes`). Ein Abschluss ist ein eigener Schritt.',
+      'Only assignments were moved: the sprint’s status stands, and no history row is created ' +
+        '(`passes`). Closing is a step of its own.',
     );
   }
 
   if (target) notes.push(...windowNotes(target, rasterOf(file), moved));
   else if (moved.length) {
     notes.push(
-      'Im Backlog gilt kein Fenster, die Daten der Einträge bleiben stehen. Sie widersprechen damit keiner ' +
-        'Zuordnung mehr, terminieren aber weiterhin Arbeit, die niemand zugesagt hat.',
+      'No window applies in the backlog, and the entries keep their dates. They therefore contradict no ' +
+        'assignment any more, but still schedule work nobody has committed to.',
     );
   }
 
@@ -879,7 +877,7 @@ function statusOf(
   const state = STATE_LABELS[sprint.state];
 
   if (!members.length) {
-    notes.push(`${sprintLabel(sprint)}, ${state}: kein Eintrag zugeordnet.`);
+    notes.push(`${sprintLabel(sprint)}, ${state}: no entry assigned.`);
   } else {
     const scope = scopeOf(members, unit);
     const remaining = scopeOf(members.filter((item) => !isDone(item)), unit);
@@ -888,17 +886,17 @@ function statusOf(
       notes.push(unusable);
     } else if (sprint.capacity == null) {
       notes.push(
-        `${sprintLabel(sprint)}, ${state}: ${count(members.length, 'Eintrag', 'Einträge')}, Umfang ` +
-          `${points(scope.sum)} ${unitLabel(unit, scope.sum)}, davon offen ${points(remaining.sum)} ` +
-          `${unitLabel(unit, remaining.sum)}. ` +
-          'Ohne `capacity` auf dem Sprint steht diese Zahl ohne Maßstab.',
+        `${sprintLabel(sprint)}, ${state}: ${count(members.length, 'entry', 'entries')}, scope ` +
+          `${points(scope.sum)} ${unitLabel(unit, scope.sum)}, of which ${points(remaining.sum)} ` +
+          `${unitLabel(unit, remaining.sum)} open. ` +
+          'Without `capacity` on the sprint this number has no scale.',
       );
     } else {
       notes.push(
-        `${sprintLabel(sprint)}, ${state}: ${count(members.length, 'Eintrag', 'Einträge')}, Umfang ` +
-          `${points(scope.sum)} von ${points(sprint.capacity)} ${unitDative(unit, sprint.capacity)} ` +
-          `(${overCapacity(scope.sum, sprint.capacity) ? 'überbucht' : 'im Rahmen'}), ` +
-          `davon offen ${points(remaining.sum)} ${unitLabel(unit, remaining.sum)}.`,
+        `${sprintLabel(sprint)}, ${state}: ${count(members.length, 'entry', 'entries')}, scope ` +
+          `${points(scope.sum)} of ${points(sprint.capacity)} ${unitLabel(unit, sprint.capacity)} ` +
+          `(${overCapacity(scope.sum, sprint.capacity) ? 'over capacity' : 'within capacity'}), ` +
+          `of which ${points(remaining.sum)} ${unitLabel(unit, remaining.sum)} open.`,
       );
     }
 
@@ -913,13 +911,13 @@ function statusOf(
         // the failure `unusableSumNote` catches one step earlier: a figure nobody can
         // check reads exactly as confident as one that can.
         Number.isSafeInteger(further)
-          ? `Offen sind ${points(remaining.sum)} ${unitLabel(unit, remaining.sum)} bei einer Kapazität von ` +
-            `${points(sprint.capacity)}: das reicht über diesen Sprint hinaus, um ` +
-            `${count(further, 'weiteren Sprint', 'weitere Sprints')} dieser Größe. Hochrechnung aus einer ` +
-            'Kapazität, keine Zusage.'
-          : `Der offene Umfang (${points(remaining.sum)} ${unitLabel(unit, remaining.sum)}) ist gegen eine ` +
-            `Kapazität von ${points(sprint.capacity)} keine Zahl von Sprints mehr, die eine Aussage wäre. ` +
-            'Die Schätzungen gehören korrigiert.',
+          ? `Open: ${points(remaining.sum)} ${unitLabel(unit, remaining.sum)} against a capacity of ` +
+            `${points(sprint.capacity)}: that reaches beyond this sprint, by ` +
+            `${count(further, 'further sprint', 'further sprints')} of this size. An extrapolation from a ` +
+            'capacity, not a commitment.'
+          : `The open scope (${points(remaining.sum)} ${unitLabel(unit, remaining.sum)}) is, against a ` +
+            `capacity of ${points(sprint.capacity)}, no longer a number of sprints that would say anything. ` +
+            'The estimates need correcting.',
       );
     }
   }
@@ -947,18 +945,18 @@ function carriedInNotes(sprint: Sprint, sprints: readonly Sprint[], file: Timeli
     return found ? sprintLabel(found) : `„${id}"`;
   };
   const parts = carried.map((entry) => {
-    const when = entry.recordedOn ? `, festgehalten am ${entry.recordedOn}` : '';
-    // The estimate at the close, and „ohne Schätzung" rather than 0 when nobody had
+    const when = entry.recordedOn ? `, recorded on ${entry.recordedOn}` : '';
+    // The estimate at the close, and „without an estimate" rather than 0 when nobody had
     // sized it: that is also why a report can say `carried: 0` about a carried item.
     const estimate =
       entry.estimateAtClose == null
-        ? ', damals ohne Schätzung'
-        : `, damals mit ${points(entry.estimateAtClose)} ${unitLabel(unit, entry.estimateAtClose)}`;
-    return `${quoted(entry.itemId)} aus ${from(entry.fromSprintId)}${when}${estimate}`;
+        ? ', without an estimate at the time'
+        : `, with ${points(entry.estimateAtClose)} ${unitLabel(unit, entry.estimateAtClose)} at the time`;
+    return `${quoted(entry.itemId)} from ${from(entry.fromSprintId)}${when}${estimate}`;
   });
   return [
-    `Aus einem früheren Sprint mitgenommen: ${parts.join('; ')}. Dieser Umfang war schon einmal zugesagt; im ` +
-      'Verlauf des früheren Sprints steht er als „carried".',
+    `Carried over from an earlier sprint: ${parts.join('; ')}. This scope was committed to once already; in ` +
+      'the earlier sprint’s history it appears as „carried".',
   ];
 }
 
@@ -967,17 +965,17 @@ function daysLeftNotes(sprint: Sprint, raster: SprintRaster | null, now: string)
   const window = sprintWindow(sprint, raster);
   if (!window) {
     return [
-      `${sprintLabel(sprint)} hat kein Fenster: ohne start und end auf der Zeile, und ohne Raster, das eines ` +
-        'beisteuert, ist nicht zu sagen, wie viel Zeit bleibt. Ein Sprint hat eine feste Länge, und ohne sie kann ' +
-        'er auch nicht aktiv sein.',
+      `${sprintLabel(sprint)} has no window: without start and end on the row, and without a raster contributing ` +
+        'one, there is no saying how much time is left. A sprint has a fixed length, and without it it cannot ' +
+        'be active either.',
     ];
   }
   if (!isDayString(now)) {
     // „Outside the window" and „not a date at all" are two different answers, and a
     // count from a value nobody could read is a confident number over nothing.
     return [
-      `${quoted(now)} ist kein Datum, deshalb bleibt „wie viel Zeit bleibt" unbeantwortet. Erwartet ist ein Tag ` +
-        'als YYYY-MM-DD.',
+      `${quoted(now)} is not a date, so „how much time is left" stays unanswered. A day is expected ` +
+        'as YYYY-MM-DD.',
     ];
   }
   const toStart = dayOffset(now, window.start);
@@ -989,13 +987,13 @@ function daysLeftNotes(sprint: Sprint, raster: SprintRaster | null, now: string)
   const withSource = (line: string): string[] => (computed ? [line, computed] : [line]);
   if (toStart > 0) {
     return withSource(
-      `${sprintLabel(sprint)} beginnt erst am ${window.start}, in ${count(toStart, 'Tag', 'Tagen')} ` +
-        `(Stichtag ${now}).`,
+      `${sprintLabel(sprint)} does not begin until ${window.start}, in ${count(toStart, 'day', 'days')} ` +
+        `(as of ${now}).`,
     );
   }
   if (toEnd >= 0) {
     return withSource(
-      `${count(toEnd + 1, 'Tag', 'Tage')} bis zum Ende am ${window.end}, den Stichtag ${now} eingeschlossen.`,
+      `${count(toEnd + 1, 'day', 'days')} until the end on ${window.end}, including ${now}.`,
     );
   }
   // „The window is over and the row still says active" is a `SprintWarning` now
@@ -1003,8 +1001,8 @@ function daysLeftNotes(sprint: Sprint, raster: SprintRaster | null, now: string)
   // answered and the view did not, because the only code comparing a window to a day lived
   // in this file. `warningNotes` renders it, and so does the page.
   return withSource(
-    `Das Fenster von ${sprintLabel(sprint)} endete am ${window.end}, vor ${count(-toEnd, 'Tag', 'Tagen')} ` +
-      `(Stichtag ${now}).`,
+    `The window of ${sprintLabel(sprint)} ended on ${window.end}, ${count(-toEnd, 'day', 'days')} ago ` +
+      `(as of ${now}).`,
   );
 }
 
@@ -1024,8 +1022,8 @@ export const sprintStatus: ToolHandler = ({ file, args, now }): ToolPlan => {
   // verbs throw instead, because for them there is nothing to write to.
   if (!sprints.length) {
     notes.push(
-      'Auf dieser Timeline ist kein Sprint angelegt: es gibt keinen Umfang, keine Restarbeit und keine ' +
-        'Restlaufzeit zu berichten.',
+      'No sprint exists on this timeline: there is no scope, no remaining work and no ' +
+        'remaining time to report.',
     );
     notes.push(...unaccountedNotes(sprints, file));
     return { notes };
@@ -1040,8 +1038,8 @@ export const sprintStatus: ToolHandler = ({ file, args, now }): ToolPlan => {
     // boundary, so „no sprint is active" is the normal state of a plan that has not
     // started and is an answer about the argument rather than a fault in the data.
     notes.push(
-      `Kein Sprint ist aktiv (${count(sprints.length, 'Sprint', 'Sprints')} angelegt: ${sprintChoices(sprints)}). ` +
-        'Ohne Argument berichtet dieser Aufruf den aktiven Sprint; nenne `sprint` für einen bestimmten.',
+      `No sprint is active (${count(sprints.length, 'sprint', 'sprints')} defined: ${sprintChoices(sprints)}). ` +
+        'Without an argument this call reports the active sprint; name `sprint` for a particular one.',
     );
   }
 
@@ -1083,7 +1081,7 @@ function concerns(warning: SprintWarning, sprintIds: ReadonlySet<string>): boole
 /**
  * The scope no sprint accounts for: the backlog, and assignments pointing at nothing.
  *
- * This is the „außerhalb des Rasters" line of the retired capacity verb, and it exists
+ * This is the „outside the raster" line of the retired capacity verb, and it exists
  * for the same reason: a per-sprint sum plus silence about everything else reads as a
  * statement about the whole timeline.
  *
@@ -1106,18 +1104,18 @@ function unaccountedNotes(sprints: readonly Sprint[], file: TimelineFile): strin
   }
   if (backlog.length) {
     const scope = scopeOf(backlog, unit);
-    const sum = Number.isFinite(scope.sum) ? `${points(scope.sum)} ${unitDative(unit, scope.sum)}` : String(scope.sum);
+    const sum = Number.isFinite(scope.sum) ? `${points(scope.sum)} ${unitLabel(unit, scope.sum)}` : String(scope.sum);
     notes.push(
-      `Ohne Sprint-Zuordnung und daher in keiner Sprint-Summe: ${count(backlog.length, 'Eintrag', 'Einträge')} ` +
-        `mit ${sum} (${idList(backlog)}). Diese Antwort verortet diesen Umfang nicht.`,
+      `Without a sprint assignment and therefore in no sprint sum: ${count(backlog.length, 'entry', 'entries')} ` +
+        `with ${sum} (${idList(backlog)}). This answer does not place that scope.`,
     );
     const missing = missingEstimateNote('Ohne Sprint-Zuordnung', scope.missing);
     if (missing) notes.push(missing);
   }
   if (orphan.length) {
     notes.push(
-      `Zugeordnet auf einen Sprint, den es nicht gibt: ${nameList(orphan)} (${idList(orphan)}). Solange die Id auf ` +
-        'keine Zeile zeigt, zählt der Eintrag in keinem Sprint und die Oberfläche zeigt ihn ohne Sprint.',
+      `Assigned to a sprint that does not exist: ${nameList(orphan)} (${idList(orphan)}). While the id points at ` +
+        'no row, the entry counts in no sprint and the interface shows it without one.',
     );
   }
   return notes;

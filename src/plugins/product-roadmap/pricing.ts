@@ -6,6 +6,7 @@
 
 import { statusOrDefault, type StatusKey } from '../../pluginHost/api';
 import { PRICING_FEATURE_META_KEY, PRICING_ITEM_VERSION_META_KEY } from './plugin';
+import { t } from './messages';
 import {
   type TimelineFileItem,
 } from '../../types';
@@ -478,7 +479,7 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
   const features = pricing.features ?? [];
   const versions = pricing.versions ?? [];
   const labels = pricing.versionLabels;
-  const title = (name?.trim() || timelineId) + ' – Preismodell';
+  const title = `${name?.trim() || timelineId} – ${t('pricingModel')}`;
 
   const lines: string[] = [];
   lines.push('---');
@@ -490,37 +491,41 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
   lines.push('');
   lines.push(`# ${title}`);
   lines.push('');
-  lines.push('> [!warning] Automatisch generiert');
-  lines.push(
-    `> Diese Datei wird aus der Timeline \`${timelineId}\` erzeugt (\`npm run export:pricing\`). ` +
-      'Änderungen von Hand gehen beim nächsten Export verloren. Quelle der Wahrheit ist die Timeline.',
-  );
+  lines.push(`> [!warning] ${t('export.generated')}`);
+  lines.push(`> ${t('doc.source', { id: timelineId })} ${t('doc.note')}`);
   lines.push('');
 
   if (!tiers.length && !features.length) {
-    lines.push('_Kein Preismodell in der Timeline hinterlegt._');
+    lines.push(t('export.noPricing'));
     lines.push('');
   } else {
     // ---- Feature matrix --------------------------------------------------
     // When versions are declared, add a trailing "Ab Version" column so the
     // static doc still carries the availability info the app shows via the switcher.
     const withVersions = (pricing.versions?.length ?? 0) > 0;
-    lines.push('## Feature-Matrix');
+    lines.push(`## ${t('export.matrixHeading')}`);
     lines.push('');
-    const header = ['Feature', ...tiers.map((t) => cell(t.name)), ...(withVersions ? ['Ab Version'] : [])];
+    // `tier` rather than `t` in every callback below: `t` is the message lookup of
+    // this module, and a parameter shadowing it turns a t('…') inside the callback
+    // into a call on a tier object.
+    const header = [
+      t('column.feature'),
+      ...tiers.map((tier) => cell(tier.name)),
+      ...(withVersions ? [t('version.from')] : []),
+    ];
     const align = ['---', ...tiers.map(() => ':--:'), ...(withVersions ? [':--:'] : [])];
     lines.push(`| ${header.join(' | ')} |`);
     lines.push(`| ${align.join(' | ')} |`);
     // Price row directly under the header.
-    const priceCells = [...tiers.map((t) => cell(t.price)), ...(withVersions ? [''] : [])];
-    lines.push(`| **Preis** | ${priceCells.join(' | ')} |`);
+    const priceCells = [...tiers.map((tier) => cell(tier.price)), ...(withVersions ? [''] : [])];
+    lines.push(`| **${t('price')}** | ${priceCells.join(' | ')} |`);
     for (const { group, features: fs } of groupFeatures(features)) {
       if (group) {
         const emptyCells = [...tiers.map(() => ''), ...(withVersions ? [''] : [])];
         lines.push(`| **${cell(group)}** | ${emptyCells.join(' | ')} |`);
       }
       for (const f of fs) {
-        const marks = tiers.map((t) => markdownCell(t, f.id));
+        const marks = tiers.map((tier) => markdownCell(tier, f.id));
         const tail = withVersions ? [f.version ? cell(versionLabel(labels, f.version)) : ''] : [];
         lines.push(`| ${cell(resolveFeatureName(f, versions, null))} | ${[...marks, ...tail].join(' | ')} |`);
       }

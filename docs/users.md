@@ -122,6 +122,7 @@ stays useful afterwards for an instance with no mail provider configured.
 | `POST /api/members` | `manage` | invite or re-invite; returns the one-time token |
 | `PATCH /api/members` | `manage` | role, status, or resend |
 | `GET /api/me` | — | the caller's identity, plus role and status while the switch is on |
+| `GET|PATCH /api/preferences` | `read` | the caller's own interface language — see „The language a person reads in" below |
 
 Two paths on purpose. The same `GET` on one path would have meant different
 things depending on who asked, and the authorization rule would have had to read
@@ -140,6 +141,34 @@ Two refusals worth knowing:
   down is allowed.
 - **`nothing_to_resend` (409).** Resending is only for a membership still
   awaiting acceptance.
+
+## The language a person reads in
+
+`app_users` carries one more column since migration `0025`: `language`, the
+interface language this person chose. It lives here rather than in a table of its
+own because this is already where per-person facts live, and one nullable column
+does not earn a table.
+
+**`read`, not `manage`.** It is the caller's own row. A `viewer` who could not set
+their own language would be the role that most needs a readable interface being the
+one that cannot choose it — the same reasoning that already lets a `viewer` keep
+private saved views.
+
+**NULL means „has not chosen", which is not „chose the default".** A row without a
+value follows `TIMELINES_DEFAULT_LANGUAGE`, and it stops following it the moment
+one is stored. That is why the column has no default and why clearing a choice is
+a distinct act from picking the language the deployment happens to answer with.
+
+**A deployment with no database still switches language.** There is nobody to
+store a preference for, so the browser keeps it and the account section says so
+(„Nur auf diesem Gerät"). `getUserLanguage` answers `null` there rather than
+refusing, because refusing would make the setting unusable on exactly the
+instances that are easiest to run.
+
+The migration puts every person already in the directory on `de`, since that was
+the only interface that existed before it. Somebody who joins afterwards has never
+seen it and gets the deployment's own answer instead. `scripts/db/set-user-language.ts`
+reports and changes all of this from a terminal.
 
 ## Where enforcement happens
 

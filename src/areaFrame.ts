@@ -106,6 +106,24 @@ export async function showArea<Id extends string>(
   await def.mount(nodes.body);
 }
 
+/**
+ * Forget which section is mounted, so the next `showArea` rebuilds it.
+ *
+ * `showArea` returns early when the section asked for is the one already up,
+ * which is what keeps re-clicking a tab from tearing its own body down. A
+ * language change is the case that early return gets wrong: the section is the
+ * same, and every string in it — its nav, its heading, its body — is now in
+ * another language. Without this the switch appears to half work, leaving an
+ * English nav around a German page.
+ *
+ * Deliberately not a `force` flag on `showArea`: the two callers that navigate
+ * must never pass it, and a boolean at the call site is how it eventually gets
+ * passed by somebody fixing a different bug.
+ */
+export function invalidateArea<Id extends string>(handle: AreaHandle<Id>): void {
+  handle.mounted = null;
+}
+
 /** Tear the current section down before another one is mounted over it. */
 export function unmountArea<Id extends string>(handle: AreaHandle<Id>, nodes: AreaNodes): void {
   handle.mounted?.unmount?.();

@@ -4,6 +4,7 @@
 // only stored backgrounds and leaves `.phase-bg` alone.
 
 import { realIdOf } from './cloneId';
+import { t } from './i18n';
 
 const ITEM_ATTR = 'data-background-item-id';
 const INTERACTIVE_CLASS = 'interactive-background';
@@ -81,7 +82,10 @@ function paint(): void {
       box.tabIndex = 0;
       box.setAttribute('role', 'button');
       const label = String((item as any)?.data?.label ?? (item as any)?.data?.content ?? '').trim();
-      box.setAttribute('aria-label', label ? `${label} bearbeiten` : 'Hintergrund-Eintrag bearbeiten');
+      box.setAttribute(
+        'aria-label',
+        label ? t('item.background.editNamed', { label }) : t('item.background.edit'),
+      );
     } else if (box.hasAttribute(ITEM_ATTR)) {
       box.removeAttribute(ITEM_ATTR);
       box.classList.remove(INTERACTIVE_CLASS);

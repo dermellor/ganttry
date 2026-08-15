@@ -1,0 +1,216 @@
+// This plugin's own text, in the two languages the host ships.
+//
+// A plugin brings its own catalogue rather than adding to the core's: the host
+// does not know a plugin exists until it is installed, and a third-party plugin
+// is not in this repository at all. `pluginMessages` is the contract seam and it
+// arrived with host API 1.7 — see „Text in more than one language"
+// (docs/plugin-authoring.md).
+//
+// **Nothing here is a stored value.** Every string is a label, a heading or a
+// placeholder. The ids this plugin stores — tier ids, feature ids, version names —
+// are the user's own words and never pass through a translation, which is the
+// rule `src/i18n/storedValues.test.ts` holds the line on.
+//
+// The placeholders keep their examples in the language of the example: „z.B. ab
+// 449,95 €/Monat" becomes „e.g. from €449.95/month" rather than being left German,
+// because a placeholder showing the expected *format* is useless in a format the
+// reader does not write numbers in.
+//
+// **What carries the `refusal.` prefix here**: the messages that say a write did
+// not happen. They interpolate an error the server wrote, so their length is not
+// ours to bound — which is what the prefix exempts. A short result of a write that
+// *did* happen („Zelle gespeichert", „Tarif „…" angelegt") stays an ordinary key,
+// because calling it a refusal to buy room it does not need is the one way to
+// cheat this rule.
+//
+// **`doc.*` is a generated Markdown document, not the interface.** Its banner is a
+// sentence about where the file comes from, which is the provenance line of a
+// document rather than a note beside a control; it follows the reader's language
+// for the same reason the matrix does. The prefix is what exempts it from the
+// length rule in `scripts/ci/check-ui-text.mjs`, next to `refusal.` and `warn.` —
+// the checker reads plugin catalogues too, so „nobody checks this file" is no
+// longer the reason a sentence survives here.
+
+import { pluginMessages } from '../../pluginHost/api';
+
+export const t = pluginMessages('dev.zeitlines.product-roadmap', {
+  en: {
+    'feature.add': '+ Feature',
+    'feature.roadmapWork': 'Roadmap work on this feature',
+    'feature.noWork': 'No roadmap work linked',
+    'feature.noWork.aria': 'Warning: no roadmap work linked',
+    'feature.group': 'Group',
+    'feature.description': 'Description',
+    'feature.versionDescriptions': 'Version descriptions',
+    'feature.unnamed': '(unnamed feature)',
+    'feature.deleteConfirm': 'Really delete feature “{name}”?',
+    'feature.updated': 'Feature “{name}” updated',
+    'feature.created': 'Feature “{name}” created',
+    'tier.add': '+ Tier',
+    'tier.edit': 'Edit tier',
+    'tier.placeholder.name': 'e.g. Micro · 1–5 calls/day',
+    'tier.placeholder.price': 'e.g. from €449.95/month',
+    'tier.placeholder.useCase': 'e.g. catch missed calls',
+    'tier.useCase': 'Use case',
+    'tier.tagline': 'Tagline',
+    'tier.targetGroup': 'Target group',
+    'tier.unnamed': '(unnamed tier)',
+    'tier.deleteConfirm': 'Really delete tier “{name}”?',
+    'tier.updated': 'Tier “{name}” updated',
+    'tier.deleted': 'Tier “{name}” deleted',
+    'tier.created': 'Tier “{name}” created',
+    'version': 'Version',
+    'version.add': '+ Version description',
+    'version.remove': 'Remove version description',
+    'version.from': 'From version',
+    'version.from.lower': 'from version',
+    'version.fromShort': 'from',
+    'version.fromStart': '— from the start —',
+    'version.all': 'All',
+    'cell.edit': 'Edit cell',
+    'cell.placeholder.number': 'e.g. 3,000',
+    'cell.on': 'Included',
+    'cell.off': 'Not included',
+    'cell.value': 'Value',
+    'cell.included': 'included',
+    'cell.saved': 'Cell saved',
+    'cell.cleared': 'Cell cleared',
+    'column.feature': 'Feature',
+    'column.work': 'Work',
+    'price': 'Price',
+    'heading.pricing': 'Pricing',
+    'pricingModel': 'Pricing model',
+    'section.other': 'More',
+    'card.allFrom': 'Everything from',
+    'work.open': 'Open',
+    'work.doing': 'In progress',
+    'work.done': 'Done',
+    'work.items': '{count} item(s)',
+    'view.display': 'Display',
+    'view.matrix': 'Matrix',
+    'view.cards': 'Cards',
+    // What the manifest declares, in the reader's language. A manifest holds no
+    // functions and cannot call `t()`, so the host looks these two up here and
+    // falls back to the literal in `manifest.ts` — see `manifestText` in
+    // `src/pluginHost/messages.ts`.
+    'manifest.name': 'Product',
+    'manifest.view.pricing': 'Pricing',
+    'move.up': 'Move up',
+    'move.down': 'Move down',
+    'description.show': 'Show description',
+    'add': 'Add',
+    'delete': 'Delete',
+    'form.name': 'Name',
+    'form.id': 'ID',
+    'form.save': 'Save',
+    'form.cancel': 'Cancel',
+    'readOnly': '(read-only)',
+    'feature.namePrompt': 'Name of the new feature?',
+    'tier.namePrompt': 'Name of the new tier?',
+    'badge.new': 'New',
+    'badge.modified': 'Modified',
+    'empty.pricing': 'No pricing model stored.',
+    'empty.highlights': 'No highlight cards defined.',
+    'export.noPricing': '_No pricing model stored in the timeline._',
+    'export.generated': 'Automatically generated',
+    'export.matrixHeading': 'Feature matrix',
+    'doc.source': 'This file is generated from timeline `{id}` (`npm run export:pricing`).',
+    'refusal.feature.conflict': 'Feature changed elsewhere — reloading…',
+    'refusal.tier.conflict': 'Tier changed elsewhere — reloading…',
+    'refusal.saveFailed': 'Saving failed: {error}',
+    'refusal.deleteFailed': 'Deleting failed: {error}',
+    'refusal.cell.saveFailed': 'Saving the cell failed: {error}',
+    'refusal.feature.createFailed': 'Creating the feature failed: {error}',
+    'refusal.feature.moveFailed': 'Reordering failed: {error}',
+    'refusal.tier.createFailed': 'Creating the tier failed: {error}',
+    'doc.note': 'Manual changes are lost on the next export. The timeline is the source of truth.',
+  },
+  de: {
+    'feature.add': '+ Feature',
+    'feature.roadmapWork': 'Roadmap-Arbeit an diesem Feature',
+    'feature.noWork': 'Keine Roadmap-Arbeit verknüpft',
+    'feature.noWork.aria': 'Warnung: keine Roadmap-Arbeit verknüpft',
+    'feature.group': 'Gruppe',
+    'feature.description': 'Beschreibung',
+    'feature.versionDescriptions': 'Versionsbeschreibungen',
+    'feature.unnamed': '(unbenanntes Feature)',
+    'feature.deleteConfirm': 'Feature „{name}" wirklich löschen?',
+    'feature.updated': 'Feature „{name}" aktualisiert',
+    'feature.created': 'Feature „{name}" angelegt',
+    'tier.add': '+ Tarif',
+    'tier.edit': 'Tarif bearbeiten',
+    'tier.placeholder.name': 'z.B. Micro · 1–5 Anrufe/Tag',
+    'tier.placeholder.price': 'z.B. ab 449,95 €/Monat',
+    'tier.placeholder.useCase': 'z.B. Verpasste Anrufe auffangen',
+    'tier.useCase': 'Use Case',
+    'tier.tagline': 'Tagline',
+    'tier.targetGroup': 'Zielgruppe',
+    'tier.unnamed': '(unbenannter Tarif)',
+    'tier.deleteConfirm': 'Tarif „{name}" wirklich löschen?',
+    'tier.updated': 'Tarif „{name}" aktualisiert',
+    'tier.deleted': 'Tarif „{name}" gelöscht',
+    'tier.created': 'Tarif „{name}" angelegt',
+    'version': 'Version',
+    'version.add': '+ Versionsbeschreibung',
+    'version.remove': 'Versionsbeschreibung entfernen',
+    'version.from': 'Ab Version',
+    'version.from.lower': 'ab Version',
+    'version.fromShort': 'ab',
+    'version.fromStart': '— von Anfang an —',
+    'version.all': 'Alle',
+    'cell.edit': 'Zelle bearbeiten',
+    'cell.placeholder.number': 'z.B. 3.000',
+    'cell.on': 'Enthalten',
+    'cell.off': 'Nicht enthalten',
+    'cell.value': 'Wert',
+    'cell.included': 'enthalten',
+    'cell.saved': 'Zelle gespeichert',
+    'cell.cleared': 'Zelle geleert',
+    'column.feature': 'Feature',
+    'column.work': 'Arbeit',
+    'price': 'Preis',
+    'heading.pricing': 'Preise',
+    'pricingModel': 'Preismodell',
+    'section.other': 'Weitere',
+    'card.allFrom': 'Alles aus',
+    'work.open': 'Offen',
+    'work.doing': 'In Arbeit',
+    'work.done': 'Erledigt',
+    'work.items': '{count} Item(s)',
+    'view.display': 'Darstellung',
+    'view.matrix': 'Matrix',
+    'view.cards': 'Kacheln',
+    'manifest.name': 'Produkt',
+    'manifest.view.pricing': 'Preise',
+    'move.up': 'Nach oben',
+    'move.down': 'Nach unten',
+    'description.show': 'Beschreibung anzeigen',
+    'add': 'Hinzufügen',
+    'delete': 'Löschen',
+    'form.name': 'Name',
+    'form.id': 'ID',
+    'form.save': 'Speichern',
+    'form.cancel': 'Abbrechen',
+    'readOnly': '(Nur lesend)',
+    'feature.namePrompt': 'Name des neuen Features?',
+    'tier.namePrompt': 'Name des neuen Tarifs?',
+    'badge.new': 'Neu',
+    'badge.modified': 'Modified',
+    'empty.pricing': 'Kein Preismodell hinterlegt.',
+    'empty.highlights': 'Keine Highlight-Kacheln definiert.',
+    'export.noPricing': '_Kein Preismodell in der Timeline hinterlegt._',
+    'export.generated': 'Automatisch generiert',
+    'export.matrixHeading': 'Feature-Matrix',
+    'doc.source': 'Diese Datei wird aus der Timeline `{id}` erzeugt (`npm run export:pricing`).',
+    'refusal.feature.conflict': 'Feature wurde extern geändert — lade neu…',
+    'refusal.tier.conflict': 'Tarif wurde extern geändert — lade neu…',
+    'refusal.saveFailed': 'Speichern fehlgeschlagen: {error}',
+    'refusal.deleteFailed': 'Löschen fehlgeschlagen: {error}',
+    'refusal.cell.saveFailed': 'Zelle speichern fehlgeschlagen: {error}',
+    'refusal.feature.createFailed': 'Feature anlegen fehlgeschlagen: {error}',
+    'refusal.feature.moveFailed': 'Umsortieren fehlgeschlagen: {error}',
+    'refusal.tier.createFailed': 'Tarif anlegen fehlgeschlagen: {error}',
+    'doc.note':
+      'Änderungen von Hand gehen beim nächsten Export verloren. Quelle der Wahrheit ist die Timeline.',
+  },
+});

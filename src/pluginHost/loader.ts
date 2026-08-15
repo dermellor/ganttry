@@ -27,6 +27,7 @@ import { register, type DeriveFn, type PluginDescriptor, type PluginModule } fro
 import { hasPlugin } from './plugins.ts';
 import { validateManifest, type PluginManifest } from './manifest.ts';
 import type { CustomFieldDef, PluginStatus, TimelineFile } from '../types';
+import { t } from '../i18n';
 
 /** What happened to one plugin at boot. Shown to the user, never swallowed. */
 export type LoadOutcome = {
@@ -237,7 +238,7 @@ function renderViewFailure(container: HTMLElement, manifest: PluginManifest, err
   container.replaceChildren();
   const box = doc.createElement('p');
   box.className = 'plugin-view-error';
-  box.textContent = `„${manifest.name}" konnte nicht dargestellt werden.`;
+  box.textContent = t('refusal.plugin.renderFailed', { name: manifest.name });
   const detail = doc.createElement('span');
   detail.className = 'plugin-view-error-detail';
   detail.textContent = error instanceof Error ? error.message : String(error);

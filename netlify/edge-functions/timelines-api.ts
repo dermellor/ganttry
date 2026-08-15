@@ -121,5 +121,6 @@ export const config: Config = {
     '/api/plugins/*',
     '/api/members',
     '/api/settings',
+    '/api/preferences',
   ],
 };

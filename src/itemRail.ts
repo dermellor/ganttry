@@ -16,6 +16,7 @@
 
 import { realIdOf } from './grouping';
 import { state, isEditableView } from './state';
+import { t } from './i18n';
 
 const MARK_CLASS = 'rail-delete';
 
@@ -99,8 +100,8 @@ function makeMark(displayId: string): HTMLElement {
   mark.type = 'button';
   mark.className = MARK_CLASS;
   mark.dataset.itemId = displayId;
-  mark.title = 'Eintrag löschen';
-  mark.setAttribute('aria-label', 'Eintrag löschen');
+  mark.title = t('item.delete');
+  mark.setAttribute('aria-label', t('item.delete'));
   return mark;
 }
 

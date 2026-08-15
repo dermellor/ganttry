@@ -1,6 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { REGISTRY, declareSetting, declaredSettings, type SettingDeclaration } from './settings.ts';
+import { translate } from './i18n/catalogue.ts';
+import { LOCALES } from './i18n/locale.ts';
 
 /** An env reader over a plain object, standing in for a runtime's own. */
 const reader = (env: Record<string, string>) => (key: string) => env[key];
@@ -92,9 +94,29 @@ test('keys are unique and every declaration is renderable', () => {
   const keys = REGISTRY.map((d) => d.key);
   assert.equal(new Set(keys).size, keys.length, 'a key is declared twice');
   for (const d of REGISTRY) {
-    assert.ok(d.label.trim(), `${d.key} has no label`);
-    assert.ok(d.group.trim(), `${d.key} has no group`);
+    // A declaration now names catalogue keys rather than carrying finished text,
+    // so „renderable" means those keys resolve — in *both* languages. The type
+    // already forbids a key the catalogue does not have; what it cannot see is a
+    // key that resolves to itself because the catalogue holds an empty string.
+    for (const locale of LOCALES) {
+      assert.notEqual(translate(locale, d.labelKey), d.labelKey, `${d.key} has no ${locale} label`);
+      assert.notEqual(translate(locale, d.groupKey), d.groupKey, `${d.key} has no ${locale} group`);
+    }
   }
+});
+
+test('a setting is served in the language of whoever asked', () => {
+  const de = find(declaredSettings(reader({}), 'de'), 'TIMELINES_ACCESS_CONTROL');
+  const en = find(declaredSettings(reader({}), 'en'), 'TIMELINES_ACCESS_CONTROL');
+  assert.equal(de.label, 'Zugriffskontrolle');
+  assert.equal(en.label, 'Access control');
+  assert.equal(de.group, 'Zugang');
+  assert.equal(en.group, 'Access');
+  // Only the text moves. The identity, the origin and the read gate are facts
+  // about the deployment and say the same thing to everybody.
+  assert.equal(de.key, en.key);
+  assert.equal(de.home, en.home);
+  assert.equal(de.value, en.value);
 });
 
 test('adding a setting is a declaration and nothing else', () => {
@@ -104,21 +126,38 @@ test('adding a setting is a declaration and nothing else', () => {
   // anywhere keyed on its name. Asserted against a declaration built here rather
   // than one in the registry, because a registry entry proves only that the
   // registry works.
-  const invented: SettingDeclaration = {
+  // The label and group are catalogue keys now, and the invented one names keys
+  // the catalogue has never heard of — deliberately, and cast past the type that
+  // normally forbids it. That is what keeps this test testing the mechanism: a
+  // declaration using real keys would only prove that the catalogue has entries.
+  //
+  // What changed with the catalogue, stated plainly, because „a declaration and
+  // nothing else" is the criterion this test carries: adding a setting is now a
+  // line here **plus its two translations**. The coupling that sentence was
+  // written against is untouched — no rendering code learns a setting's name, and
+  // the page still renders declarations it cannot enumerate. A translated
+  // interface has to keep its text somewhere, and the alternative is the finished
+  // German string in the declaration, which is what this change removed.
+  const invented = {
     key: 'INVENTED_SETTING',
-    group: 'Erfunden',
-    label: 'Erfundene Einstellung',
+    groupKey: 'invented.group',
+    labelKey: 'invented.label',
     // A home no declaration in the registry uses yet, and an editable one, so
     // this also asserts that neither depends on a case being present today.
     home: 'db',
     editable: true,
     expose: 'value',
-  };
+  } as unknown as SettingDeclaration;
 
+  // An unknown key resolves to itself rather than to a blank. The row therefore
+  // comes out fully rendered and *says which key is missing* — a blank label
+  // would be indistinguishable from a layout bug, and this is the one path where
+  // the type cannot help, because a plugin or a future runtime can hand this
+  // function a declaration the catalogue was not compiled with.
   assert.deepEqual(declareSetting(invented, 'x'), {
     key: 'INVENTED_SETTING',
-    group: 'Erfunden',
-    label: 'Erfundene Einstellung',
+    group: 'invented.group',
+    label: 'invented.label',
     home: 'db',
     editable: true,
     set: true,

@@ -11,6 +11,7 @@ import {
 import { collectionsFromPricing } from '../plugins/product-roadmap/compose';
 import type { Pricing } from '../plugins/product-roadmap/types';
 import type { CustomFieldDef, TimelineFile } from '../types';
+import { setLocale } from '../i18n';
 
 // pluginFieldDefs is the seam the generic custom-field machinery reads plugin
 // fields through: each enabled kind's `fields(file)`, stamped with the kind's
@@ -50,16 +51,26 @@ test('no plugin enabled ⇒ no contributed fields', () => {
   assert.deepEqual(pluginFieldDefs(null), []);
 });
 
-test('product-roadmap contributes its fields under the "Produkt" group', () => {
+test('product-roadmap contributes its fields under its own name as the group', () => {
+  // What is pinned is that the group IS the plugin's name; the word is only how
+  // that is observed, and it follows the reader's language now. Asserting in both
+  // is what would have caught the group heading staying German on an English
+  // screen — the manifest's literal used to be the value rather than the fallback.
+  setLocale('de');
+  assert.deepEqual(
+    pluginFieldDefs(enabled()).map((d) => d.group),
+    ['Produkt', 'Produkt', 'Produkt'],
+  );
+  setLocale('en');
   const defs = pluginFieldDefs(enabled());
   // The array order IS the render order and `width` decides who shares a row:
   // the two compact pickers pair up, the chip field spans both columns below.
   assert.deepEqual(
     defs.map((d) => [d.key, d.label, d.type, d.group, d.width]),
     [
-      [PRICING_ITEM_VERSION_META_KEY, 'Version', 'select', 'Produkt', undefined],
-      [PRICING_TIER_META_KEY, 'Tier', 'multi-select', 'Produkt', undefined],
-      [PRICING_FEATURE_META_KEY, 'Features', 'multi-select', 'Produkt', 'full'],
+      [PRICING_ITEM_VERSION_META_KEY, 'Version', 'select', 'Product', undefined],
+      [PRICING_TIER_META_KEY, 'Tier', 'multi-select', 'Product', undefined],
+      [PRICING_FEATURE_META_KEY, 'Features', 'multi-select', 'Product', 'full'],
     ],
   );
   // Options are derived from the pricing model, not hand-maintained. Tier values
@@ -121,7 +132,7 @@ test('a contributed field supersedes a stored definition on the same key', () =>
   // One def per key, the derived one — a second control on the same key would
   // write the same metadata and share its multi-select state bucket.
   assert.equal(merged.filter((d) => d.key === PRICING_TIER_META_KEY).length, 1);
-  assert.equal(merged.find((d) => d.key === PRICING_TIER_META_KEY)?.group, 'Produkt');
+  assert.equal(merged.find((d) => d.key === PRICING_TIER_META_KEY)?.group, 'Product');
   // Unrelated stored fields keep their place ahead of the contributed ones.
   assert.equal(merged[0], own);
 });

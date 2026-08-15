@@ -289,6 +289,74 @@ policy allows inline styles. Do not fetch a stylesheet from anywhere — the
 Content-Security-Policy will refuse it unless the operator has allowlisted that
 origin, and asking them to is a worse first impression than a plain table.
 
+## Text in more than one language
+
+The interface language is a **per-person setting** (see
+[`settings.md`](settings.md)), so a plugin's own text has to follow the reader the
+way the core's does. It cannot do that through the core catalogue: `MessageKey` is
+derived from the core's own `messages.en.ts` and your keys are not in it, and
+importing past the contract barrel is what
+[`check-plugin-isolation.mjs`](../scripts/ci/check-plugin-isolation.mjs) refuses.
+
+So a plugin brings its own catalogue and gets back a lookup bound to whatever the
+host is rendering in (host API **1.7**):
+
+```ts
+import { pluginMessages } from '../../pluginHost/api';
+
+export const t = pluginMessages('com.acme.sprints', {
+  en: { 'field.confidence': 'Confidence', 'points.left': '{n} points left' },
+  de: { 'field.confidence': 'Zuversicht', 'points.left': 'noch {n} Punkte' },
+});
+```
+
+**Shipping one language is allowed and is not a failure.** A plugin that declares
+only German renders German on an English host — its own text, never a column of
+dotted keys. That is the difference between „not translated yet" and „broken", and
+it is why the fallback chain ends at any language the plugin declares rather than
+at the key. A plugin that declares nothing at all keeps its literals and keeps
+working, which is what makes 1.7 additive.
+
+Three rules, and the first is the one that costs data if you get it wrong:
+
+- **Never translate a stored value.** A select option is `{ value, label }`: the
+  `value` is an id sitting in item `metadata`, the `label` is what a person reads.
+  Run a value through `t` and every item carrying it is orphaned the first time
+  somebody switches language — the field renders empty, the filter loses a bucket,
+  and nothing errors. The sprints plugin is the worked example of the trap, because
+  its three confidence values *are* German words (`hoch`, `mittel`, `niedrig`) that
+  were already stored before any of this existed. The boundary is asserted in
+  [`../src/i18n/storedValues.test.ts`](../src/i18n/storedValues.test.ts).
+- **Take dates, numbers and sorting from the host.** `formatDay`, `formatNumber`
+  and `compare` come through the contract, so a screen mixing core and plugin text
+  uses one set of conventions rather than two.
+- **Do not call `t` at module scope.** `const LABEL = t('x')` at the top of a file
+  is evaluated on import, before the host has resolved a language, and freezes one
+  in. Core has a CI check for this on its own catalogue; your plugin does not get
+  it for free.
+
+**Your keys are yours.** They are namespaced by plugin id, so two plugins
+declaring `title` never see each other's, and a plugin key never resolves against a
+core message — `t('form.save')` in a plugin returns `form.save`, not „Speichern".
+A hit there would be an accident every time.
+
+Declaring from several modules of one plugin merges rather than replaces, so the
+text can live beside the code that uses it.
+
+### Agent-facing text is a different audience, and it is English
+
+A tool's `title` and `description` are read by a model and are English on purpose
+— that has always been true. The **notes** a tool returns are relayed to a person,
+which makes „which language" a real question, and the answer is: **English,
+unconditionally**.
+
+One rule for the whole tool surface, rather than notes that follow a reader while
+the descriptions beside them do not. A model relaying a note can translate it for
+the person it is talking to; it cannot reliably parse a note in a language its
+tool surface does not otherwise speak. A service token has no person behind it to
+have a preference at all, so any other rule would need a second answer for that
+case.
+
 ## Declaring data
 
 A collection is declared in the manifest and the host does the rest — storage,

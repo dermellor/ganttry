@@ -2,6 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { flattenRows, matchesQuery, nextRowIndex, switcherGroups } from './switcherRows';
 import type { SourceKind, View } from './types';
+import { setLocale } from './i18n';
+// The wording below is German, so these tests ask for German. The module reads
+// the language from `src/i18n` module state rather than taking it as an argument
+// (it renders, it does not validate), so the request is a `setLocale` here — the
+// same move `fieldDefs.test.ts` makes with its `locale` parameter, and for the
+// same reason: what is pinned is the rule, and the wording is only how it is
+// observed. Without this the assertions would follow `DEFAULT_LOCALE` and break
+// the day the product default changes.
+setLocale('de');
+
 
 // The switcher replaces a flat `<select>` over every discovered source. These tests
 // pin the two things that decide whether somebody finds their timeline: what the

@@ -184,6 +184,7 @@ of a label is what „Interface text" in [`../AGENTS.md`](../AGENTS.md) rules ou
 | --- | --- |
 | `#settings=instance` | The declared settings, grouped, read-only today. |
 | `#settings=members` | The membership screen — see [`users.md`](users.md). |
+| `#settings=account` | What the reader set for themselves. Today: the interface language. |
 | `#timeline-settings=general` | The open timeline's name, description and default grouping. |
 | `#timeline-settings=fields` | Its own field definitions — see „Custom fields" ([`items.md`](items.md)). |
 | `#timeline-settings=export` | The one static HTML file of this timeline — see „Der Export" ([`editing.md`](editing.md)). |
@@ -219,6 +220,57 @@ instance settings reads as a claim about the settings. The timeline's own area k
 the name, its read-only badge and the item count: that page is *about* that timeline,
 so its subject has to stay visible.
 
+## The account section, and the two firsts it is
+
+„Konto" is the first **writable** setting here, and the first section that is
+about the *reader* rather than about the deployment. Both were anticipated on this
+page and in [`information-architecture.md`](information-architecture.md), which
+said the header row „is not the place for „Konto" either: there is no account
+surface, and a heading over an empty one would be inventing a level rather than
+naming it". A per-person preference is what makes that surface non-empty, which
+is the condition that sentence set.
+
+It belongs in **this** area rather than a level of its own because the scope is
+„this person, on this deployment" — the same deployment the other sections
+describe. „Scope equals storage" then puts the store on `app_users` (migration
+`0025`), one row per person per instance.
+
+Putting it beside the instance section is deliberate, and it is the answer to the
+risk this page is designed against: an area that is 80% values you cannot change
+teaches people to ignore it. One section that *does* change something is what
+keeps the rest from reading as decoration.
+
+### The label is resolved on the server
+
+A declaration in [`../src/settings.ts`](../src/settings.ts) carries a **catalogue
+key** (`labelKey`, `groupKey`), and `declaredSettings` resolves it into the
+caller's language before the row goes over the wire. `DeclaredSetting` is
+unchanged: it still carries a finished string.
+
+That split is what keeps the spine intact. Shipping the *key* to the client would
+have rebuilt exactly the „the page knows each setting" coupling this module exists
+to avoid — one lookup table keyed by setting name, one entry per new setting.
+Resolving on the server means the page still renders a string it never looks up.
+
+The cost is that the route has to know who is asking, and forgetting that does not
+fail: it serves correct English labels to a German reader, which reads as „that
+section is not translated yet" rather than as a bug.
+
+One consequence for „adding a setting is a declaration and nothing else": it is now
+a declaration **plus its two translations**. The coupling that sentence was written
+against is untouched — no rendering code learns a setting's name — and a translated
+interface has to keep its text somewhere. `settings.test.ts` still asserts the
+mechanism against a declaration naming keys the catalogue has never heard of, which
+come out rendered as the keys rather than as blanks.
+
+### What a language change does not repaint
+
+Switching language rebuilds the settings area, because everything in it is text
+that just changed. It does **not** rebuild the chrome behind the area: that is
+hidden while the area is open and picks the new language up on its next render.
+Closing the area and switching a view is enough; a reload is never needed, and the
+choice survives one either way.
+
 ## What is deliberately not here
 
 - **An `instance_settings` table.** No setting is `home: 'db'` yet. One
@@ -227,6 +279,8 @@ so its subject has to stay visible.
   second arrived with different needs. The declaration shape does not depend on
   the answer, which is the point — `db` is in the union and needs no change here
   when the first one lands.
-- **Editing.** `editable` exists and the interface reads it; nothing declares
-  `true` yet, because everything an operator can currently change lives in a host
-  dashboard or a build.
+- **Editing of a *declared* setting.** `editable` exists and the interface reads
+  it; no entry in `REGISTRY` declares `true`, because everything an operator can
+  change lives in a host dashboard or a build. The account section is not a
+  counter-example: it writes a per-person preference through
+  `PATCH /api/preferences`, not a declared instance setting.

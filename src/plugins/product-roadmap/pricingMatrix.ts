@@ -44,6 +44,7 @@ import { hasPlugin } from '../../pluginHost/viewApi';
 import { PRODUCT_ROADMAP_PLUGIN } from './plugin';
 import { currentPricing, hasPricingModel } from './compose';
 
+import { t } from './messages';
 const PRICING_VERSION_KEY = 'timelines.pricingVersion';
 const PRICING_SUBVIEW_KEY = 'timelines.pricingSubview';
 
@@ -89,21 +90,26 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
   // A tier's column head is its edit affordance (the Stammdaten drawer), mirroring
   // the feature row header. data-tier-id is only emitted when editable — unlike the
   // feature rows, nothing read-only needs to look a tier up off the DOM.
+  // The map parameter is `tier` rather than `t`: this module's `t` is the message
+  // lookup, and a callback shadowing it turns every t('…') inside into a call on a
+  // tier object — a TypeError at render time rather than a missing translation.
   const head =
-    `<tr><th class="pm-feature">Feature</th>` +
+    `<tr><th class="pm-feature">${escapeHtml(t('column.feature'))}</th>` +
     tiers
-      .map((t) =>
+      .map((tier) =>
         editable
-          ? `<th class="pm-tier pm-tier-editable" data-tier-id="${escapeHtml(t.id)}" title="Tarif bearbeiten">${escapeHtml(t.name)}</th>`
-          : `<th class="pm-tier">${escapeHtml(t.name)}</th>`,
+          ? `<th class="pm-tier pm-tier-editable" data-tier-id="${escapeHtml(tier.id)}" title="${escapeHtml(t('tier.edit'))}">${escapeHtml(tier.name)}</th>`
+          : `<th class="pm-tier">${escapeHtml(tier.name)}</th>`,
       )
       .join('') +
-    (showWorkCol ? `<th class="pm-work-col" title="Roadmap-Arbeit an diesem Feature">Arbeit</th>` : '') +
+    (showWorkCol
+      ? `<th class="pm-work-col" title="${escapeHtml(t('feature.roadmapWork'))}">${escapeHtml(t('column.work'))}</th>`
+      : '') +
     `</tr>`;
 
   const priceRow =
-    `<tr class="pm-price-row"><th class="pm-feature">Preis</th>` +
-    tiers.map((t) => `<td class="pm-tier">${escapeHtml(t.price)}</td>`).join('') +
+    `<tr class="pm-price-row"><th class="pm-feature">${escapeHtml(t('price'))}</th>` +
+    tiers.map((tier) => `<td class="pm-tier">${escapeHtml(tier.price)}</td>`).join('') +
     (showWorkCol ? `<td class="pm-work-col"></td>` : '') +
     `</tr>`;
 
@@ -118,7 +124,7 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
       const addInGroup = editable
         ? html(
             Button({
-              label: '+ Feature',
+              label: t('feature.add'),
               variant: 'outline',
               size: 'sm',
               reveal: true,
@@ -134,15 +140,15 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
     for (let i = 0; i < visible.length; i++) {
       const f = visible[i];
       const cells = tiers
-        .map((t) => {
-          const v = t.values?.[f.id];
+        .map((tier) => {
+          const v = tier.values?.[f.id];
           const off = v === false || v == null || v === '';
           // Version-gated cell: not yet available at the pinned version → dash.
           // In "Alle" mode (no pin) show the end state plus an "ab <version>" chip
           // stating from which version this tier includes the feature (mirrors the
           // feature-row chip). No chip once a version is pinned — the gating itself
           // (cell present vs. dash) already carries the information.
-          const af = t.valueVersions?.[f.id];
+          const af = tier.valueVersions?.[f.id];
           const gated = !off && !cellActiveForVersion(af, versions, selectedVersion);
 
           let cls: string;
@@ -153,11 +159,11 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
           } else {
             const chip =
               !selectedVersion && af
-                ? ` <span class="pricing-badge-version pm-cell-ver">ab ${escapeHtml(versionLabel(versionLabels, af))}</span>`
+                ? ` <span class="pricing-badge-version pm-cell-ver">${escapeHtml(t('version.fromShort'))} ${escapeHtml(versionLabel(versionLabels, af))}</span>`
                 : '';
             if (v === true) {
               cls = 'pm-cell is-on';
-              inner = `<span class="pm-check" aria-label="enthalten">✓</span>${chip}`;
+              inner = `<span class="pm-check" aria-label="${escapeHtml(t('cell.included'))}">✓</span>${chip}`;
             } else {
               cls = 'pm-cell is-value';
               inner = `${escapeHtml(String(v))}${chip}`;
@@ -168,8 +174,8 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
           // starts from a dash.
           if (!editable) return `<td class="${cls}">${inner}</td>`;
           return (
-            `<td class="${cls} pm-cell-editable" data-tier-id="${escapeHtml(t.id)}"` +
-            ` data-feature-id="${escapeHtml(f.id)}" tabindex="0" role="button" title="Zelle bearbeiten">${inner}</td>`
+            `<td class="${cls} pm-cell-editable" data-tier-id="${escapeHtml(tier.id)}"` +
+            ` data-feature-id="${escapeHtml(f.id)}" tabindex="0" role="button" title="${escapeHtml(t('cell.edit'))}">${inner}</td>`
           );
         })
         .join('');
@@ -180,7 +186,7 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
             workItems.length
               ? workDotHtml(workItems)
               : needsWorkWarning(f, items, versions, selectedVersion)
-                ? '<span class="pm-work-warn" title="Keine Roadmap-Arbeit verknüpft" aria-label="Warnung: keine Roadmap-Arbeit verknüpft">⚠</span>'
+                ? `<span class="pm-work-warn" title="${escapeHtml(t('feature.noWork'))}" aria-label="${escapeHtml(t('feature.noWork.aria'))}">⚠</span>`
                 : ''
           }</td>`
         : '';
@@ -189,11 +195,11 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
       // instead show a neutral "ab <version>" chip stating when the feature was
       // introduced. Pre-existing features (no version) get no chip.
       const badge = isNewFeature(f, versions, selectedVersion)
-        ? '<span class="pricing-badge-new">Neu</span>'
+        ? `<span class="pricing-badge-new">${escapeHtml(t('badge.new'))}</span>`
         : isModifiedFeature(f, items, versions, selectedVersion)
-          ? '<span class="pricing-badge-modified">Modified</span>'
+          ? `<span class="pricing-badge-modified">${escapeHtml(t('badge.modified'))}</span>`
           : !selectedVersion && f.version
-            ? `<span class="pricing-badge-version">ab ${escapeHtml(versionLabel(versionLabels, f.version))}</span>`
+            ? `<span class="pricing-badge-version">${escapeHtml(t('version.fromShort'))} ${escapeHtml(versionLabel(versionLabels, f.version))}</span>`
             : '';
       const name = escapeHtml(resolveFeatureName(f, versions, selectedVersion));
       const featureThClass = editable ? 'pm-feature pm-feature-editable' : 'pm-feature';
@@ -216,8 +222,8 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
       const reorder =
         editable && visible.length > 1
           ? `<span class="pm-reorder">` +
-            (prev ? moveBtn(prev.id, 'data-move-before', '↑', 'Nach oben') : '') +
-            (next ? moveBtn(next.id, 'data-move-after', '↓', 'Nach unten') : '') +
+            (prev ? moveBtn(prev.id, 'data-move-before', '↑', t('move.up')) : '') +
+            (next ? moveBtn(next.id, 'data-move-after', '↓', t('move.down')) : '') +
             `</span>`
           : '';
       // Info icon only when there's an actual description (base text or version
@@ -226,7 +232,7 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
       const { base, notes } = resolveFeatureDescriptionParts(f, versions);
       const info =
         base || notes.length
-          ? `<span class="pm-info" tabindex="0" role="button" aria-label="Beschreibung anzeigen"></span>`
+          ? `<span class="pm-info" tabindex="0" role="button" aria-label="${escapeHtml(t('description.show'))}"></span>`
           : '';
       // data-feature-id is emitted always — it lets the info-icon tooltip look up
       // the feature in read-only views too. Click-to-edit stays gated by
@@ -321,7 +327,10 @@ function featureTipHtml(f: PricingFeature, versions: string[], labels?: Record<s
   const { base, notes } = resolveFeatureDescriptionParts(f, versions);
   if (!f.version && !base && !notes.length) return '';
   const parts: string[] = [];
-  if (f.version) parts.push(`<div class="pm-tip-avail">ab Version ${escapeHtml(versionLabel(labels, f.version))}</div>`);
+  if (f.version)
+    parts.push(
+      `<div class="pm-tip-avail">${escapeHtml(t('version.from.lower'))} ${escapeHtml(versionLabel(labels, f.version))}</div>`,
+    );
   if (base) parts.push(`<p class="pm-tip-desc">${escapeHtml(base)}</p>`);
   if (notes.length) {
     parts.push(
@@ -329,7 +338,7 @@ function featureTipHtml(f: PricingFeature, versions: string[], labels?: Record<s
         notes
           .map(
             (n) =>
-              `<li><span class="pm-tip-ver">ab ${escapeHtml(versionLabel(labels, n.version))}</span>` +
+              `<li><span class="pm-tip-ver">${escapeHtml(t('version.fromShort'))} ${escapeHtml(versionLabel(labels, n.version))}</span>` +
               `<span class="pm-tip-note">${escapeHtml(n.text)}</span></li>`,
           )
           .join('') +
@@ -433,7 +442,7 @@ export function renderPricingView(host: HTMLElement): void {
   // would float over a stale position (or over a cell that no longer exists).
   closeCellEditor();
   if (!hasPricing(file)) {
-    host.innerHTML = '<p class="pricing-empty">Kein Preismodell hinterlegt.</p>';
+    host.innerHTML = `<p class="pricing-empty">${escapeHtml(t('empty.pricing'))}</p>`;
     renderedSubView = null;
     return;
   }
@@ -455,11 +464,16 @@ export function renderPricingView(host: HTMLElement): void {
   const toggle = hasHighlights
     ? html(
         SegmentedControl({
-          ariaLabel: 'Darstellung',
+          ariaLabel: t('view.display'),
           className: 'pm-subview',
           segments: [
-            { value: 'matrix', label: 'Matrix', selected: subView === 'matrix', attrs: { 'data-sub': 'matrix' } },
-            { value: 'cards', label: 'Kacheln', selected: subView === 'cards', attrs: { 'data-sub': 'cards' } },
+            {
+              value: 'matrix',
+              label: t('view.matrix'),
+              selected: subView === 'matrix',
+              attrs: { 'data-sub': 'matrix' },
+            },
+            { value: 'cards', label: t('view.cards'), selected: subView === 'cards', attrs: { 'data-sub': 'cards' } },
           ],
         }),
       )
@@ -471,22 +485,22 @@ export function renderPricingView(host: HTMLElement): void {
   // in the group rows are the way into a specific section.
   const addControls =
     editable && subView === 'matrix'
-      ? `<div class="pm-add" role="group" aria-label="Hinzufügen">` +
-        html(Button({ label: '+ Feature', variant: 'outline', attrs: { 'data-action': 'add-feature' } })) +
-        html(Button({ label: '+ Tarif', variant: 'outline', attrs: { 'data-action': 'add-tier' } })) +
+      ? `<div class="pm-add" role="group" aria-label="${escapeHtml(t('add'))}">` +
+        html(Button({ label: t('feature.add'), variant: 'outline', attrs: { 'data-action': 'add-feature' } })) +
+        html(Button({ label: t('tier.add'), variant: 'outline', attrs: { 'data-action': 'add-tier' } })) +
         `</div>`
       : '';
 
   const switcher = versions.length
     ? html(
         ToolbarControl({
-          label: 'Version',
+          label: t('version'),
           className: 'pm-version-switch',
           children: Select({
             className: 'pm-version-select',
             block: false,
             options: [
-              { value: '', label: 'Alle', selected: !selectedVersion },
+              { value: '', label: t('version.all'), selected: !selectedVersion },
               ...versions.map((v) => ({
                 value: v,
                 label: versionLabel(model.versionLabels, v),
@@ -507,7 +521,7 @@ export function renderPricingView(host: HTMLElement): void {
   host.innerHTML =
     `<div class="pricing-inner">` +
     `<div class="pricing-header">` +
-    `<h2 class="pricing-title">${escapeHtml(file.name ?? 'Preismodell')} — Preise</h2>` +
+    `<h2 class="pricing-title">${escapeHtml(file.name ?? t('pricingModel'))} — ${escapeHtml(t('heading.pricing'))}</h2>` +
     `<div class="pricing-controls">${addControls}${toggle}${switcher}</div>` +
     `</div>` +
     body +

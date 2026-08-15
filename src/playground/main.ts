@@ -87,7 +87,7 @@ import {
   StatusDot,
   type Child,
 } from '../design-system';
-import { TIMELINE_ICONS } from '../icons';
+import { TIMELINE_ICON_KEYS } from '../icons';
 import { ITEM_STATUSES } from '../status';
 import { tokens } from '../design-system/tokens';
 
@@ -321,8 +321,12 @@ const marksSection = section(
   'Der Glyph ist eine CSS-Maske, keine Grafik: er nimmt die Textfarbe an und passt damit ohne zweites Asset in jede Lane und jedes Theme.',
   el('div', { class: 'pg-Stack' }, [
     el('div', { class: 'pg-IconGrid' }, [
-      ...TIMELINE_ICONS.map(({ key, label }) =>
-        specimen(key, Icon({ name: key, size: 'lg', standalone: true, attrs: { title: label } })),
+      // The key rather than the translated label: these sections are module-scope
+      // constants, and `t()` there is evaluated before the language is resolved
+      // (see „Never call t() at module scope" in src/i18n/index.ts). A specimen
+      // page names the vocabulary anyway.
+      ...TIMELINE_ICON_KEYS.map((key) =>
+        specimen(key, Icon({ name: key, size: 'lg', standalone: true, attrs: { title: key } })),
       ),
       // Every `--ui-icon-*` in icons.css belongs here. The list is hand-kept and had
       // already lost `caret`, which is how a chrome glyph goes years without anyone
@@ -544,10 +548,10 @@ const menuSection = section(
           placement: 'fixed',
           className: 'pg-StaticPopover',
           children: PickerGrid({
-            children: TIMELINE_ICONS.slice(0, 12).map(({ key, label }) =>
+            children: TIMELINE_ICON_KEYS.slice(0, 12).map((key) =>
               MenuItem({
                 cell: true,
-                label,
+                label: key,
                 mark: Icon({ name: key, standalone: true }),
                 selected: key === 'launch',
               }),

@@ -15,12 +15,24 @@
 // Everything in this module has to stay data-only and free of view imports: the
 // registry imports it STATICALLY, so anything it reaches pulls into the generic
 // bundle and the lazy split is gone (`scripts/ci/check-bundle-split.sh`).
+//
+// **The catalogue is on the eager side on purpose**, which is the one thing here
+// that costs bundle bytes without being data. The host needs this plugin's *name*
+// before any of its view code exists: it captions the control in the bar and it
+// headings the fields the plugin contributes to the item form, both of which are
+// drawn while the view chunk has never been fetched. Registering the catalogue
+// lazily left those two reading the manifest's fallback — an English „Product"
+// sitting in an otherwise German form — and the mismatch appeared and disappeared
+// depending on whether the reader had opened the pricing view yet. Strings in two
+// languages are what that costs; the split the check enforces is about view code
+// and stylesheets, and neither moves here.
 
 import type { PluginDescriptor } from '../../pluginHost/api';
 import { hasPlugin } from '../../pluginHost/api';
 import { hasPricingModel } from './compose';
 import { productRoadmapManifest } from './manifest';
 import { productRoadmapFields } from './fields';
+import './messages';
 import { PRODUCT_ROADMAP_PLUGIN } from './plugin';
 
 export const productRoadmapDescriptor: PluginDescriptor = {

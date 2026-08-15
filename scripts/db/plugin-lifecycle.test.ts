@@ -446,7 +446,11 @@ describe('the registry as the manifest source', () => {
       enabled: true,
     });
     const record = await makeManifestSource(store.repo)('dev.zeitlines.product-roadmap');
-    assert.equal(record?.manifest.name, 'Produkt');
+    // The manifest's own literal, deliberately: this asserts the registry is the
+    // source, not what a reader sees. The displayed name goes through the plugin's
+    // catalogue (`manifestText`), and a server reading a manifest record has no
+    // reader to resolve it for.
+    assert.equal(record?.manifest.name, 'Product');
   });
 
   test('a repo that cannot answer falls back rather than taking the data routes down', async () => {

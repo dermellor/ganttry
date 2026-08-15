@@ -635,6 +635,20 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
       /* nothing to record */
     },
 
+    // The interface language is per person, and a file-backed instance has no
+    // people — there is genuinely nobody to record a preference for. Both answer
+    // „nothing stored" rather than refusing, because the client has a store that
+    // *is* right for this case: `localStorage`, which claims only this device and
+    // says so in the account section („Nur auf diesem Gerät"). A refusal here
+    // would make the language unswitchable on exactly the instances that are
+    // easiest to run.
+    async getUserLanguage(): Promise<null> {
+      return null;
+    },
+    async setUserLanguage(): Promise<void> {
+      /* nowhere to put it; the device remembers instead */
+    },
+
     // Membership is a DB concept too, and a file has no instance to belong to.
     // Reads answer "nobody", so an enforcement path that consults them denies by
     // omission rather than crashing; the writes refuse loudly, because silently

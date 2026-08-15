@@ -11,6 +11,7 @@
 // vocabulary and the guard that keeps a stored value out of a CSS var name.
 
 import { html, Icon } from './design-system';
+import { t } from './i18n';
 
 export type IconKey =
   | 'milestone'
@@ -32,29 +33,43 @@ export type IconKey =
   | 'info'
   | 'note';
 
-// key -> German label for the editor dropdown
-export const TIMELINE_ICONS: { key: IconKey; label: string }[] = [
-  { key: 'milestone', label: 'Meilenstein' },
-  { key: 'launch', label: 'Launch' },
-  { key: 'done', label: 'Erledigt' },
-  { key: 'warning', label: 'Warnung' },
-  { key: 'blocked', label: 'Blockiert' },
-  { key: 'review', label: 'Review' },
-  { key: 'deadline', label: 'Deadline' },
-  { key: 'meeting', label: 'Meeting' },
-  { key: 'idea', label: 'Idee' },
-  { key: 'research', label: 'Research' },
-  { key: 'design', label: 'Design' },
-  { key: 'build', label: 'Build' },
-  { key: 'bug', label: 'Bug' },
-  { key: 'release', label: 'Release' },
-  { key: 'decision', label: 'Entscheidung' },
-  { key: 'goal', label: 'Ziel' },
-  { key: 'info', label: 'Info' },
-  { key: 'note', label: 'Notiz' },
+// The vocabulary, in the order the picker offers it. Keys only: an icon's *label*
+// follows the reader's language and therefore cannot be a constant here — a
+// `{ key, label }` table evaluated on import freezes whichever language was in
+// force at boot, which is what „Never call t() at module scope" (src/i18n/index.ts)
+// is about. Ask `iconLabel` for the word instead.
+export const TIMELINE_ICON_KEYS: readonly IconKey[] = [
+  'milestone',
+  'launch',
+  'done',
+  'warning',
+  'blocked',
+  'review',
+  'deadline',
+  'meeting',
+  'idea',
+  'research',
+  'design',
+  'build',
+  'bug',
+  'release',
+  'decision',
+  'goal',
+  'info',
+  'note',
 ];
 
-const ICON_KEYS = new Set<string>(TIMELINE_ICONS.map((i) => i.key));
+/** What the picker calls an icon, in the language in force. */
+export function iconLabel(key: IconKey): string {
+  return t(`icon.${key}`);
+}
+
+/** The picker's rows, resolved at call time so the labels follow the language. */
+export function timelineIcons(): { key: IconKey; label: string }[] {
+  return TIMELINE_ICON_KEYS.map((key) => ({ key, label: iconLabel(key) }));
+}
+
+const ICON_KEYS = new Set<string>(TIMELINE_ICON_KEYS);
 
 // Accepts a stored icon value and returns a valid key or undefined. Guards the
 // value before it lands in a CSS var name / HTML attribute.

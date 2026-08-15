@@ -26,7 +26,8 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/plugin-public-read.md`](docs/plugin-public-read.md) | Publishing a plugin's data without an endpoint of its own: the three gates, what is stripped, and why a local source inverts the question. |
 | [`docs/plugin-authoring.md`](docs/plugin-authoring.md) | Writing a plugin outside this repository: what it exports, the host API it is handed, how to declare data, and how an instance installs it. |
 | [`docs/plugin-isolation.md`](docs/plugin-isolation.md) | Where plugin code runs, why the sandbox was rejected, what protects an instance instead, and what would bring the decision back. |
-| [`docs/settings.md`](docs/settings.md) | The instance settings area: how a setting declares where it lives, the per-setting read gate, and where the area sits. |
+| [`docs/settings.md`](docs/settings.md) | The instance settings area: how a setting declares where it lives, the per-setting read gate, the account section, and where the area sits. |
+| [`src/i18n/`](src/i18n/) | The interface language: the two catalogues, how one is resolved for a reader, and the formatters that follow it. The modules document themselves. |
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server and its tools. |
 | [`docs/deploy.md`](docs/deploy.md) | The Netlify deploy, the auth gate, JIRA linking. |
 | [`src/plugins/*/README.md`](src/plugins/) | Each plugin documents itself: what it does, its fields, its model, and an `AGENTS.md` with the conventions for changing it. No core chapter is the home of a plugin fact. |
@@ -46,6 +47,14 @@ subsystem and documented there.
   no tooltip restating a badge, no sentence about what a button will do. Not
   shortened, not moved into a tooltip, not made muted and small: deleted. The full
   rule and what „refusal" covers is below, in „Interface text".
+- **Interface text lives in the catalogues, never at the call site.** Both
+  languages are in [`src/i18n/`](src/i18n/), English is the reference, and German
+  is typed as a total record over it so a forgotten translation does not compile.
+  A rendering site calls `t('key')` — and never at module scope, which is
+  evaluated before the language is resolved and freezes one in. The full model,
+  including what a plugin ships and which strings are values rather than labels,
+  is in [`docs/settings.md`](docs/settings.md) and
+  [`docs/plugin-authoring.md`](docs/plugin-authoring.md).
 - **Comments explain *why*, not *what*.** Most non-obvious rules here carry the
   failure mode they prevent, because that is the part which cannot be recovered
   from reading the code. When you change such a rule, change its reasoning with it.
@@ -121,6 +130,44 @@ than one sentence or eight words, in a component prop, an HTML attribute or the
 text of markup built as a string. It passed with no exemptions the day it was
 written, because every violation was deleted instead of allowlisted. Its four
 skips are named in the script with their reasons.
+
+It now checks three more things, all because the text moved into catalogues:
+
+- **Every catalogue**, held to the same limit — the core's two and each plugin's,
+  found as `src/plugins/*/messages.ts` rather than listed, so a new plugin is
+  covered the day it ships one. Checking only call sites would have gone quietly
+  green as they emptied, retiring the rule exactly the way this section says prose
+  comes back. The catalogue is the better subject anyway: a complete list, in one
+  place, in every language. Four key shapes are exempt from the **word limit** and
+  from nothing else, because each names a category that is a full statement by
+  nature: `refusal.` (the software declined, or reports what it did), `warn.` (a
+  fault found in the data and reported rather than resolved), `doc.` (text written
+  into a generated document, not into the interface) and a key ending in `.aria`
+  (the accessible name of a graphic, which has to carry the figures the picture
+  shows). The prefix makes the claim greppable instead of accidental, and using one
+  to buy room for an ordinary label is a visible lie in a diff.
+- **Language at a call site.** A German literal outside a catalogue fails, which is
+  the mechanical form of the second convention above. It exists because that rule
+  was written down, followed through most of a sweep, and then half-abandoned: the
+  branch that introduced the language setting left 121 German literals at rendering
+  sites, and what that renders is not an error but an interface whose buttons say
+  „Edit sprint" while the figures beside them say „Umfang (Points)". A string
+  carrying „…" counts too, whatever language it is in — that is what caught the
+  status line under the timeline, which was **English** at its call site and
+  therefore invisible to a test for German. The agent surface (`tools.ts`,
+  `manifest.ts`) is English by its own rule and quotes the values it reports, so
+  the quote half does not apply there.
+- **`t()` at module scope**, which freezes the language in at import time. It is
+  the one way to misuse the catalogue, it fails silently, and it was real in
+  `settingsArea.ts`.
+
+Two things a **manifest** cannot do follow from the same rule. It holds no
+functions and is stored as JSON for an installed artifact, so it cannot call `t()`
+— and its own name and view labels are drawn by the host before any of the
+plugin's view code exists. So the host looks them up in the plugin's catalogue
+under `manifest.name` and `manifest.view.<id>`, with the manifest's literal as the
+fallback, and the plugin's catalogue is registered eagerly rather than with its
+view. See `manifestText` in [`src/pluginHost/messages.ts`](src/pluginHost/messages.ts).
 
 ## The name covers the product, not its vocabulary or its instances
 

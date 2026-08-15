@@ -8,7 +8,7 @@
 // held the answer. The alternative it replaces is worse than it looks: a button
 // per concern in the header, ending in four panels and no overview.
 //
-// Sections are declared in SECTIONS below, and the instance section renders
+// Sections are declared in `sections()` below, and the instance section renders
 // whatever `/api/settings` declares — it knows no setting by name. That is the
 // acceptance criterion for the whole design: adding a setting is a declaration
 // in `src/settings.ts`, and this file does not change.
@@ -34,6 +34,7 @@ import {
 import {
   areaSection,
   createAreaHandle,
+  invalidateArea,
   showArea,
   wireAreaNav,
   type AreaNodes,
@@ -41,7 +42,8 @@ import {
 } from './areaFrame';
 import './styles/settings.css';
 import { mountMemberAdmin, unmountMemberAdmin } from './memberAdmin';
-import { ACCESS_CONTROL_OFF_TEXT } from './settings';
+import { LOCALE_CHANGED, mountAccount } from './accountSection';
+import { t } from './i18n';
 import { els, state, syncUrl } from './state';
 import type { DeclaredSetting } from './types';
 
@@ -53,16 +55,20 @@ import type { DeclaredSetting } from './types';
  * though the labels beside them are German. A separate slug would also make this
  * module import-cycle with `state.ts`, which writes the hash.
  */
-export type SettingsSection = 'instance' | 'members';
+export type SettingsSection = 'instance' | 'members' | 'account';
 
 type SectionDef = AreaSection<SettingsSection>;
 
-/** Where a value lives, in the words an operator would use. */
-const HOME_LABEL: Record<DeclaredSetting['home'], string> = {
-  env: 'Umgebung',
-  build: 'Build',
-  db: 'Datenbank',
-};
+/**
+ * Where a value lives, in the words an operator would use.
+ *
+ * A function rather than the constant it was, because a constant is evaluated on
+ * import — before `initLocale()` has run — which freezes the product default into
+ * it and leaves the badges in one language whatever the reader picked. That is the
+ * one way to misuse `t()` and it is why nothing calls it at module scope.
+ */
+const homeLabel = (home: DeclaredSetting['home']): string =>
+  ({ env: t('settings.home.env'), build: t('settings.home.build'), db: t('settings.home.db') })[home];
 
 /**
  * The refusals worth a sentence of their own, translated from the server's
@@ -70,16 +76,16 @@ const HOME_LABEL: Record<DeclaredSetting['home'], string> = {
  * answers in English like everything written into the repository, the interface
  * is German, and anything unlisted falls back to the server's own message.
  */
-const ERROR_TEXT: Record<string, string> = {
-  access_control_disabled: ACCESS_CONTROL_OFF_TEXT,
-  settings_unavailable: 'Diese Laufzeit kann ihre eigene Konfiguration nicht lesen.',
-  forbidden: 'Dafür fehlen dir die Rechte.',
-};
+const errorText = (): Record<string, string> => ({
+  access_control_disabled: t('refusal.accessControlOff'),
+  settings_unavailable: t('refusal.settings.unreadable'),
+  forbidden: t('refusal.forbidden'),
+});
 
 async function apiJson(path: string): Promise<any> {
   const res = await fetch(path);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(ERROR_TEXT[data.error] || data.message || data.error || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(errorText()[data.error] || data.message || data.error || `HTTP ${res.status}`);
   return data;
 }
 
@@ -95,18 +101,18 @@ async function apiJson(path: string): Promise<any> {
 function valueCell(s: DeclaredSetting): HTMLElement {
   if (s.value == null) {
     return s.set
-      ? Text({ text: 'gesetzt', tone: 'muted', className: 'setting-value setting-secret' })
-      : Text({ text: 'nicht gesetzt', tone: 'muted', className: 'setting-value' });
+      ? Text({ text: t('settings.set'), tone: 'muted', className: 'setting-value setting-secret' })
+      : Text({ text: t('settings.unset'), tone: 'muted', className: 'setting-value' });
   }
-  if (s.value === 'true') return Text({ text: 'an', tone: 'accent', className: 'setting-value' });
-  if (s.value === 'false') return Text({ text: 'aus', tone: 'muted', className: 'setting-value' });
-  if (!s.value) return Text({ text: 'leer', tone: 'muted', className: 'setting-value' });
+  if (s.value === 'true') return Text({ text: t('settings.on'), tone: 'accent', className: 'setting-value' });
+  if (s.value === 'false') return Text({ text: t('settings.off'), tone: 'muted', className: 'setting-value' });
+  if (!s.value) return Text({ text: t('settings.empty'), tone: 'muted', className: 'setting-value' });
   // An unset variable that still has an effective value is the instance's
   // default — „editor" and „why does nothing say so" are two different facts,
   // and an operator looking for where a value is configured needs the second.
   return el('span', {}, [
     Text({ text: s.value, className: 'setting-value' }),
-    !s.set && Text({ text: ' (Standard)', tone: 'muted', size: 'xs' }),
+    !s.set && Text({ text: ` ${t('settings.default')}`, tone: 'muted', size: 'xs' }),
   ]);
 }
 
@@ -134,7 +140,7 @@ function settingRow(s: DeclaredSetting): HTMLElement {
       TableCell({ children: valueCell(s) }),
       TableCell({
         children: Badge({
-          label: HOME_LABEL[s.home] ?? s.home,
+          label: homeLabel(s.home) ?? s.home,
           tone: s.home === 'env' ? 'neutral' : 'muted',
         }),
       }),
@@ -159,7 +165,7 @@ function settingsGroups(settings: DeclaredSetting[]): HTMLElement[] {
       Table({
         className: 'setting-table',
         children: [
-          TableHead({ columns: ['Einstellung', 'Wert', 'Herkunft'] }),
+          TableHead({ columns: [t('settings.column.setting'), t('settings.column.value'), t('settings.origin')] }),
           el('tbody', {}, body),
         ],
       }),
@@ -168,27 +174,47 @@ function settingsGroups(settings: DeclaredSetting[]): HTMLElement[] {
 }
 
 async function mountInstance(root: HTMLElement): Promise<void> {
-  root.replaceChildren(Text({ as: 'p', text: 'Wird geladen …', tone: 'muted', placeholder: true }));
+  root.replaceChildren(Text({ as: 'p', text: t('app.loading'), tone: 'muted', placeholder: true }));
   try {
     const { settings } = (await apiJson('/api/settings')) as { settings: DeclaredSetting[] };
     root.replaceChildren(
       ...(settings.length
         ? settingsGroups(settings)
-        : [Callout({ tone: 'warning', text: 'Diese Instanz deklariert keine Einstellungen.' })]),
+        : [Callout({ tone: 'warning', text: t('settings.none') })]),
     );
   } catch (e) {
     root.replaceChildren(Callout({ text: e instanceof Error ? e.message : String(e) }));
   }
 }
 
-const SECTIONS: readonly SectionDef[] = [
-  { id: 'instance', label: 'Instanz', mount: mountInstance },
-  { id: 'members', label: 'Benutzer', mount: mountMemberAdmin, unmount: unmountMemberAdmin },
+/**
+ * The sections, built on call rather than held in a `const`.
+ *
+ * A module-scope array would evaluate `t()` on import — before `initLocale()` has
+ * decided the language — and freeze the product default into the section list, so
+ * the nav would stay English for a German reader while every section body followed
+ * the setting. Nothing in this codebase calls `t()` at module scope, and this is
+ * the file that first proved the rule was worth writing down (src/i18n/index.ts).
+ *
+ * The **ids** are not built here and never move: they are the hash, so they stay
+ * English like every other key in the address (see „Sections" in docs/settings.md).
+ */
+const sections = (): readonly SectionDef[] => [
+  { id: 'instance', label: t('settings.section.instance'), mount: mountInstance },
+  { id: 'members', label: t('settings.section.members'), mount: mountMemberAdmin, unmount: unmountMemberAdmin },
+  // „Konto" last, because the two before it are about the deployment and this one
+  // is about the reader — and because it is the only section every instance can
+  // offer, so putting it first would push what an operator opened the area for
+  // below a control they may not have come for.
+  { id: 'account', label: t('settings.section.account'), mount: mountAccount },
 ];
+
+/** The first section's id, which the header button opens. Never translated. */
+const FIRST_SECTION: SettingsSection = 'instance';
 
 /** The section a hash value names, defaulting to the first (see `areaSection`). */
 export function settingsSection(raw: string | undefined | null): SettingsSection {
-  return areaSection(SECTIONS, raw);
+  return areaSection(sections(), raw);
 }
 
 const handle = createAreaHandle<SettingsSection>();
@@ -218,7 +244,7 @@ function nodes(): AreaNodes {
  * timeline that cannot be edited.
  */
 export async function showSettings(section: SettingsSection | null): Promise<void> {
-  await showArea(handle, nodes(), SECTIONS, section, 'settings-open');
+  await showArea(handle, nodes(), sections(), section, 'settings-open');
 }
 
 /**
@@ -246,5 +272,19 @@ export function closeSettings(): void {
 export function wireSettingsArea(): void {
   wireAreaNav<SettingsSection>(els.settingsNav, openSettings);
   els.settingsClose.addEventListener('click', () => closeSettings());
-  els.settingsBtn.addEventListener('click', () => openSettings(SECTIONS[0].id));
+  els.settingsBtn.addEventListener('click', () => openSettings(FIRST_SECTION));
+  // Switching language repaints the area, because everything in it — the section
+  // nav, the „Herkunft" badges, this section's own heading — is text that just
+  // changed. Repainting only the control that was clicked would leave a German
+  // nav around an English page, which reads as the switch having half worked.
+  //
+  // The rest of the chrome behind the area is not repainted here: it is hidden
+  // while the area is open, and it rebuilds from `t()` on the next render. What
+  // it does not do is rebuild *now*, which is the known limit of this — see
+  // „What a language change does not repaint" (docs/settings.md).
+  window.addEventListener(LOCALE_CHANGED, () => {
+    if (!state.settingsSection) return;
+    invalidateArea(handle);
+    void showSettings(state.settingsSection);
+  });
 }

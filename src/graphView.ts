@@ -43,6 +43,7 @@ import {
   type EdgeKind,
 } from './graphLayout';
 import type { GraphConfig } from './types';
+import { t } from './i18n';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -340,7 +341,7 @@ export function renderGraphView(): void {
   syncFilterControl();
 
   if (!entries.length) {
-    host.appendChild(emptyState('Keine Einträge, die die Filter passieren lassen.'));
+    host.appendChild(emptyState(t('view.empty.filtered')));
     return;
   }
 
@@ -493,11 +494,11 @@ export function renderGraphView(): void {
       el('div', { class: 'graph-legend' }, [
         el('span', { class: 'graph-legend-item' }, [
           el('span', { class: 'graph-legend-line' }),
-          'Abhängigkeit',
+          t('graph.dependency'),
         ]),
         el('span', { class: 'graph-legend-item' }, [
           el('span', { class: 'graph-legend-line', 'data-kind': 'parent' }),
-          'Übergeordnet',
+          t('graph.parent'),
         ]),
       ]),
     );

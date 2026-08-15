@@ -40,18 +40,26 @@ import './styles/members.css';
 import { MEMBER_ROLES, type MemberRole, type MemberStatus } from './access';
 import type { Member } from './types';
 
-const STATUS_LABEL: Record<MemberStatus, string> = {
-  invited: 'Eingeladen',
-  active: 'Aktiv',
-  suspended: 'Gesperrt',
-  removed: 'Entfernt',
-};
+import { formatDay, t } from './i18n';
 
-const ROLE_LABEL: Record<MemberRole, string> = {
-  admin: 'Administrator',
-  editor: 'Bearbeiter',
-  viewer: 'Leser',
-};
+// Functions rather than the two `Record` constants they were: a constant is
+// filled on import, before the reader's language is resolved, so the table's
+// badges and role dropdowns would stay in whichever language the page booted in.
+// The keys are the stored membership vocabulary and never move.
+const statusLabel = (status: MemberStatus): string =>
+  ({
+    invited: t('members.status.invited'),
+    active: t('members.status.active'),
+    suspended: t('members.status.suspended'),
+    removed: t('members.status.removed'),
+  })[status];
+
+const roleLabel = (role: MemberRole): string =>
+  ({
+    admin: t('members.role.admin'),
+    editor: t('members.role.editor'),
+    viewer: t('members.role.viewer'),
+  })[role];
 
 /** Where the built subtree currently lives, or null while unmounted. */
 let root: HTMLElement | null = null;
@@ -65,16 +73,16 @@ let members: Member[] = [];
  * at the source. Anything not listed falls back to the server's own message,
  * which is still more use than a status code.
  */
-const ERROR_TEXT: Record<string, string> = {
-  last_admin: 'Das würde die Instanz ohne aktiven Administrator zurücklassen.',
-  nothing_to_resend: 'Diese Mitgliedschaft wartet auf keine Einladung.',
-  db_not_configured: 'Für Mitgliedschaften braucht diese Instanz eine Datenbank.',
-  access_control_disabled: 'Die Benutzerverwaltung ist auf dieser Instanz nicht eingeschaltet.',
-  membership_unavailable: 'Die Mitgliederliste ist nicht lesbar. Vermutlich fehlt die Migration.',
-  forbidden: 'Dafür fehlen dir die Rechte.',
-  invalid_request: 'Diese Eingabe ist nicht gültig.',
-  'not found': 'Diese Adresse ist kein Mitglied.',
-};
+const errorText = (): Record<string, string> => ({
+  last_admin: t('refusal.members.lastAdmin'),
+  nothing_to_resend: t('refusal.members.nothingToResend'),
+  db_not_configured: t('refusal.members.needsDatabase'),
+  access_control_disabled: t('refusal.members.off'),
+  membership_unavailable: t('refusal.members.unreadable'),
+  forbidden: t('refusal.forbidden'),
+  invalid_request: t('refusal.members.invalid'),
+  'not found': t('refusal.members.notAMember'),
+});
 
 async function api(method: string, body?: unknown): Promise<any> {
   const res = await fetch('/api/members', {
@@ -84,7 +92,7 @@ async function api(method: string, body?: unknown): Promise<any> {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(ERROR_TEXT[data.error] || data.message || data.error || `HTTP ${res.status}`);
+    throw new Error(errorText()[data.error] || data.message || data.error || `HTTP ${res.status}`);
   }
   return data;
 }
@@ -99,10 +107,10 @@ function row(m: Member): HTMLElement {
     Button({ label, variant: danger ? 'danger' : 'outline', size: 'sm', attrs: { 'data-act': act } });
 
   const actions: HTMLElement[] = [];
-  if (m.status === 'invited') actions.push(action('resend', 'Einladung erneut'));
-  if (m.status === 'active') actions.push(action('suspend', 'Sperren'));
-  if (m.status === 'suspended' || m.status === 'removed') actions.push(action('restore', 'Entsperren'));
-  if (m.status !== 'removed') actions.push(action('remove', 'Entfernen', true));
+  if (m.status === 'invited') actions.push(action('resend', t('members.action.resend')));
+  if (m.status === 'active') actions.push(action('suspend', t('members.action.suspend')));
+  if (m.status === 'suspended' || m.status === 'removed') actions.push(action('restore', t('members.action.restore')));
+  if (m.status !== 'removed') actions.push(action('remove', t('members.action.remove'), true));
 
   return TableRow({
     className: `member-row is-${m.status}`,
@@ -117,20 +125,22 @@ function row(m: Member): HTMLElement {
       TableCell({
         children: Select({
           block: false,
-          attrs: { 'data-act': 'role', 'aria-label': 'Rolle' },
-          options: MEMBER_ROLES.map((r) => ({ value: r, label: ROLE_LABEL[r], selected: r === m.role })),
+          attrs: { 'data-act': 'role', 'aria-label': t('members.role') },
+          options: MEMBER_ROLES.map((r) => ({ value: r, label: roleLabel(r), selected: r === m.role })),
         }),
       }),
       TableCell({
         children: Badge({
-          label: STATUS_LABEL[m.status],
+          label: statusLabel(m.status),
           tone: m.status === 'active' ? 'accent' : m.status === 'invited' ? 'neutral' : 'muted',
         }),
       }),
       TableCell({
         nowrap: true,
         muted: true,
-        children: m.lastSeenAt ? new Date(m.lastSeenAt).toLocaleDateString('de-DE') : '—',
+        // Through the shared formatter: a hardcoded `de-DE` here was the last
+        // date in the interface that did not follow the language setting.
+        children: m.lastSeenAt ? formatDay(new Date(m.lastSeenAt)) : '—',
       }),
       // On a div inside the cell, never on the `<td>`: a flex table cell stops
       // participating in the table's column sizing, which makes every row a
@@ -151,7 +161,7 @@ function render(): void {
             children: TableCell({
               colspan: 5,
               muted: true,
-              children: Text({ text: 'Noch niemand eingeladen.', placeholder: true }),
+              children: Text({ text: t('members.none'), placeholder: true }),
             }),
           }),
         ]),
@@ -235,7 +245,7 @@ function wire(): void {
       const res = await api('POST', { email, role });
       form.reset();
       await reload();
-      say(`${email} eingeladen.`);
+      say(t('members.invited', { email }));
       if (res.inviteToken) showInvite(email, res.inviteToken);
     } catch (e) {
       say(e instanceof Error ? e.message : String(e), 'error');
@@ -250,13 +260,13 @@ function wire(): void {
     if (!btn || !email) return;
     switch (btn.dataset.act) {
       case 'resend':
-        return void act(email, { resend: true }, `Neue Einladung für ${email}.`);
+        return void act(email, { resend: true }, t('members.reinvited', { email }));
       case 'suspend':
-        return void act(email, { status: 'suspended' }, `${email} gesperrt.`);
+        return void act(email, { status: 'suspended' }, t('members.suspended', { email }));
       case 'restore':
-        return void act(email, { status: 'active' }, `${email} entsperrt.`);
+        return void act(email, { status: 'active' }, t('members.restored', { email }));
       case 'remove':
-        return void act(email, { status: 'removed' }, `${email} entfernt.`);
+        return void act(email, { status: 'removed' }, t('members.removed', { email }));
     }
   });
 
@@ -264,19 +274,19 @@ function wire(): void {
     const select = ev.target as HTMLSelectElement;
     if (select.dataset.act !== 'role') return;
     const email = select.closest('tr')?.getAttribute('data-email');
-    if (email) void act(email, { role: select.value }, `Rolle von ${email} geändert.`);
+    if (email) void act(email, { role: select.value }, t('members.roleChanged', { email }));
   });
 
   root.querySelector('#member-invite-copy')!.addEventListener('click', async () => {
     const field = root!.querySelector('#member-invite-url') as HTMLInputElement;
     try {
       await navigator.clipboard.writeText(field.value);
-      say('Link kopiert.');
+      say(t('members.linkCopied'));
     } catch {
       // Clipboard access can be refused; the field is selected either way, so
       // the link is still one keystroke from being copied.
       field.select();
-      say('Link markiert — mit Strg/Cmd+C kopieren.');
+      say(t('refusal.members.linkCopy'));
     }
   });
 
@@ -297,17 +307,17 @@ function build(): HTMLElement {
         TextInput({
           type: 'email',
           name: 'email',
-          placeholder: 'adresse@example.com',
+          placeholder: t('members.emailPlaceholder'),
           required: true,
-          attrs: { 'aria-label': 'E-Mail-Adresse einladen' },
+          attrs: { 'aria-label': t('members.invite') },
         }),
         Select({
           name: 'role',
           block: false,
-          attrs: { 'aria-label': 'Rolle' },
-          options: MEMBER_ROLES.map((r) => ({ value: r, label: ROLE_LABEL[r], selected: r === 'editor' })),
+          attrs: { 'aria-label': t('members.role') },
+          options: MEMBER_ROLES.map((r) => ({ value: r, label: roleLabel(r), selected: r === 'editor' })),
         }),
-        Button({ label: 'Einladen', type: 'submit' }),
+        Button({ label: t('members.submit'), type: 'submit' }),
       ]),
 
       el('div', { id: 'member-note' }),
@@ -315,15 +325,15 @@ function build(): HTMLElement {
       el('div', { id: 'member-invite', class: 'member-invite', hidden: true }, [
         Text({
           as: 'p',
-          children: ['Einladungslink für ', el('strong', { class: 'member-invite-for' })],
+          children: [`${t('members.inviteLink')} `, el('strong', { class: 'member-invite-for' })],
         }),
         el('div', { class: 'member-invite-row' }, [
           TextInput({
             id: 'member-invite-url',
             readonly: true,
-            attrs: { 'aria-label': 'Einladungslink' },
+            attrs: { 'aria-label': t('members.inviteLinkField') },
           }),
-          Button({ label: 'Kopieren', variant: 'outline', attrs: { id: 'member-invite-copy' } }),
+          Button({ label: t('members.copy'), variant: 'outline', attrs: { id: 'member-invite-copy' } }),
         ]),
       ]),
 
@@ -331,7 +341,15 @@ function build(): HTMLElement {
         Table({
           className: 'member-table',
           children: [
-            TableHead({ columns: ['Person', 'Rolle', 'Status', 'Zuletzt', ''] }),
+            TableHead({
+              columns: [
+                t('members.column.person'),
+                t('members.role'),
+                t('list.column.status'),
+                t('members.column.lastSeen'),
+                '',
+              ],
+            }),
             el('tbody', { id: 'member-rows' }),
           ],
         }),

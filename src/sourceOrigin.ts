@@ -21,6 +21,8 @@
 // Datenbank. Änderungen anderer erscheinen sofort."), which is explanation nobody
 // asked for on a control that already states its state.
 
+import { t } from './i18n';
+
 export type SourceOriginBadge = {
   /** Whether the pill is on screen at all. False leaves the name and its gear adjacent. */
   shown: boolean;
@@ -43,7 +45,7 @@ export function sourceOriginBadge(editable: boolean): SourceOriginBadge {
     // Without the origin word: „Lokal · nur lesend" spent its first half on the
     // heading the switcher already puts above this timeline, and the half that
     // names the missing buttons had to compete with it.
-    label: 'Nur lesend',
+    label: t('switcher.readOnly'),
     tone: 'muted',
   };
 }

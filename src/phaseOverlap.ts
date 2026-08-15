@@ -10,6 +10,8 @@
 // pull server-side); importing durationToMs from ./buildItems instead would
 // drag the client graph (filter, icons) into the edge function.
 import { durationToMs, parseLocalDay } from './date.ts';
+import { translate } from './i18n/catalogue.ts';
+import { DEFAULT_LOCALE, type Locale } from './i18n/locale.ts';
 import type { TimelinePhase } from './types';
 
 export type PhaseExtent = { start: number; end: number };
@@ -62,9 +64,17 @@ export function findPhaseOverlap(
   return null;
 }
 
-/** Human-readable reason for a rejected write / blocked save. */
-export function describePhaseOverlap(a: TimelinePhase, b: TimelinePhase): string {
-  return `Phasen dürfen sich nicht überlappen: „${a.label}" und „${b.label}".`;
+/**
+ * Human-readable reason for a rejected write / blocked save. The locale is a
+ * parameter for the reason `describeReversedExtent` takes one: the server reads
+ * this module too and does not know who is looking.
+ */
+export function describePhaseOverlap(
+  a: TimelinePhase,
+  b: TimelinePhase,
+  locale: Locale = DEFAULT_LOCALE,
+): string {
+  return translate(locale, 'refusal.phase.overlap', { a: a.label ?? '', b: b.label ?? '' });
 }
 
 /**
