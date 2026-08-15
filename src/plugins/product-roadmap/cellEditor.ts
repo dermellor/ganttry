@@ -30,6 +30,7 @@ import type { PricingTier } from './types';
 import { currentPricing } from './compose';
 import { versionLabel } from './pricing';
 
+import { t } from './messages';
 const LAYER_ID = 'pm-cell-editor';
 
 type Mode = 'on' | 'value' | 'off';
@@ -85,7 +86,7 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
       Field({
         label: 'Wert',
         className: 'pm-ce-value-field',
-        control: TextInput({ className: 'pm-ce-value', value: valueText, placeholder: 'z.B. 3.000' }),
+        control: TextInput({ className: 'pm-ce-value', value: valueText, placeholder: t('cell.placeholder.number') }),
       }),
       // „ab Version" only gates an included cell, so it is offered but never
       // forced; clearing a cell drops the gate with it (see submit).
@@ -95,7 +96,7 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
             control: Select({
               className: 'pm-ce-version',
               options: [
-                { value: '', label: '— von Anfang an —', selected: !availableFrom },
+                { value: '', label: t('version.fromStart'), selected: !availableFrom },
                 ...versions.map((v) => ({
                   value: v,
                   label: versionLabel(pricing.versionLabels, v),

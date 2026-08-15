@@ -44,6 +44,7 @@ import { hasPlugin } from '../../pluginHost/api';
 import { PRODUCT_ROADMAP_PLUGIN } from './plugin';
 import { currentPricing, hasPricingModel } from './compose';
 
+import { t } from './messages';
 const PRICING_VERSION_KEY = 'timelines.pricingVersion';
 const PRICING_SUBVIEW_KEY = 'timelines.pricingSubview';
 
@@ -118,7 +119,7 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
       const addInGroup = editable
         ? html(
             Button({
-              label: '+ Feature',
+              label: t('feature.add'),
               variant: 'outline',
               size: 'sm',
               reveal: true,
@@ -180,7 +181,7 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
             workItems.length
               ? workDotHtml(workItems)
               : needsWorkWarning(f, items, versions, selectedVersion)
-                ? '<span class="pm-work-warn" title="Keine Roadmap-Arbeit verknüpft" aria-label="Warnung: keine Roadmap-Arbeit verknüpft">⚠</span>'
+                ? `<span class="pm-work-warn" title="${t('feature.noWork')}" aria-label="${t('feature.noWork.aria')}">⚠</span>`
                 : ''
           }</td>`
         : '';
@@ -471,9 +472,9 @@ export function renderPricingView(host: HTMLElement): void {
   // in the group rows are the way into a specific section.
   const addControls =
     editable && subView === 'matrix'
-      ? `<div class="pm-add" role="group" aria-label="Hinzufügen">` +
-        html(Button({ label: '+ Feature', variant: 'outline', attrs: { 'data-action': 'add-feature' } })) +
-        html(Button({ label: '+ Tarif', variant: 'outline', attrs: { 'data-action': 'add-tier' } })) +
+      ? `<div class="pm-add" role="group" aria-label="${t('add')}">` +
+        html(Button({ label: t('feature.add'), variant: 'outline', attrs: { 'data-action': 'add-feature' } })) +
+        html(Button({ label: t('tier.add'), variant: 'outline', attrs: { 'data-action': 'add-tier' } })) +
         `</div>`
       : '';
 

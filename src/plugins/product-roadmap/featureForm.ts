@@ -26,6 +26,7 @@ import { file, hostApi, status } from './host';
 import { repaintPricingView } from './pricingMatrix';
 import { currentPricing } from './compose';
 
+import { t } from './messages';
 function findFeature(featureId: string): PricingFeature | undefined {
   return currentPricing(file())?.features.find((f) => f.id === featureId);
 }
@@ -57,7 +58,7 @@ function vdescRow(
     TextArea({ className: 'version-desc-text', value: text, attrs: { hidden: true } }),
     IconButton({
       icon: '×',
-      ariaLabel: 'Versionsbeschreibung entfernen',
+      ariaLabel: t('version.remove'),
       variant: 'outline',
       attrs: { 'data-action': 'remove-vdesc' },
     }),
@@ -120,7 +121,7 @@ export function showFeatureForm(featureId: string): void {
               .map((v) => vdescRow(versions, versionLabels, v, feature.descriptionByVersion![v])),
           ),
           Button({
-            label: '+ Versionsbeschreibung',
+            label: t('version.add'),
             variant: 'dashed',
             className: 'vdesc-add',
             attrs: { 'data-action': 'add-vdesc' },
@@ -156,13 +157,13 @@ export function showFeatureForm(featureId: string): void {
       ],
     }),
     Field({
-      label: 'Ab Version',
+      label: t('version.from'),
       htmlFor: 'ft-version',
       control: Select({
         id: 'ft-version',
         name: 'version',
         options: [
-          { value: '', label: '— von Anfang an —', selected: !feature.version },
+          { value: '', label: t('version.fromStart'), selected: !feature.version },
           ...versions.map((v) => ({ value: v, label: versionLabel(versionLabels, v), selected: feature.version === v })),
         ],
       }),
@@ -191,7 +192,7 @@ export function showFeatureForm(featureId: string): void {
     FormActions({
       children: [
         Button({ label: 'Speichern', type: 'submit' }),
-        Button({ label: 'Löschen', variant: 'danger', attrs: { 'data-action': 'delete' } }),
+        Button({ label: t('delete'), variant: 'danger', attrs: { 'data-action': 'delete' } }),
       ],
     }),
   ]);
@@ -284,7 +285,7 @@ async function saveFeatureFromForm(featureId: string, form: HTMLFormElement): Pr
       // The row moved under us. The host's own reload is what brings the new one
       // in; repainting from the stale snapshot would show the value we failed to
       // write as if it had been saved.
-      status('Feature wurde extern geändert — lade neu…');
+      status(t('refusal.feature.conflict'));
       return;
     }
     status(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);

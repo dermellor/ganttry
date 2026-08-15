@@ -185,4 +185,21 @@ export {
 // internal convention — see „Making it look like the app"
 // (docs/plugin-authoring.md) and
 // <https://github.com/zeitlines/zeitlines/issues/60>.
+/**
+ * How a plugin ships text in more than one language, and the host's own
+ * locale-aware formatters.
+ *
+ * A plugin cannot import the core catalogue — its keys are not in `MessageKey`,
+ * and reaching past this barrel is what `check-plugin-isolation.mjs` forbids — so
+ * it brings its own and gets back a lookup bound to the language the host is
+ * rendering in. `formatDay`, `formatNumber` and `compare` come from here for the
+ * same reason the components do: one set of conventions across a screen that
+ * mixes core and plugin text.
+ *
+ * What must never go through `t`: a stored value. Only `label` moves; a select
+ * option's `value` is an id in item metadata (src/i18n/storedValues.test.ts).
+ */
+export { pluginMessages, type PluginCatalogues, type PluginT } from './messages';
+export { compare, formatDay, formatDateTime, formatNumber, locale, type Locale } from '../i18n';
+
 export * from '../design-system';

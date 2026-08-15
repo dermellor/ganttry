@@ -6,6 +6,7 @@
 
 import { statusOrDefault, type StatusKey } from '../../pluginHost/api';
 import { PRICING_FEATURE_META_KEY, PRICING_ITEM_VERSION_META_KEY } from './plugin';
+import { t } from './messages';
 import {
   type TimelineFileItem,
 } from '../../types';
@@ -493,7 +494,7 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
   lines.push('> [!warning] Automatisch generiert');
   lines.push(
     `> Diese Datei wird aus der Timeline \`${timelineId}\` erzeugt (\`npm run export:pricing\`). ` +
-      'Änderungen von Hand gehen beim nächsten Export verloren. Quelle der Wahrheit ist die Timeline.',
+      t('export.note'),
   );
   lines.push('');
 
@@ -507,7 +508,7 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
     const withVersions = (pricing.versions?.length ?? 0) > 0;
     lines.push('## Feature-Matrix');
     lines.push('');
-    const header = ['Feature', ...tiers.map((t) => cell(t.name)), ...(withVersions ? ['Ab Version'] : [])];
+    const header = ['Feature', ...tiers.map((t) => cell(t.name)), ...(withVersions ? [t('version.from')] : [])];
     const align = ['---', ...tiers.map(() => ':--:'), ...(withVersions ? [':--:'] : [])];
     lines.push(`| ${header.join(' | ')} |`);
     lines.push(`| ${align.join(' | ')} |`);

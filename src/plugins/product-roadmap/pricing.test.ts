@@ -22,6 +22,7 @@ import {
 import type { PricingFeature, PricingTier } from './types';
 import type { TimelineFileItem } from '../../types';
 
+import { setLocale } from '../../i18n';
 const doc: PricingDoc = {
   timelineId: 'demo/roadmap',
   name: 'Example Timeline',
@@ -99,7 +100,13 @@ test('pipes in names and values are escaped inside cells', () => {
   assert.match(md, /ja \\\| nein/);
 });
 
-test('with versions: adds an "Ab Version" column carrying per-feature version', () => {
+test('with versions: adds a version column carrying the per-feature version', () => {
+  // The language is set explicitly because this pins the *shape* of the export —
+  // that a column appears at all, and what it carries — not the word in its
+  // heading. Asserting the default's wording would make this fail the day the
+  // product default changes, which is a fact about the interface and not about
+  // the export.
+  setLocale('de');
   const md = pricingToMarkdown(
     {
       timelineId: 't',
@@ -121,7 +128,8 @@ test('with versions: adds an "Ab Version" column carrying per-feature version', 
   assert.match(md, /\| Immer \| ✓ \|  \|/); // no version → blank cell
 });
 
-test('without versions: no "Ab Version" column', () => {
+test('without versions: no version column', () => {
+  setLocale('de');
   const md = pricingToMarkdown(doc, { updated: '2026-07-15' });
   assert.doesNotMatch(md, /Ab Version/);
 });

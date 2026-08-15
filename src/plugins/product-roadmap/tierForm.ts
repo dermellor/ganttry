@@ -17,6 +17,7 @@ import { repaintPricingView } from './pricingMatrix';
 import { slugId } from './pricing';
 import { currentPricing } from './compose';
 
+import { t } from './messages';
 function findTier(tierId: string): PricingTier | undefined {
   return currentPricing(file())?.tiers.find((t) => t.id === tierId);
 }
@@ -40,7 +41,7 @@ export function showTierForm(tierId: string): void {
         id: 'tr-price',
         name: 'price',
         value: tier.price ?? '',
-        placeholder: 'z.B. ab 449,95 €/Monat',
+        placeholder: t('tier.placeholder.price'),
       }),
     }),
     Field({
@@ -51,18 +52,18 @@ export function showTierForm(tierId: string): void {
         id: 'tr-tagline',
         name: 'tagline',
         value: tier.tagline ?? '',
-        placeholder: 'z.B. Micro · 1–5 Anrufe/Tag',
+        placeholder: t('tier.placeholder.name'),
       }),
     }),
     Field({
-      label: 'Use Case',
+      label: t('tier.useCase'),
       htmlFor: 'tr-usecase',
       full: true,
       control: TextInput({
         id: 'tr-usecase',
         name: 'useCase',
         value: tier.useCase ?? '',
-        placeholder: 'z.B. Verpasste Anrufe auffangen',
+        placeholder: t('tier.placeholder.useCase'),
       }),
     }),
     Field({
@@ -80,7 +81,7 @@ export function showTierForm(tierId: string): void {
     FormActions({
       children: [
         Button({ label: 'Speichern', type: 'submit' }),
-        Button({ label: 'Löschen', variant: 'danger', attrs: { 'data-action': 'delete' } }),
+        Button({ label: t('delete'), variant: 'danger', attrs: { 'data-action': 'delete' } }),
       ],
     }),
   ]);
@@ -133,7 +134,7 @@ async function saveTierFromForm(tierId: string, form: HTMLFormElement): Promise<
       // The row moved under us. The host's reload brings the new one in;
       // repainting from the stale snapshot would show the value we failed to write
       // as if it had been saved.
-      status('Tarif wurde extern geändert — lade neu…');
+      status(t('refusal.tier.conflict'));
       return;
     }
     status(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
