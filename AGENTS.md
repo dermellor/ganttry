@@ -131,18 +131,43 @@ text of markup built as a string. It passed with no exemptions the day it was
 written, because every violation was deleted instead of allowlisted. Its four
 skips are named in the script with their reasons.
 
-It now checks two more things, both because the text moved into catalogues:
+It now checks three more things, all because the text moved into catalogues:
 
-- **Both catalogues**, held to the same limit. Checking only call sites would have
-  gone quietly green as they emptied, retiring the rule exactly the way this
-  section says prose comes back. The catalogue is the better subject anyway: a
-  complete list, in one place, in both languages. Keys under `refusal.` are exempt
-  from the word limit and not from the check — that is the third category above,
-  which used to escape this script by sitting in a rule module rather than at a
-  rendering site. The prefix makes the claim greppable instead of accidental.
+- **Every catalogue**, held to the same limit — the core's two and each plugin's,
+  found as `src/plugins/*/messages.ts` rather than listed, so a new plugin is
+  covered the day it ships one. Checking only call sites would have gone quietly
+  green as they emptied, retiring the rule exactly the way this section says prose
+  comes back. The catalogue is the better subject anyway: a complete list, in one
+  place, in every language. Four key shapes are exempt from the **word limit** and
+  from nothing else, because each names a category that is a full statement by
+  nature: `refusal.` (the software declined, or reports what it did), `warn.` (a
+  fault found in the data and reported rather than resolved), `doc.` (text written
+  into a generated document, not into the interface) and a key ending in `.aria`
+  (the accessible name of a graphic, which has to carry the figures the picture
+  shows). The prefix makes the claim greppable instead of accidental, and using one
+  to buy room for an ordinary label is a visible lie in a diff.
+- **Language at a call site.** A German literal outside a catalogue fails, which is
+  the mechanical form of the second convention above. It exists because that rule
+  was written down, followed through most of a sweep, and then half-abandoned: the
+  branch that introduced the language setting left 121 German literals at rendering
+  sites, and what that renders is not an error but an interface whose buttons say
+  „Edit sprint" while the figures beside them say „Umfang (Points)". A string
+  carrying „…" counts too, whatever language it is in — that is what caught the
+  status line under the timeline, which was **English** at its call site and
+  therefore invisible to a test for German. The agent surface (`tools.ts`,
+  `manifest.ts`) is English by its own rule and quotes the values it reports, so
+  the quote half does not apply there.
 - **`t()` at module scope**, which freezes the language in at import time. It is
   the one way to misuse the catalogue, it fails silently, and it was real in
   `settingsArea.ts`.
+
+Two things a **manifest** cannot do follow from the same rule. It holds no
+functions and is stored as JSON for an installed artifact, so it cannot call `t()`
+— and its own name and view labels are drawn by the host before any of the
+plugin's view code exists. So the host looks them up in the plugin's catalogue
+under `manifest.name` and `manifest.view.<id>`, with the manifest's literal as the
+fallback, and the plugin's catalogue is registered eagerly rather than with its
+view. See `manifestText` in [`src/pluginHost/messages.ts`](src/pluginHost/messages.ts).
 
 ## The name covers the product, not its vocabulary or its instances
 

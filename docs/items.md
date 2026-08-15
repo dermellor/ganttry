@@ -32,10 +32,11 @@ defined in the `:root` block of
   `currentColor` — it adapts to the item text colour automatically.
 - **Change the icon look:** override any key in your own stylesheet, e.g.
   `:root { --icon-milestone: url("…"); }`.
-- **Add a new semantic key:** add it to `IconKey` + `TIMELINE_ICONS` in
-  `src/icons.ts` (label shown in the icon picker) and add a matching
-  `--icon-<key>` to the `:root` set in `theme.css`. It then appears in the edit
-  form, the `timeline_items.icon` column, and the MCP `add_item`/`update_item` tools.
+- **Add a new semantic key:** add it to `IconKey` + `TIMELINE_ICON_KEYS` in
+  `src/icons.ts`, add an `icon.<key>` entry to both catalogues in `src/i18n/`
+  (the label the icon picker shows), and add a matching `--icon-<key>` to the
+  `:root` set in `theme.css`. It then appears in the edit form, the
+  `timeline_items.icon` column, and the MCP `add_item`/`update_item` tools.
 
 Icons render on the live viewer, exported HTML, and the read-only Netlify deploy.
 
