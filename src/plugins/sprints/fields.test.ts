@@ -142,7 +142,10 @@ test('the suggestion offers only the sprints some item falls into', () => {
   // so the two dimensions read „Sprints · Sprint" and „Sprints · Sprint nach Datum",
   // and calling both „Sprint" would make them indistinguishable in the one menu a user
   // picks between them in.
-  assert.equal(byDate?.label, 'Sprint nach Datum');
+  // The label follows the reader now, so this asserts the default rather than a
+  // German string: what it pins is that the two dimensions are told apart at all,
+  // not the wording that does it.
+  assert.equal(byDate?.label, 'Sprint by date');
   assert.equal(byDate?.derived, true);
   // Read-only, so it stays out of the right-click menu: there is nothing to set,
   // because the item's own start decides the value.

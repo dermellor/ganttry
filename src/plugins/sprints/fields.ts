@@ -29,6 +29,7 @@
 import { hasPlugin, pluginConfig, type DeriveFn } from '../../pluginHost/api';
 import type { CustomFieldDef, CustomFieldOption, TimelineFile } from '../../types';
 import { readSprintConfig } from './raster';
+import { t } from './messages';
 import {
   CONFIDENCE_KEY,
   SPRINTS_PLUGIN,
@@ -118,7 +119,7 @@ export function sprintsFields(file: TimelineFile | null | undefined): CustomFiel
     if (inPlay.length) {
       defs.push({
         key: SPRINT_BY_DATE_KEY,
-        label: 'Sprint nach Datum',
+        label: t('sprint.byDate'),
         type: 'select',
         // Read-only everywhere and skipped by the context menu: there is nothing to
         // set, because the item's own start decides the value.

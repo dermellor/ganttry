@@ -175,7 +175,7 @@ export async function addTier(): Promise<void> {
   const pricing = currentPricing(file());
   if (!pricing) return;
 
-  const name = prompt('Name des neuen Tarifs?')?.trim();
+  const name = prompt(t('tier.namePrompt'))?.trim();
   if (!name) return;
 
   const id = slugId(

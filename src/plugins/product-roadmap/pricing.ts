@@ -499,7 +499,7 @@ export function pricingToMarkdown(doc: PricingDoc, opts: { updated: string }): s
   lines.push('');
 
   if (!tiers.length && !features.length) {
-    lines.push('_Kein Preismodell in der Timeline hinterlegt._');
+    lines.push(t('export.noPricing'));
     lines.push('');
   } else {
     // ---- Feature matrix --------------------------------------------------

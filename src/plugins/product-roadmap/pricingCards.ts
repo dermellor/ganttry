@@ -12,6 +12,7 @@ import type { TimelineFile } from '../../types';
 import type { PricingHighlight, PricingTier } from './types';
 import { currentPricing } from './compose';
 
+import { t } from './messages';
 const DEFAULT_SECTION = 'Weitere';
 
 // Green circle-check (included) and grey left arrow (inheritance) — same glyphs
@@ -50,7 +51,7 @@ function highlightBadge(
   selected: string | null,
   labels?: Record<string, string>,
 ): string {
-  if (r.isNew) return '<span class="pricing-badge-new">Neu</span>';
+  if (r.isNew) return `<span class="pricing-badge-new">${t('badge.new')}</span>`;
   if (!selected && r.introducedVersion)
     return `<span class="pricing-badge-version">ab ${escapeHtml(versionLabel(labels, r.introducedVersion))}</span>`;
   return '';

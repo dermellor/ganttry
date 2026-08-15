@@ -2394,9 +2394,9 @@ components:
       additionalProperties:
         "$ref": "#/components/schemas/PluginCollectionData"
     PluginCollectionData:
-      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-14956-16132-src_types.ts-0-278601108268078"
+      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-15005-16181-src_types.ts-0-285311108268078"
       description: "A plugin's collections, keyed by the collection id its manifest declares."
-    Recordstringdef-alias-src_types.ts-14956-16132-src_types.ts-0-278601108268078:
+    Recordstringdef-alias-src_types.ts-15005-16181-src_types.ts-0-285311108268078:
       type: object
       additionalProperties:
         type: array

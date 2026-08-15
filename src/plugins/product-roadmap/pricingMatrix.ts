@@ -190,7 +190,7 @@ function matrixHtml(file: TimelineFile, versions: string[], editable: boolean): 
       // instead show a neutral "ab <version>" chip stating when the feature was
       // introduced. Pre-existing features (no version) get no chip.
       const badge = isNewFeature(f, versions, selectedVersion)
-        ? '<span class="pricing-badge-new">Neu</span>'
+        ? `<span class="pricing-badge-new">${t('badge.new')}</span>`
         : isModifiedFeature(f, items, versions, selectedVersion)
           ? '<span class="pricing-badge-modified">Modified</span>'
           : !selectedVersion && f.version

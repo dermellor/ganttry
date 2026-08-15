@@ -335,7 +335,7 @@ export async function addFeature(group?: string): Promise<void> {
   const pricing = currentPricing(file());
   if (!pricing) return;
 
-  const name = prompt('Name des neuen Features?')?.trim();
+  const name = prompt(t('feature.namePrompt'))?.trim();
   if (!name) return;
 
   const id = slugId(
