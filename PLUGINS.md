@@ -29,11 +29,11 @@ Sprints as rows with a goal, a capacity and a frozen result: membership is assig
 
 ## product
 
-### [Produkt](src/plugins/product-roadmap/README.md)
+### [Product](src/plugins/product-roadmap/README.md)
 
 Keeps a pricing matrix and the roadmap that fills it in one timeline, so the pricing page and the plan cannot drift apart.
 
-![Produkt](src/plugins/product-roadmap/preview.png)
+![Product](src/plugins/product-roadmap/preview.png)
 
 | | |
 | --- | --- |
@@ -41,4 +41,4 @@ Keeps a pricing matrix and the roadmap that fills it in one timeline, so the pri
 | Version | 1.0.0 |
 | Keywords | pricing matrix, pricing page, product roadmap, feature comparison, tiers, release planning |
 | Example | [`src:example-produkt-roadmap`](data/example-produkt-roadmap.json) |
-| Views | Preise |
+| Views | Pricing |

@@ -20,6 +20,7 @@ import type { CustomFieldDef, TimelineFile, TimelineFileItem } from '../types';
 import { pluginViewMode, type PluginViewMode } from './viewMode';
 import { validateManifest, type ManifestView, type PluginManifest, type ToolDecl } from './manifest';
 import type { ToolHandler } from './tools';
+import { manifestText } from './messages';
 import { productRoadmapDescriptor } from '../plugins/product-roadmap/descriptor';
 import { sprintsDescriptor } from '../plugins/sprints/descriptor';
 import type { HostApi } from './hostApi';
@@ -322,8 +323,13 @@ export function pluginRealtimeTables(): string[] {
 export function pluginFieldDefs(file: TimelineFile | null | undefined): CustomFieldDef[] {
   const out: CustomFieldDef[] = [];
   for (const plugin of PLUGINS) {
+    // The group heading is the plugin's name as the **reader** sees it, not the
+    // literal in the manifest: a manifest cannot call `t()`, so the name is looked
+    // up in the plugin's own catalogue with the literal as fallback. Same seam the
+    // control in the bar uses — see `manifestText`.
+    const name = manifestText(plugin.manifest.id, 'manifest.name', plugin.manifest.name);
     for (const def of plugin.fields(file)) {
-      out.push(def.group ? def : { ...def, group: plugin.manifest.name });
+      out.push(def.group ? def : { ...def, group: name });
     }
   }
   return out;

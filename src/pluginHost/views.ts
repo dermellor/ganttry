@@ -17,6 +17,7 @@
 // which carries its name inside on the left.
 
 import { fromHtml, SegmentedControl, ViewSection } from '../design-system';
+import { manifestText } from './messages';
 import { loadedPluginView, pluginById, type PluginView } from './registry';
 import { hostApiFor } from './hostBackend';
 import { renderPluginViewInto } from './renderView';
@@ -50,7 +51,10 @@ export function pluginViewGroup(
   if (!group) {
     const firstMode = views[0] ? pluginViewMode(pluginId, views[0].id) : null;
     group = SegmentedControl({
-      label: pluginName,
+      // The manifest's literal is the fallback, not the value: a manifest cannot
+      // call `t()`, so its name and its view labels are looked up in the plugin's
+      // own catalogue first. See `manifestText`.
+      label: manifestText(pluginId, 'manifest.name', pluginName),
       // The name is the biggest target in the control and reads as the way into
       // the plugin, so it enters it: the first view, which is the one the plugin
       // declares first for that reason. While one of this plugin's views is
@@ -69,7 +73,7 @@ export function pluginViewGroup(
         const mode = pluginViewMode(pluginId, view.id);
         return {
           value: mode,
-          label: view.label,
+          label: manifestText(pluginId, `manifest.view.${view.id}`, view.label),
           // Markup the plugin declares: inert SVG, rendered into a segment the
           // host owns.
           icon: fromHtml(view.icon),
@@ -99,7 +103,7 @@ export function pluginViewSection(
     // `plain`: the section claims the space and styles nothing. How the view
     // fills it is the plugin's own stylesheet's business.
     section = ViewSection({
-      ariaLabel: view.label,
+      ariaLabel: manifestText(pluginId, `manifest.view.${view.id}`, view.label),
       hidden: true,
       attrs: { id: `plugin-view-${pluginId}-${view.id}` },
     });

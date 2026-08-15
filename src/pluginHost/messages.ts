@@ -78,30 +78,61 @@ export function pluginMessages(id: string, catalogues: PluginCatalogues): Plugin
   }
   registered.set(id, merged);
 
-  return (key, vars) => {
-    const own = registered.get(id) ?? {};
-    // The host's language first, then the language the plugin was written in,
-    // then the key. The middle step is what makes a single-language plugin work
-    // unchanged on a host rendering the other language: it shows its own text
-    // rather than a row of keys, which is the difference between „not translated
-    // yet" and „broken".
-    const chain: Record<string, Record<string, string>> = {};
-    const active = locale();
-    if (own[active]) chain[active] = own[active]!;
-    if (own[DEFAULT_LOCALE]) chain[DEFAULT_LOCALE] = own[DEFAULT_LOCALE]!;
-    for (const [lang, table] of Object.entries(own)) {
-      if (!chain[lang]) chain[lang] = table!;
-    }
-    const hit = translate(active, key, vars, chain);
-    if (hit !== key) return hit;
-    // `translate` already tried the active language and the product default. What
-    // is left is a plugin that ships neither — a German-only plugin on an English
-    // host — so any declared language is better than the key.
-    for (const table of Object.values(chain)) {
-      if (table[key] != null) return translate(active, key, vars, { [active]: table });
-    }
-    return key;
-  };
+  return (key, vars) => lookup(id, key, vars) ?? key;
+}
+
+/**
+ * One plugin's text for a key, or `null` when it declares none.
+ *
+ * The `null` is the whole reason this is separate from the lookup a plugin gets:
+ * a plugin rendering its own view wants the key back, because a key on screen
+ * names the line to fix. A **manifest** label wants the declared literal instead —
+ * see `manifestText`.
+ */
+function lookup(id: string, key: string, vars?: MessageVars): string | null {
+  const own = registered.get(id) ?? {};
+  // The host's language first, then the language the plugin was written in, then
+  // nothing. The middle step is what makes a single-language plugin work unchanged
+  // on a host rendering the other language: it shows its own text rather than a
+  // row of keys, which is the difference between „not translated yet" and
+  // „broken".
+  const chain: Record<string, Record<string, string>> = {};
+  const active = locale();
+  if (own[active]) chain[active] = own[active]!;
+  if (own[DEFAULT_LOCALE]) chain[DEFAULT_LOCALE] = own[DEFAULT_LOCALE]!;
+  for (const [lang, table] of Object.entries(own)) {
+    if (!chain[lang]) chain[lang] = table!;
+  }
+  const hit = translate(active, key, vars, chain);
+  if (hit !== key) return hit;
+  // `translate` already tried the active language and the product default. What is
+  // left is a plugin that ships neither — a German-only plugin on an English host —
+  // so any declared language is better than nothing.
+  for (const table of Object.values(chain)) {
+    if (table[key] != null) return translate(active, key, vars, { [active]: table });
+  }
+  return null;
+}
+
+/**
+ * A label the **manifest** declares, in the reader's language.
+ *
+ * A manifest cannot call `t()`. It is a static, serialisable declaration: it is
+ * validated at install time and stored as JSON for an installed artifact, so it
+ * holds no functions — and a `t()` evaluated in its module body would freeze the
+ * language at import anyway, which is the misuse `check-ui-text.mjs` fails on.
+ * That left the plugin's own name and its view labels as the last German words in
+ * an English interface: the control in the bar said „PRODUKT" whatever the reader
+ * had chosen.
+ *
+ * So the host looks the label up in the plugin's catalogue under a conventional
+ * key (`manifest.name`, `manifest.view.<id>`) and falls back to the literal the
+ * manifest declares. Nothing about the manifest schema changes, every existing and
+ * third-party manifest stays valid, and a plugin that ships no catalogue keeps the
+ * text it always had rather than rendering a key.
+ */
+export function manifestText(id: string, key: string, declared: string): string {
+  return lookup(id, key) ?? declared;
 }
 
 /** Which languages a plugin declares. For the catalogue page and for tests. */

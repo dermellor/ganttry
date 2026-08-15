@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { beforeEach } from 'node:test';
 
-import { pluginMessages, pluginLocales, resetPluginMessages } from './messages.ts';
+import { manifestText, pluginMessages, pluginLocales, resetPluginMessages } from './messages.ts';
 import { setLocale } from '../i18n/index.ts';
 
 beforeEach(() => {
@@ -74,4 +74,25 @@ test('a plugin reports which languages it ships', () => {
   pluginMessages('com.acme.test', { en: { a: 'A' }, de: { a: 'Ä' } });
   assert.deepEqual(pluginLocales('com.acme.test').sort(), ['de', 'en']);
   assert.deepEqual(pluginLocales('com.acme.unknown'), []);
+});
+
+test('a manifest label follows the language, and falls back to the literal', () => {
+  pluginMessages('com.acme.test', {
+    en: { 'manifest.name': 'Product' },
+    de: { 'manifest.name': 'Produkt' },
+  });
+  setLocale('de');
+  assert.equal(manifestText('com.acme.test', 'manifest.name', 'Produkt'), 'Produkt');
+  setLocale('en');
+  assert.equal(manifestText('com.acme.test', 'manifest.name', 'Produkt'), 'Product');
+});
+
+test('a manifest label shows its literal rather than the key when nothing declares it', () => {
+  // The difference to `t()`, and the reason this is a second function. A key on
+  // screen names the line to fix, which is right inside a plugin's own view — and
+  // wrong for a plugin that ships no catalogue at all, where it would replace a
+  // name that was always fine with `manifest.name`.
+  pluginMessages('com.acme.test', { en: { other: 'Other' } });
+  assert.equal(manifestText('com.acme.test', 'manifest.name', 'Acme'), 'Acme');
+  assert.equal(manifestText('com.acme.unknown', 'manifest.view.board', 'Board'), 'Board');
 });

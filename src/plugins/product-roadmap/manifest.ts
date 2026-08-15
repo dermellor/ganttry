@@ -22,7 +22,12 @@ export const PRICING_COLLECTIONS = {
 
 export const productRoadmapManifest: PluginManifest = {
   id: 'dev.zeitlines.product-roadmap',
-  name: 'Produkt',
+  // The literal here is the **fallback**, not the label: the host looks
+  // `manifest.name` up in this plugin's catalogue first (see `manifestText` in
+  // src/pluginHost/messages.ts), which is what makes the control in the bar follow
+  // the reader. English, because that is what a plugin shipping no catalogue at
+  // all should fall back to — the product's default language.
+  name: 'Product',
   version: '1.0.0',
   apiVersion: '^1',
   capabilities: ['items:read', 'fields', 'views', 'data:own', 'public:read'],
@@ -42,7 +47,8 @@ export const productRoadmapManifest: PluginManifest = {
   views: [
     {
       id: 'pricing',
-      label: 'Preise',
+      // The fallback for `manifest.view.pricing`; see the note on `name` above.
+      label: 'Pricing',
       // Declares nothing: the matrix renders tiers against features, so neither
       // the item grouping nor the item filter has anything to act on here. Before
       // views declared their accessories this was the boolean `toolbar: false`,
