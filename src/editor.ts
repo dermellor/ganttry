@@ -187,7 +187,7 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
         return { file: await res.json(), editable: true, live: parseLive(res.headers.get('X-Source-Live')) };
       }
       const reason = res ? `HTTP ${res.status}` : t('sync.noApi');
-      throw new Error(`Lokale Quelle „${id}“ konnte nicht geladen werden (${reason}).`);
+      throw new Error(t('refusal.source.localFailed', { id, reason }));
     }
     // Static deploy: no process to write with, so the built copy is served
     // read-only. The file genuinely IS the source here, not a snapshot of
@@ -197,7 +197,7 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
       return { file: await res.json(), editable: false, live: 'none' };
     }
     const reason = res ? `HTTP ${res.status}` : t('sync.offline');
-    throw new Error(`Datei-Quelle „${id}“ konnte nicht geladen werden (${reason}).`);
+    throw new Error(t('refusal.source.fileFailed', { id, reason }));
   }
 
   // DB source: served only live from the DB via the API. There is deliberately
@@ -217,14 +217,10 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
   // instead of a status code. Deliberately NOT a redirect: they are signed in,
   // and sending them back to a login they already passed is a loop.
   if (apiRes && apiRes.status === 403) {
-    throw new Error(
-      `Für die Timeline „${id}“ fehlt dir die Berechtigung. Bitte eine Administratorin oder einen Administrator dieser Instanz um Zugriff.`,
-    );
+    throw new Error(t('refusal.source.forbidden', { id }));
   }
   const reason = apiRes ? `HTTP ${apiRes.status}` : t('sync.noApi');
-  throw new Error(
-    `Timeline „${id}“ konnte nicht aus der DB geladen werden (${reason}).`,
-  );
+  throw new Error(t('refusal.source.dbFailed', { id, reason }));
 }
 
 // Both wrap the shared rule in ./itemId.ts, which the server's granular create

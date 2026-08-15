@@ -167,7 +167,7 @@ async function write(action: () => Promise<unknown>, done: string): Promise<void
     // The server's own message, not a generic failure: a refusal here says „this
     // needs write access" or „this belongs to somebody else", and both are things
     // the reader can act on.
-    setStatus(`Ansicht: ${e instanceof Error ? e.message : String(e)}`);
+    setStatus(t('savedView.error', { message: e instanceof Error ? e.message : String(e) }));
   }
 }
 
@@ -208,7 +208,7 @@ async function saveAsNew(name: string): Promise<void> {
     state.activeSavedViewId = stored.id;
     syncUrl();
     syncSavedViewsControl();
-  }, `Ansicht „${name}" gespeichert.`);
+  }, t('savedView.saved', { name }));
 }
 
 /**
@@ -245,7 +245,7 @@ function nameForm(): HTMLElement {
       cancel();
     }
   });
-  const save = Button({ label: 'Speichern', variant: 'primary', size: 'sm', on: { click: commit } });
+  const save = Button({ label: t('form.save'), variant: 'primary', size: 'sm', on: { click: commit } });
   // Focused after the caller has mounted it, since an element outside the document
   // cannot take focus.
   queueMicrotask(() => input.focus());
@@ -285,7 +285,7 @@ async function deleteView(view: SavedView): Promise<void> {
       syncUrl();
     }
     syncSavedViewsControl();
-  }, `Ansicht „${view.name}" gelöscht.`);
+  }, t('savedView.deleted', { name: view.name }));
 }
 
 /**
@@ -325,7 +325,7 @@ function openViewDialog(view: SavedView): void {
 
   const dialog = Dialog({
     title: view.name,
-    ariaLabel: `Einstellungen der Ansicht „${view.name}"`,
+    ariaLabel: t('savedView.settings', { name: view.name }),
     closeLabel: t('savedView.close'),
     onClose: () => dialog.close(),
   });
@@ -335,7 +335,7 @@ function openViewDialog(view: SavedView): void {
   dialog.addEventListener('close', () => dialog.remove());
 
   const save = Button({
-    label: 'Speichern',
+    label: t('form.save'),
     variant: 'primary',
     on: {
       click: () => {
@@ -352,7 +352,7 @@ function openViewDialog(view: SavedView): void {
         // `timelineMetaPatch` follows, and for the same reason — an empty PATCH
         // would still bump the row's version and re-attribute it.
         if (!Object.keys(patch).length) return;
-        void updateView(view, patch, `Ansicht „${next}" gespeichert.`);
+        void updateView(view, patch, t('savedView.saved', { name: next }));
       },
     },
   });
@@ -361,7 +361,7 @@ function openViewDialog(view: SavedView): void {
     variant: 'danger',
     on: {
       click: () => {
-        if (!confirm(`Ansicht „${view.name}" wirklich löschen?`)) return;
+        if (!confirm(t('savedView.delete.confirm', { name: view.name }))) return;
         dialog.close();
         void deleteView(view);
       },
@@ -371,9 +371,9 @@ function openViewDialog(view: SavedView): void {
   dialog.append(
     FormGrid({
       children: [
-        Field({ label: 'Name', htmlFor: 'saved-view-name', full: true, control: name }),
+        Field({ label: t('form.name'), htmlFor: 'saved-view-name', full: true, control: name }),
         Field({
-          label: 'Sichtbarkeit',
+          label: t('savedView.visibility'),
           full: true,
           // Shown disabled rather than hidden, and without a note saying why: the
           // control's own state is the statement (see „Interface text" in AGENTS.md).
@@ -424,8 +424,8 @@ function setTrigger(active: SavedView | undefined, isDrifted: boolean): void {
   const label = `${active.name}${isDrifted ? ' *' : ''}`;
   toggle.replaceChildren(mark, el('span', { class: 'ds-Button-label' }, label));
   delete toggle.dataset.iconOnly;
-  toggle.setAttribute('aria-label', `Gespeicherte Ansichten: ${label}`);
-  toggle.title = isDrifted ? `„${active.name}" mit ungespeicherten Änderungen` : active.name;
+  toggle.setAttribute('aria-label', t('savedView.trigger', { name: label }));
+  toggle.title = isDrifted ? t('savedView.drifted', { name: active.name }) : active.name;
 }
 
 /**
@@ -447,7 +447,7 @@ function viewRow(view: SavedView): HTMLElement {
     checked: view.id === state.activeSavedViewId,
     // „geteilt" rather than an icon: the list is read as text, and this is the one
     // fact about a view that changes who else is affected by editing it.
-    detail: visibilityOf(view) === 'instance' ? 'geteilt' : undefined,
+    detail: visibilityOf(view) === 'instance' ? t('savedView.sharedMark') : undefined,
     className: 'saved-view-apply',
     on: {
       click: () => {
@@ -462,7 +462,7 @@ function viewRow(view: SavedView): HTMLElement {
     // Filled rather than stroked, because at 16px a stroked cog's teeth close up
     // and detached ones read as a sun — see the note on `--ui-icon-gear`.
     icon: Icon({ name: 'gear', chrome: true, size: 'sm', standalone: true }),
-    ariaLabel: `Einstellungen der Ansicht „${view.name}"`,
+    ariaLabel: t('savedView.settings', { name: view.name }),
     boxSize: 'sm',
     // The component's own „quiet until you are on the row" treatment, the same one
     // the list's per-group „+ Eintrag" uses: five views should read as five names,
@@ -524,7 +524,7 @@ export function syncSavedViewsControl(): void {
   // list; with none it heads the actions, so a panel opened from an unlabelled
   // 30px box still says what it is about before anything is read.
   if (all.length) {
-    children.push(MenuSection({ label: 'Ansichten', children: all.map(viewRow) }));
+    children.push(MenuSection({ label: t('savedView.section'), children: all.map(viewRow) }));
   }
   if (active) {
     children.push(
@@ -568,11 +568,11 @@ export function syncSavedViewsControl(): void {
   if (active && isDrifted && canSave && canEditSavedView(active, caller)) {
     actions.push(
       MenuItem({
-        label: `„${active.name}" aktualisieren`,
+        label: t('savedView.update', { name: active.name }),
         on: {
           click: () => {
             closeMenu();
-            void updateView(active, currentAsView(active.name), `Ansicht „${active.name}" aktualisiert.`);
+            void updateView(active, currentAsView(active.name), t('savedView.updated', { name: active.name }));
           },
         },
       }),
@@ -580,7 +580,7 @@ export function syncSavedViewsControl(): void {
   }
   if (actions.length) {
     if (children.length) children.push(Separator({}));
-    children.push(MenuSection({ label: all.length ? undefined : 'Ansichten', children: actions }));
+    children.push(MenuSection({ label: all.length ? undefined : t('savedView.section'), children: actions }));
   }
   if (naming) {
     children.push(Separator({}));

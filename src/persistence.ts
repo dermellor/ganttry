@@ -168,14 +168,14 @@ export async function persist(): Promise<void> {
       const canon = canonicalItem(it);
       const prev = state.savedItems.get(it.id);
       if (prev === undefined) {
-        setStatus('Speichere…');
+        setStatus(t('sync.saving'));
         const saved = await apiAddItem(sourceId, it);
         adoptAudit(it, saved);
         state.savedItems.set(it.id, canonicalItem(it));
         if (saved.version != null) state.savedItemVersions.set(it.id, saved.version);
         adoptDocumentVersion(saved);
       } else if (prev !== canon) {
-        setStatus('Speichere…');
+        setStatus(t('sync.saving'));
         const patch = buildItemPatch(it);
         const saved = await apiUpdateItem(sourceId, it.id, patch, state.savedItemVersions.get(it.id));
         adoptAudit(it, saved);
@@ -188,7 +188,7 @@ export async function persist(): Promise<void> {
     // Deletions.
     for (const oldId of [...state.savedItems.keys()]) {
       if (!currentIds.has(oldId)) {
-        setStatus('Speichere…');
+        setStatus(t('sync.saving'));
         await apiDeleteItem(sourceId, oldId);
         state.savedItems.delete(oldId);
         state.savedItemVersions.delete(oldId);
@@ -198,12 +198,12 @@ export async function persist(): Promise<void> {
     // Phases (replaced as a unit — small, rarely edited).
     const phasesJson = JSON.stringify(file.phases ?? []);
     if (phasesJson !== state.savedPhasesJson) {
-      setStatus('Speichere…');
+      setStatus(t('sync.saving'));
       await apiPutPhases(sourceId, file.phases ?? []);
       state.savedPhasesJson = phasesJson;
     }
 
-    setStatus(`Gespeichert · ${file.items.length} items`);
+    setStatus(t('sync.saved', { count: file.items.length }));
   } catch (err) {
     if (err instanceof ConflictError) {
       // Someone edited the same item concurrently — reload authoritative state.
@@ -214,7 +214,7 @@ export async function persist(): Promise<void> {
       return;
     }
     console.error(err);
-    setStatus(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    setStatus(t('refusal.save.failed', { message: err instanceof Error ? err.message : String(err) }));
   } finally {
     state.persisting = false;
     if (state.persistAgain) {

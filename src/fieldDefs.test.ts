@@ -129,12 +129,19 @@ test('a stored value the definition dropped keeps a row of its own', () => {
   // Without it the select shows the empty row, and leaving the panel commits that
   // empty over the stored value: one removed option cleared the field on every item
   // that carried it. This was reproduced against the real form before the fix.
-  const rows = selectRowsFor({ options: [{ value: 'Scale' }] }, 'Free');
+  // The locale is explicit for the reason the refusal tests above ask for one: what
+  // is pinned is that the dropped value keeps a marked row, and the wording is only
+  // how that is observed.
+  const rows = selectRowsFor({ options: [{ value: 'Scale' }] }, 'Free', 'de');
   assert.deepEqual(rows, [
     { value: '', label: '— —', selected: false },
     { value: 'Scale', label: 'Scale', selected: false },
     { value: 'Free', label: 'Free (nicht in der Liste)', selected: true },
   ]);
+  assert.equal(
+    selectRowsFor({ options: [{ value: 'Scale' }] }, 'Free', 'en').at(-1)?.label,
+    'Free (not in the list)',
+  );
 });
 
 test('a declared value gets no extra row, and no value selects the empty one', () => {

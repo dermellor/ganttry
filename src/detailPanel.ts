@@ -8,6 +8,7 @@ import { jiraLinks, readJiraIssues } from './jira';
 import { state, els, isEditableView, revealBesidePanel, clearFormSlots } from './state';
 import { cancelThrottledPersist, publishSelfPresence } from './persistence';
 import { showItemForm } from './itemForm';
+import { t } from './i18n';
 
 // Single entry point for the panel headline. For an editable item the headline
 // *is* the title editor (`editable: true` turns it into a contenteditable
@@ -37,7 +38,7 @@ export function setDetailTitle(text: string, editable = false): void {
     // round-trips to the DB as a plain string.
     h.setAttribute('contenteditable', 'plaintext-only');
     h.setAttribute('role', 'textbox');
-    h.setAttribute('aria-label', 'Titel');
+    h.setAttribute('aria-label', t('form.title'));
     h.setAttribute('spellcheck', 'false');
   } else {
     h.removeAttribute('contenteditable');

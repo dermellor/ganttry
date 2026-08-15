@@ -19,7 +19,7 @@ import { currentPricing } from './compose';
 
 import { t } from './messages';
 function findTier(tierId: string): PricingTier | undefined {
-  return currentPricing(file())?.tiers.find((t) => t.id === tierId);
+  return currentPricing(file())?.tiers.find((row) => row.id === tierId);
 }
 
 export function showTierForm(tierId: string): void {
@@ -28,13 +28,13 @@ export function showTierForm(tierId: string): void {
 
   const form = el('form', { class: 'ds-FormGrid tier-form', 'data-id': tierId }, [
     Field({
-      label: 'Name',
+      label: t('form.name'),
       htmlFor: 'tr-name',
       full: true,
       control: TextInput({ id: 'tr-name', name: 'name', value: tier.name ?? '' }),
     }),
     Field({
-      label: 'Preis',
+      label: t('price'),
       htmlFor: 'tr-price',
       full: true,
       control: TextInput({
@@ -45,7 +45,7 @@ export function showTierForm(tierId: string): void {
       }),
     }),
     Field({
-      label: 'Tagline',
+      label: t('tier.tagline'),
       htmlFor: 'tr-tagline',
       full: true,
       control: TextInput({
@@ -67,20 +67,20 @@ export function showTierForm(tierId: string): void {
       }),
     }),
     Field({
-      label: 'Zielgruppe',
+      label: t('tier.targetGroup'),
       htmlFor: 'tr-target',
       full: true,
       control: TextArea({ id: 'tr-target', name: 'targetGroup', rows: 2, value: tier.targetGroup ?? '' }),
     }),
     Field({
-      label: 'ID',
-      hint: '(read-only)',
+      label: t('form.id'),
+      hint: t('readOnly'),
       htmlFor: 'tr-id',
       control: TextInput({ id: 'tr-id', name: 'id', value: tierId, readonly: true }),
     }),
     FormActions({
       children: [
-        Button({ label: 'Speichern', type: 'submit' }),
+        Button({ label: t('form.save'), type: 'submit' }),
         Button({ label: t('delete'), variant: 'danger', attrs: { 'data-action': 'delete' } }),
       ],
     }),
@@ -89,7 +89,7 @@ export function showTierForm(tierId: string): void {
   // The host owns the drawer, records that a plugin form is open and hands over a
   // container. Wiring follows on the element we still hold.
   hostApi().panel?.open({
-    title: tier.name || '(unbenannter Tarif)',
+    title: tier.name || t('tier.unnamed'),
     render: (container) => container.replaceChildren(form),
   });
 
@@ -127,7 +127,7 @@ async function saveTierFromForm(tierId: string, form: HTMLFormElement): Promise<
     // design — they are their own rows, so a rename cannot disturb a column.
     applyRow(file(), PRICING_COLLECTIONS.tiers, saved);
     repaintPricingView();
-    status(`Tarif „${patch.name ?? tier.name}" aktualisiert`);
+    status(t('tier.updated', { name: patch.name ?? tier.name }));
     showTierForm(tierId);
   } catch (err) {
     if (err instanceof ConflictError) {
@@ -137,7 +137,7 @@ async function saveTierFromForm(tierId: string, form: HTMLFormElement): Promise<
       status(t('refusal.tier.conflict'));
       return;
     }
-    status(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(t('refusal.saveFailed', { error: err instanceof Error ? err.message : String(err) }));
   }
 }
 
@@ -145,15 +145,17 @@ async function deleteTier(tierId: string): Promise<void> {
   const pricing = currentPricing(file());
   const tier = pricing && findTier(tierId);
   if (!pricing || !tier) return;
-  // A tier owns a whole column of cells, so say so — this is not a one-field undo.
-  const cellCount = Object.keys(tier.values ?? {}).length;
-  const extra = cellCount ? ` Damit verschwinden auch ${cellCount} Matrix-Werte.` : '';
-  if (!confirm(`Tarif „${tier.name}" wirklich löschen?${extra}`)) return;
+  // The second sentence this used to carry („Damit verschwinden auch N
+  // Matrix-Werte.") is gone rather than translated: „a paragraph about what
+  // removing something will cost" is named in „Interface text" (AGENTS.md) as the
+  // thing that gets deleted. What the column takes with it is the cascade the
+  // manifest declares, not a line of copy in a confirm dialog.
+  if (!confirm(t('tier.deleteConfirm', { name: tier.name }))) return;
 
   try {
     await apiDeleteTier(tierId);
   } catch (err) {
-    status(`Löschen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(t('refusal.deleteFailed', { error: err instanceof Error ? err.message : String(err) }));
     return;
   }
 
@@ -163,7 +165,7 @@ async function deleteTier(tierId: string): Promise<void> {
   dropRowsWhere(file(), PRICING_COLLECTIONS.tierValues, (d) => d.tierId === tierId);
   repaintPricingView();
   hostApi().panel?.close();
-  status(`Tarif „${tier.name}" gelöscht`);
+  status(t('tier.deleted', { name: tier.name }));
 }
 
 /**
@@ -180,7 +182,7 @@ export async function addTier(): Promise<void> {
 
   const id = slugId(
     name,
-    pricing.tiers.map((t) => t.id),
+    pricing.tiers.map((row) => row.id),
     'tarif',
   );
   try {
@@ -190,8 +192,8 @@ export async function addTier(): Promise<void> {
     applyRow(file(), PRICING_COLLECTIONS.tiers, saved);
     repaintPricingView();
     showTierForm(saved.id);
-    status(`Tarif „${name}" angelegt`);
+    status(t('tier.created', { name }));
   } catch (err) {
-    status(`Tarif anlegen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(t('refusal.tier.createFailed', { error: err instanceof Error ? err.message : String(err) }));
   }
 }

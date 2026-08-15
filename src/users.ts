@@ -20,6 +20,7 @@ import { Avatar, el, html, Text } from './design-system';
 import { hueFor, initials, type PresenceUser } from './presenceModel';
 import { indexUsers, matchUsers, resolveOwnerIn, type ResolvedOwner } from './ownerModel';
 import type { DirectoryUser } from './types';
+import { t } from './i18n';
 
 export { displayName } from './ownerModel';
 
@@ -107,7 +108,7 @@ export function ownerCell(raw: string): HTMLElement {
     return Text({
       text: owner.label,
       placeholder: true,
-      attrs: { title: `${owner.raw} — nicht mit einem Benutzer verknüpft` },
+      attrs: { title: t('form.owner.unlinked', { value: owner.raw }) },
     });
   }
   return el('span', { class: 'owner-cell', title: owner.raw }, [

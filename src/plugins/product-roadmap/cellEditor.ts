@@ -55,7 +55,7 @@ export function closeCellEditor(): void {
 
 export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: string): void {
   const pricing = currentPricing(file());
-  const tier = pricing?.tiers.find((t) => t.id === tierId);
+  const tier = pricing?.tiers.find((row) => row.id === tierId);
   const feature = pricing?.features.find((f) => f.id === featureId);
   if (!pricing || !tier || !feature) return;
 
@@ -79,12 +79,12 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
     el('form', { class: 'pm-ce-form' }, [
       Text({ as: 'p', text: `${tier.name} · ${feature.name}`, className: 'pm-ce-head' }),
       el('div', { class: 'pm-ce-choices' }, [
-        radio('on', [el('span', { class: 'pm-check', 'aria-hidden': 'true' }, '✓'), ' Enthalten']),
-        radio('value', 'Wert'),
-        radio('off', [el('span', { class: 'pm-dash', 'aria-hidden': 'true' }, '–'), ' Nicht enthalten']),
+        radio('on', [el('span', { class: 'pm-check', 'aria-hidden': 'true' }, '✓'), ` ${t('cell.on')}`]),
+        radio('value', t('cell.value')),
+        radio('off', [el('span', { class: 'pm-dash', 'aria-hidden': 'true' }, '–'), ` ${t('cell.off')}`]),
       ]),
       Field({
-        label: 'Wert',
+        label: t('cell.value'),
         className: 'pm-ce-value-field',
         control: TextInput({ className: 'pm-ce-value', value: valueText, placeholder: t('cell.placeholder.number') }),
       }),
@@ -92,7 +92,7 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
       // forced; clearing a cell drops the gate with it (see submit).
       versions.length
         ? Field({
-            label: 'ab Version',
+            label: t('version.from.lower'),
             control: Select({
               className: 'pm-ce-version',
               options: [
@@ -109,8 +109,8 @@ export function openCellEditor(anchor: HTMLElement, tierId: string, featureId: s
       FormActions({
         className: 'pm-ce-actions',
         children: [
-          Button({ label: 'Speichern', type: 'submit' }),
-          Button({ label: 'Abbrechen', variant: 'outline', attrs: { 'data-action': 'cancel' } }),
+          Button({ label: t('form.save'), type: 'submit' }),
+          Button({ label: t('form.cancel'), variant: 'outline', attrs: { 'data-action': 'cancel' } }),
         ],
       }),
     ]),
@@ -193,7 +193,7 @@ async function saveCell(
   try {
     saved = await apiSetTierValue(tier.id, featureId, value, availableFrom);
   } catch (err) {
-    status(`Zelle speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(t('refusal.cell.saveFailed', { error: err instanceof Error ? err.message : String(err) }));
     return;
   }
 
@@ -206,5 +206,5 @@ async function saveCell(
   else dropRow(file(), PRICING_COLLECTIONS.tierValues, cellId(tier.id, featureId));
 
   repaintPricingView();
-  status(value === null ? 'Zelle geleert' : 'Zelle gespeichert');
+  status(value === null ? t('cell.cleared') : t('cell.saved'));
 }

@@ -5,6 +5,16 @@ import {
   backgroundIdFromTarget,
   isStoredBackground,
 } from './backgroundItemSelection';
+import { setLocale } from './i18n';
+// The wording below is German, so these tests ask for German. The module reads
+// the language from `src/i18n` module state rather than taking it as an argument
+// (it renders, it does not validate), so the request is a `setLocale` here — the
+// same move `fieldDefs.test.ts` makes with its `locale` parameter, and for the
+// same reason: what is pinned is the rule, and the wording is only how it is
+// observed. Without this the assertions would follow `DEFAULT_LOCALE` and break
+// the day the product default changes.
+setLocale('de');
+
 
 function classes(...names: string[]) {
   const set = new Set(names);

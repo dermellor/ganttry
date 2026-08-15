@@ -25,6 +25,7 @@ import type { SettingsSection } from './settingsArea';
 import type { TimelineSection } from './timelineSettings';
 import type { PresenceHandle } from './realtime';
 import { mountAppShell } from './appShell';
+import { initLocale } from './i18n';
 import { isoDateOnly } from './editor';
 import { writeUrlState, type UrlState } from './urlState';
 import { legacyViewMode } from './pluginHost/registry';
@@ -53,6 +54,17 @@ import type { FilterSelection } from './filterRule';
 // `contentArea` is where plugin views mount: the host creates one section per
 // declared view (see main.ts), rather than the frame carrying a container per
 // plugin it may not have.
+//
+// **The language is resolved first, and that line is load-bearing.** This module
+// body runs on *import*, long before `bootstrap()` in main.ts gets to its own
+// `initLocale()` — so the shell used to be built while the locale was still the
+// untouched product default. The result was the exact symptom „t() at module
+// scope" produces without being one: a toolbar and a header menu frozen in
+// English over a body that followed the setting, which reads as a broken switch
+// rather than as an ordering bug. `initLocale()` with no arguments is the
+// device's own remembered answer and is synchronous by design (see its comment in
+// src/i18n/index.ts); the profile still reconciles in `bootstrap`.
+initLocale();
 export const els = mountAppShell();
 
 // Which parent items have their subtree folded away, per source: item ids are

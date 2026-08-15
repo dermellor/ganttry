@@ -1,7 +1,7 @@
 {
   "$schema": "../schema/timeline.schema.json",
-  "name": "Sprint-Planung (Lieferplan)",
-  "description": "Beispiel für das Plugin „Sprints\": ein Lieferplan mit Kadenz. Die Sprints sind Zeilen mit Ziel, Kapazität und eingefrorenem Ergebnis; die Zuordnung steht am Item (`metadata.sprint`), das Raster (Anker 2026-01-05, 14 Tage) liefert daneben den Vorschlag „Sprint nach Datum\". Zwei Sprints sind geschlossen und tragen Verlauf und Bericht, Sprint 3 ist aktiv und absichtlich ohne Ziel, Sprint 5 hat noch keine Daten und bekommt sein Fenster aus dem Raster. „Barrierefreiheits-Audit\" wurde aus Sprint 2 mitgenommen und liegt jetzt in Sprint 3, ohne umgeplant zu sein: Zuordnung und Datum widersprechen sich sichtbar. Sprint 3 ist gegen eine Kapazität von 20 Punkten überbucht, ein Item läuft über zwei Sprints, eines beginnt vor dem Anker, eines hat kein Datum, und drei tragen keine Schätzung.",
+  "name": "Sprint planning (delivery plan)",
+  "description": "Example for the „Sprints\" plugin: a delivery plan with a cadence. The sprints are rows with a goal, a capacity and a frozen result; membership sits on the item (`metadata.sprint`), and the raster (anchor 2026-01-05, 14 days) supplies the „sprint by date\" suggestion beside it. Two sprints are closed and carry a history and a report, sprint 3 is active and deliberately without a goal, sprint 5 has no dates yet and takes its window from the raster. „Accessibility audit\" was carried over from sprint 2 and now sits in sprint 3 without being rescheduled: membership and dates contradict each other visibly. Sprint 3 is overbooked against a capacity of 20 points, one item runs across two sprints, one starts before the anchor, one has no date, and three carry no estimate.",
   "plugins": [
     {
       "id": "dev.zeitlines.sprints",
@@ -21,26 +21,26 @@
           "id": "sprint-1",
           "data": {
             "name": "Sprint 1",
-            "goal": "Das mandantenfähige Datenmodell steht in der Datenbank",
+            "goal": "The multi-tenant data model is in the database",
             "start": "2026-01-05",
             "end": "2026-01-18",
             "state": "closed",
             "closedOn": "2026-01-18",
             "capacity": 20,
-            "note": "Review: Die Migration lief ohne Ausfall. Retro: Der Spike vorab hat die Schätzung getragen."
+            "note": "Review: the migration ran without downtime. Retro: the spike beforehand carried the estimate."
           }
         },
         {
           "id": "sprint-2",
           "data": {
             "name": "Sprint 2",
-            "goal": "Das Fremdsystem lässt sich lesen und schreiben",
+            "goal": "The external system can be read and written",
             "start": "2026-01-19",
             "end": "2026-02-01",
             "state": "closed",
             "closedOn": "2026-02-01",
             "capacity": 20,
-            "note": "Review: Der Client steht. Das Audit wurde nicht angefangen und wandert weiter. Im Verlauf steht es als „carried\", im Bericht steht trotzdem „carried: 0\": mitgenommen wurde ein Eintrag ohne Schätzung, und der Bericht zählt Punkte. Beide Angaben sind richtig."
+            "note": "Review: the client is done. The audit was never started and moves on. The history records it as „carried\", while the report still says „carried: 0\": what was carried is an entry without an estimate, and the report counts points. Both are correct."
           }
         },
         {
@@ -57,7 +57,7 @@
           "id": "sprint-4",
           "data": {
             "name": "Sprint 4",
-            "goal": "Die Suche ist mit Filtern benutzbar",
+            "goal": "Search is usable with filters",
             "start": "2026-02-16",
             "end": "2026-03-01",
             "state": "planned",
@@ -68,7 +68,7 @@
           "id": "sprint-5",
           "data": {
             "name": "Sprint 5",
-            "goal": "Die Altdaten sind übernommen",
+            "goal": "The legacy data has been migrated",
             "state": "planned"
           }
         }
@@ -185,13 +185,13 @@
   "savedViews": [
     {
       "id": "nach-sprints",
-      "name": "Nach Sprints",
+      "name": "By sprint",
       "groupBy": "cf:sprint",
       "visibility": "instance"
     },
     {
       "id": "nach-datum",
-      "name": "Nach Sprint-Fenster",
+      "name": "By sprint window",
       "groupBy": "cf:sprintByDate",
       "visibility": "instance"
     }
@@ -199,7 +199,7 @@
   "groups": [
     {
       "id": "1-plattform",
-      "content": "Plattform"
+      "content": "Platform"
     },
     {
       "id": "2-app",
@@ -207,11 +207,11 @@
     },
     {
       "id": "3-integrationen",
-      "content": "Integrationen"
+      "content": "Integrations"
     },
     {
       "id": "4-qualitaet",
-      "content": "Qualität & Betrieb"
+      "content": "Quality & operations"
     }
   ],
   "items": [
@@ -219,13 +219,13 @@
       "id": "P-0",
       "start": "2025-12-15",
       "duration": "2w",
-      "content": "Architektur-Spike Datenmodell",
+      "content": "Architecture spike: data model",
       "group": "1-plattform",
       "status": "Done",
       "icon": "research",
-      "body": "## Spike\n\nLief vor dem Beginn der Kadenz, deshalb ohne Sprint. Ergebnis: Mandantenspalte statt getrennter Schemata.",
+      "body": "## Spike\n\nRan before the cadence began, so it has no sprint. Outcome: a tenant column rather than separate schemas.",
       "metadata": {
-        "owner": "Architektur",
+        "owner": "Architecture",
         "storyPoints": "3",
         "estimateConfidence": "hoch"
       }
@@ -234,12 +234,12 @@
       "id": "P-1",
       "start": "2026-01-05",
       "duration": "2w",
-      "content": "Schema-Migration Mandanten",
+      "content": "Schema migration for tenants",
       "group": "1-plattform",
       "status": "Done",
       "icon": "build",
       "metadata": {
-        "owner": "Plattform-Team",
+        "owner": "Platform team",
         "dependsOn": [
           "P-0"
         ],
@@ -252,11 +252,11 @@
       "id": "A-1",
       "start": "2026-01-07",
       "duration": "1w",
-      "content": "Login-Flow überarbeiten",
+      "content": "Rework the login flow",
       "group": "2-app",
       "status": "Done",
       "metadata": {
-        "owner": "App-Team",
+        "owner": "App team",
         "sprint": "sprint-1",
         "storyPoints": "5",
         "estimateConfidence": "hoch"
@@ -266,12 +266,12 @@
       "id": "I-1",
       "start": "2026-01-19",
       "duration": "2w",
-      "content": "REST-Client für das Fremdsystem",
+      "content": "REST client for the external system",
       "group": "3-integrationen",
       "status": "Done",
-      "body": "## REST-Client\n\nLesen und Schreiben, Token aus dem Vault. Im Review abgenommen, das Ratelimit des Anbieters ist dokumentiert.",
+      "body": "## REST client\n\nReading and writing, token from the vault. Accepted in review, and the provider's rate limit is documented.",
       "metadata": {
-        "owner": "Integrations-Team",
+        "owner": "Integrations team",
         "dependsOn": [
           "P-1"
         ],
@@ -284,11 +284,11 @@
       "id": "A-2",
       "start": "2026-01-26",
       "duration": "1w",
-      "content": "Fehlerzustände im Formular",
+      "content": "Error states in the form",
       "group": "2-app",
       "status": "Done",
       "metadata": {
-        "owner": "App-Team",
+        "owner": "App team",
         "sprint": "sprint-2",
         "storyPoints": "5",
         "estimateConfidence": "hoch"
@@ -298,12 +298,12 @@
       "id": "Q-1",
       "start": "2026-01-28",
       "duration": "1w",
-      "content": "Barrierefreiheits-Audit",
+      "content": "Accessibility audit",
       "group": "4-qualitaet",
       "icon": "review",
-      "body": "Externe Prüfung. Aus Sprint 2 mitgenommen (`carried`) und in Sprint 3 zugeordnet, ohne die Termine anzufassen: die Zuordnung gilt, der Widerspruch zum Datum wird angezeigt und nicht stillschweigend aufgelöst. Der Aufwand für die Nacharbeit ist weiter nicht geschätzt.",
+      "body": "An external review. Carried over from sprint 2 (`carried`) and assigned to sprint 3 without touching the dates: the assignment holds, and the contradiction with the dates is shown rather than quietly resolved. The rework is still unestimated.",
       "metadata": {
-        "owner": "Qualität",
+        "owner": "Quality",
         "sprint": "sprint-3"
       }
     },
@@ -311,10 +311,10 @@
       "id": "P-2",
       "start": "2026-02-02",
       "duration": "2w",
-      "content": "Mandantenfähige Rechteprüfung",
+      "content": "Multi-tenant permission checks",
       "group": "1-plattform",
       "metadata": {
-        "owner": "Plattform-Team",
+        "owner": "Platform team",
         "dependsOn": [
           "P-1"
         ],
@@ -327,10 +327,10 @@
       "id": "A-3",
       "start": "2026-02-03",
       "duration": "2w",
-      "content": "Onboarding-Assistent",
+      "content": "Onboarding assistant",
       "group": "2-app",
       "metadata": {
-        "owner": "App-Team",
+        "owner": "App team",
         "sprint": "sprint-3",
         "storyPoints": "8",
         "estimateConfidence": "niedrig"
@@ -340,10 +340,10 @@
       "id": "I-2",
       "start": "2026-02-09",
       "duration": "1w",
-      "content": "Webhooks für Statuswechsel",
+      "content": "Webhooks for status changes",
       "group": "3-integrationen",
       "metadata": {
-        "owner": "Integrations-Team",
+        "owner": "Integrations team",
         "dependsOn": [
           "I-1"
         ],
@@ -356,10 +356,10 @@
       "id": "Q-2",
       "start": "2026-02-11",
       "duration": "1w",
-      "content": "Lasttest der Suche",
+      "content": "Load test for search",
       "group": "4-qualitaet",
       "metadata": {
-        "owner": "Qualität",
+        "owner": "Quality",
         "sprint": "sprint-3",
         "storyPoints": "8",
         "estimateConfidence": "niedrig"
@@ -369,10 +369,10 @@
       "id": "A-4",
       "start": "2026-02-16",
       "duration": "2w",
-      "content": "Suche mit Filtern",
+      "content": "Search with filters",
       "group": "2-app",
       "metadata": {
-        "owner": "App-Team",
+        "owner": "App team",
         "sprint": "sprint-4",
         "storyPoints": "8",
         "estimateConfidence": "mittel"
@@ -385,7 +385,7 @@
       "group": "1-plattform",
       "type": "point",
       "icon": "release",
-      "body": "Ein Release ist keine Sprintarbeit, deshalb ohne Zuordnung. Das Raster schlägt Sprint 4 vor.",
+      "body": "A release is not sprint work, so it has no assignment. The raster suggests sprint 4.",
       "metadata": {
         "dependsOn": [
           "P-2",
@@ -397,11 +397,11 @@
       "id": "I-3",
       "start": "2026-03-02",
       "duration": "4w",
-      "content": "Datenmigration Altsystem",
+      "content": "Migrate data from the legacy system",
       "group": "3-integrationen",
-      "body": "## Migration\n\nLäuft über zwei Sprintfenster. Sprint 5 trägt noch keine Daten, sein Fenster kommt aus dem Raster.",
+      "body": "## Migration\n\nRuns across two sprint windows. Sprint 5 has no dates yet, so its window comes from the raster.",
       "metadata": {
-        "owner": "Integrations-Team",
+        "owner": "Integrations team",
         "dependsOn": [
           "I-2"
         ],
@@ -414,11 +414,11 @@
       "id": "Q-3",
       "start": "2026-03-30",
       "duration": "1w",
-      "content": "Wiederherstellung aus dem Backup testen",
+      "content": "Test recovery from backup",
       "group": "4-qualitaet",
-      "body": "Terminiert, aber noch keinem Sprint zugeordnet: es gibt noch keine Zeile, deren Fenster diesen Tag enthält.",
+      "body": "Scheduled, but not assigned to a sprint: no row has a window containing this day yet.",
       "metadata": {
-        "owner": "Qualität",
+        "owner": "Quality",
         "dependsOn": [
           "I-3"
         ],
@@ -430,21 +430,21 @@
       "id": "A-5",
       "start": "2026-04-06",
       "duration": "1w",
-      "content": "Offline-Modus erkunden",
+      "content": "Explore an offline mode",
       "group": "2-app",
       "icon": "idea",
-      "body": "Vorstudie. Ohne Schätzung, solange der Umfang nicht steht, und ohne Sprint.",
+      "body": "A preliminary study. Without an estimate while the scope is open, and without a sprint.",
       "metadata": {
-        "owner": "App-Team"
+        "owner": "App team"
       }
     },
     {
       "id": "P-4",
-      "content": "Mehrsprachigkeit im Backend",
+      "content": "Multi-language support in the backend",
       "group": "1-plattform",
-      "body": "Noch nicht terminiert und keinem Sprint zugeordnet.",
+      "body": "Not scheduled yet and not assigned to a sprint.",
       "metadata": {
-        "owner": "Plattform-Team",
+        "owner": "Platform team",
         "storyPoints": "5",
         "estimateConfidence": "niedrig"
       }

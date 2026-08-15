@@ -3,6 +3,16 @@ import assert from 'node:assert/strict';
 import { sourceOriginBadge } from './sourceOrigin';
 import { switcherGroups } from './switcherRows';
 import type { View } from './types';
+import { setLocale } from './i18n';
+// The wording below is German, so these tests ask for German. The module reads
+// the language from `src/i18n` module state rather than taking it as an argument
+// (it renders, it does not validate), so the request is a `setLocale` here — the
+// same move `fieldDefs.test.ts` makes with its `locale` parameter, and for the
+// same reason: what is pinned is the rule, and the wording is only how it is
+// observed. Without this the assertions would follow `DEFAULT_LOCALE` and break
+// the day the product default changes.
+setLocale('de');
+
 
 // The badge beside the open timeline's name. These tests pin the wording, because
 // the wording is the whole feature: „Nur lesend" is what names every affordance the

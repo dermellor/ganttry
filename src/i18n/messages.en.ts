@@ -2,7 +2,7 @@
 // `messages.de.ts` is typed as a total record over this object — so a key added
 // here and forgotten there does not compile.
 //
-// **Two namespaces, because „Interface text" (AGENTS.md) names two kinds of text
+// **Two namespaces, because “Interface text” (AGENTS.md) names two kinds of text
 // with two different limits.**
 //
 //   - Everything else is a **label or a heading**, and the limit is the one the
@@ -10,12 +10,12 @@
 //   - `refusal.*` is the third category — what the app says about something the
 //     user just did: a validation message, a save error, a server's reason for a
 //     503. Those are allowed to be a full sentence, and the rule already said so
-//     („A long refusal is still allowed, and it is not written inline").
+//     (“A long refusal is still allowed, and it is not written inline”).
 //
 // The prefix is what makes that claim **greppable**. Before this file the same
 // distinction existed by accident: a long refusal escaped `check-ui-text.mjs`
-// because it sat in a rule module rather than at a rendering site, so „is this a
-// refusal?" was answered by where the string happened to live. `npm run
+// because it sat in a rule module rather than at a rendering site, so “is this a
+// refusal?” was answered by where the string happened to live. `npm run
 // ui-text:check` now walks both catalogues and holds every non-`refusal.` key to
 // the eight-word limit, which is a complete check over a complete list rather than
 // a pattern match over call sites.
@@ -26,6 +26,15 @@
 // Keys are grouped by where they appear, and the grouping is a comment rather than
 // a nested object: `keyof` over a flat object is the complete key list, which is
 // what the type check and the text check both walk.
+//
+// **Quotation marks are the language's, not the codebase's.** English quotes a
+// value with “…” and German with „…", and the two are not interchangeable: the
+// first English screenshots of this interface showed „Sprint 3" in otherwise
+// English sentences, which reads to a native eye exactly the way a German sentence
+// full of "straight quotes" reads. So this file uses “…” throughout and
+// `messages.de.ts` keeps „…". Assembling the quotes at the call site around a
+// value from the catalogue is what produces the mixture — put the whole sentence,
+// quotes included, in the key.
 
 export const EN = {
   // ── Chrome: the header, the menu, the shell ──────────────────────────────
@@ -45,6 +54,10 @@ export const EN = {
   'switcher.open': 'open',
   'switcher.noMatch': 'No timeline matches.',
   'switcher.readOnly': 'Read-only',
+  // The heading a group of sources gets. `SourceKind` is the stored vocabulary
+  // (`db`, `local`); only the heading over it is a label.
+  'switcher.origin.db': 'Database',
+  'switcher.origin.local': 'Local',
 
   // ── Items ────────────────────────────────────────────────────────────────
   'item.create': '+ Entry',
@@ -61,6 +74,49 @@ export const EN = {
   'item.unsaved': 'not saved yet',
   'item.count.one': '{count} entry',
   'item.count.other': '{count} entries',
+  'item.untitled': '(untitled)',
+  'item.delete.confirm': 'Really delete “{label}”?',
+  'item.background.editNamed': 'Edit {label}',
+  // The children's extent against the parent's. Three keys rather than one with
+  // an “and” glued in: a conjunction assembled at the call site is the shape that
+  // reads as a translation the moment a language puts the verb somewhere else.
+  'item.children.overflow.before': 'Sub-entries start on {before}.',
+  'item.children.overflow.after': 'Sub-entries run until {after}.',
+  'item.children.overflow.both': 'Sub-entries start on {before} and run until {after}.',
+
+  // ── The temporal type of an item ─────────────────────────────────────────
+  // The keys in `ITEM_TYPE_KEYS` are stored on items (`type: 'point'`); only these
+  // labels move. See src/i18n/storedValues.test.ts for the line that separates
+  // the two.
+  'itemType.point': 'Milestone',
+  'itemType.range': 'Range',
+  'itemType.background': 'Phase',
+  'itemType.box': 'Marker',
+  'itemType.auto': 'Automatic',
+  // The picker names what the type looks like, which is the choice being made there.
+  'itemType.background.long': 'Phase (background)',
+
+  // ── The icon set ─────────────────────────────────────────────────────────
+  // `IconKey` is stored on items and resolves to a `--icon-<key>` custom
+  // property; these are the words the picker offers for it.
+  'icon.milestone': 'Milestone',
+  'icon.launch': 'Launch',
+  'icon.done': 'Done',
+  'icon.warning': 'Warning',
+  'icon.blocked': 'Blocked',
+  'icon.review': 'Review',
+  'icon.deadline': 'Deadline',
+  'icon.meeting': 'Meeting',
+  'icon.idea': 'Idea',
+  'icon.research': 'Research',
+  'icon.design': 'Design',
+  'icon.build': 'Build',
+  'icon.bug': 'Bug',
+  'icon.release': 'Release',
+  'icon.decision': 'Decision',
+  'icon.goal': 'Goal',
+  'icon.info': 'Info',
+  'icon.note': 'Note',
 
   // ── The item form ────────────────────────────────────────────────────────
   'form.save': 'Save',
@@ -83,6 +139,30 @@ export const EN = {
   'form.owner.empty': 'No users recorded yet',
   'form.moveUp': 'Move up',
   'form.moveDown': 'Move down',
+  'form.remove': 'Remove',
+  'form.saving': 'Saving …',
+  'form.name': 'Name',
+  'form.title': 'Title',
+  'form.description': 'Description',
+  'form.start': 'Start',
+  'form.end': 'End',
+  'form.duration': 'Duration',
+  'form.icon': 'Icon',
+  'form.color': 'Colour',
+  'form.id': 'ID',
+  'form.readOnly': '(read-only)',
+  'form.preset': 'default',
+  'form.advanced': 'Advanced',
+  'form.tabs': 'Fields',
+  'form.noMatch': 'No match',
+  'form.owner.remove': 'Remove owner',
+  'form.owner.unlinked': '{value} — not linked to a user',
+
+  // ── The audit block under an item's form ─────────────────────────────────
+  'audit.created': 'Created',
+  'audit.updated': 'Updated',
+  'audit.metadata': 'Metadata',
+  'audit.by': 'by',
 
   // ── Custom fields ────────────────────────────────────────────────────────
   'field.key': 'Key',
@@ -92,6 +172,18 @@ export const EN = {
   'field.contextMenu': 'Offer in the right-click menu too',
   'field.options.hint': 'one per line: value = label #colour',
   'field.optional': 'optional',
+  'field.new': 'New field',
+  'field.type': 'Type',
+  'field.values': 'Values',
+  'field.section': 'Section',
+  // The state of the input, which is where a reason belongs — see “Interface
+  // text” (AGENTS.md).
+  'field.keyLocked': 'fixed, because in use',
+  'field.problems': '{count} problem(s) to resolve.',
+  'field.valueNotListed': '{value} (not in the list)',
+  'field.type.text': 'Text',
+  'field.type.select': 'Choice',
+  'field.type.multiSelect': 'Multiple choice',
 
   // ── Filter, grouping, presentation ───────────────────────────────────────
   'view.grouping': 'Group by',
@@ -106,7 +198,7 @@ export const EN = {
   'app.online': 'Online',
   'app.plugins': 'Plugins',
   'filter.all': 'All values',
-  // The „Ohne …" bucket the core composes from a field's label. The label is the
+  // The “Ohne …” bucket the core composes from a field's label. The label is the
   // user's own word for their field and is never translated — only the frame is.
   'filter.count.one': '1 value',
   'filter.count.other': '{count} values',
@@ -114,6 +206,21 @@ export const EN = {
   'group.default': 'Group (default)',
   'view.empty': 'No entries in this view.',
   'view.empty.filtered': 'No entries pass the filter.',
+  // The dimensions a list can be grouped or filtered by. The dimension *keys*
+  // (`group`, `tag`, `status`, `type`) are stored in a saved view and in the
+  // hash; these are only what they are called.
+  'dimension.group': 'Group',
+  'dimension.tag': 'Tag',
+  'dimension.status': 'Status',
+  'dimension.type': 'Type',
+
+  // ── The list view's columns ──────────────────────────────────────────────
+  'list.column.entry': 'Entry',
+  'list.column.start': 'Start',
+  'list.column.end': 'End',
+  'list.column.type': 'Type',
+  'list.column.status': 'Status',
+  'list.column.owner': 'Owner',
 
   // ── Saved views ──────────────────────────────────────────────────────────
   'savedView.plural': 'Saved views',
@@ -123,13 +230,48 @@ export const EN = {
   'savedView.saveCurrent': 'Save the current setting…',
   'savedView.leave': 'Leave the view',
   'savedView.close': 'Close view settings',
+  'savedView.section': 'Views',
+  'savedView.visibility': 'Visibility',
+  'savedView.sharedMark': 'shared',
+  'savedView.settings': 'Settings of view “{name}”',
+  'savedView.trigger': 'Saved views: {name}',
+  'savedView.drifted': '“{name}” with unsaved changes',
+  'savedView.update': 'Update “{name}”',
+  'savedView.saved': 'View “{name}” saved.',
+  'savedView.updated': 'View “{name}” updated.',
+  'savedView.deleted': 'View “{name}” deleted.',
+  'savedView.delete.confirm': 'Really delete view “{name}”?',
+  'savedView.error': 'View: {message}',
 
   // ── The timeline's own settings ──────────────────────────────────────────
   'timeline.settings.grouping': 'Grouping on open',
   'timeline.settings.export': 'Download as HTML',
+  'timeline.settings.general': 'General',
+  'timeline.settings.fields': 'Fields',
+  'timeline.settings.export.section': 'Export',
   'timeline.none': 'No timeline loaded.',
   'timeline.noChange': 'No change.',
   'timeline.saved': 'Saved.',
+  // The status line's tail: entries the timeline cannot place. Named as a count
+  // rather than listed, and the timeline is named rather than the presentations
+  // that do show them — see `statusFor` in src/render.ts.
+  'timeline.datelessHint': '{count} without a start (not on the timeline)',
+  // The status line under the timeline. It was the last English sentence written
+  // at a call site rather than declared here, and it survived the sweep because
+  // the sweep looked for German: “6 items in … · 3 groups” reads as finished work
+  // in every language until somebody switches to German and it does not move.
+  'timeline.status': '{items} in “{name}” · {groups}',
+  'timeline.items.one': '{count} item',
+  'timeline.items.other': '{count} items',
+  'timeline.groups.one': '{count} group',
+  'timeline.groups.other': '{count} groups',
+  'export.generating': 'Generating …',
+  'export.done': 'File created.',
+
+  // ── Phases ───────────────────────────────────────────────────────────────
+  'phase.unnamed': '(unnamed phase)',
+  'phase.updated': 'Phase “{label}” updated',
+  'phase.delete.confirm': 'Really delete phase “{label}”?',
 
   // ── The instance settings area ───────────────────────────────────────────
   'settings.section.instance': 'Instance',
@@ -179,6 +321,33 @@ export const EN = {
   'members.invite': 'Invite an e-mail address',
   'members.none': 'Nobody invited yet.',
   'members.inviteLink': 'Invitation link for',
+  'members.inviteLinkField': 'Invitation link',
+  'members.emailPlaceholder': 'address@example.com',
+  'members.submit': 'Invite',
+  'members.copy': 'Copy',
+  'members.role': 'Role',
+  'members.column.person': 'Person',
+  'members.column.lastSeen': 'Last seen',
+  // `MemberStatus` and `MemberRole` are stored on the membership row; these are
+  // the words the table shows for them.
+  'members.status.invited': 'Invited',
+  'members.status.active': 'Active',
+  'members.status.suspended': 'Suspended',
+  'members.status.removed': 'Removed',
+  'members.role.admin': 'Administrator',
+  'members.role.editor': 'Editor',
+  'members.role.viewer': 'Reader',
+  'members.action.resend': 'Invite again',
+  'members.action.suspend': 'Suspend',
+  'members.action.restore': 'Restore',
+  'members.action.remove': 'Remove',
+  'members.invited': '{email} invited.',
+  'members.reinvited': 'New invitation for {email}.',
+  'members.suspended': '{email} suspended.',
+  'members.restored': '{email} restored.',
+  'members.removed': '{email} removed.',
+  'members.roleChanged': 'Role of {email} changed.',
+  'members.linkCopied': 'Link copied.',
 
   // ── Plugins ──────────────────────────────────────────────────────────────
   'plugin.active': 'active in this timeline',
@@ -201,15 +370,17 @@ export const EN = {
   'sync.noApi': 'no connection to the API',
   'sync.offline': 'no connection',
   'sync.conflict': 'Conflict: changed elsewhere, reloading…',
+  'sync.saving': 'Saving…',
+  'sync.saved': 'Saved · {count} items',
 
   // ── Refusals and results: what the app says about what you just did ──────
   // Allowed a full sentence. See the header of this file for why the prefix is
   // the claim rather than the file the string sits in.
   'refusal.field.keyMissing': 'Without a key the field can store nothing.',
-  'refusal.field.keyShape': 'A key may hold only letters, digits, „-" and „_", and must start with a letter.',
-  'refusal.field.keyReserved': '„{key}" already has a field of its own in the form.',
-  'refusal.field.keyFromPlugin': '„{key}" comes from a plugin. A stored field on it would never appear.',
-  'refusal.field.keyTaken': '„{key}" is already taken (field {index}).',
+  'refusal.field.keyShape': 'A key may hold only letters, digits, “-” and “_”, and must start with a letter.',
+  'refusal.field.keyReserved': '“{key}” already has a field of its own in the form.',
+  'refusal.field.keyFromPlugin': '“{key}” comes from a plugin. A stored field on it would never appear.',
+  'refusal.field.keyTaken': '“{key}” is already taken (field {index}).',
   'refusal.field.labelMissing': 'Without a label nobody knows what the field means.',
   'refusal.field.optionsMissing': 'A choice with no values can choose nothing.',
   'refusal.settings.unreadable': 'This runtime cannot read its own configuration.',
@@ -228,4 +399,15 @@ export const EN = {
   'refusal.conflict.item': 'This entry was changed elsewhere — saving will reload.',
   'refusal.account.saveFailed': 'Not saved.',
   'refusal.account.saved': 'Saved.',
+  'refusal.item.reversedExtent': 'The end date has to be after the start (start {start}, end {end}).',
+  'refusal.phase.overlap': 'Phases must not overlap: “{a}” and “{b}”.',
+  'refusal.source.localFailed': 'Local source “{id}” could not be loaded ({reason}).',
+  'refusal.source.fileFailed': 'File source “{id}” could not be loaded ({reason}).',
+  'refusal.source.dbFailed': 'Timeline “{id}” could not be loaded from the database ({reason}).',
+  'refusal.source.forbidden':
+    'You do not have access to the timeline “{id}”. Ask an administrator of this instance for it.',
+  'refusal.source.loadFailed': 'Could not load source {id}: {message}',
+  'refusal.save.failed': 'Saving failed: {message}',
+  'refusal.export.failed': 'Export failed: {message}',
+  'refusal.plugin.renderFailed': '“{name}” could not be rendered.',
 } as const;

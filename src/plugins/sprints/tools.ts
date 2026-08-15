@@ -98,7 +98,7 @@ function quoted(value: unknown): string {
 }
 
 /**
- * A counted noun in German. Notes are interface text an agent relays verbatim, and
+ * A counted noun. A note is relayed verbatim by whoever called the tool, and
  * „1 entries" is the kind of wrongness that makes the whole answer read as machine
  * output nobody checked.
  */
@@ -108,7 +108,7 @@ function count(n: number, one: string, many: string): string {
 
 /** What a person recognises the item by. The id is the fallback, never the first choice. */
 function nameOf(item: TimelineFileItem): string {
-  return item.content?.trim() || item.id?.trim() || '(ohne Titel)';
+  return item.content?.trim() || item.id?.trim() || '(untitled)';
 }
 
 function nameList(items: readonly TimelineFileItem[]): string {
@@ -120,7 +120,7 @@ function nameList(items: readonly TimelineFileItem[]): string {
  * only an id addresses an item in a follow-up call.
  */
 function idList(items: readonly TimelineFileItem[]): string {
-  return items.map((item) => item.id?.trim() || `(ohne Id: ${nameOf(item)})`).join(', ');
+  return items.map((item) => item.id?.trim() || `(no id: ${nameOf(item)})`).join(', ');
 }
 
 /** A sprint in a note: the name a person reads plus the id a follow-up call needs. */
@@ -368,7 +368,7 @@ function windowNotes(sprint: Sprint, raster: SprintRaster | null, items: readonl
 
 /** What a warning calls the item it is about. The content first, the id as a fallback. */
 function warnedName(warning: { content: string; itemId: string | null }): string {
-  return `„${warning.content.trim() || warning.itemId?.trim() || '(ohne Titel)'}"`;
+  return `„${warning.content.trim() || warning.itemId?.trim() || '(untitled)'}"`;
 }
 
 /**
@@ -439,7 +439,7 @@ function warningNotes(
     }
     if (warning.kind === 'several-reports-for-one-sprint') {
       notes.push(
-        `Zu ${label(warning.sprintId)} gibt es mehr als einen Bericht (${warning.rowIds.map(quoted).join(', ')}). ` +
+        `There is more than one report for ${label(warning.sprintId)} (${warning.rowIds.map(quoted).join(', ')}). ` +
           'The first is read; the rest are second frozen numbers for the same closed sprint.',
       );
     }
@@ -449,11 +449,11 @@ function warningNotes(
       // readable from the rows rather than remembered by whoever was watching.
       // Same shape as the page's sentence, and phrased the same way for the same reason:
       // a count as the subject makes the verb decline too, and one of the two ends up wrong.
-      const rows = count(warning.passes, 'Historienzeile', 'Historienzeilen');
+      const rows = count(warning.passes, 'history row', 'history rows');
       const written = warning.report ? `${rows} and report written` : `${rows} written, no report`;
       notes.push(
         `The close of ${label(warning.sprintId)} is unfinished: ${written}, status „${warning.state}". ` +
-          'Ein erneuter Abschluss schreibt nichts doppelt.',
+          'Closing again writes nothing twice.',
       );
     }
     if (warning.kind === 'sprint-window-past') {
@@ -666,16 +666,18 @@ export const planSprint: ToolHandler = ({ file, args }): ToolPlan => {
     assign.length
       ? `${sprintLabel(sprint)}: ${count(assign.length, 'entry', 'entries')} assigned (${nameList(assign)}). ` +
         'No dates were touched in the process.'
-      : `${sprintLabel(sprint)}: nichts zugeordnet.`,
+      : `${sprintLabel(sprint)}: nothing assigned.`,
   );
   if (already.length) {
     // Writing the value an item already carries is a patch with no effect, and a plan
     // that reports it looks like a change happened.
-    notes.push(`Bereits ${sprintLabel(sprint)} zugeordnet und daher nicht erneut geschrieben: ${nameList(already)}.`);
+    notes.push(
+      `Already assigned to ${sprintLabel(sprint)} and therefore not written again: ${nameList(already)}.`,
+    );
   }
   if (unknown.length || unusable.length) {
     notes.push(
-      `Nicht auf dieser Timeline und daher nicht zugeordnet: ${[...unknown, ...unusable].map(quoted).join(', ')}. ` +
+      `Not on this timeline and therefore not assigned: ${[...unknown, ...unusable].map(quoted).join(', ')}. ` +
         'An id no entry carries would invalidate the whole plan, so it is not in it.',
     );
   }
@@ -787,7 +789,7 @@ export const rollOver: ToolHandler = ({ file, args }): ToolPlan => {
     moved.length
       ? `${sprintLabel(source)}: ${count(moved.length, 'open entry', 'open entries')} moved to ${where} ` +
         `(${nameList(moved)}). No date was changed in the process.`
-      : `${sprintLabel(source)}: kein offener Eintrag verschoben.`,
+      : `${sprintLabel(source)}: no open entry moved.`,
   );
 
   if (done.length) {
@@ -798,7 +800,7 @@ export const rollOver: ToolHandler = ({ file, args }): ToolPlan => {
   }
   if (unaddressable.length) {
     notes.push(
-      `Ohne verwendbare Id und daher nicht verschoben: ${nameList(unaddressable)}. Ein Plan adressiert einen ` +
+      `Without a usable id and therefore not moved: ${nameList(unaddressable)}. A plan addresses an ` +
         'entry by its id; an empty id would invalidate the whole plan.',
     );
   }

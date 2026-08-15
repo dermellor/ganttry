@@ -194,7 +194,7 @@ test('an item id that names nothing is reported instead of poisoning the plan', 
   const file = timeline([item('A-1', { start: '2026-02-03' }), item('  ', { start: '2026-02-05' })], SPRINTS);
   const result = plan({ sprint: 'S-3', items: ['A-1', 'A-99', '  ', 42] }, file);
   assert.deepEqual(result.changes, [{ op: 'update', itemId: 'A-1', patch: { metadata: { sprint: 'S-3' } } }]);
-  said(result, 'Nicht auf dieser Timeline und daher nicht zugeordnet: "A-99", "  ", 42');
+  said(result, 'Not on this timeline and therefore not assigned: "A-99", "  ", 42');
   assert.deepEqual(validateToolPlan(decl('plan_sprint'), file, result), []);
 });
 
@@ -204,7 +204,7 @@ test('an assignment the item already carries is not written again', () => {
   const file = timeline([item('A-1', { start: '2026-02-03', sprint: 'S-3' })], SPRINTS);
   const result = plan({ sprint: 'S-3', items: ['A-1', 'A-1'] }, file);
   assert.deepEqual(result.changes, []);
-  said(result, 'Bereits „Sprint 3" (S-3) zugeordnet und daher nicht erneut geschrieben: „A-1"');
+  said(result, 'Already assigned to „Sprint 3" (S-3) and therefore not written again: „A-1"');
   assert.deepEqual(validateToolPlan(decl('plan_sprint'), file, result), []);
 });
 
@@ -277,7 +277,7 @@ test('a padded item id is matched trimmed and written back as the item carries i
     { op: 'update', itemId: ' A-1 ', patch: { metadata: { sprint: 'S-3' } } },
     { op: 'update', itemId: 'A-2', patch: { metadata: { sprint: 'S-3' } } },
   ]);
-  didNotSay(result, 'Nicht auf dieser Timeline');
+  didNotSay(result, 'Not on this timeline');
   assert.deepEqual(validateToolPlan(decl('plan_sprint'), file, result), []);
 
   // The same on the way out: an item stored with a padded id and rolled over.
@@ -296,7 +296,7 @@ test('an entry of only whitespace reaches the handler, which is why it is named 
   assert.deepEqual(validateToolArgs(declaration, { sprint: 'S-3', items: ['  '] }), []);
   const file = timeline([item('A-1', { start: '2026-02-03' })], SPRINTS);
   const result = plan({ sprint: 'S-3', items: ['A-1', '  '] }, file);
-  said(result, 'Nicht auf dieser Timeline und daher nicht zugeordnet: "  "');
+  said(result, 'Not on this timeline and therefore not assigned: "  "');
 });
 
 test('planning into a closed or cancelled sprint is refused, the way rolling into one is', () => {
@@ -425,7 +425,7 @@ test('an item whose id is only whitespace is named rather than written into a re
   );
   const result = roll({ sprint: 'S-3', toSprint: 'S-4' }, file);
   assert.deepEqual(result.changes, [{ op: 'update', itemId: 'echt', patch: { metadata: { sprint: 'S-4' } } }]);
-  said(result, 'Ohne verwendbare Id und daher nicht verschoben: „namenlos"');
+  said(result, 'Without a usable id and therefore not moved: „namenlos"');
   assert.deepEqual(validateToolPlan(decl('roll_over'), file, result), []);
 });
 

@@ -37,7 +37,9 @@ export function Chip(options: ChipOptions = {}): HTMLSpanElement {
     code,
     unlinked,
     removable,
-    removeLabel = 'Entfernen',
+    // Only reached by a `removable` chip; see the note in Panel.ts for why the
+    // default is English rather than the German it used to be.
+    removeLabel = 'Remove',
     onRemove,
     title,
     className,

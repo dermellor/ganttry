@@ -82,7 +82,10 @@ function paint(): void {
       box.tabIndex = 0;
       box.setAttribute('role', 'button');
       const label = String((item as any)?.data?.label ?? (item as any)?.data?.content ?? '').trim();
-      box.setAttribute('aria-label', label ? `${label} bearbeiten` : t('item.background.edit'));
+      box.setAttribute(
+        'aria-label',
+        label ? t('item.background.editNamed', { label }) : t('item.background.edit'),
+      );
     } else if (box.hasAttribute(ITEM_ATTR)) {
       box.removeAttribute(ITEM_ATTR);
       box.classList.remove(INTERACTIVE_CLASS);

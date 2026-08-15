@@ -31,8 +31,8 @@ import {
 } from './design-system';
 import { apiUpdateMeta } from './editor';
 import {
-  FIELD_TYPES,
   fieldKeysInUse,
+  fieldTypeRows,
   formatFieldOptions,
   hasOptions,
   keyEditable,
@@ -46,7 +46,7 @@ import { pluginFieldDefs } from './pluginHost/registry';
 import { renderTimeline } from './render';
 import { els, state } from './state';
 import type { CustomFieldDef, CustomFieldType } from './types';
-import { t } from './i18n';
+import { locale, t } from './i18n';
 
 /** The draft the form edits: the stored definitions, never the contributed ones. */
 let draft: CustomFieldDef[] = [];
@@ -76,7 +76,7 @@ function fieldCard(
     on: { input: (e) => { def.label = (e.target as HTMLInputElement).value; } },
   });
   const type = Select({ disabled: !editable });
-  setSelectOptions(type, FIELD_TYPES.map((t) => ({ value: t.value, label: t.label })));
+  setSelectOptions(type, fieldTypeRows(locale()));
   type.value = def.type;
   type.addEventListener('change', () => {
     def.type = type.value as CustomFieldType;
@@ -106,24 +106,24 @@ function fieldCard(
 
   return el('section', { class: 'field-card' }, [
     el('div', { class: 'field-card-head' }, [
-      Text({ text: def.label.trim() || def.key.trim() || 'Neues Feld', className: 'field-card-title' }),
+      Text({ text: def.label.trim() || def.key.trim() || t('field.new'), className: 'field-card-title' }),
       el('div', { class: 'field-card-tools' }, [
         Button({
           label: '↑',
           variant: 'trigger',
-          ariaLabel: 'Nach oben',
+          ariaLabel: t('form.moveUp'),
           disabled: !editable || index === 0,
           on: { click: () => { draft = moveFieldDef(draft, index, -1); rerender(); } },
         }),
         Button({
           label: '↓',
           variant: 'trigger',
-          ariaLabel: 'Nach unten',
+          ariaLabel: t('form.moveDown'),
           disabled: !editable || index === draft.length - 1,
           on: { click: () => { draft = moveFieldDef(draft, index, 1); rerender(); } },
         }),
         Button({
-          label: 'Entfernen',
+          label: t('form.remove'),
           variant: 'danger',
           disabled: !editable,
           on: {
@@ -136,19 +136,19 @@ function fieldCard(
         }),
       ]),
     ]),
-    Field({ label: 'Bezeichnung', control: label }),
+    Field({ label: t('field.label'), control: label }),
     Field({
       label: t('field.key'),
       // The hint only names the state of a locked input; there is deliberately no
       // hint on an editable one, and no prose under either.
-      hint: keyLocked ? 'fest, weil benutzt' : undefined,
+      hint: keyLocked ? t('field.keyLocked') : undefined,
       control: key,
     }),
-    Field({ label: 'Typ', control: type }),
+    Field({ label: t('field.type'), control: type }),
     options
       ? Field({
-          label: 'Werte',
-          hint: 'einer pro Zeile: wert = Beschriftung #farbe',
+          label: t('field.values'),
+          hint: t('field.options.hint'),
           control: options,
         })
       : null,
@@ -160,7 +160,7 @@ function fieldCard(
           on: { change: (e) => { def.contextMenu = (e.target as HTMLInputElement).checked; } },
         })
       : null,
-    Field({ label: 'Abschnitt', hint: 'optional', control: group }),
+    Field({ label: t('field.section'), hint: t('field.optional'), control: group }),
     ...mine.map((p) => Callout({ tone: 'danger', text: p.message })),
   ]);
 }
@@ -177,26 +177,26 @@ export function mountFields(root: HTMLElement): void {
   const contributed = pluginFieldDefs(file);
   const pluginKeys = contributed.map((f) => f.key);
   const inUse = fieldKeysInUse(file.items);
-  const problems = validateFieldDefs(draft, pluginKeys);
+  const problems = validateFieldDefs(draft, pluginKeys, locale());
 
   const rerender = () => mountFields(root);
 
   const save = Button({
-    label: 'Speichern',
+    label: t('form.save'),
     variant: 'outline',
     disabled: problems.length > 0,
     attrs: { hidden: !editable },
   });
   const status = Text({
     as: 'p',
-    text: notice || (problems.length ? `${problems.length} Problem(e) zu klären.` : ''),
+    text: notice || (problems.length ? t('field.problems', { count: problems.length }) : ''),
     tone: 'muted',
     size: 'xs',
     attrs: { role: 'status' },
   });
 
   save.addEventListener('click', () => {
-    notice = 'Wird gespeichert …';
+    notice = t('form.saving');
     save.disabled = true;
     status.textContent = notice;
     void apiUpdateMeta(view.source.id, { customFields: draft.map(normalizeFieldDef) })
@@ -205,7 +205,7 @@ export function mountFields(root: HTMLElement): void {
         // the grouping list, the filter and the context menu. Patching each of them
         // from here would be four places to keep in step with a fifth.
         await renderTimeline(view);
-        notice = 'Gespeichert.';
+        notice = t('timeline.saved');
         draft = (state.activeSourceFile?.customFields ?? []).map((f) => structuredClone(f));
         rerender();
       })
@@ -219,13 +219,13 @@ export function mountFields(root: HTMLElement): void {
   root.replaceChildren(
     el('div', { class: 'settings-form' }, [
       ...draft.map((def, index) => fieldCard(def, index, { editable, inUse, problems, rerender })),
-      draft.length ? null : Text({ as: 'p', text: 'Noch keine eigenen Felder.', tone: 'muted' }),
+      draft.length ? null : Text({ as: 'p', text: t('field.none'), tone: 'muted' }),
       el('div', { class: 'settings-actions' }, [
         Button({
           // „Add another one" under a repeatable row: the dashed slot the design
           // system has for exactly this, rather than a second outline button
           // competing with Speichern.
-          label: '+ Feld',
+          label: t('field.add'),
           variant: 'dashed',
           attrs: { hidden: !editable },
           on: { click: () => { draft = [...draft, newField()]; rerender(); } },

@@ -45,12 +45,12 @@ function vdescRow(
     Select({
       className: 'version-desc-select',
       block: false,
-      attrs: { 'aria-label': 'Version' },
+      attrs: { 'aria-label': t('version') },
       // value is the version id (what save writes as a descriptionByVersion key);
       // only the label shown to the user resolves through versionLabel.
       options: versions.map((v) => ({
         value: v,
-        label: `ab ${versionLabel(labels, v)}`,
+        label: `${t('version.fromShort')} ${versionLabel(labels, v)}`,
         selected: v === selectedVersion,
       })),
     }),
@@ -109,7 +109,7 @@ export function showFeatureForm(featureId: string): void {
   // (there's nothing to link a note to otherwise).
   const versionDescField = versions.length
     ? Field({
-        label: 'Versionsbeschreibungen',
+        label: t('feature.versionDescriptions'),
         full: true,
         className: 'version-desc-field',
         control: [
@@ -132,13 +132,13 @@ export function showFeatureForm(featureId: string): void {
 
   const form = el('form', { class: 'ds-FormGrid feature-form', 'data-id': featureId }, [
     Field({
-      label: 'Name',
+      label: t('form.name'),
       htmlFor: 'ft-name',
       full: true,
       control: TextInput({ id: 'ft-name', name: 'name', value: feature.name ?? '' }),
     }),
     Field({
-      label: 'Gruppe',
+      label: t('feature.group'),
       htmlFor: 'ft-group',
       control: [
         TextInput({
@@ -169,7 +169,7 @@ export function showFeatureForm(featureId: string): void {
       }),
     }),
     Field({
-      label: 'Beschreibung',
+      label: t('feature.description'),
       htmlFor: 'ft-description',
       full: true,
       control: [
@@ -184,14 +184,14 @@ export function showFeatureForm(featureId: string): void {
     }),
     versionDescField,
     Field({
-      label: 'ID',
-      hint: '(read-only)',
+      label: t('form.id'),
+      hint: t('readOnly'),
       htmlFor: 'ft-id',
       control: TextInput({ id: 'ft-id', name: 'id', value: featureId, readonly: true }),
     }),
     FormActions({
       children: [
-        Button({ label: 'Speichern', type: 'submit' }),
+        Button({ label: t('form.save'), type: 'submit' }),
         Button({ label: t('delete'), variant: 'danger', attrs: { 'data-action': 'delete' } }),
       ],
     }),
@@ -201,7 +201,7 @@ export function showFeatureForm(featureId: string): void {
   // form is open (which stops background persistence writing underneath it) and
   // hands over a container. Wiring happens after, on the element we still hold.
   hostApi().panel?.open({
-    title: feature.name || '(unbenanntes Feature)',
+    title: feature.name || t('feature.unnamed'),
     render: (container) => container.replaceChildren(form),
   });
 
@@ -278,7 +278,7 @@ async function saveFeatureFromForm(featureId: string, form: HTMLFormElement): Pr
     // without a reset dance — the server already dropped the key.
     applyRow(file(), PRICING_COLLECTIONS.features, saved);
     repaintPricingView();
-    status(`Feature „${patch.name ?? feature.name}" aktualisiert`);
+    status(t('feature.updated', { name: patch.name ?? feature.name }));
     showFeatureForm(featureId);
   } catch (err) {
     if (err instanceof ConflictError) {
@@ -288,7 +288,7 @@ async function saveFeatureFromForm(featureId: string, form: HTMLFormElement): Pr
       status(t('refusal.feature.conflict'));
       return;
     }
-    status(`Speichern fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(t('refusal.saveFailed', { error: err instanceof Error ? err.message : String(err) }));
   }
 }
 
@@ -296,12 +296,12 @@ async function deleteFeature(featureId: string): Promise<void> {
   const pricing = currentPricing(file());
   const feature = pricing && findFeature(featureId);
   if (!pricing || !feature) return;
-  if (!confirm(`Feature „${feature.name}" wirklich löschen?`)) return;
+  if (!confirm(t('feature.deleteConfirm', { name: feature.name }))) return;
 
   try {
     await apiDeleteFeature(featureId);
   } catch (err) {
-    status(`Löschen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(t('refusal.deleteFailed', { error: err instanceof Error ? err.message : String(err) }));
     return;
   }
 
@@ -348,9 +348,9 @@ export async function addFeature(group?: string): Promise<void> {
     applyRow(file(), PRICING_COLLECTIONS.features, saved);
     repaintPricingView();
     showFeatureForm(saved.id);
-    status(`Feature „${name}" angelegt`);
+    status(t('feature.created', { name }));
   } catch (err) {
-    status(`Feature anlegen fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(t('refusal.feature.createFailed', { error: err instanceof Error ? err.message : String(err) }));
   }
 }
 
@@ -371,6 +371,6 @@ export async function moveFeature(featureId: string, anchor: { after?: string; b
     orderRows(file(), PRICING_COLLECTIONS.features, order);
     repaintPricingView();
   } catch (err) {
-    status(`Umsortieren fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+    status(t('refusal.feature.moveFailed', { error: err instanceof Error ? err.message : String(err) }));
   }
 }

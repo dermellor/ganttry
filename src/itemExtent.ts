@@ -22,6 +22,8 @@
 // their extension. `./date` is dependency-free, so pulling it server-side is
 // safe — see the same note in ./phaseOverlap.ts.
 import { parseLocalDay } from './date.ts';
+import { translate } from './i18n/catalogue.ts';
+import { DEFAULT_LOCALE, type Locale } from './i18n/locale.ts';
 
 export type ItemExtentInput = { start?: unknown; end?: unknown; content?: unknown };
 
@@ -49,9 +51,23 @@ export function hasReversedExtent(item: ItemExtentInput): boolean {
   return isReversedExtent(item?.start, item?.end);
 }
 
-/** Human-readable reason for a rejected write / blocked save. */
-export function describeReversedExtent(start: unknown, end: unknown): string {
-  return `Das End-Datum muss nach dem Start liegen (Start ${String(start)}, Ende ${String(end)}).`;
+/**
+ * Human-readable reason for a rejected write / blocked save.
+ *
+ * The locale is a parameter for the reason `validateFieldDefs` takes one: this
+ * module is read by the server too, and the write path does not know who is
+ * looking. The default resolves to the product language, so every existing
+ * caller keeps working and nothing here reads client state.
+ */
+export function describeReversedExtent(
+  start: unknown,
+  end: unknown,
+  locale: Locale = DEFAULT_LOCALE,
+): string {
+  return translate(locale, 'refusal.item.reversedExtent', {
+    start: String(start),
+    end: String(end),
+  });
 }
 
 /**

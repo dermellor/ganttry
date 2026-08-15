@@ -27,7 +27,7 @@ import { scheduleLiveEdit } from './persistence';
 import { mergeFieldDefs, pluginFieldDefs } from './pluginHost/registry';
 import { selectRowsFor } from './fieldDefs';
 import { type CustomFieldDef, type CustomFieldOption } from './types';
-import { t } from './i18n';
+import { t, locale } from './i18n';
 
 // metadata keys managed by their own dedicated form control (the reserved
 // built-ins handled directly in itemForm) — used to keep them out of the
@@ -211,7 +211,7 @@ function fieldNode(
       ...shared,
       control: Select({
         attrs: { 'data-cf-control': def.key },
-        options: selectRowsFor(def, current),
+        options: selectRowsFor(def, current, locale()),
       }),
     });
   }

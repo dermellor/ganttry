@@ -17,11 +17,32 @@ import type { CustomFieldDef, CustomFieldOption, CustomFieldType, TimelineFileIt
 
 import { translate, type MessageKey } from './i18n/catalogue.ts';
 import { DEFAULT_LOCALE, type Locale } from './i18n/locale.ts';
-export const FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
-  { value: 'text', label: 'Text' },
-  { value: 'select', label: 'Auswahl' },
-  { value: 'multi-select', label: 'Mehrfachauswahl' },
-];
+
+/** The three shapes a field can have. Stored on the definition; never a label. */
+export const FIELD_TYPE_VALUES: readonly CustomFieldType[] = ['text', 'select', 'multi-select'];
+
+const FIELD_TYPE_KEY: Record<CustomFieldType, MessageKey> = {
+  text: 'field.type.text',
+  select: 'field.type.select',
+  'multi-select': 'field.type.multiSelect',
+};
+
+/**
+ * The `<select>` rows for a field's type, in a language.
+ *
+ * A function rather than the constant table it was: a table is filled on import,
+ * before a reader's language is known, and this module is also read by the server
+ * — so the locale comes in as an argument here for the reason `validateFieldDefs`
+ * takes one (see below).
+ */
+export function fieldTypeRows(
+  locale: Locale = DEFAULT_LOCALE,
+): { value: CustomFieldType; label: string }[] {
+  return FIELD_TYPE_VALUES.map((value) => ({
+    value,
+    label: translate(locale, FIELD_TYPE_KEY[value]),
+  }));
+}
 
 /**
  * Metadata keys with a control of their own. A field on one of these would be a
@@ -201,6 +222,7 @@ export function keyEditable(key: string, inUse: ReadonlySet<string>): boolean {
 export function selectRowsFor(
   def: Pick<CustomFieldDef, 'options'>,
   current: string,
+  locale: Locale = DEFAULT_LOCALE,
 ): { value: string; label: string; selected: boolean }[] {
   const declared = def.options ?? [];
   const rows = [
@@ -214,7 +236,11 @@ export function selectRowsFor(
   if (current && !declared.some((o) => o.value === current)) {
     // Marked rather than shown bare: „Free" beside three other values reads as one
     // of them, and the next person wonders why it is not in the definition.
-    rows.push({ value: current, label: `${current} (nicht in der Liste)`, selected: true });
+    rows.push({
+      value: current,
+      label: translate(locale, 'field.valueNotListed', { value: current }),
+      selected: true,
+    });
   }
   return rows;
 }

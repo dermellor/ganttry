@@ -2,7 +2,7 @@
 // edit form shown in the detail panel.
 
 import { Button, el, Field, FormActions, Select, TextInput } from './design-system';
-import { TIMELINE_ICONS } from './icons';
+import { timelineIcons } from './icons';
 import { isoDateOnly } from './editor';
 import type { PhaseEdit } from './phaseBand';
 import { describePhaseOverlap, findPhaseOverlap } from './phaseOverlap';
@@ -13,7 +13,7 @@ import { rebuildAndApply } from './render';
 import { publishSelfPresence, schedulePersist } from './persistence';
 import { hideDetail, setDetailTitle } from './detailPanel';
 
-import { t } from './i18n';
+import { locale, t } from './i18n';
 export function handlePhaseEdit(edit: PhaseEdit): void {
   const phase = state.activeSourceFile?.phases?.[edit.srcIndex];
   if (!phase) return;
@@ -42,7 +42,7 @@ export function showPhaseForm(srcIndex: number): void {
   // We just gave up the item we occupied — release its presence mark.
   publishSelfPresence();
 
-  setDetailTitle(phase.label || '(unbenannte Phase)');
+  setDetailTitle(phase.label || t('phase.unnamed'));
   els.detailMeta.replaceChildren();
 
   const durationValue =
@@ -50,40 +50,40 @@ export function showPhaseForm(srcIndex: number): void {
 
   const form = el('form', { class: 'ds-FormGrid item-form phase-form', 'data-index': srcIndex }, [
     Field({
-      label: 'Titel',
+      label: t('form.title'),
       htmlFor: 'p-label',
       full: true,
       control: TextInput({ id: 'p-label', name: 'label', value: phase.label ?? '' }),
     }),
     Field({
-      label: 'Start',
+      label: t('form.start'),
       htmlFor: 'p-start',
       control: TextInput({ id: 'p-start', name: 'start', type: 'date', value: isoDateOnly(phase.start) }),
     }),
     Field({
-      label: 'Ende',
+      label: t('form.end'),
       htmlFor: 'p-end',
       control: TextInput({ id: 'p-end', name: 'end', type: 'date', value: isoDateOnly(phase.end ?? '') }),
     }),
     Field({
-      label: 'Dauer',
+      label: t('form.duration'),
       htmlFor: 'p-duration',
       control: TextInput({
         id: 'p-duration',
         name: 'duration',
         value: durationValue,
-        placeholder: 'leer = Ende nutzen',
+        placeholder: t('form.endEmpty'),
       }),
     }),
     Field({
-      label: 'Icon',
+      label: t('form.icon'),
       htmlFor: 'p-icon',
       control: Select({
         id: 'p-icon',
         name: 'icon',
         options: [
-          { value: '', label: '— kein Icon —', selected: !phase.icon },
-          ...TIMELINE_ICONS.map(({ key, label }) => ({
+          { value: '', label: t('form.noIcon.option'), selected: !phase.icon },
+          ...timelineIcons().map(({ key, label }) => ({
             value: key,
             label,
             selected: phase.icon === key,
@@ -92,19 +92,19 @@ export function showPhaseForm(srcIndex: number): void {
       }),
     }),
     Field({
-      label: 'Farbe',
+      label: t('form.color'),
       htmlFor: 'p-color',
       control: TextInput({ id: 'p-color', name: 'color', value: phase.color ?? '', placeholder: '#2f0d5b' }),
     }),
     Field({
-      label: 'ID',
-      hint: '(read-only)',
+      label: t('form.id'),
+      hint: t('form.readOnly'),
       htmlFor: 'p-id',
       control: TextInput({ id: 'p-id', name: 'id', value: phase.id ?? '', readonly: true }),
     }),
     FormActions({
       children: [
-        Button({ label: 'Speichern', type: 'submit' }),
+        Button({ label: t('form.save'), type: 'submit' }),
         Button({ label: t('form.delete'), variant: 'danger', attrs: { 'data-action': 'delete' } }),
       ],
     }),
@@ -164,7 +164,7 @@ function savePhaseFromForm(srcIndex: number, form: HTMLFormElement): void {
   const candidate = (state.activeSourceFile!.phases ?? []).map((p, i) => (i === srcIndex ? trial : p));
   const clash = findPhaseOverlap(candidate);
   if (clash) {
-    setStatus(describePhaseOverlap(clash.a, clash.b));
+    setStatus(describePhaseOverlap(clash.a, clash.b, locale()));
     return;
   }
 
@@ -185,14 +185,14 @@ function savePhaseFromForm(srcIndex: number, form: HTMLFormElement): void {
 
   rebuildAndApply();
   schedulePersist();
-  setStatus(`Phase „${phase.label}" aktualisiert`);
+  setStatus(t('phase.updated', { label: phase.label ?? '' }));
   showPhaseForm(srcIndex);
 }
 
 function deletePhase(srcIndex: number): void {
   const phase = state.activeSourceFile?.phases?.[srcIndex];
   if (!phase) return;
-  if (!confirm(`Phase „${phase.label}" wirklich löschen?`)) return;
+  if (!confirm(t('phase.delete.confirm', { label: phase.label ?? '' }))) return;
   state.activeSourceFile!.phases!.splice(srcIndex, 1);
   state.activeFormPhaseIndex = null;
   rebuildAndApply();

@@ -103,7 +103,20 @@ function row(
   });
 }
 
-const COLUMNS = ['Eintrag', 'Start', 'Ende', 'Typ', 'Status', 'Owner'];
+// A function, not a constant: a `const` here is filled on import, before the
+// reader's language is resolved, and the header row would stay in whichever
+// language the page booted in — see „Never call `t()` at module scope"
+// (src/i18n/index.ts).
+function columns(): string[] {
+  return [
+    t('list.column.entry'),
+    t('list.column.start'),
+    t('list.column.end'),
+    t('list.column.type'),
+    t('list.column.status'),
+    t('list.column.owner'),
+  ];
+}
 
 // Real (non-background) items grouped by the active dimension, each section's
 // items sorted by start ascending. Phase-tint background items are omitted.
@@ -152,7 +165,7 @@ export function renderListView(): void {
 
   if (!entries.length) {
     els.listBody.replaceChildren(
-      Text({ as: 'p', text: 'Keine Einträge in dieser View.', tone: 'muted' }),
+      Text({ as: 'p', text: t('view.empty'), tone: 'muted' }),
     );
     return;
   }
@@ -164,6 +177,7 @@ export function renderListView(): void {
   const itemParents = state.activeBuild?.parents ?? new Map<string, string>();
   const hasChildren = new Set(itemParents.values());
 
+  const cols = columns();
   const body = sections.flatMap((s) => {
     const ordered = treeOrder(s.items, itemParents);
     const hasTree = ordered.some((e) => e.depth > 0 || hasChildren.has(e.item.id));
@@ -171,7 +185,7 @@ export function renderListView(): void {
       grouped
         ? TableGroupRow({
             title: s.label,
-            colspan: COLUMNS.length,
+            colspan: cols.length,
             action:
               showAdd && !s.empty && !parents.has(s.id)
                 ? Button({
@@ -192,7 +206,7 @@ export function renderListView(): void {
   });
 
   els.listBody.replaceChildren(
-    Table({ children: [TableHead({ columns: COLUMNS }), el('tbody', {}, body)] }),
+    Table({ children: [TableHead({ columns: cols }), el('tbody', {}, body)] }),
   );
 }
 

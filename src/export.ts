@@ -8,6 +8,7 @@ import {
   type TimelineItem,
 } from './buildItems';
 import { JIRA_BASE_URL } from './jira';
+import { locale } from './i18n';
 
 import visJsRaw from 'vis-timeline/standalone/umd/vis-timeline-graph2d.min.js?raw';
 import visCssRaw from 'vis-timeline/styles/vis-timeline-graph2d.min.css?raw';
@@ -93,7 +94,12 @@ function clientScript(): string {
     xss: { disabled: true },
     margin: { item: 6, axis: 8 },
     orientation: { axis: 'top', item: 'top' },
-    locale: 'de',
+    // Baked into the exported file at the moment of export, in the language the
+    // person exporting is reading — same value and same reason as the live axis
+    // (see src/render.ts). The primary subtag, not a BCP 47 tag with a region:
+    // vis keys its own locale table on de / en. No backticks in this comment —
+    // it lives inside the template literal that IS the exported script.
+    locale: '${locale()}',
     tooltip: { followMouse: false, overflowMethod: 'cap' },
     zoomMin: 1000 * 60 * 60 * 6,
     zoomMax: 1000 * 60 * 60 * 24 * 365 * 30,

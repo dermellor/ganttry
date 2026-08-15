@@ -27,7 +27,10 @@ export type DialogOptions = {
 };
 
 export function Dialog(options: DialogOptions = {}): HTMLDialogElement {
-  const { title, children, closeLabel = 'Schließen', onClose, ariaLabel, className, attrs } = options;
+  // English because that is the product's default language, and every product call
+  // site passes a translated one. See the note in Panel.ts: a German default is
+  // invisible to a sweep over call sites and reaches the interface anyway.
+  const { title, children, closeLabel = 'Close', onClose, ariaLabel, className, attrs } = options;
 
   const close = IconButton({
     icon: '×',

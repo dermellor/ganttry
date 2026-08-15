@@ -11,6 +11,7 @@
 // picker stays with the built name, since nothing has loaded it.
 
 import type { CustomFieldDef, TimelineFile, View } from './types';
+import { t } from './i18n';
 
 /** The name to show for the open timeline: the source's own, else the built one. */
 export function timelineName(view: View | null, file: TimelineFile | null): string {
@@ -81,10 +82,10 @@ export function timelineMetaPatch(
  */
 export function groupByChoices(file: TimelineFile | null): { value: string; label: string }[] {
   const out = [
-    { value: '', label: 'Gruppe (Standard)' },
-    { value: 'tag', label: 'Tag' },
-    { value: 'status', label: 'Status' },
-    { value: 'type', label: 'Typ' },
+    { value: '', label: t('group.default') },
+    { value: 'tag', label: t('dimension.tag') },
+    { value: 'status', label: t('dimension.status') },
+    { value: 'type', label: t('dimension.type') },
   ];
   for (const f of file?.customFields ?? []) {
     out.push({ value: `cf:${f.key}`, label: fieldLabel(f) });

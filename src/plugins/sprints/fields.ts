@@ -101,7 +101,7 @@ export function sprintsFields(file: TimelineFile | null | undefined): CustomFiel
       // Half of what the interface shows: the core prefixes the plugin name, so this
       // reads „Sprints · Sprint" and the empty bucket „Ohne Sprints · Sprint"
       // (dimensionLabel in src/listGrouping.ts). Renaming either half renames both.
-      label: 'Sprint',
+      label: t('sprint'),
       type: 'select',
       // Retargeting an item into another sprint is the action people take most in
       // planning, and it is exactly one value on one item: the right-click menu is
@@ -131,7 +131,7 @@ export function sprintsFields(file: TimelineFile | null | undefined): CustomFiel
 
   defs.push({
     key: STORY_POINTS_KEY,
-    label: 'Story Points',
+    label: t('unit.storyPoints'),
     type: 'select',
     // A short, fixed ladder that gets retargeted often: exactly the case the
     // right-click menu is worth it for.
@@ -142,8 +142,10 @@ export function sprintsFields(file: TimelineFile | null | undefined): CustomFiel
   defs.push({
     key: CONFIDENCE_KEY,
     // „Confidence" is the word the practice uses; „Schätzsicherheit" would be a term
-    // this plugin invented (see „How does it compare?" in the README).
-    label: 'Confidence',
+    // this plugin invented (see „How does it compare?" in the README). It is therefore
+    // the same word in both catalogues rather than a literal: the label goes through the
+    // same lookup as its siblings, and the German entry records the decision.
+    label: t('field.confidence'),
     type: 'select',
     contextMenu: true,
     options: CONFIDENCE_OPTIONS,

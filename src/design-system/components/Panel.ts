@@ -48,7 +48,12 @@ export type PanelHeaderOptions = {
  * whose content fits shows no rule at all.
  */
 export function PanelHeader(options: PanelHeaderOptions = {}): HTMLDivElement {
-  const { title, tools, closeLabel = 'Schließen', onClose, className, attrs } = options;
+  // The default is the product's default language, and every product call site
+  // passes a translated one. It used to be „Schließen", which no sweep could find:
+  // it is not a literal at a call site but a value a forgotten prop falls back to,
+  // so an English interface handed a screen reader a German word and nothing said
+  // so. The close button is rendered unconditionally, so this is always reached.
+  const { title, tools, closeLabel = 'Close', onClose, className, attrs } = options;
   const close = IconButton({
     icon: '×',
     ariaLabel: closeLabel,

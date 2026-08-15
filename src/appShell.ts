@@ -160,7 +160,11 @@ type DetailPanelParts = {
 function detailPanel(interactive: boolean): DetailPanelParts {
   const detailTitle = Heading({ level: 2, attrs: { id: 'detail-title' } });
   const detailTools = PanelTools({ hidden: true, attrs: { id: 'detail-tools' } });
-  const header = PanelHeader({ title: detailTitle, tools: interactive ? detailTools : undefined });
+  const header = PanelHeader({
+    title: detailTitle,
+    tools: interactive ? detailTools : undefined,
+    closeLabel: t('form.close'),
+  });
   const detailMeta = DescriptionList({ attrs: { id: 'detail-meta' } });
   // The exported page only ever shows a rendered note, so there the body it
   // writes into *is* a `Prose`. In the app the same element also holds the edit
