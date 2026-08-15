@@ -26,7 +26,8 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/plugin-public-read.md`](docs/plugin-public-read.md) | Publishing a plugin's data without an endpoint of its own: the three gates, what is stripped, and why a local source inverts the question. |
 | [`docs/plugin-authoring.md`](docs/plugin-authoring.md) | Writing a plugin outside this repository: what it exports, the host API it is handed, how to declare data, and how an instance installs it. |
 | [`docs/plugin-isolation.md`](docs/plugin-isolation.md) | Where plugin code runs, why the sandbox was rejected, what protects an instance instead, and what would bring the decision back. |
-| [`docs/settings.md`](docs/settings.md) | The instance settings area: how a setting declares where it lives, the per-setting read gate, and where the area sits. |
+| [`docs/settings.md`](docs/settings.md) | The instance settings area: how a setting declares where it lives, the per-setting read gate, the account section, and where the area sits. |
+| [`src/i18n/`](src/i18n/) | The interface language: the two catalogues, how one is resolved for a reader, and the formatters that follow it. The modules document themselves. |
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server and its tools. |
 | [`docs/deploy.md`](docs/deploy.md) | The Netlify deploy, the auth gate, JIRA linking. |
 | [`src/plugins/*/README.md`](src/plugins/) | Each plugin documents itself: what it does, its fields, its model, and an `AGENTS.md` with the conventions for changing it. No core chapter is the home of a plugin fact. |
@@ -46,6 +47,14 @@ subsystem and documented there.
   no tooltip restating a badge, no sentence about what a button will do. Not
   shortened, not moved into a tooltip, not made muted and small: deleted. The full
   rule and what „refusal" covers is below, in „Interface text".
+- **Interface text lives in the catalogues, never at the call site.** Both
+  languages are in [`src/i18n/`](src/i18n/), English is the reference, and German
+  is typed as a total record over it so a forgotten translation does not compile.
+  A rendering site calls `t('key')` — and never at module scope, which is
+  evaluated before the language is resolved and freezes one in. The full model,
+  including what a plugin ships and which strings are values rather than labels,
+  is in [`docs/settings.md`](docs/settings.md) and
+  [`docs/plugin-authoring.md`](docs/plugin-authoring.md).
 - **Comments explain *why*, not *what*.** Most non-obvious rules here carry the
   failure mode they prevent, because that is the part which cannot be recovered
   from reading the code. When you change such a rule, change its reasoning with it.
@@ -121,6 +130,19 @@ than one sentence or eight words, in a component prop, an HTML attribute or the
 text of markup built as a string. It passed with no exemptions the day it was
 written, because every violation was deleted instead of allowlisted. Its four
 skips are named in the script with their reasons.
+
+It now checks two more things, both because the text moved into catalogues:
+
+- **Both catalogues**, held to the same limit. Checking only call sites would have
+  gone quietly green as they emptied, retiring the rule exactly the way this
+  section says prose comes back. The catalogue is the better subject anyway: a
+  complete list, in one place, in both languages. Keys under `refusal.` are exempt
+  from the word limit and not from the check — that is the third category above,
+  which used to escape this script by sitting in a rule module rather than at a
+  rendering site. The prefix makes the claim greppable instead of accidental.
+- **`t()` at module scope**, which freezes the language in at import time. It is
+  the one way to misuse the catalogue, it fails silently, and it was real in
+  `settingsArea.ts`.
 
 ## The name covers the product, not its vocabulary or its instances
 

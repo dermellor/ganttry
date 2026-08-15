@@ -96,12 +96,22 @@ bundle-split check (below). What the checks expect:
   „Ansicht" is not used for either, because the code already spends `View` on the
   first — see „What this leaves alone"
   ([`docs/information-architecture.md`](docs/information-architecture.md)).
-- **Documentation is English, the UI is German.** That split is deliberate, so
-  quoted UI strings stay German in the docs („Neu", „kein Wert", „Gespeichert")
-  even in otherwise English prose. Commit messages, branch names, pull request
-  text and issues are English as well. Some `data/` examples, a few identifiers
-  and most of the commit history before that rule carry German; that is history,
-  not a convention to extend.
+- **Documentation is English; the interface speaks the reader's language.** It
+  used to be German outright, and the docs quoted it that way. Since #153 the
+  language is a per-person setting (German or English, `#settings=account`), and
+  the strings live in `src/i18n/messages.en.ts` and `messages.de.ts` rather than
+  at the call sites. English is the reference catalogue: a key added there and
+  forgotten in German does not compile.
+
+  Quoted UI strings **stay German in the docs** where the prose is describing a
+  screen somebody actually looked at („Neu", „kein Wert", „Gespeichert"). Changing
+  them all to English would be a large diff that makes every existing sentence
+  slightly less checkable against the code, and the German is still what the
+  chapter's author saw.
+
+  Commit messages, branch names, pull request text and issues are English. Some
+  `data/` examples, a few identifiers and most of the commit history before that
+  rule carry German; that is history, not a convention to extend.
 
 ## Pull requests
 

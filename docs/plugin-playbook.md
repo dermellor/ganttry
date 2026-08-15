@@ -334,6 +334,24 @@ filesystem-only deploy.
 
 ---
 
+### The plugin's text
+
+A plugin's labels follow the reader's language through `pluginMessages`, and the
+full contract is „Text in more than one language"
+([`plugin-authoring.md`](plugin-authoring.md)). Three things belong in the plan
+rather than in a cleanup pass afterwards, because each is expensive to retrofit:
+
+- **Which strings are values and which are labels.** A select option's `value` is
+  stored on items and must never be translated; only its `label` moves. Decide it
+  while writing `fields.ts`, and pin it with a test — retrofitting this after a
+  plugin has shipped means either orphaning stored data or keeping a translation
+  that cannot be applied.
+- **Which language the plugin is written in.** Shipping one is fine and the host
+  renders it on either side; shipping two means writing both as you go, since a
+  translation pass over a finished plugin is the thing that never happens.
+- **Tool notes are English.** Not a translation decision — the whole agent-facing
+  surface is English, and a note is the only part of it that reaches a person.
+
 ## Phase 4: verification
 
 - **Unit test** the derived options, including the empty and malformed config cases.
@@ -647,9 +665,14 @@ research, the spec, the verification and the publication — is unaffected by ei
        (or explicitly skipped), terminology table (core vocabulary respected)
 [ ] 2  Spec written: fields, tools, view, config, data, catalogue entry,
        and what it does not do
-[ ] 3  Reverse-DNS id, apiVersion (^1.3 with tools); manifest, descriptor,
-       fields.ts, tools.ts, tests, README, AGENTS.md; one registry line
-[ ] 4  Tests incl. domain rules; typecheck, schema check, catalogue check,
+[ ] 3  Reverse-DNS id, apiVersion (^1.3 with tools, ^1.7 to follow the reader's
+       language); manifest, descriptor, fields.ts, tools.ts, messages.ts,
+       tests, README, AGENTS.md; one registry line
+[ ] 3b Text: labels through pluginMessages, NO stored value translated,
+       dates/numbers/sorting from the host, no t() at module scope,
+       tool notes in English
+[ ] 4  Tests incl. domain rules and one asserting stored option values are
+       untouched by a label change; typecheck, schema check, catalogue check,
        build, bundle split, design system; example with "public": true;
        preview.png; click path incl. how the plugin gets switched on
 [ ] 5  Plugin README incl. tools, confidence and contribution call;

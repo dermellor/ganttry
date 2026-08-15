@@ -104,6 +104,7 @@ for a different part of the screen to set the same thing.
 | App mark | header, left | 1 | the entry into the instance |
 | „Einstellungen" | the header menu | 1 | done: the `#settings` route, reached from the menu at the trailing edge rather than from a button in the row. Offered on a `manage` role, or to anybody where no access control runs — gating it on a role nobody can hold hid the one page that says so |
 | „Abmelden" | the header menu | 1 | done: `/auth/logout` had existed in the auth gate from the start with nothing pointing at it. Offered only where a session exists, which only the gate can report |
+| Interface language | `#settings=account` | 1, per person | done: the reader's own setting, stored on their `app_users` row and falling back to the deployment's `TIMELINES_DEFAULT_LANGUAGE`. Level 1 because the scope is „this person, on this deployment" — the same deployment the other sections describe, so „scope equals storage" puts it on a row per person per instance rather than in a level of its own |
 | Access switch, domains, instance profile | env, shown in `#settings=instance` | 1 | done: origin and reason on every row |
 | „Plugins" panel | footer | 1 + 3 | the catalog belongs in the instance area; the per-timeline half belongs to level 3. The footer entry stays reachable from a timeline, because that is where „why is this view missing" gets asked |
 | Timeline switcher | header, left | 2 | done: search, grouped by origin, the open one marked; the trigger doubles as the statement of which timeline is open |
@@ -194,9 +195,15 @@ Not a layout, just the set of places the levels demand. One each.
 
   It is a menu rather than a button because level 3 needs a gear of its own, and
   two settings entries in one row told apart only by where they sit is not a
-  distinction anybody makes at a glance. The row is not the place for „Konto"
-  either: there is no account surface, and a heading over an empty one would be
+  distinction anybody makes at a glance. The row was not the place for „Konto"
+  either: there was no account surface, and a heading over an empty one would be
   inventing a level rather than naming it.
+
+  **A per-person setting is what made that surface non-empty**, which is exactly
+  the condition the sentence above set. The interface language is now
+  `#settings=account` — a section of the instance area, not an entry in this row,
+  because the scope is „this person, on this deployment" and the menu still holds
+  only navigation and actions. See „The account section" ([`settings.md`](settings.md)).
 
   **The trigger is always on screen, and the empty case says so in a row.** Hiding
   the trigger when neither action applies was the first shape of this and it reads
