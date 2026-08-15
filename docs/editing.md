@@ -893,9 +893,10 @@ arrows, and an item with no date yet lived in the list and nowhere else.
   ([`src/graphLayout.ts`](../src/graphLayout.ts)).
 
 **Bands can be named, and nodes can carry references.** Both are declared per
-timeline (`graph` in [`src/types.ts`](../src/types.ts)), and both name a *group*,
-because that is the vocabulary a timeline already has for „what kind of thing is
-this":
+timeline (`graph` in [`src/types.ts`](../src/types.ts)), set in
+`#timeline-settings=general` or through the `set_layout` agent tool, and both name a
+*group*, because that is the vocabulary a timeline already has for „what kind of thing
+is this":
 
 - `bandRootGroup` — items of that group become **band roots**. A root is one that
   no other item of the same group points at, so it is the top of its own chain; it
@@ -1467,7 +1468,8 @@ Creating a timeline belongs here too and is not here: there is no create route y
 ## The timeline's own settings
 
 What is true of the timeline as a whole — its name, its description, the dimension it
-opens with — is edited in its own area, `#timeline-settings=<section>`, reached from
+opens with, the order of its groups and the two settings the relation graph reads — is
+edited in its own area, `#timeline-settings=<section>`, reached from
 the gear beside the name ([`src/timelineSettings.ts`](../src/timelineSettings.ts)).
 It shares its frame and its section mechanics with the instance area (see „The second
 area" (docs/settings.md)); field definitions and per-timeline plugins become further
@@ -1489,6 +1491,29 @@ Three rules the form follows, each of them a trap avoided:
 - **An emptied name is a no-op, not a clear.** A timeline with no name shows as its
   id, so „" would replace a readable label with a slug, which is never what emptying
   the field meant.
+- **A stored value that matches no option is normalized, never shown blank.**
+  `"groupBy": "group"` says exactly what no key at all says — open on the group
+  dimension — and only the empty option carries it, so the select rendered blank on
+  every timeline that spelled the default out. Blank was the smaller half: the form
+  read that back as a change and cleared the key on the next save of any other
+  field. A `<select>` reporting its first option for a value it does not have is the
+  shape of this bug, and the graph settings below avoid it from the other end.
+
+**`graph` is diffed as a unit, and its two selects offer a group nothing declares.**
+Every path that writes the graph configuration replaces it whole rather than merging
+into it (the MCP tool says so as well), so changing one of the two controls sends the
+other's stored value back with it — sending only the changed half would clear the
+other one on every save. Clearing both sends `null` rather than `{}`, which would read
+as „configured, to nothing". The choices are the timeline's declared groups plus the
+**stored** value even when no group declares it: a `<select>` reports its first option
+when its value matches none, so a setting naming a group that was since renamed — or
+one a directory source derives from folder names without declaring — would show as
+„Keine" and then really be cleared by the next save of any other field.
+
+**A read-only source shows all five disabled rather than hiding them**, which is the
+general rule for anything the code reads (see „Every stored setting is reachable"
+([`information-architecture.md`](information-architecture.md))). What says so in words
+is the „Nur lesend" badge beside the name, once.
 
 **The name exists twice, and the open timeline's source wins.** `TimelineFile.name` is
 live and writable; `View.name` is what the build wrote into `config.json` when it

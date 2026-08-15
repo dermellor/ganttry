@@ -39,8 +39,9 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Conventions
 
-Six rules that hold across the whole codebase. Everything else is local to a
-subsystem and documented there.
+The rules that hold across the whole codebase. Everything else is local to a
+subsystem and documented there. (The count used to stand here and was wrong by
+one for two additions, which is why it is not a number any more.)
 
 - **Interface text is labels, headings and refusals. Nothing else.** No sublines
   under a field, no note beside a control, no card explaining what a section does,
@@ -55,6 +56,16 @@ subsystem and documented there.
   including what a plugin ships and which strings are values rather than labels,
   is in [`docs/settings.md`](docs/settings.md) and
   [`docs/plugin-authoring.md`](docs/plugin-authoring.md).
+- **A stored setting is reachable in the interface, editable or read-only.**
+  Anything the code reads off a timeline, a source or the instance gets a control
+  at its own level; where the source refuses writes, the control is shown disabled
+  rather than left out, because „you may not change this here" and „this does not
+  exist" must not look the same. Adding a field to `TimelineFile`, to a settings
+  declaration or to a repo's meta patch is therefore not finished until it can be
+  reached without a text editor. The failure this prevents, and the levels a
+  control can belong to, are in
+  [`docs/information-architecture.md`](docs/information-architecture.md) → „Every
+  stored setting is reachable".
 - **Comments explain *why*, not *what*.** Most non-obvious rules here carry the
   failure mode they prevent, because that is the part which cannot be recovered
   from reading the code. When you change such a rule, change its reasoning with it.
