@@ -36,5 +36,4 @@ export const sprintsDescriptor: PluginDescriptor = {
   fields: sprintsFields,
   derive: sprintsDerive,
   tools: sprintsTools,
-  load: () => import('./index'),
 };

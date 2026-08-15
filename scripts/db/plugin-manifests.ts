@@ -30,10 +30,18 @@ import type { TimelineRepo } from './repo.ts';
  * The manifests compiled into this build.
  *
  * An in-tree plugin has to be listed here as well as registered in
- * `src/pluginHost/registry.ts`: the client registry is not reachable from the write
- * path, and a plugin missing here has no manifest to enforce its declarations
- * against — so its rows and its metadata keys are refused on a deploy where the
- * install registry is empty, while the interface shows the plugin working.
+ * `src/pluginHost/registry.ts`. A plugin missing here has no manifest to enforce
+ * its declarations against — so its rows and its metadata keys are refused on a
+ * deploy where the install registry is empty, while the interface shows the plugin
+ * working.
+ *
+ * This used to say the client registry „is not reachable from the write path". It
+ * stopped being true the day the MCP server began reading plugin fields and
+ * derived values from it, and the sentence stayed — which is roughly how nobody
+ * noticed that the same import was dragging the design system into a serverless
+ * function until every deploy had been failing for a day. What holds the line now
+ * is `scripts/ci/check-server-bundle.mjs`, not this paragraph: the registry *is*
+ * reachable from the server, and what it may drag along is what is checked.
  */
 const BUILT_IN: PluginManifest[] = [productRoadmapManifest, sprintsManifest];
 

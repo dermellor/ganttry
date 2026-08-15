@@ -7,7 +7,7 @@
 // matrix itself (cellEditor.ts), which keeps two people editing different cells
 // of the same column from colliding.
 
-import { Button, ConflictError, el, Field, FormActions, TextArea, TextInput } from '../../pluginHost/api';
+import { Button, ConflictError, el, Field, FormActions, TextArea, TextInput } from '../../pluginHost/viewApi';
 import type { PricingTier } from './types';
 import { apiAddTier, apiUpdateTier, apiDeleteTier } from './api';
 import { applyRow, dropRow, dropRowsWhere } from './store';

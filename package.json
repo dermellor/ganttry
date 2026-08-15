@@ -34,6 +34,7 @@
     "openapi": "tsx scripts/schema/openapi.ts",
     "openapi:check": "tsx scripts/schema/openapi.ts --check",
     "ui-text:check": "node scripts/ci/check-ui-text.mjs",
+    "server-bundle:check": "node scripts/ci/check-server-bundle.mjs",
     "plugins:catalogue": "tsx scripts/plugins/catalogue.ts",
     "plugins:catalogue:check": "tsx scripts/plugins/catalogue.ts --check",
     "plugins:preview": "tsx scripts/plugins/preview.ts",

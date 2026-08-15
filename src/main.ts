@@ -10,6 +10,10 @@ import 'vis-timeline/styles/vis-timeline-graph2d.css';
 // components that use it (see src/design-system/index.ts).
 import './styles/timeline.css';
 import './styles/app.css';
+// The built-in plugins' view loaders. A side-effect import, and the only place the
+// browser entry says where a plugin's view lives — see ./pluginHost/builtInViews.ts
+// for why the descriptor must not.
+import './pluginHost/builtInViews';
 import type { BuiltConfig } from './types';
 import {
   onExternalUrlStateChange,

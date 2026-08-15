@@ -54,7 +54,7 @@ import {
   type HostApi,
   type PluginRow,
   type TimelineSnapshot,
-} from '../../pluginHost/api';
+} from '../../pluginHost/viewApi';
 import type { TimelineFileItem } from '../../types';
 import { MIN_CAPACITY, SPRINT_COLLECTIONS, sprintsManifest } from './manifest';
 import { dayOf, type SprintRaster } from './raster';

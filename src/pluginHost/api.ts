@@ -94,19 +94,6 @@ export { overlays, type Overlay, type OverlayRect } from './overlay';
 export { ITEM_STATUSES, DEFAULT_STATUS, normalizeStatus, statusOrDefault, type StatusKey } from '../status';
 
 /**
- * The markdown editor the item form uses.
- *
- * Here rather than in the design system, which is where it belongs and where it is
- * not yet: it carries its own stylesheet and two npm dependencies, so moving it is
- * a design-system change with its own playground entry, not a line in this file.
- * Re-exported now because the alternative was a plugin reaching into
- * `src/wysiwyg.ts` — and it costs nothing, since the item form already puts it in
- * the entry bundle. See „What is not in the design system yet"
- * (docs/design-system.md).
- */
-export { createMarkdownEditor, type MarkdownEditor } from '../wysiwyg';
-
-/**
  * What an artifact exports. A plugin implements this; the host calls it.
  *
  * `fields(file)` is optional and synchronous, because it runs on the item form's
@@ -185,4 +172,13 @@ export {
 // internal convention — see „Making it look like the app"
 // (docs/plugin-authoring.md) and
 // <https://github.com/zeitlines/zeitlines/issues/60>.
-export * from '../design-system';
+
+/**
+ * Where this plugin's view lives, for a plugin that ships **inside** this
+ * repository. Called from its own `view.ts`; see ./viewLoaders.ts for why it is
+ * not a field on the descriptor, and what broke when it was.
+ *
+ * A runtime-installed plugin does not use it: its artifact carries the view and
+ * the host loads it from a blob URL.
+ */
+export { attachView } from './viewLoaders';
