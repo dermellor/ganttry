@@ -94,9 +94,22 @@ export const EN = {
   'field.optional': 'optional',
 
   // ── Filter, grouping, presentation ───────────────────────────────────────
+  'view.grouping': 'Group by',
+  'view.filter': 'Filter',
+  'view.presentation': 'Presentation',
+  'view.filterValues': 'Filter values',
+  'view.areas': 'Areas',
+  'view.timeline': 'Timeline',
+  'view.list': 'List',
+  'view.graph': 'Graph',
+  'app.timelines': 'Timelines',
+  'app.online': 'Online',
+  'app.plugins': 'Plugins',
   'filter.all': 'All values',
   // The „Ohne …" bucket the core composes from a field's label. The label is the
   // user's own word for their field and is never translated — only the frame is.
+  'filter.count.one': '1 value',
+  'filter.count.other': '{count} values',
   'filter.emptyBucket': 'Without {field}',
   'group.default': 'Group (default)',
   'view.empty': 'No entries in this view.',

@@ -30,8 +30,18 @@ import { DEFAULT_LOCALE, type Locale } from './locale.ts';
 import { EN } from './messages.en.ts';
 import { DE } from './messages.de.ts';
 
-/** Every message the interface has. Derived, never hand-listed. */
-export type MessageKey = keyof typeof EN;
+/**
+ * Every message the interface has. Derived, never hand-listed.
+ *
+ * A plural is two entries (`item.count.one`, `item.count.other`) and is *called*
+ * by its base (`t('item.count', { count })`), so the base has to be a valid key
+ * even though no entry carries it. Derived from the `.one` half rather than
+ * declared, which keeps „add a plural" a two-line change in the catalogue and
+ * nothing here.
+ */
+type PluralBase<K> = K extends `${infer B}.one` ? B : never;
+
+export type MessageKey = keyof typeof EN | PluralBase<keyof typeof EN>;
 
 export const CATALOGUES: Record<Locale, Record<string, string>> = { en: EN, de: DE };
 

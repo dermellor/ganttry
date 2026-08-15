@@ -20,6 +20,7 @@ import { filterDimensions, filterValueOptions } from './grouping';
 import { applyFilter } from './render';
 import { filterValueCount, pruneFilters, withFilterValues } from './filterRule';
 
+import { t } from './i18n';
 // Value options are drawn from the *unfiltered* build so narrowing the selection
 // never shrinks the list of choices.
 function currentEntries(): TimelineItem[] {
@@ -38,7 +39,7 @@ function updateToggleLabel(): void {
   // in the panel there is no single total to be „of". How the values are spread
   // across dimensions is what the panel itself shows.
   els.filterToggle.textContent =
-    values === 0 ? 'Alle Werte' : values === 1 ? '1 Wert' : `${values} Werte`;
+    values === 0 ? t('filter.all') : t('filter.count', { count: values });
   // A narrowed filter is worth seeing without opening the panel, since it explains
   // a count in the status line that would otherwise look like missing data.
   els.filterToggle.dataset.active = values > 0 ? 'true' : 'false';
