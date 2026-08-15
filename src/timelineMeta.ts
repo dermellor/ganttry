@@ -11,7 +11,14 @@
 // picker stays with the built name, since nothing has loaded it.
 
 import type { CustomFieldDef, TimelineFile, View } from './types';
+import { GROUP_DIM } from './listGrouping';
 import { t } from './i18n';
+
+/**
+ * What a PATCH body may carry. `graph` is an object, which is why this is not the
+ * `Record<string, string | null>` it used to be.
+ */
+export type TimelineMetaBody = Record<string, unknown>;
 
 /** The name to show for the open timeline: the source's own, else the built one. */
 export function timelineName(view: View | null, file: TimelineFile | null): string {
@@ -19,12 +26,30 @@ export function timelineName(view: View | null, file: TimelineFile | null): stri
   return live || view?.name || '';
 }
 
-/** What the settings form edits. */
+/**
+ * What the settings form edits.
+ *
+ * Every field is a string, empty meaning „not set", including the two that are
+ * stored inside `graph`. A `<select>` has no other empty state, and flattening them
+ * here keeps the diff below one comparison per control rather than a nested one.
+ */
 export type TimelineMetaDraft = {
   name: string;
   description: string;
   groupBy: string;
+  /** '' = the alphabetical default; see src/groupOrder.ts. */
+  groupOrder: string;
+  /** `graph.bandRootGroup`: the group whose items become band headings. */
+  bandRootGroup: string;
+  /** `graph.referenceGroup`: the group listed on the nodes it references. */
+  referenceGroup: string;
 };
+
+/** The default dimension, spelled out or left empty, as the form's empty option. */
+function normalizeGroupBy(stored: string | undefined): string {
+  const value = (stored ?? '').trim();
+  return value === GROUP_DIM ? '' : value;
+}
 
 /** The current values, as the form should show them. */
 export function timelineMetaDraft(view: View | null, file: TimelineFile | null): TimelineMetaDraft {
@@ -34,7 +59,15 @@ export function timelineMetaDraft(view: View | null, file: TimelineFile | null):
     // The stored default, not the dimension in force: what this field sets is what
     // the timeline opens with, and `state.groupBy` may be a per-person choice made
     // since (see „Where the display state lives" in docs/editing.md).
-    groupBy: file?.groupBy ?? '',
+    //
+    // `group` and `` are the same statement — open on the group dimension — and only
+    // the empty one is an option, so a file saying `"groupBy": "group"` matched none
+    // and the select rendered blank. Worse than blank: the form would then read ``
+    // back as a change and clear the key on the next save of any other field.
+    groupBy: normalizeGroupBy(file?.groupBy),
+    groupOrder: file?.groupOrder ?? '',
+    bandRootGroup: file?.graph?.bandRootGroup ?? '',
+    referenceGroup: file?.graph?.referenceGroup ?? '',
   };
 }
 
@@ -53,8 +86,8 @@ export function timelineMetaDraft(view: View | null, file: TimelineFile | null):
 export function timelineMetaPatch(
   current: TimelineMetaDraft,
   next: TimelineMetaDraft,
-): Record<string, string | null> | null {
-  const patch: Record<string, string | null> = {};
+): TimelineMetaBody | null {
+  const patch: TimelineMetaBody = {};
 
   const name = next.name.trim();
   // The name is the one field with no empty state: a timeline with no name shows as
@@ -69,6 +102,28 @@ export function timelineMetaPatch(
 
   const groupBy = next.groupBy.trim();
   if (groupBy !== current.groupBy.trim()) patch.groupBy = groupBy || null;
+
+  const groupOrder = next.groupOrder.trim();
+  if (groupOrder !== current.groupOrder.trim()) patch.groupOrder = groupOrder || null;
+
+  // `graph` is replaced as a unit rather than merged into, on every path that writes
+  // it (the MCP tool says so too). Merging would need a rule for a key the caller
+  // may never have read, and „this is the graph configuration" is a small enough
+  // statement to make whole. So both controls are diffed together, and one changed
+  // control still sends the other's stored value back.
+  const bandRootGroup = next.bandRootGroup.trim();
+  const referenceGroup = next.referenceGroup.trim();
+  if (
+    bandRootGroup !== current.bandRootGroup.trim() ||
+    referenceGroup !== current.referenceGroup.trim()
+  ) {
+    const graph: Record<string, string> = {};
+    if (bandRootGroup) graph.bandRootGroup = bandRootGroup;
+    if (referenceGroup) graph.referenceGroup = referenceGroup;
+    // An empty object would be a `graph: {}` in the file and a `{}` in the column,
+    // which reads as „configured, to nothing". Cleared is cleared.
+    patch.graph = Object.keys(graph).length ? graph : null;
+  }
 
   return Object.keys(patch).length ? patch : null;
 }
@@ -90,6 +145,50 @@ export function groupByChoices(file: TimelineFile | null): { value: string; labe
   for (const f of file?.customFields ?? []) {
     out.push({ value: `cf:${f.key}`, label: fieldLabel(f) });
   }
+  return out;
+}
+
+/** The two ordering rules, the alphabetical one marked as the default it is. */
+export function groupOrderChoices(): { value: string; label: string }[] {
+  return [
+    { value: '', label: t('groupOrder.alpha') },
+    { value: 'declared', label: t('groupOrder.declared') },
+  ];
+}
+
+/**
+ * The groups a graph setting can name, for a `<select>` whose empty value clears it.
+ *
+ * **Declared and discovered both, in that order.** A timeline does not have to
+ * declare its groups — the shipped examples name theirs on the items only, and a
+ * directory source derives them from folder names — so offering `groups[]` alone
+ * left the two controls with nothing but „Keine" on exactly the timelines the graph
+ * was built for. Declared first because that order is the author's statement (see
+ * `orderGroups`); the rest follow in the order the build found them.
+ *
+ * `ungroupedId` is left out for the reason `orderGroups` sorts it last: it is the
+ * absence of a value rather than a value, and no band should be headed by it.
+ *
+ * `stored` is offered even when nothing declares or contains it, and that is the
+ * point rather than defensiveness: a `<select>` silently reports its first option
+ * when its value matches none, so a setting naming a group that was since renamed —
+ * or emptied by a filter-shaped mistake — would show as „Keine" and then really be
+ * cleared by the next save of any other field.
+ */
+export function graphGroupChoices(
+  file: TimelineFile | null,
+  discovered: readonly { id: string; label?: string }[],
+  stored: string,
+  ungroupedId: string,
+): { value: string; label: string }[] {
+  const out = [{ value: '', label: t('group.none') }];
+  const add = (id: string, label: string) => {
+    if (id === ungroupedId || out.some((c) => c.value === id)) return;
+    out.push({ value: id, label: label || id });
+  };
+  for (const g of file?.groups ?? []) add(g.id, g.content);
+  for (const g of discovered) add(g.id, g.label ?? '');
+  if (stored) add(stored, stored);
   return out;
 }
 

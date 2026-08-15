@@ -167,6 +167,9 @@ export const DE: Record<keyof typeof EN, string> = {
   'filter.count.other': '{count} Werte',
   'filter.emptyBucket': 'Ohne {field}',
   'group.default': 'Gruppe (Standard)',
+  'group.none': 'Keine',
+  'groupOrder.alpha': 'Alphabetisch (Standard)',
+  'groupOrder.declared': 'Wie deklariert',
   'view.empty': 'Keine Einträge in dieser View.',
   'view.empty.filtered': 'Keine Einträge, die die Filter passieren lassen.',
   'dimension.group': 'Gruppe',
@@ -205,6 +208,10 @@ export const DE: Record<keyof typeof EN, string> = {
 
   // ── The timeline's own settings ──────────────────────────────────────────
   'timeline.settings.grouping': 'Gruppierung beim Öffnen',
+  'timeline.settings.groupOrder': 'Reihenfolge der Gruppen',
+  'timeline.settings.graph': 'Graph',
+  'timeline.settings.graph.bandRoots': 'Gruppe für Bandüberschriften',
+  'timeline.settings.graph.references': 'Gruppe auf den Knoten',
   'timeline.settings.export': 'Als HTML herunterladen',
   'timeline.settings.general': 'Allgemein',
   'timeline.settings.fields': 'Felder',

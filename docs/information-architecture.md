@@ -113,6 +113,7 @@ for a different part of the screen to set the same thing.
 | Custom field definitions | the timeline settings route | 3 | done: `#timeline-settings=fields` |
 | Enabled plugins and their config | a `timeline_plugins` row | 3 | timeline settings; stays an INSERT |
 | Name, description, default grouping | the timeline settings route | 3 | done: `#timeline-settings=general`, written through `PATCH /api/source/<id>` |
+| Group order, the graph's two group settings | the timeline settings route | 3 | done: the same section and the same save, since all five are one PATCH. They were read by the client and settable only by hand-editing a file for two releases — see „Every stored setting is reachable" below |
 | Phases as a set | only the ribbon | 3 | the set is structure of the timeline; one phase is level 5 |
 | Presence avatars | header, trailing edge | 3 | they belong to the open timeline and sit with the instance controls anyway: exactly one timeline is ever open, so no position in this bar can name the wrong one, and the trailing edge is where every other tool puts the people on a document |
 | Darstellung switch (Timeline / Liste / Graph) | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
@@ -175,6 +176,19 @@ control goes, so the argument is had once.
   wrong container for a count somebody else decides. What replaced it — one labelled
   control per plugin — moves the limit rather than removing it, which is exactly why
   the rule is about *stating* the behaviour rather than about a particular form.
+- **Every stored setting is reachable, editable or read-only.** A value the code
+  reads is a value the interface offers, at its own level, on the surface that
+  level owns. Where the source refuses writes, the control is shown **disabled**
+  rather than left out. Both halves were found the hard way. Leaving it out on a
+  read-only source makes „you may not change this here" indistinguishable from
+  „this does not exist", and the reader goes hunting for a spelling mistake in a
+  file they may not be allowed to edit anyway. Leaving it out altogether is
+  <https://github.com/zeitlines/zeitlines/issues/137>: `groupOrder` and the two
+  `graph` keys were read by the client, documented, and settable only by
+  hand-editing JSON or by an agent, through two releases in which nobody using the
+  app could have known they existed. A field that is read announces itself as
+  supported, so the gap between „stored" and „offered" is the product claiming
+  something it does not do.
 - **Every level you can link to is in the address.** Levels 3 to 5 are in the hash
   and level 1 has its route; level 2 has no address because it has no surface yet.
   A level without an address cannot be handed to somebody else, which is what

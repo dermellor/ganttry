@@ -204,6 +204,10 @@ export const EN = {
   'filter.count.other': '{count} values',
   'filter.emptyBucket': 'Without {field}',
   'group.default': 'Group (default)',
+  // „No group is named here", the empty option of a setting that names one.
+  'group.none': 'None',
+  'groupOrder.alpha': 'Alphabetical (default)',
+  'groupOrder.declared': 'As declared',
   'view.empty': 'No entries in this view.',
   'view.empty.filtered': 'No entries pass the filter.',
   // The dimensions a list can be grouped or filtered by. The dimension *keys*
@@ -245,6 +249,12 @@ export const EN = {
 
   // ── The timeline's own settings ──────────────────────────────────────────
   'timeline.settings.grouping': 'Grouping on open',
+  'timeline.settings.groupOrder': 'Group order',
+  // A heading over the two settings the relation graph reads, so each label can
+  // name its group without repeating which presentation it steers.
+  'timeline.settings.graph': 'Graph',
+  'timeline.settings.graph.bandRoots': 'Group supplying band headings',
+  'timeline.settings.graph.references': 'Group listed on the nodes',
   'timeline.settings.export': 'Download as HTML',
   'timeline.settings.general': 'General',
   'timeline.settings.fields': 'Fields',
