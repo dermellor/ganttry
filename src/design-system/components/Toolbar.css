@@ -57,6 +57,11 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--fg-muted);
+  /* A caption is one line. It held together by accident while every caption was a
+     single word („Gruppieren", „Filter"); the moment one of them became two
+     („Group by"), it broke over two lines and pushed the control it labels out of
+     the row's baseline. A caption that needs wrapping is too long to be a caption. */
+  white-space: nowrap;
 }
 
 .ds-ToolbarControl[hidden] {
