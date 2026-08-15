@@ -21,6 +21,7 @@ import { pluginViewMode, type PluginViewMode } from './viewMode';
 import { validateManifest, type ManifestView, type PluginManifest, type ToolDecl } from './manifest';
 import type { ToolHandler } from './tools';
 import { manifestText } from './messages';
+import { viewLoader } from './viewLoaders';
 import { productRoadmapDescriptor } from '../plugins/product-roadmap/descriptor';
 import { sprintsDescriptor } from '../plugins/sprints/descriptor';
 import type { HostApi } from './hostApi';
@@ -384,10 +385,11 @@ export async function ensurePluginLoaded(desc: PluginDescriptor): Promise<Plugin
   // A plugin with no views has no module. Reaching here for one means a view mode
   // resolved to a plugin that declares none, which is a bug in the caller rather
   // than something to paper over with an empty module.
-  if (!desc.load) {
+  const load = desc.load ?? viewLoader(desc.manifest.id);
+  if (!load) {
     throw new Error(`plugin "${desc.manifest.id}" declares no view module to load`);
   }
-  const mod = await desc.load();
+  const mod = await load();
   loaded.set(desc.manifest.id, mod);
   return mod;
 }

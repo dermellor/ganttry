@@ -468,6 +468,7 @@ npm run schema:check # verify they match the types + the examples validate (CI)
 npm run openapi      # regenerate openapi.yaml
 npm run openapi:check # verify the committed spec matches routes + types (CI)
 npm run ui-text:check # interface text is labels, headings and refusals (CI)
+npm run server-bundle:check # the MCP function carries no interface (CI)
 npm run plugins:catalogue       # regenerate PLUGINS.md from the plugin manifests
 npm run plugins:catalogue:check # verify it matches, and that every plugin is publishable (CI)
 npm run plugins:preview -- <folder>  # render a plugin's preview.png (needs a running app + Chrome)
@@ -624,6 +625,28 @@ a marker goes stale. The markers are read out of each plugin's own stylesheet
 rather than listed in the script, so a new plugin is covered as soon as it ships
 one and a renamed class updates the check by itself. Runnable locally after
 `npm run build`.
+
+**Server-bundle check**
+([`scripts/ci/check-server-bundle.mjs`](scripts/ci/check-server-bundle.mjs),
+`npm run server-bundle:check`) is the other direction of the same promise: the
+**server** must not carry the interface. A Netlify Function is bundled by esbuild,
+which has no loader for a `.css` import, so one server-side module reaching one
+takes **every deploy** down — and does it quietly, because the site keeps serving
+the last good deploy, the smoke job asks that deploy whether it answers and it
+does, and CI is green because `npm test` and `vite build` never run the function
+bundler. A day of merges sat unshipped before anyone looked.
+
+The cause was two ordinary lines: the MCP server started reading plugin fields and
+derived values from `src/pluginHost/registry.ts` (the *client* registry), each
+descriptor carried `load: () => import('./index')`, and `pluginHost/api.ts`
+re-exported `export * from '../design-system'`. The function bundle grew to 118
+modules, 50 of them design-system and 27 of them stylesheets. Two rules came out
+of it and the check holds both: **`pluginHost/api.ts` is DOM-free** and the design
+system lives behind `pluginHost/viewApi.ts`, which only a module that draws may
+import; and a built-in plugin's **view loader is registered by the client**
+(`attachView`, `src/pluginHost/viewLoaders.ts`) instead of sitting on its
+descriptor. Verified by putting the loader back and watching it fail exactly as
+the deploy did.
 
 **Plugin-isolation check**
 ([`scripts/ci/check-plugin-isolation.mjs`](scripts/ci/check-plugin-isolation.mjs))

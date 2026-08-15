@@ -48,5 +48,4 @@ export const productRoadmapDescriptor: PluginDescriptor = {
   applies: (file) => hasPlugin(file, PRODUCT_ROADMAP_PLUGIN),
 
   fields: productRoadmapFields,
-  load: () => import('./index'),
 };

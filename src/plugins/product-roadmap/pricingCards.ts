@@ -5,8 +5,8 @@
 // "← Alles aus <prev>" row (arrow + pill). Read-only; highlights are the curated
 // layer (pricing.highlights). Class names + SVGs match the rendered original.
 
-import { escapeHtml } from '../../pluginHost/api';
-import { html, Separator } from '../../pluginHost/api';
+import { escapeHtml } from '../../pluginHost/viewApi';
+import { html, Separator } from '../../pluginHost/viewApi';
 import { resolveHighlight, resolveHighlightLabel, versionLabel, type ResolvedHighlight } from './pricing';
 import type { TimelineFile } from '../../types';
 import type { PricingHighlight, PricingTier } from './types';

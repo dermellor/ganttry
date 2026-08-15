@@ -51,6 +51,10 @@ const ROOT = fileURLToPath(new URL('../..', import.meta.url));
  */
 const IMPORT_ALLOWLIST = new Map([
   ['src/pluginHost/registry.ts', 'the client registry; it imports descriptors it does not understand'],
+  [
+    'src/pluginHost/builtInViews.ts',
+    'the client registry of view loaders — the one thing a registry of third-party plugins cannot hold, a static import path',
+  ],
   ['scripts/db/plugin-manifests.ts', 'the server-side registry of built-in manifests'],
   ['scripts/db/legacy-pricing.ts', 'dated: reads the pre-#17 tables for the migration, deleted with them'],
   ['scripts/db/migrate-pricing-to-plugin-data.ts', 'dated: the migration itself'],
@@ -197,7 +201,13 @@ function checkFile(path) {
 
 const PLUGIN_IMPORT_ALLOWED = [
   // The contract. Everything a plugin gets from the host comes through here.
-  /^\.{1,2}\/(?:\.\.\/)*pluginHost\/api(?:\.ts)?$/,
+  //
+  // Two files, one seam: `api.ts` is the DOM-free half and is safe to reach from a
+  // server, `viewApi.ts` adds the design system and the markdown editor for the
+  // modules that draw. The split is not cosmetic — while it was one file, a
+  // plugin's fields dragged 50 design-system modules and 27 stylesheets into the
+  // MCP function's bundle and it stopped building. See src/pluginHost/viewApi.ts.
+  /^\.{1,2}\/(?:\.\.\/)*pluginHost\/(?:api|viewApi)(?:\.ts)?$/,
   // The shared data shapes. Types only in practice, and erased at build time.
   /^\.{1,2}\/(?:\.\.\/)*types(?:\.ts)?$/,
   // Anything inside the plugin's own folder, including its subdirectories.

@@ -4,7 +4,7 @@
 // it without importing each other. The click wiring lives in pricingMatrix
 // (wireWork), matching on the `.pm-work-item` class this markup emits.
 
-import { el, escapeHtml, htmlAll, MenuItem } from '../../pluginHost/api';
+import { el, escapeHtml, htmlAll, MenuItem } from '../../pluginHost/viewApi';
 import { aggregateWorkState } from './pricing';
 import { statusOrDefault, type StatusKey } from '../../pluginHost/api';
 import type { TimelineFileItem } from '../../types';

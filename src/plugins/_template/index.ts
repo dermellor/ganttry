@@ -11,7 +11,7 @@
 // the plugin's CSS and anything else heavy. `fields.ts`, `tools.ts` and the
 // descriptor stay data-only, or the split is lost.
 
-import type { HostApi } from '../../pluginHost/api';
+import type { HostApi } from '../../pluginHost/viewApi';
 
 /**
  * Render the plugin's view into the container the host created for it.

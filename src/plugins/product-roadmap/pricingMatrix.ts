@@ -10,8 +10,8 @@
 // rows can be added/reordered in place. Each writes only the row or cell it edits.
 // Highlights and the version list are still authored via MCP.
 
-import { escapeHtml } from '../../pluginHost/api';
-import { Button, html, IconButton, SegmentedControl, Select, ToolbarControl } from '../../pluginHost/api';
+import { escapeHtml } from '../../pluginHost/viewApi';
+import { Button, html, IconButton, SegmentedControl, Select, ToolbarControl } from '../../pluginHost/viewApi';
 import {
   groupFeatures,
   featureVisibleForVersion,
@@ -40,7 +40,7 @@ import {
 import {
   type PricingFeature,
 } from './types';
-import { hasPlugin } from '../../pluginHost/api';
+import { hasPlugin } from '../../pluginHost/viewApi';
 import { PRODUCT_ROADMAP_PLUGIN } from './plugin';
 import { currentPricing, hasPricingModel } from './compose';
 
