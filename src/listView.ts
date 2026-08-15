@@ -37,6 +37,7 @@ import { parentGroupIds } from './groupHierarchy';
 import { treeOrder } from './itemHierarchy';
 import { ownerCell } from './users';
 import { itemTypeLabel } from './itemType';
+import { t } from './i18n';
 
 
 // "2026-01-15" / ISO → "15.01.2026". Falls back to the raw slice if it can't
@@ -86,7 +87,7 @@ function row(
           hasTree
             ? TreeToggle({
                 expanded: hasChildren ? !collapsed : undefined,
-                label: collapsed ? 'Untereinträge einblenden' : 'Untereinträge ausblenden',
+                label: collapsed ? t('item.children.show') : t('item.children.hide'),
                 attrs: hasChildren ? { 'data-collapse': item.id } : undefined,
               })
             : null,
@@ -174,7 +175,7 @@ export function renderListView(): void {
             action:
               showAdd && !s.empty && !parents.has(s.id)
                 ? Button({
-                    label: '+ Eintrag',
+                    label: t('item.create'),
                     variant: 'outline',
                     size: 'sm',
                     reveal: true,

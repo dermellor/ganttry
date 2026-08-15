@@ -84,6 +84,7 @@ import {
 import { rebuildAndApply } from './render';
 import { focusDetailTitle, hideDetail, setDetailTitle, setDetailTitleText } from './detailPanel';
 
+import { t } from './i18n';
 // Build the group <select> options. Parent groups (those with nestedGroups) are
 // containers only, so they render as a non-selectable <optgroup> heading and
 // only their leaf children appear as options — an item can never be assigned to
@@ -272,7 +273,7 @@ const ICON_SPEC: PickerSpec = {
   title: 'Icon',
   layout: 'grid',
   options: [
-    { value: '', label: 'kein Icon', mark: () => el('span', {}, '—') },
+    { value: '', label: t('form.noIcon'), mark: () => el('span', {}, '—') },
     ...TIMELINE_ICONS.map(({ key, label }) => ({
       value: key,
       label,
@@ -609,7 +610,7 @@ export function showItemForm(
       chipField({
         label: 'Owner',
         inputId: 'f-owner-search',
-        placeholder: 'Person suchen…',
+        placeholder: t('form.owner.search'),
         chipRole: 'owner-chip',
         listRole: 'owner-list',
         alignEnd: true,
@@ -626,7 +627,7 @@ export function showItemForm(
       chipField({
         label: 'Tags',
         inputId: 'f-tags',
-        placeholder: 'hinzufügen…',
+        placeholder: t('form.add'),
         chipRole: 'tags-chips',
         listRole: 'tags-list',
         full: true,
@@ -671,7 +672,7 @@ export function showItemForm(
           id: 'f-duration',
           name: 'duration',
           value: durationValue,
-          placeholder: 'nur ohne End-Datum',
+          placeholder: t('form.milestoneOnly'),
         }),
       }),
       FieldError({ hidden: true, attrs: { 'data-role': 'extent-error' } }),
@@ -679,9 +680,9 @@ export function showItemForm(
 
     panel('rel', [
       chipField({
-        label: 'Übergeordnet',
+        label: t('item.parent'),
         inputId: 'f-parent',
-        placeholder: 'Eintrag suchen…',
+        placeholder: t('item.search'),
         chipRole: 'parent-chip',
         listRole: 'parent-list',
         full: true,
@@ -689,7 +690,7 @@ export function showItemForm(
       // Read-only: a child is linked from its own form, so this field shows the
       // subtree rather than editing it. Hidden until there is one.
       Field({
-        label: 'Untereinträge',
+        label: t('item.children'),
         full: true,
         hidden: true,
         attrs: { 'data-role': 'children-field' },
@@ -701,7 +702,7 @@ export function showItemForm(
       chipField({
         label: 'Depends on',
         inputId: 'f-deps',
-        placeholder: 'Eintrag suchen…',
+        placeholder: t('item.search'),
         chipRole: 'deps-chips',
         listRole: 'deps-list',
         full: true,
@@ -709,7 +710,7 @@ export function showItemForm(
       chipField({
         label: 'JIRA',
         inputId: 'f-jira',
-        placeholder: 'Ticket suchen oder Key eingeben (z. B. PROJ-123)…',
+        placeholder: t('form.jira.search'),
         chipRole: 'jira-chips',
         listRole: 'jira-list',
         full: true,
@@ -718,7 +719,7 @@ export function showItemForm(
 
     FormActions({
       centered: true,
-      children: Button({ label: 'Löschen', variant: 'danger', attrs: { 'data-action': 'delete' } }),
+      children: Button({ label: t('form.delete'), variant: 'danger', attrs: { 'data-action': 'delete' } }),
     }),
     auditBlock(item),
   ]);
@@ -904,7 +905,7 @@ function auditEntries(item: TimelineFileItem): DescriptionListEntry[] {
     auditRow('Aktualisiert', item.updatedBy, item.updatedAt, item.version),
   ].filter((row): row is DescriptionListEntry => row != null);
   // Nothing known yet (e.g. a freshly added item before its first save round-trip).
-  return [...entries, ...(rows.length ? rows : [{ term: 'Metadaten', value: 'noch nicht gespeichert' }])];
+  return [...entries, ...(rows.length ? rows : [{ term: 'Metadaten', value: t('item.unsaved') }])];
 }
 
 function auditBlock(item: TimelineFileItem): HTMLElement | null {
@@ -1461,9 +1462,9 @@ function wireOwnerPicker(form: HTMLFormElement): void {
       const { status } = directoryState();
       const msg =
         status === 'unavailable'
-          ? 'Benutzerverzeichnis nicht erreichbar'
+          ? t('form.owner.unreachable')
           : status === 'empty'
-            ? 'Noch keine Benutzer erfasst'
+            ? t('form.owner.empty')
             : 'Kein Treffer';
       list.replaceChildren(SuggestEmpty({ text: msg }));
       list.hidden = false;
@@ -1905,7 +1906,7 @@ export function applyItemForm(id: string, form: HTMLFormElement): void {
     /* item may be filtered out of the current view */
   }
   showExtentError(form, extentReversed ? describeReversedExtent(startVal, endVal) : null);
-  if (metaError) setStatus('Metadata JSON ungültig — Änderung nicht übernommen');
+  if (metaError) setStatus(t('refusal.metadata.invalid'));
 }
 
 /**

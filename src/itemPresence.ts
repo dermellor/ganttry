@@ -24,6 +24,7 @@ import { Avatar } from './design-system';
 import { realIdOf } from './grouping';
 import { itemPresenceTreatment } from './itemPresenceTreatment';
 import { state } from './state';
+import { t } from './i18n';
 
 // Real item id → the other users currently on it (never ourselves).
 let marks = new Map<string, PresenceEntry[]>();
@@ -161,7 +162,7 @@ function avatars(users: PresenceEntry[]): HTMLElement[] {
       className: 'presence-mark',
       // „ausgewählt" rather than „offen": the mark follows the timeline
       // selection, which outlives closing the detail panel.
-      title: `${labelFor(u)} — ${u.editing ? 'editiert gerade' : 'hat diesen Eintrag ausgewählt'}`,
+      title: `${labelFor(u)} — ${u.editing ? 'editiert gerade' : t('item.selectedBy')}`,
       attrs: u.editing ? { 'data-editing': '' } : undefined,
     }),
   );

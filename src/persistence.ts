@@ -16,6 +16,7 @@ import { clearItemPresence, setItemPresence } from './itemPresence';
 import { state, els, setStatus, PERSIST_THROTTLE_MS, isAnyFormOpen } from './state';
 import { refreshActiveSourceInPlace, renderTimeline } from './render';
 import { applyItemForm, refreshItemAudit } from './itemForm';
+import { t } from './i18n';
 
 export function schedulePersist(): void {
   if (state.saveTimer) clearTimeout(state.saveTimer);
@@ -206,7 +207,7 @@ export async function persist(): Promise<void> {
   } catch (err) {
     if (err instanceof ConflictError) {
       // Someone edited the same item concurrently — reload authoritative state.
-      setStatus('Konflikt: extern geändert, lade neu…');
+      setStatus(t('sync.conflict'));
       state.persisting = false;
       state.persistAgain = false;
       if (state.activeView) await renderTimeline(state.activeView);
@@ -321,7 +322,7 @@ export function setupRealtime(): void {
     }
     // Don't clobber a form the user is editing — just flag it.
     if (change.table === 'timeline_items' && change.id === state.activeFormItemId) {
-      setStatus('Dieser Eintrag wurde extern geändert — beim Speichern wird neu geladen.');
+      setStatus(t('refusal.conflict.item'));
       return;
     }
     // Pricing child-table changes (features/tiers/values/highlights) re-read the

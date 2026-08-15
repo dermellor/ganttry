@@ -44,26 +44,40 @@ test('every problem is reported, not just the first', () => {
 });
 
 test('a duplicate key names the field it collides with', () => {
-  const problems = validateFieldDefs([def(), def({ label: 'Zweites' })]);
+  // The locale is explicit here and in the three below. These tests pin the
+  // *rule* — which definition is refused and which field it names — and the
+  // wording is only how that is observed, so asking for one language keeps them
+  // from breaking the day the product default changes.
+  const problems = validateFieldDefs([def(), def({ label: 'Zweites' })], [], 'de');
   assert.equal(problems.length, 1);
   assert.equal(problems[0].index, 1);
   assert.match(problems[0].message, /schon vergeben \(Feld 1\)/);
 });
 
+test('the same refusal answers in the language it was asked in', () => {
+  // The half the four below cannot show: one rule, two languages, and the field
+  // number carried through the placeholder rather than concatenated around it.
+  const de = validateFieldDefs([def(), def({ label: 'Zweites' })], [], 'de');
+  const en = validateFieldDefs([def(), def({ label: 'Zweites' })], [], 'en');
+  assert.match(de[0].message, /schon vergeben \(Feld 1\)/);
+  assert.match(en[0].message, /already taken \(field 1\)/);
+  assert.equal(de[0].index, en[0].index);
+});
+
 test('a key with its own control in the form is refused', () => {
-  const problems = validateFieldDefs([def({ key: 'owner', type: 'text', options: undefined })]);
+  const problems = validateFieldDefs([def({ key: 'owner', type: 'text', options: undefined })], [], 'de');
   assert.match(problems[0].message, /eigenes Feld/);
 });
 
 test('a key a plugin contributes is refused rather than silently ignored', () => {
   // mergeFieldDefs lets the contributed definition win, so a stored one on the same
   // key would never appear — an edit that looks like it did not take.
-  const problems = validateFieldDefs([def({ key: 'version' })], ['version']);
+  const problems = validateFieldDefs([def({ key: 'version' })], ['version'], 'de');
   assert.match(problems[0].message, /von einem Plugin/);
 });
 
 test('a choice without values cannot choose', () => {
-  const problems = validateFieldDefs([def({ options: [] })]);
+  const problems = validateFieldDefs([def({ options: [] })], [], 'de');
   assert.match(problems[0].message, /ohne Werte/);
   // A text field needs none.
   assert.deepEqual(validateFieldDefs([def({ type: 'text', options: [] })]), []);

@@ -178,6 +178,13 @@ export const DE: Record<keyof typeof EN, string> = {
   'sync.conflict': 'Konflikt: extern geändert, lade neu…',
 
   // ── Refusals and results ─────────────────────────────────────────────────
+  'refusal.field.keyMissing': 'Ohne Schlüssel kann das Feld nichts speichern.',
+  'refusal.field.keyShape': 'Der Schlüssel darf nur Buchstaben, Ziffern, „-" und „_" enthalten und muss mit einem Buchstaben beginnen.',
+  'refusal.field.keyReserved': '„{key}" hat schon ein eigenes Feld im Formular.',
+  'refusal.field.keyFromPlugin': '„{key}" kommt von einem Plugin. Ein gespeichertes Feld darauf würde nie erscheinen.',
+  'refusal.field.keyTaken': '„{key}" ist schon vergeben (Feld {index}).',
+  'refusal.field.labelMissing': 'Ohne Bezeichnung weiß niemand, was das Feld meint.',
+  'refusal.field.optionsMissing': 'Eine Auswahl ohne Werte kann nichts auswählen.',
   'refusal.settings.unreadable': 'Diese Laufzeit kann ihre eigene Konfiguration nicht lesen.',
   'refusal.forbidden': 'Dafür fehlen dir die Rechte.',
   'refusal.accessControlOff':

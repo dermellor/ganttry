@@ -57,6 +57,7 @@ import {
   ToolbarGroup,
   ViewSection,
 } from './design-system';
+import { t } from './i18n';
 
 /** The nodes the app wires behaviour to. `state.ts` re-exports this as `els`. */
 export type AppShellElements = {
@@ -257,7 +258,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   });
   const switcherSearch = TextInput({
     id: 'switcher-search',
-    placeholder: 'Suchen…',
+    placeholder: t('app.search'),
     bare: true,
     attrs: { autocomplete: 'off', role: 'combobox', 'aria-controls': 'switcher-list', 'aria-expanded': 'true' },
   });
@@ -323,7 +324,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     // `--ui-icon-*` is for — and being the only glyph outside icons.css is how this
     // one stayed a sun through several passes over the header.
     icon: Icon({ name: 'gear', chrome: true, size: 'md', standalone: true }),
-    ariaLabel: 'Einstellungen dieser Timeline',
+    ariaLabel: t('app.settings.timeline'),
     boxSize: 'md',
     attrs: { id: 'tl-settings-btn', hidden: true },
   });
@@ -369,7 +370,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   });
   const appMenu = Menu({
     hidden: true,
-    ariaLabel: 'Menü',
+    ariaLabel: t('app.menu'),
     alignEnd: true,
     minWidth: 180,
     attrs: { id: 'app-menu' },
@@ -377,7 +378,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   });
   const appMenuBtn = IconButton({
     icon: Icon({ name: 'menu', chrome: true, size: 'md', standalone: true }),
-    ariaLabel: 'Menü',
+    ariaLabel: t('app.menu'),
     boxSize: 'md',
     attrs: {
       id: 'app-menu-btn',
@@ -387,9 +388,9 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     },
   });
   const addBtn = Button({
-    label: '+ Eintrag',
+    label: t('item.create'),
     variant: 'outline',
-    ariaLabel: 'Neuen Eintrag hinzufügen',
+    ariaLabel: t('item.create.aria'),
     attrs: { id: 'add-btn', hidden: true },
   });
 
@@ -573,11 +574,11 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   // is true of the open timeline. Built from one function rather than twice, since
   // the second one arrived by copying the first in the draft and the copies had
   // already drifted apart by a heading level.
-  const instanceArea = settingsFrame('settings', 'Einstellungen', 'Einstellungen schließen');
+  const instanceArea = settingsFrame('settings', t('app.settings'), t('app.settings.close'));
   const timelineArea = settingsFrame(
     'timeline-settings',
     'Timeline-Einstellungen',
-    'Timeline-Einstellungen schließen',
+    t('app.settings.timeline.close'),
   );
 
   const main = AppMain({
@@ -591,7 +592,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   const pluginsBtn = Button({
     label: 'Plugins',
     variant: 'link',
-    ariaLabel: 'Installierte Plugins und ihr Zustand',
+    ariaLabel: t('app.plugins.state'),
     attrs: { id: 'plugins-btn', 'aria-haspopup': 'true', 'aria-expanded': 'false' },
   });
   const pluginsPanel = el('div', {

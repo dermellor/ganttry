@@ -27,6 +27,7 @@ import { scheduleLiveEdit } from './persistence';
 import { mergeFieldDefs, pluginFieldDefs } from './pluginHost/registry';
 import { selectRowsFor } from './fieldDefs';
 import { type CustomFieldDef, type CustomFieldOption } from './types';
+import { t } from './i18n';
 
 // metadata keys managed by their own dedicated form control (the reserved
 // built-ins handled directly in itemForm) — used to keep them out of the
@@ -189,7 +190,7 @@ function fieldNode(
             children: [
               TextInput({
                 bare: true,
-                placeholder: 'Auswählen…',
+                placeholder: t('form.select'),
                 attrs: { autocomplete: 'off', 'data-cf-input': def.key },
               }),
               SuggestList({ hidden: true, attrs: { 'data-cf-list': def.key } }),

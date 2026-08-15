@@ -46,6 +46,7 @@ import { pluginFieldDefs } from './pluginHost/registry';
 import { renderTimeline } from './render';
 import { els, state } from './state';
 import type { CustomFieldDef, CustomFieldType } from './types';
+import { t } from './i18n';
 
 /** The draft the form edits: the stored definitions, never the contributed ones. */
 let draft: CustomFieldDef[] = [];
@@ -137,7 +138,7 @@ function fieldCard(
     ]),
     Field({ label: 'Bezeichnung', control: label }),
     Field({
-      label: 'Schlüssel',
+      label: t('field.key'),
       // The hint only names the state of a locked input; there is deliberately no
       // hint on an editable one, and no prose under either.
       hint: keyLocked ? 'fest, weil benutzt' : undefined,
@@ -153,7 +154,7 @@ function fieldCard(
       : null,
     hasOptions(def.type)
       ? Checkbox({
-          label: 'Auch im Rechtsklick-Menü anbieten',
+          label: t('field.contextMenu'),
           checked: !!def.contextMenu,
           disabled: !editable,
           on: { change: (e) => { def.contextMenu = (e.target as HTMLInputElement).checked; } },
@@ -168,7 +169,7 @@ export function mountFields(root: HTMLElement): void {
   const view = state.activeView;
   const file = state.activeSourceFile;
   if (!view || !file) {
-    root.replaceChildren(Callout({ text: 'Keine Timeline geladen.' }));
+    root.replaceChildren(Callout({ text: t('timeline.none') }));
     return;
   }
 

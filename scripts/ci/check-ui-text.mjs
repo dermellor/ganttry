@@ -197,6 +197,36 @@ for (const file of CATALOGUES) {
   }
 }
 
+// ---- `t()` at module scope ----------------------------------------------------
+//
+// The one way to misuse the catalogue, and it fails silently in the direction
+// nobody checks. A `const LABEL = t('form.save')` at the top of a file is
+// evaluated on **import**, which happens before `initLocale()` has decided the
+// language — so the product default is frozen into it and no language change ever
+// moves it. The symptom is a half-translated screen: the nav stays English while
+// every section body follows the setting, which reads as a bug in the switch
+// rather than in the constant.
+//
+// Found the hard way in `settingsArea.ts`, whose section list was exactly this.
+//
+// The test is indentation: a `const` at column zero is module scope, one inside a
+// function is not. Crude, and right for this codebase's formatting — a false
+// positive is fixed by making the constant a function, which is the fix anyway.
+for (const file of files('src')) {
+  const source = readFileSync(file, 'utf8');
+  source.split('\n').forEach((line, i) => {
+    if (!/^(export )?(const|let|var) /.test(line)) return;
+    if (!/\bt\(['"]/.test(line)) return;
+    problems.push({
+      file,
+      line: i + 1,
+      words: 0,
+      sentences: 0,
+      text: `t() at module scope — evaluated before initLocale(), so the language is frozen in: ${line.trim()}`,
+    });
+  });
+}
+
 if (problems.length) {
   console.error('check-ui-text: interface text carries explanation\n');
   for (const p of problems) {

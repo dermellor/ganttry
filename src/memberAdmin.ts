@@ -40,6 +40,7 @@ import './styles/members.css';
 import { MEMBER_ROLES, type MemberRole, type MemberStatus } from './access';
 import type { Member } from './types';
 
+import { t } from './i18n';
 const STATUS_LABEL: Record<MemberStatus, string> = {
   invited: 'Eingeladen',
   active: 'Aktiv',
@@ -65,16 +66,16 @@ let members: Member[] = [];
  * at the source. Anything not listed falls back to the server's own message,
  * which is still more use than a status code.
  */
-const ERROR_TEXT: Record<string, string> = {
-  last_admin: 'Das würde die Instanz ohne aktiven Administrator zurücklassen.',
-  nothing_to_resend: 'Diese Mitgliedschaft wartet auf keine Einladung.',
-  db_not_configured: 'Für Mitgliedschaften braucht diese Instanz eine Datenbank.',
-  access_control_disabled: 'Die Benutzerverwaltung ist auf dieser Instanz nicht eingeschaltet.',
-  membership_unavailable: 'Die Mitgliederliste ist nicht lesbar. Vermutlich fehlt die Migration.',
-  forbidden: 'Dafür fehlen dir die Rechte.',
-  invalid_request: 'Diese Eingabe ist nicht gültig.',
-  'not found': 'Diese Adresse ist kein Mitglied.',
-};
+const errorText = (): Record<string, string> => ({
+  last_admin: t('refusal.members.lastAdmin'),
+  nothing_to_resend: t('refusal.members.nothingToResend'),
+  db_not_configured: t('refusal.members.needsDatabase'),
+  access_control_disabled: t('refusal.members.off'),
+  membership_unavailable: t('refusal.members.unreadable'),
+  forbidden: t('refusal.forbidden'),
+  invalid_request: t('refusal.members.invalid'),
+  'not found': t('refusal.members.notAMember'),
+});
 
 async function api(method: string, body?: unknown): Promise<any> {
   const res = await fetch('/api/members', {
@@ -84,7 +85,7 @@ async function api(method: string, body?: unknown): Promise<any> {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(ERROR_TEXT[data.error] || data.message || data.error || `HTTP ${res.status}`);
+    throw new Error(errorText()[data.error] || data.message || data.error || `HTTP ${res.status}`);
   }
   return data;
 }
@@ -151,7 +152,7 @@ function render(): void {
             children: TableCell({
               colspan: 5,
               muted: true,
-              children: Text({ text: 'Noch niemand eingeladen.', placeholder: true }),
+              children: Text({ text: t('members.none'), placeholder: true }),
             }),
           }),
         ]),
@@ -276,7 +277,7 @@ function wire(): void {
       // Clipboard access can be refused; the field is selected either way, so
       // the link is still one keystroke from being copied.
       field.select();
-      say('Link markiert — mit Strg/Cmd+C kopieren.');
+      say(t('refusal.members.linkCopy'));
     }
   });
 
@@ -299,7 +300,7 @@ function build(): HTMLElement {
           name: 'email',
           placeholder: 'adresse@example.com',
           required: true,
-          attrs: { 'aria-label': 'E-Mail-Adresse einladen' },
+          attrs: { 'aria-label': t('members.invite') },
         }),
         Select({
           name: 'role',
@@ -315,7 +316,7 @@ function build(): HTMLElement {
       el('div', { id: 'member-invite', class: 'member-invite', hidden: true }, [
         Text({
           as: 'p',
-          children: ['Einladungslink für ', el('strong', { class: 'member-invite-for' })],
+          children: [`${t('members.inviteLink')} `, el('strong', { class: 'member-invite-for' })],
         }),
         el('div', { class: 'member-invite-row' }, [
           TextInput({

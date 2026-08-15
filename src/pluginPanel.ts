@@ -12,6 +12,7 @@ import { pluginLines, type PluginLine } from './pluginHost/installed.ts';
 import type { LoadOutcome } from './pluginHost/loader.ts';
 import type { PluginStatus, TimelineFile } from './types';
 
+import { t } from './i18n';
 /**
  * Where the registry comes from, in the order that makes both deploy shapes work.
  *
@@ -61,8 +62,8 @@ function lineElement(line: PluginLine): HTMLLIElement {
   state.className = 'plugin-line-state';
   state.textContent = line.running
     ? line.enabledHere
-      ? 'in dieser Timeline aktiv'
-      : 'nicht aktiv'
+      ? t('plugin.active')
+      : t('plugin.inactive')
     : reasonText(line);
   // The full sentence carries the specifics a fixed phrase cannot — which version,
   // which manifest field — so it stays reachable on hover rather than being lost.
@@ -85,24 +86,24 @@ function reasonText(line: PluginLine): string {
   switch (line.reason) {
     // The host refused before trying.
     case 'disabled':
-      return 'für diese Instanz abgeschaltet';
+      return t('plugin.disabled');
     case 'api-version':
-      return 'passt nicht zu dieser Host-Version';
+      return t('plugin.versionMismatch');
     case 'invalid-manifest':
-      return 'das Manifest ist nicht mehr gültig';
+      return t('plugin.manifestInvalid');
     // The loader tried and could not.
     case 'unsupported-artifact':
-      return 'die Herkunft des Codes wird nicht unterstützt';
+      return t('plugin.originUnsupported');
     case 'unreachable':
-      return 'der Code ist nicht erreichbar';
+      return t('plugin.unreachable');
     case 'integrity':
-      return 'der Code weicht von seiner Prüfsumme ab';
+      return t('plugin.checksumMismatch');
     case 'invalid-module':
-      return 'der Code passt nicht zum Manifest';
+      return t('plugin.codeMismatch');
     case 'threw':
-      return 'das Laden ist gescheitert';
+      return t('plugin.loadFailed');
     default:
-      return line.problem ?? 'kann nicht geladen werden';
+      return line.problem ?? t('plugin.unloadable');
   }
 }
 

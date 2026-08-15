@@ -13,6 +13,7 @@ import { rebuildAndApply } from './render';
 import { publishSelfPresence, schedulePersist } from './persistence';
 import { hideDetail, setDetailTitle } from './detailPanel';
 
+import { t } from './i18n';
 export function handlePhaseEdit(edit: PhaseEdit): void {
   const phase = state.activeSourceFile?.phases?.[edit.srcIndex];
   if (!phase) return;
@@ -104,7 +105,7 @@ export function showPhaseForm(srcIndex: number): void {
     FormActions({
       children: [
         Button({ label: 'Speichern', type: 'submit' }),
-        Button({ label: 'Löschen', variant: 'danger', attrs: { 'data-action': 'delete' } }),
+        Button({ label: t('form.delete'), variant: 'danger', attrs: { 'data-action': 'delete' } }),
       ],
     }),
   ]);

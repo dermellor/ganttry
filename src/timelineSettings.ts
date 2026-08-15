@@ -38,6 +38,7 @@ import { groupByChoices, timelineMetaDraft, timelineMetaPatch } from './timeline
 import { apiUpdateMeta } from './editor';
 import { mountFieldsSection, unmountFields } from './fieldsSection';
 import { filterBuildForDisplay, renderTimeline, timelineItems } from './render';
+import { t } from './i18n';
 
 /**
  * A section id, which is also verbatim what `#timeline-settings=<id>` carries.
@@ -68,7 +69,7 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
   const file = state.activeSourceFile;
   if (!view || !file) {
     root.replaceChildren(
-      Callout({ text: 'Keine Timeline geladen.' }),
+      Callout({ text: t('timeline.none') }),
     );
     return;
   }
@@ -110,7 +111,7 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
     // „Nothing changed" is said rather than swallowed: a save button that answers a
     // click with silence reads as a save that failed.
     if (!patch) {
-      status.textContent = 'Keine Änderung.';
+      status.textContent = t('timeline.noChange');
       return;
     }
     status.textContent = 'Wird gespeichert …';
@@ -147,7 +148,7 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
         htmlFor: 'tl-description',
       }),
       Field({
-        label: 'Gruppierung beim Öffnen',
+        label: t('timeline.settings.grouping'),
         hint: 'Vorgabe',
         control: groupBy,
         htmlFor: 'tl-groupby',
@@ -174,7 +175,7 @@ function mountExport(root: HTMLElement): void {
   const view = state.activeView;
   if (!view || !state.activeBuild) {
     root.replaceChildren(
-      Callout({ text: 'Keine Timeline geladen.' }),
+      Callout({ text: t('timeline.none') }),
     );
     return;
   }

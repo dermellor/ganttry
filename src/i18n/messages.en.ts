@@ -192,6 +192,13 @@ export const EN = {
   // ── Refusals and results: what the app says about what you just did ──────
   // Allowed a full sentence. See the header of this file for why the prefix is
   // the claim rather than the file the string sits in.
+  'refusal.field.keyMissing': 'Without a key the field can store nothing.',
+  'refusal.field.keyShape': 'A key may hold only letters, digits, „-" and „_", and must start with a letter.',
+  'refusal.field.keyReserved': '„{key}" already has a field of its own in the form.',
+  'refusal.field.keyFromPlugin': '„{key}" comes from a plugin. A stored field on it would never appear.',
+  'refusal.field.keyTaken': '„{key}" is already taken (field {index}).',
+  'refusal.field.labelMissing': 'Without a label nobody knows what the field means.',
+  'refusal.field.optionsMissing': 'A choice with no values can choose nothing.',
   'refusal.settings.unreadable': 'This runtime cannot read its own configuration.',
   'refusal.forbidden': 'You do not have the rights for that.',
   'refusal.accessControlOff':

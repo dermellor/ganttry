@@ -1,6 +1,7 @@
 import { dataUrl } from './data-base';
 import { ConflictError } from './pluginHost/errors';
 import { assignMissingItemIds, nextItemId } from './itemId';
+import { t } from './i18n';
 import type {
   SavedView,
   SourceLive,
@@ -185,7 +186,7 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
       if (res && res.ok) {
         return { file: await res.json(), editable: true, live: parseLive(res.headers.get('X-Source-Live')) };
       }
-      const reason = res ? `HTTP ${res.status}` : 'keine Verbindung zur API';
+      const reason = res ? `HTTP ${res.status}` : t('sync.noApi');
       throw new Error(`Lokale Quelle „${id}“ konnte nicht geladen werden (${reason}).`);
     }
     // Static deploy: no process to write with, so the built copy is served
@@ -195,7 +196,7 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
     if (res && res.ok) {
       return { file: await res.json(), editable: false, live: 'none' };
     }
-    const reason = res ? `HTTP ${res.status}` : 'keine Verbindung';
+    const reason = res ? `HTTP ${res.status}` : t('sync.offline');
     throw new Error(`Datei-Quelle „${id}“ konnte nicht geladen werden (${reason}).`);
   }
 
@@ -220,7 +221,7 @@ export async function loadSource(source: ViewSource): Promise<LoadResult> {
       `Für die Timeline „${id}“ fehlt dir die Berechtigung. Bitte eine Administratorin oder einen Administrator dieser Instanz um Zugriff.`,
     );
   }
-  const reason = apiRes ? `HTTP ${apiRes.status}` : 'keine Verbindung zur API';
+  const reason = apiRes ? `HTTP ${apiRes.status}` : t('sync.noApi');
   throw new Error(
     `Timeline „${id}“ konnte nicht aus der DB geladen werden (${reason}).`,
   );

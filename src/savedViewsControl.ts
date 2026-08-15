@@ -53,6 +53,7 @@ import type { SavedView } from './types';
 import { renderListView } from './listView';
 import { applyGrouping } from './render';
 import type { ViewMode } from './pluginHost/viewMode';
+import { t } from './i18n';
 
 /** Set by `setupSavedViewsControl`: switching presentation belongs to main.ts. */
 let applyMode: ((mode: ViewMode) => void) | null = null;
@@ -219,8 +220,8 @@ async function saveAsNew(name: string): Promise<void> {
  */
 function nameForm(): HTMLElement {
   const input = TextInput({
-    placeholder: 'Name der Ansicht',
-    attrs: { 'aria-label': 'Name der neuen Ansicht' },
+    placeholder: t('savedView.name'),
+    attrs: { 'aria-label': t('savedView.name.new') },
   });
   const commit = () => {
     const name = input.value.trim();
@@ -313,10 +314,10 @@ function openViewDialog(view: SavedView): void {
   const name = TextInput({
     value: view.name,
     id: 'saved-view-name',
-    attrs: { 'aria-label': 'Name der Ansicht' },
+    attrs: { 'aria-label': t('savedView.name') },
   });
   const shared = Checkbox({
-    label: 'Für alle Mitglieder dieser Instanz sichtbar',
+    label: t('savedView.shared'),
     checked: visibilityOf(view) === 'instance',
     disabled: !mayPublish,
   });
@@ -325,7 +326,7 @@ function openViewDialog(view: SavedView): void {
   const dialog = Dialog({
     title: view.name,
     ariaLabel: `Einstellungen der Ansicht „${view.name}"`,
-    closeLabel: 'Ansicht-Einstellungen schließen',
+    closeLabel: t('savedView.close'),
     onClose: () => dialog.close(),
   });
   // Removed on close rather than kept around: the dialog is built from the view as
@@ -356,7 +357,7 @@ function openViewDialog(view: SavedView): void {
     },
   });
   const remove = Button({
-    label: 'Löschen',
+    label: t('form.delete'),
     variant: 'danger',
     on: {
       click: () => {
@@ -413,8 +414,8 @@ function setTrigger(active: SavedView | undefined, isDrifted: boolean): void {
   if (!active) {
     toggle.replaceChildren(mark);
     toggle.dataset.iconOnly = 'true';
-    toggle.setAttribute('aria-label', 'Gespeicherte Ansichten');
-    toggle.title = 'Gespeicherte Ansichten';
+    toggle.setAttribute('aria-label', t('savedView.plural'));
+    toggle.title = t('savedView.plural');
     return;
   }
   // The asterisk says „what you see is no longer what this view stores", which is
@@ -528,7 +529,7 @@ export function syncSavedViewsControl(): void {
   if (active) {
     children.push(
       MenuItem({
-        label: 'Ansicht verlassen',
+        label: t('savedView.leave'),
         none: true,
         on: {
           click: () => {
@@ -551,7 +552,7 @@ export function syncSavedViewsControl(): void {
   if (canSave) {
     actions.push(
       MenuItem({
-        label: 'Aktuelle Einstellung speichern…',
+        label: t('savedView.saveCurrent'),
         on: {
           click: () => {
             naming = true;

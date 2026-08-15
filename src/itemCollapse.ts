@@ -15,6 +15,7 @@
 
 import { realIdOf } from './grouping';
 import { state } from './state';
+import { t } from './i18n';
 
 const MARK_CLASS = 'rail-collapse';
 const SUMMARY_CLASS = 'item-summary';
@@ -100,7 +101,7 @@ function makeMark(displayId: string, box: HTMLElement): HTMLElement {
 // which `is-collapsed` on the bar already carries (see withHierarchyMarks).
 function applyLabels(mark: HTMLElement, box: HTMLElement): void {
   const collapsed = box.classList.contains('is-collapsed');
-  const label = collapsed ? 'Untereinträge einblenden' : 'Untereinträge ausblenden';
+  const label = collapsed ? t('item.children.show') : t('item.children.hide');
   mark.title = label;
   mark.setAttribute('aria-label', label);
   mark.setAttribute('aria-expanded', String(!collapsed));

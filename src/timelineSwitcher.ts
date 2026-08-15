@@ -30,6 +30,7 @@ import {
   type SwitcherRow,
 } from './switcherRows';
 import type { View } from './types';
+import { t } from './i18n';
 
 let views: readonly View[] = [];
 let activeId: string | null = null;
@@ -74,7 +75,7 @@ function renderList(): void {
         const index = rows.indexOf(row);
         return SuggestItem({
           label: row.view.name,
-          detail: row.active ? 'geöffnet' : undefined,
+          detail: row.active ? t('switcher.open') : undefined,
           active: index === cursor,
           attrs: { 'data-view-id': row.view.id, id: `switcher-row-${index}` },
           on: { click: () => pick(row.view.id) },
@@ -85,7 +86,7 @@ function renderList(): void {
       ? []
       : [
           el('li', { class: 'switcher-empty', role: 'presentation' }, [
-            Text({ text: 'Keine Timeline passt dazu.', tone: 'muted', size: 'xs' }),
+            Text({ text: t('switcher.noMatch'), tone: 'muted', size: 'xs' }),
           ]),
         ]),
   );

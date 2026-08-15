@@ -15,6 +15,8 @@
 
 import type { CustomFieldDef, CustomFieldOption, CustomFieldType, TimelineFileItem } from './types';
 
+import { translate, type MessageKey } from './i18n/catalogue.ts';
+import { DEFAULT_LOCALE, type Locale } from './i18n/locale.ts';
 export const FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
   { value: 'text', label: 'Text' },
   { value: 'select', label: 'Auswahl' },
@@ -100,7 +102,14 @@ export type FieldDefProblem = { index: number; message: string };
 export function validateFieldDefs(
   defs: readonly CustomFieldDef[],
   pluginKeys: readonly string[] = [],
+  locale: Locale = DEFAULT_LOCALE,
 ): FieldDefProblem[] {
+  // The locale is a parameter rather than read from module state, because this
+  // module is shared with the server: the browser knows who is looking, and the
+  // write path does not. A default that resolves to the product language keeps
+  // every existing caller working and keeps the module free of client state —
+  // the same arrangement `declaredSettings` uses, and for the same reason.
+  const m = (key: MessageKey, vars?: Record<string, string | number>) => translate(locale, key, vars);
   const problems: FieldDefProblem[] = [];
   const seen = new Map<string, number>();
   const plugin = new Set(pluginKeys);
@@ -108,31 +117,24 @@ export function validateFieldDefs(
   defs.forEach((def, index) => {
     const key = def.key.trim();
     if (!key) {
-      problems.push({ index, message: 'Ohne Schlüssel kann das Feld nichts speichern.' });
+      problems.push({ index, message: m('refusal.field.keyMissing') });
     } else if (!KEY_SHAPE.test(key)) {
-      problems.push({
-        index,
-        message:
-          'Der Schlüssel darf nur Buchstaben, Ziffern, „-" und „_" enthalten und muss mit einem Buchstaben beginnen.',
-      });
+      problems.push({ index, message: m('refusal.field.keyShape') });
     } else if (RESERVED_FIELD_KEYS.includes(key)) {
-      problems.push({ index, message: `„${key}" hat schon ein eigenes Feld im Formular.` });
+      problems.push({ index, message: m('refusal.field.keyReserved', { key }) });
     } else if (plugin.has(key)) {
-      problems.push({
-        index,
-        message: `„${key}" kommt von einem Plugin. Ein gespeichertes Feld darauf würde nie erscheinen.`,
-      });
+      problems.push({ index, message: m('refusal.field.keyFromPlugin', { key }) });
     } else if (seen.has(key)) {
-      problems.push({ index, message: `„${key}" ist schon vergeben (Feld ${seen.get(key)! + 1}).` });
+      problems.push({ index, message: m('refusal.field.keyTaken', { key, index: seen.get(key)! + 1 }) });
     } else {
       seen.set(key, index);
     }
 
     if (!def.label.trim()) {
-      problems.push({ index, message: 'Ohne Bezeichnung weiß niemand, was das Feld meint.' });
+      problems.push({ index, message: m('refusal.field.labelMissing') });
     }
     if (hasOptions(def.type) && !(def.options ?? []).length) {
-      problems.push({ index, message: 'Eine Auswahl ohne Werte kann nichts auswählen.' });
+      problems.push({ index, message: m('refusal.field.optionsMissing') });
     }
   });
 
