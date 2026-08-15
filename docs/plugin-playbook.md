@@ -537,6 +537,39 @@ wrong:
 seen this repository, `plugins:catalogue:check` is green, and the site page exists with
 its `status` matching reality.
 
+### 5.5 Every later change to the plugin comes back here
+
+Phase 5 is not a one-off. **A change to a plugin that goes live is not done until the
+page and its pictures have been checked against it**, and that check belongs in the same
+step as the merge rather than in a later sweep, because nothing downstream reports it.
+
+Three artefacts go stale in silence, which is what makes this a rule rather than a
+habit:
+
+- **The page's claims.** They were true of the version they were written against. A
+  changed field, a renamed control, a limit that was lifted — each turns a sentence on
+  the site into a false one, and the site is the copy an answer engine has cached.
+- **The screenshots** (`zeitlines-web`, `src/assets/shots/`). A stale screenshot still
+  looks like a product, which is exactly why nobody notices it.
+- **The catalogue image** (`preview.png`, phase 4). Same failure, one repository over.
+
+**What counts as a trigger is „what the reader sees changes", not „the plugin folder
+changed".** A refactor with no visible effect needs nothing. Two examples from the
+change that produced this section, both of which invalidated every shot at once and
+neither of which was a plugin change at all: the interface language became a per-user
+setting, and a toolbar caption stopped wrapping over two lines.
+
+Retaking is cheap because the shots are declared rather than collected — that is what
+`src/data/shots.ts` and `npm run shots` are for, and `npm run plugins:preview -- <folder>`
+is its sibling here. Both need a server serving the **example** data. Each shot declares
+an `expect` string that has to appear in the rendered page before a PNG is written; that
+guard exists because a server started from the wrong working directory once produced a
+sharp, plausible screenshot of a real deployment's 145 items and looked exactly like a
+successful run.
+
+**Exit condition for a change:** the page says nothing the code no longer does, the
+shots and `preview.png` show the current interface, and `status` still matches reality.
+
 ---
 
 ## Phase 6: measurement and done
@@ -683,4 +716,12 @@ research, the spec, the verification and the publication — is unaffected by ei
        at least one generated screenshot with alt text
 [ ] 6  Baseline recorded → measurement scheduled (or explicitly skipped);
        committed, pushed, deploy green
+```
+
+And on **every later change that alters what a reader sees** (5.5):
+
+```
+[ ] The page's claims re-read against the code, not against the old page
+[ ] npm run shots  +  npm run plugins:preview -- <folder>, against the example data
+[ ] status still matching reality
 ```

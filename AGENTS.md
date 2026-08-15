@@ -32,7 +32,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/deploy.md`](docs/deploy.md) | The Netlify deploy, the auth gate, JIRA linking. |
 | [`src/plugins/*/README.md`](src/plugins/) | Each plugin documents itself: what it does, its fields, its model, and an `AGENTS.md` with the conventions for changing it. No core chapter is the home of a plugin fact. |
 | [`docs/design-system.md`](docs/design-system.md) | Tokens, components, the playground, and the contract for using them. Read before changing anything the viewer draws. |
-| [`docs/plugin-playbook.md`](docs/plugin-playbook.md) | How a new plugin gets built: the gate, the reach research, implementation, verification, publication. |
+| [`docs/plugin-playbook.md`](docs/plugin-playbook.md) | How a plugin gets built and stays published: the gate, the reach research, implementation, verification, publication — and what a later change owes the page and its screenshots (5.5). |
 | [`PLUGINS.md`](PLUGINS.md) | The plugin catalogue, generated from the manifests. What exists, and what each one is for. |
 | [`openapi.yaml`](openapi.yaml) | The HTTP API, generated. Read this before writing a client. |
 | [`schema/`](schema/) | JSON Schemas for the data files, generated from `src/types.ts`. |
