@@ -174,7 +174,10 @@ paths:
     patch:
       operationId: patchSourceById
       summary: "Update timeline metadata"
-      description: "Name, description, groupBy, phases, customFields, plugins. Touches only the keys present in the body."
+      description: |-
+          Name, description, groupBy, groupOrder, graph, scan, phases, customFields, plugins. Touches only the keys present in the body.
+
+          Two of them are objects and they are written differently, which the client has to know before it sends one: `graph` is replaced as a unit (send both keys, or `null` to clear it), while `scan` is merged key by key and a `null` inside it deletes that one key. `scan` configures how a folder is *read*, so only a scanned directory source accepts it; a database timeline and a standalone JSON file answer 501 rather than storing a setting nothing would read.
       requestBody:
         required: true
         content:
@@ -2303,6 +2306,41 @@ components:
           What the relation graph needs told about a timeline, beyond its items and relations.
 
           Both fields name a **group**, because that is the vocabulary a timeline already has for „what kind of thing is this" — no new dimension, and a folder-derived group works as well as a declared one.
+    ScanConfig:
+      type: object
+      properties:
+        dateFields:
+          type: array
+          items:
+            type: string
+          description: |-
+              Frontmatter keys tried in order for an item's start. Defaults to `["date", "scheduled", "created"]`.
+
+              An **empty array** is the meaningful setting rather than a degenerate one: it says none of this folder's dates are the item's date. A vault stamps `created` on every note, and reading that as the start puts a hundred items on the day they were typed — a timeline that looks like data and is an artefact of the editor.
+        filenameDatePatterns:
+          type: array
+          items:
+            type: string
+          description: "Regexes tried against the filename when no frontmatter date is found."
+        groupFromFolder:
+          type: boolean
+          description: "Take the item's group from the subfolder it sits in, when its frontmatter names none. Off by default: a flat folder has nothing to derive, and a folder whose subdirectories are storage rather than meaning would gain groups that say nothing."
+        linkEdges:
+          type: boolean
+          description: "Read `[[wikilinks]]` as relations between items, recorded on `metadata.dependsOn` and, one entry per link with the frontmatter key it came from, on `metadata.wikilinks`. Off by default, because in most folders a link is a reference and not a dependency."
+        orderFrom:
+          type: string
+          description: |-
+              A file in the folder whose `[[wikilinks]]`, read top to bottom, are the order the items are meant to be read in. Each resolved link stamps a 1-based `metadata.sequence` on the item it names; the first mention wins.
+
+              A folder of notes has no inherent order — the filesystem sorts by name and the scan sorts by date, neither of which is the order the author intended — but a folder that *has* one usually already writes it down somewhere, as a table of contents, an agenda, a running order. Naming that file is cheaper and truer than stamping an index into every note's frontmatter, where it would have to be renumbered on every insert.
+
+              The whole file is read, headings included: the position of a link is where the author put it, and this deliberately has no opinion about list nesting or heading levels, which differ per vault. Frontmatter and fenced code are skipped, being metadata and quotation rather than the document's own order. Off by default; a folder without such a file states nothing.
+      additionalProperties: false
+      description: |-
+          How a directory's Markdown files are read into items.
+
+          It sits on the container rather than in an env var or in `timelines.config.json` because it is a property of *that* folder: which frontmatter key holds a date, whether the subfolder means something, whether wikilinks are relations. A folder of meeting notes and a folder holding a novel answer differently, and the answer has to travel with the folder — otherwise moving or copying it changes what it means (the same reasoning that put `groups` and `phases` here, see docs/local-sources.md).
     SavedView:
       type: object
       properties:
@@ -2408,9 +2446,9 @@ components:
       additionalProperties:
         "$ref": "#/components/schemas/PluginCollectionData"
     PluginCollectionData:
-      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-16012-17188-src_types.ts-0-314881108268078"
+      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-16012-17188-src_types.ts-0-328411108268078"
       description: "A plugin's collections, keyed by the collection id its manifest declares."
-    Recordstringdef-alias-src_types.ts-16012-17188-src_types.ts-0-314881108268078:
+    Recordstringdef-alias-src_types.ts-16012-17188-src_types.ts-0-328411108268078:
       type: object
       additionalProperties:
         type: array
@@ -2590,6 +2628,16 @@ components:
         graph:
           "$ref": "#/components/schemas/GraphConfig"
           description: "How the relation graph reads this timeline. See `GraphConfig`."
+        scan:
+          "$ref": "#/components/schemas/ScanConfig"
+          description: |-
+              How this source is read, for a source that is read by *scanning*. See `ScanConfig`.
+
+              It used to be stripped before a scanned directory reached the client, on the grounds that it says how the directory was read and is spent by the time there are items. That is true of its **effect** and false of the **setting**: somebody who wants to name an order file has to be able to see the one that is named now, and „a stored setting is reachable in the interface" (AGENTS.md → Conventions) outranks keeping the payload narrow.
+
+              Its **presence is the discriminator**: a scanned directory always carries the block, empty when it declares nothing, and every other source kind carries none. That is what lets the settings form tell „this folder has not named an order file" from „this timeline is not a folder", which are different answers and must not look alike.
+
+              A standalone JSON source may therefore spell it and nothing will read it — the same latitude the schema already gives a hand-written file for `version` and the audit stamps, which are equally server-filled.
         savedViews:
           type: array
           items:

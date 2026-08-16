@@ -4,6 +4,8 @@ import {
   graphGroupChoices,
   groupByChoices,
   groupOrderChoices,
+  isScannedSource,
+  orderFileFindsNothing,
   timelineMetaDraft,
   timelineMetaPatch,
   timelineName,
@@ -37,6 +39,7 @@ const draft = (over: Partial<TimelineMetaDraft> = {}): TimelineMetaDraft => ({
   groupOrder: '',
   bandRootGroup: '',
   referenceGroup: '',
+  orderFrom: '',
   ...over,
 });
 
@@ -135,6 +138,74 @@ test('a graph setting left alone sends no graph key at all', () => {
   assert.deepEqual(timelineMetaPatch(current, { ...current, description: 'b' }), {
     description: 'b',
   });
+});
+
+// ── scan.orderFrom ─────────────────────────────────────────────────────────
+// The setting only exists on a source that is read by scanning a folder, and the
+// PRESENCE of the scan block is what says so — a folder that has named no file
+// still carries an empty one, and that is the folder somebody is here to fix.
+
+test('a scanned folder is told from a timeline that is not one', () => {
+  assert.equal(isScannedSource(file({ scan: {} })), true);
+  assert.equal(isScannedSource(file()), false);
+  assert.equal(isScannedSource(null), false);
+});
+
+test('the draft reads the order file out of the scan block', () => {
+  const current = timelineMetaDraft(view('X'), file({ scan: { orderFrom: '_Index.md' } }));
+  assert.deepEqual(current, draft({ orderFrom: '_Index.md' }));
+});
+
+// `scan` is MERGED by the store, unlike `graph`: the form holds one of its five
+// keys, so sending the block whole would clear the four it never showed.
+test('a changed order file sends the one key, not the whole block', () => {
+  const current = draft({ orderFrom: '_Index.md' });
+  assert.deepEqual(timelineMetaPatch(current, { ...current, orderFrom: '_Ablauf.md' }), {
+    scan: { orderFrom: '_Ablauf.md' },
+  });
+});
+
+test('a cleared order file deletes the key rather than storing an empty name', () => {
+  const current = draft({ orderFrom: '_Index.md' });
+  assert.deepEqual(timelineMetaPatch(current, { ...current, orderFrom: '' }), {
+    scan: { orderFrom: null },
+  });
+});
+
+test('a source that is not scanned never sends a scan key', () => {
+  // The form draws no control there, so the draft carries '' on both sides — and
+  // a `scan` key would reach a store that refuses one (both DB drivers, and the
+  // file repo for a JSON source).
+  const current = timelineMetaDraft(view('X'), file({ description: 'a' }));
+  assert.deepEqual(timelineMetaPatch(current, { ...current, name: 'Y' }), { name: 'Y' });
+});
+
+test('an order file that positions nothing is reported, one that works is not', () => {
+  const named = { scan: { orderFrom: '_Index.md' } };
+  // Missing file, or no wikilink that resolves: one symptom, one statement.
+  assert.equal(orderFileFindsNothing(file({ ...named, items: [{ id: 'a', content: 'A' }] })), true);
+  assert.equal(
+    orderFileFindsNothing(
+      file({ ...named, items: [{ id: 'a', content: 'A', metadata: { sequence: 1 } }] }),
+    ),
+    false,
+  );
+  // An item that only INHERITS a position counts: the question is whether the
+  // order file did anything at all, not how much of the folder it reached.
+  assert.equal(
+    orderFileFindsNothing(
+      file({
+        ...named,
+        items: [
+          { id: 'a', content: 'A', metadata: { sequence: 1, dependsOn: ['b'] } },
+          { id: 'b', content: 'B' },
+        ],
+      }),
+    ),
+    false,
+  );
+  // Nothing to warn about where no file is named.
+  assert.equal(orderFileFindsNothing(file({ scan: {}, items: [{ id: 'a', content: 'A' }] })), false);
 });
 
 test('the grouping choices come from the timeline, not from the active build', () => {

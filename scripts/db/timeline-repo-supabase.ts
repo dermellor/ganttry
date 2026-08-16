@@ -35,6 +35,7 @@ import { pluginsForWrite } from '../../src/pluginHost/plugins.ts';
 import {
   ConflictError,
   NotFoundError,
+  NotSupportedError,
   ValidationError,
   type MemberInvite,
   type TimelineGroupDecl,
@@ -732,6 +733,9 @@ export async function updateMeta(
   // Replaced whole rather than merged: patching into the bag needs a merge rule for
   // a value the caller may not have read first.
   if ('graph' in meta) set.graph = meta.graph ?? null;
+  // No column, and no folder to configure the reading of; refused rather than
+  // dropped, for the reason the postgres driver gives.
+  if ('scan' in meta) throw new NotSupportedError('a database timeline has no scan configuration');
   const { error } = await db.from('timelines').update(set).eq('id', id);
   if (error) throw new Error(`updateMeta: ${error.message}`);
 }

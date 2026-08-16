@@ -23,6 +23,7 @@ import type {
   PluginData,
   PluginDataRow,
   SavedView,
+  ScanConfig,
   TimelineFile,
   TimelineFileItem,
   TimelinePhase,
@@ -60,7 +61,29 @@ export type TimelineMetaPatch = {
   groupOrder?: TimelineFile['groupOrder'] | null;
   /** Which group supplies band roots, which is shown as references. */
   graph?: TimelineFile['graph'] | null;
+  /**
+   * How a scanned source is read. **Merged key by key**, and that is the one place
+   * this shape departs from `graph`, which is replaced whole.
+   *
+   * The difference is what the caller can be assumed to hold. Both of `graph`'s
+   * keys have a control in the form, so a save carries the pair and replacing is
+   * exactly right. `scan` has five keys and one control, so replacing would clear
+   * `dateFields`, `filenameDatePatterns`, `groupFromFolder` and `linkEdges` every
+   * time somebody named an order file — and `dateFields: []` is a meaningful
+   * setting whose loss is invisible until the timeline fills up with the day every
+   * note was typed.
+   *
+   * A key sent as `null` is deleted, like a `null` anywhere else here.
+   *
+   * Only a source that is *read by scanning* has one. The database drivers refuse
+   * it rather than dropping it silently, which is the failure #137 was: a key no
+   * implementation names is accepted, answered `200`, and never stored.
+   */
+  scan?: ScanPatch | null;
 };
+
+/** `TimelineMetaPatch.scan`: any subset of `ScanConfig`, `null` deleting a key. */
+export type ScanPatch = { [K in keyof ScanConfig]?: ScanConfig[K] | null };
 
 export type TimelineMeta = { id: string; name?: string; description?: string; groupBy?: string };
 

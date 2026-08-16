@@ -555,11 +555,17 @@ export async function scanDirectory(dir: string, opts: ScanOptions = {}): Promis
     return a.id! < b.id! ? -1 : 1;
   });
 
-  // `scan` stays behind: it says how this directory was *read*, which is spent by
-  // the time there are items. Shipping it would put reading config into the client's
-  // TimelineFile, where the generated schema does not allow it.
-  const { scan: _scan, ...timeline } = container;
-  return { name: basename(dir), ...timeline, items };
+  // `scan` travels with the result, and always as an object — empty when the
+  // folder declares nothing. It used to be stripped here, because it says how the
+  // directory was *read* and that is spent by the time there are items. True of
+  // the effect, false of the setting: a reader who wants to name an order file
+  // has to be able to see the one named now (AGENTS.md → „A stored setting is
+  // reachable in the interface").
+  //
+  // Always an object, because the settings form reads its **presence** as „this
+  // source is scanned". Handing back nothing for a folder that declares nothing
+  // would hide the control on exactly the folder that has yet to configure one.
+  return { name: basename(dir), ...container, scan: container.scan ?? {}, items };
 }
 
 /** Newest mtime across the directory: the watermark for a directory source. */

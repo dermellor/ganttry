@@ -282,14 +282,15 @@ describe('scanDirectory: what the container declares about reading', () => {
     assert.equal(file.items[0].group, undefined);
   });
 
-  // `scan` says how the directory was *read*. It is spent by the time there are
-  // items, and the generated TimelineFile schema does not allow the key.
-  test('the scan block does not travel to the client', async () => {
+  // `scan` used to be stripped here — see „the scan block reaches the client"
+  // below for why it is not any more. What is still true is that reading it never
+  // costs the rest of the container: the two travel side by side.
+  test('the scan block travels beside the container, not instead of it', async () => {
     const dir = await fresh('no-leak', { name: 'Buch', scan: { linkEdges: true } });
     await note(dir, 'a.md', 'title: A');
     const file = await scanDirectory(dir);
     assert.equal(file.name, 'Buch');
-    assert.equal((file as Record<string, unknown>).scan, undefined);
+    assert.deepEqual(file.scan, { linkEdges: true });
   });
 });
 
@@ -502,5 +503,41 @@ describe('scanDirectory: an order file as the items\' sequence', () => {
     const file = await scanDirectory(dir);
     assert.equal(file.items.length, 1);
     assert.equal(sequence(file, 'a'), undefined);
+  });
+});
+
+// The scan block used to be stripped here, which left the settings form with no
+// way to show a setting the code reads (AGENTS.md → „A stored setting is reachable
+// in the interface"). It now travels with the result, and always as an object:
+// its PRESENCE is what tells „this timeline is a scanned folder" from „this
+// folder has named no order file", which are different answers.
+describe('scanDirectory: the scan block reaches the client', () => {
+  test('what the folder declares comes back as it stands', async () => {
+    const dir = await fresh('scan-declared', {
+      name: 'F',
+      scan: { dateFields: [], orderFrom: '_Index.md', linkEdges: true },
+    });
+    await note(dir, 'a.md', 'title: A');
+    assert.deepEqual((await scanDirectory(dir)).scan, {
+      dateFields: [],
+      orderFrom: '_Index.md',
+      linkEdges: true,
+    });
+  });
+
+  test('a folder that declares nothing still carries an empty block', async () => {
+    const dir = await fresh('scan-empty', { name: 'F' });
+    await note(dir, 'a.md', 'title: A');
+    assert.deepEqual((await scanDirectory(dir)).scan, {});
+  });
+
+  // The defaults the caller passes are what the scan RAN with; the block is what
+  // the folder SAYS. Folding the two together would show a form full of settings
+  // nobody wrote, and saving one would write them all into the file.
+  test('the block is what the folder declared, not what the scan resolved', async () => {
+    const dir = await fresh('scan-opts', { name: 'F' });
+    await note(dir, 'a.md', 'title: A');
+    const file = await scanDirectory(dir, { dateFields: ['when'], orderFrom: '_Von-Aussen.md' });
+    assert.deepEqual(file.scan, {});
   });
 });

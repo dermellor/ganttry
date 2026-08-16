@@ -539,6 +539,17 @@ function containerOf(file: TimelineFile): TimelineContainer {
   const { items: _items, ...rest } = file;
   const pluginData = withoutRowVersions(rest.pluginData);
   if (pluginData) rest.pluginData = pluginData;
+  // The scan block has to survive a write, and it did not: the scan used to strip
+  // it on the way out, so every container write — a rename, a description, a new
+  // group, a phase, a plugin row — wrote the file back without it and silently
+  // deleted the folder's `dateFields`, `linkEdges` and `orderFrom`. It now travels
+  // on the scanned file (see `scanDirectory`), which is what makes it survive.
+  //
+  // Empty is dropped rather than written as `"scan": {}`, for the reason the graph
+  // settings clear to `null` rather than `{}`: an empty block reads as „configured,
+  // to nothing", and the empty object here is the scan's way of saying „this is a
+  // folder", not the folder's way of saying anything.
+  if (rest.scan && !Object.keys(rest.scan).length) delete rest.scan;
   // The stamp is the directory's version, not the view's; see `save` for the same
   // strip on a JSON source.
   if (rest.savedViews) rest.savedViews = rest.savedViews.map(({ version: _v, ...view }) => view);
@@ -844,6 +855,28 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
         // own editor then flags.
         if (meta[key] === null) delete (next as any)[key];
         else (next as any)[key] = meta[key];
+      }
+      // `scan` is merged rather than assigned, for the reason `TimelineMetaPatch`
+      // gives: the form holds one of its five keys, so replacing would clear the
+      // four it never saw. A key sent as null is deleted, and a block left with no
+      // keys is dropped by `containerOf` rather than written as `{}`.
+      if (meta.scan !== undefined) {
+        // A standalone JSON file states its items outright: nothing scans it, so
+        // there is no reading of it to configure. Refused rather than stored,
+        // because a key written into a file that nothing reads is the same dead
+        // setting from the other end.
+        if (!loaded.isDir) {
+          throw new NotSupportedError(`„${id}" is a JSON source and is not read by scanning`);
+        }
+        if (meta.scan === null) delete next.scan;
+        else {
+          const scan: Record<string, unknown> = { ...next.scan };
+          for (const [key, value] of Object.entries(meta.scan)) {
+            if (value === null) delete scan[key];
+            else scan[key] = value;
+          }
+          next.scan = scan;
+        }
       }
       await persist(loaded, next);
     },

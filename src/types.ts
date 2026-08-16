@@ -513,6 +513,28 @@ export type TimelineFile = {
   /** How the relation graph reads this timeline. See `GraphConfig`. */
   graph?: GraphConfig;
   /**
+   * How this source is read, for a source that is read by *scanning*. See
+   * `ScanConfig`.
+   *
+   * It used to be stripped before a scanned directory reached the client, on the
+   * grounds that it says how the directory was read and is spent by the time
+   * there are items. That is true of its **effect** and false of the **setting**:
+   * somebody who wants to name an order file has to be able to see the one that
+   * is named now, and „a stored setting is reachable in the interface"
+   * (AGENTS.md → Conventions) outranks keeping the payload narrow.
+   *
+   * Its **presence is the discriminator**: a scanned directory always carries the
+   * block, empty when it declares nothing, and every other source kind carries
+   * none. That is what lets the settings form tell „this folder has not named an
+   * order file" from „this timeline is not a folder", which are different answers
+   * and must not look alike.
+   *
+   * A standalone JSON source may therefore spell it and nothing will read it —
+   * the same latitude the schema already gives a hand-written file for `version`
+   * and the audit stamps, which are equally server-filled.
+   */
+  scan?: ScanConfig;
+  /**
    * Named ways of looking at this timeline. On a `db` source these are rows of
    * the `saved_views` table folded in for the caller; in a file they are the
    * store itself, which is what keeps a local timeline self-contained — the same
@@ -558,17 +580,6 @@ export type TimelineFile = {
   }[];
 };
 
-/**
- * The `timeline.json` at the root of a **directory** source: everything a
- * timeline carries above item level, for the case where the items are one
- * Markdown file each (see docs/local-sources.md).
- *
- * A separate type rather than `TimelineFile` with an optional `items`. Making
- * `items` optional would weaken it at the dozen call sites that iterate it, none
- * of which a container file ever reaches — they all work on the *scanned*
- * result, which always has items. The cost is one more generated schema; the
- * benefit is that `file.items` stays something you can use without a guard.
- */
 /**
  * How a directory's Markdown files are read into items.
  *
@@ -629,10 +640,23 @@ export type ScanConfig = {
   orderFrom?: string;
 };
 
-export type TimelineContainer = Omit<TimelineFile, 'items'> & {
-  /** Directory sources only: how the Markdown files are read. */
-  scan?: ScanConfig;
-};
+/**
+ * The `timeline.json` at the root of a **directory** source: everything a
+ * timeline carries above item level, for the case where the items are one
+ * Markdown file each (see docs/local-sources.md).
+ *
+ * A separate type rather than `TimelineFile` with an optional `items`. Making
+ * `items` optional would weaken it at the dozen call sites that iterate it, none
+ * of which a container file ever reaches — they all work on the *scanned*
+ * result, which always has items. The cost is one more generated schema; the
+ * benefit is that `file.items` stays something you can use without a guard.
+ *
+ * `scan` is inherited rather than restated. It was declared on both types for as
+ * long as only the container carried it; now that a scanned directory ships the
+ * block to the client as well, a second declaration would be a second place to
+ * change it.
+ */
+export type TimelineContainer = Omit<TimelineFile, 'items'>;
 
 export type Config = {
   /** Points editors at schema/config.schema.json for completion + validation. */

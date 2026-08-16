@@ -266,6 +266,11 @@ export const EN = {
   'timeline.settings.graph': 'Graph',
   'timeline.settings.graph.bandRoots': 'Group supplying band headings',
   'timeline.settings.graph.references': 'Group listed on the nodes',
+  // A heading for the same reason the graph has one: the settings below it are
+  // about how the folder is *read*, which is a different subject from what the
+  // timeline is, and one label cannot carry that without repeating it per row.
+  'timeline.settings.scan': 'Folder',
+  'timeline.settings.scan.orderFrom': 'File holding the order',
   'timeline.settings.export': 'Download as HTML',
   'timeline.settings.general': 'General',
   'timeline.settings.fields': 'Fields',
@@ -393,6 +398,11 @@ export const EN = {
   'sync.conflict': 'Conflict: changed elsewhere, reloading…',
   'sync.saving': 'Saving…',
   'sync.saved': 'Saved · {count} items',
+
+  // ── Warnings: a fault found in the data, reported rather than resolved ───
+  // Allowed a full sentence, like a refusal, and for the same reason: naming the
+  // fault is the whole content. The `warn.` prefix is what claims that.
+  'warn.orderFileFindsNothing': '“{file}” positions no entry of this timeline.',
 
   // ── Refusals and results: what the app says about what you just did ──────
   // Allowed a full sentence. See the header of this file for why the prefix is

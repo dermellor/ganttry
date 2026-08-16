@@ -40,6 +40,7 @@ import { pluginsForWrite } from '../../src/pluginHost/plugins.ts';
 import {
   ConflictError,
   NotFoundError,
+  NotSupportedError,
   ValidationError,
   type MemberInvite,
   type TimelineGroupDecl,
@@ -732,6 +733,11 @@ export async function updateMeta(sql: Sql, id: string, meta: TimelineMetaPatch):
   // need a merge rule for a value the caller may not have read first, and „set the
   // graph config" is a small enough statement to make as a unit.
   if ('graph' in meta) set.graph = sql.json(meta.graph ?? null);
+  // A database timeline is not read by scanning a folder, so there is no reading
+  // of it to configure and no column to put one in. Refused, not dropped: a key
+  // no implementation names, accepted and answered `200`, is exactly how the three
+  // graph settings became readable-but-unsettable (#137).
+  if ('scan' in meta) throw new NotSupportedError('a database timeline has no scan configuration');
   await sql`update timelines set ${sql(set, ...Object.keys(set))} where id = ${id}`;
 }
 

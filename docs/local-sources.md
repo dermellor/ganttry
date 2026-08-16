@@ -285,9 +285,29 @@ reasoning that put `groups` and `phases` there.
 | `linkEdges` | Read `[[wikilinks]]` as relations. Off by default, because in most folders a link is a reference and not a dependency. |
 | `orderFrom` | A file in the folder whose `[[wikilinks]]`, read top to bottom, are the order its items are meant to be read in. Off by default; a folder without such a file states nothing. |
 
-The block is stripped before the `TimelineFile` reaches the client: it says how
-the directory was *read*, which is spent by the time there are items, and the
-generated schema does not allow the key.
+**The block travels with the scanned `TimelineFile`, and its presence is what
+says „this timeline is a folder".** It used to be stripped, on the grounds that it
+describes how the directory was *read* and is spent by the time there are items.
+That holds for the effect and not for the setting: a reader who wants to name an
+order file has to see the one named now, and a setting the code reads and the
+interface never offers is the gap „Every stored setting is reachable"
+([`information-architecture.md`](information-architecture.md)) is about.
+
+It is always an object, empty when the folder declares nothing. That is what lets
+the settings form tell **„this folder has named no order file"** from **„this
+timeline is not a folder"** — two different answers, and hiding the control on the
+first would hide it on exactly the folder somebody came to configure. A database
+timeline and a standalone JSON file carry no block at all, and both refuse a write
+to one (`501`) rather than storing a key nothing would read.
+
+What the block carries is what the folder **declared**, never what the scan
+resolved: the caller's defaults are how it ran, and folding them in would show a
+form full of settings nobody wrote, then write them into the file on the first
+save.
+
+Only `orderFrom` has a control so far ([`editing.md`](editing.md) → „The
+timeline's own settings"). The other four are reachable through this seam and not
+yet offered.
 
 ### Wikilinks as relations
 

@@ -220,6 +220,8 @@ export const DE: Record<keyof typeof EN, string> = {
   'timeline.settings.graph': 'Graph',
   'timeline.settings.graph.bandRoots': 'Gruppe für Bandüberschriften',
   'timeline.settings.graph.references': 'Gruppe auf den Knoten',
+  'timeline.settings.scan': 'Ordner',
+  'timeline.settings.scan.orderFrom': 'Datei mit der Reihenfolge',
   'timeline.settings.export': 'Als HTML herunterladen',
   'timeline.settings.general': 'Allgemein',
   'timeline.settings.fields': 'Felder',
@@ -341,6 +343,9 @@ export const DE: Record<keyof typeof EN, string> = {
   'sync.conflict': 'Konflikt: extern geändert, lade neu…',
   'sync.saving': 'Speichere…',
   'sync.saved': 'Gespeichert · {count} items',
+
+  // ── Warnings ─────────────────────────────────────────────────────────────
+  'warn.orderFileFindsNothing': '„{file}" positioniert keinen Eintrag dieser Timeline.',
 
   // ── Refusals and results ─────────────────────────────────────────────────
   'refusal.field.keyMissing': 'Ohne Schlüssel kann das Feld nichts speichern.',

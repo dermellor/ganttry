@@ -1519,7 +1519,8 @@ Creating a timeline belongs here too and is not here: there is no create route y
 ## The timeline's own settings
 
 What is true of the timeline as a whole — its name, its description, the dimension it
-opens with, the order of its groups and the two settings the relation graph reads — is
+opens with, the order of its groups, the two settings the relation graph reads and, on
+a scanned folder, the file its order comes out of — is
 edited in its own area, `#timeline-settings=<section>`, reached from
 the gear beside the name ([`src/timelineSettings.ts`](../src/timelineSettings.ts)).
 It shares its frame and its section mechanics with the instance area (see „The second
@@ -1565,6 +1566,34 @@ one a directory source derives from folder names without declaring — would sho
 general rule for anything the code reads (see „Every stored setting is reachable"
 ([`information-architecture.md`](information-architecture.md))). What says so in words
 is the „Nur lesend" badge beside the name, once.
+
+**`scan.orderFrom` is the sixth field, and the only one that is left out rather
+than disabled.** It names the file in a folder whose wikilinks are the items'
+order (see „An order file as the items' order"
+([`local-sources.md`](local-sources.md))), and a folder is the only thing that has
+one: a database timeline and a standalone JSON file are not read by scanning, so
+the setting does not exist for them at all. That is a different statement from
+„you may not change this here", which is what the disabled controls above make,
+and drawing one as the other would claim the product has a concept it does not.
+The **presence of the `scan` block** decides it, never a value in it — a folder
+that has named no file still carries an empty block, and that is precisely the
+folder somebody opened this section to configure. On a read-only folder the field
+is shown disabled like the rest.
+
+It is **merged rather than replaced**, which is where it parts company with
+`graph` one paragraph up. Both of `graph`'s keys have a control, so a save carries
+the pair and replacing is exactly right; `scan` has five keys and one control, so
+replacing would clear `dateFields`, `filenameDatePatterns`, `groupFromFolder` and
+`linkEdges` every time somebody named an order file. `dateFields: []` is the one
+that would hurt: its loss reads as a folder full of items dated the day each note
+was typed, which looks like data rather than like a setting somebody deleted.
+
+**A named file that positions nothing is reported.** Both ways that happens — the
+file is not in the folder, or it holds no wikilink resolving to an item of this
+timeline — leave every item unpositioned, so the setting looks accepted and does
+nothing. They are told as one statement rather than apart, because the reader is
+looking at the same symptom either way and separating them needs the scanner's
+view of the folder rather than the timeline that was loaded.
 
 **The name exists twice, and the open timeline's source wins.** `TimelineFile.name` is
 live and writable; `View.name` is what the build wrote into `config.json` when it
