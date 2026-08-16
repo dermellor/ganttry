@@ -13,11 +13,13 @@ import {
   canEditSavedView,
   canPublishSavedView,
   canSeeSavedView,
+  canonicalEdges,
   canonicalFilters,
   uniqueSavedViewId,
   visibleSavedViews,
   type SavedViewCaller,
 } from '../../src/savedViews.ts';
+import { sanitizeEdgeSelection } from '../../src/linkEdges.ts';
 import type { TimelineRepo } from './repo.ts';
 
 export type SavedViewRequest = {
@@ -46,6 +48,7 @@ type SavedViewInput = {
   mode?: string | null;
   groupBy?: string | null;
   filters?: Record<string, string[]> | null;
+  edges?: Record<string, string> | null;
   owner?: string;
   visibility?: string;
 };
@@ -77,6 +80,15 @@ function merged(current: SavedView, input: SavedViewInput): SavedView {
     const filters = canonicalFilters(input.filters ?? {});
     if (Object.keys(filters).length) next.filters = filters;
     else delete next.filters;
+  }
+  // Canonicalised on the way in like `filters`, which drops the fields left at
+  // the default direction: „said nothing about Hints" and „set Hints back to
+  // incoming" are one state, and storing the second makes a view look drifted
+  // against a display that matches it.
+  if (input.edges !== undefined) {
+    const edges = canonicalEdges(sanitizeEdgeSelection(input.edges ?? {}));
+    if (Object.keys(edges).length) next.edges = edges;
+    else delete next.edges;
   }
   if (input.visibility !== undefined) {
     next.visibility = input.visibility === 'instance' ? 'instance' : 'private';

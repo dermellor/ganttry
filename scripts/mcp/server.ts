@@ -681,6 +681,15 @@ const savedViewFields = {
         'dimensions, OR within one; an empty object narrows nothing. Values come from ' +
         'describe_view_dimensions.',
     ),
+  edges: z
+    .record(z.enum(['off', 'in', 'out']))
+    .optional()
+    .describe(
+      'Directory sources only: which wikilink fields become dependencies, keyed by the frontmatter ' +
+        'field name with "" for the note body, e.g. { "Blocks": "in", "": "off" }. "in" means the ' +
+        'linked note leads to this one and is the default for a field left out, "out" the reverse. ' +
+        'Field names come from the items\' metadata.wikilinks; a source without those ignores this.',
+    ),
   owner: z
     .string()
     .optional()

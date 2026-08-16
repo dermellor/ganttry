@@ -1293,7 +1293,10 @@ instance may see it. The control is the first one in the presentation bar
 controls it is a shortcut over.
 
 The edge selection round-trips through a **local** source, whose saved views are
-stored as the JSON this describes. The database path enumerates its columns and has
+stored as the JSON this describes, and it is settable through the API and the MCP
+server (`edges` on `create_saved_view` / `update_saved_view`) — which is the only
+way an agent can reach the setting at all: the unnamed selection is one person's
+browser state and has no address. The database path enumerates its columns and has
 none for it, so a DB-backed view drops it — which is not a gap in practice, because
 only a directory scan records the link origins the setting acts on and the control
 never appears without them. A DB source that ever records them needs the migration

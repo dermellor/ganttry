@@ -95,6 +95,24 @@ function closeMenu(): void {
   els.edgeToggle.setAttribute('aria-expanded', 'false');
 }
 
+/**
+ * Drop the drag treatment from every node carrying one.
+ *
+ * By selector rather than by remembering what was marked: a drop rebuilds the
+ * sections, so the nodes marked at `dragstart` are gone by the time this runs, and
+ * a stale reference would leave the dashed outlines on the new ones forever.
+ */
+function clearDragMarks(): void {
+  const marked = els.edgeMenu.querySelectorAll<HTMLElement>(
+    '[data-dragging], [data-dropping], [data-droppable]',
+  );
+  for (const node of marked) {
+    delete node.dataset.dragging;
+    delete node.dataset.dropping;
+    delete node.dataset.droppable;
+  }
+}
+
 function signature(fields: string[]): string {
   return fields.map((f) => `${f}␟${directionOf(state.edges, f)}`).join('§');
 }
@@ -177,14 +195,18 @@ export function setupEdgeControl(): void {
     e.dataTransfer?.setData('text/plain', dragging);
     if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
     chip.dataset.dragging = 'true';
+    // Every section marked at once, including the one the chip is leaving. Marking
+    // only what the pointer is over says nothing until the pointer has already
+    // arrived — and where a chip *may* go is the question a drag opens, so the
+    // answer has to be on screen before the first move.
+    for (const section of els.edgeMenu.querySelectorAll<HTMLElement>('[data-direction]')) {
+      section.dataset.droppable = 'true';
+    }
   });
 
   els.edgeMenu.addEventListener('dragend', () => {
     dragging = null;
-    for (const node of els.edgeMenu.querySelectorAll<HTMLElement>('[data-dragging], [data-dropping]')) {
-      delete node.dataset.dragging;
-      delete node.dataset.dropping;
-    }
+    clearDragMarks();
   });
 
   els.edgeMenu.addEventListener('dragover', (e) => {
@@ -215,7 +237,10 @@ export function setupEdgeControl(): void {
     dragging = null;
     if (!section) return;
     e.preventDefault();
-    delete section.dataset.dropping;
+    // Before the move, not after: `setDirection` replaces these nodes, and
+    // clearing afterwards would strip the marks off the freshly rendered
+    // sections while `dragend` never reaches the ones that are gone.
+    clearDragMarks();
     if (field === null || (dir !== 'in' && dir !== 'out' && dir !== 'off')) return;
     setDirection(field, dir);
   });
