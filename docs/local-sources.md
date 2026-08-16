@@ -315,11 +315,44 @@ loud:
   again. Fenced code is skipped for the same reason a snippet is not a reference.
 
 What this deliberately does **not** do is decide what a link *means*. Every
-wikilink becomes one undirected reference recorded on the linking note, so the
-arrow points from the linked note to the one that mentions it. A vault where the
-direction matters per frontmatter key — „this field lists what leads *to* me" —
-needs typed edges, which is
-<https://github.com/zeitlines/zeitlines/issues/73> and not this.
+wikilink becomes one reference recorded on the linking note, so the `dependsOn`
+arrow points from the linked note to the one that mentions it, whether the link
+sat in a frontmatter field or in the middle of a sentence.
+
+That single direction is wrong for half the links in a vault that types its
+relations, and it is wrong invisibly: a key meaning „this field lists what leads
+*to* me" and a link an author wrote as „and so we get to `[[X]]`" mean opposite
+things, and both come out of the scanner pointing the same way. The paragraph that
+used to stand here treated that as a limitation to live with, which cost a
+session: explanatory links added to note bodies quietly restored the very edges
+that had just been deleted from the frontmatter, and the graph looked like it had
+ignored the edit.
+
+**So the field name is kept**, on `metadata.wikilinks`, one entry per link:
+
+```jsonc
+"wikilinks": [
+  { "field": "Revelations", "target": "_Revelations/Die Enthüllung" },
+  { "field": null,          "target": "_Hints/Der Hinweis" }        // body prose
+]
+```
+
+`field` is the top-level frontmatter key the link sat under, `null` for the body.
+A sub-key reports the top-level key it hangs under, because „which field links
+this" is a statement about the field a reader sees. One entry per field per
+target: a field naming a note twice is one relation, two fields naming it are two,
+and that second case is the whole reason the key exists. `dependsOn` is written
+unchanged beside it and still deduplicates.
+
+The key is `wikilinks` rather than `links` because the scanner's metadata keys
+overwrite the note's own frontmatter (`{ ...fm, path, filename, dateSource }`), and
+`links:` is a key a vault plausibly already uses.
+
+The scanner still records no opinion about direction. Choosing which fields become
+edges and which way they point is
+<https://github.com/zeitlines/zeitlines/issues/159>, and it belongs to the view
+rather than to the scan: `scan` says how the directory was *read* and is spent by
+the time there are items, so a choice that changes per view cannot live there.
 
 ## What this removed
 

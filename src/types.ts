@@ -169,6 +169,27 @@ export type TimelineFileItem = {
   updatedBy?: string;
 };
 
+/**
+ * One wikilink a directory scan found on a note, with the frontmatter key it sat
+ * under. Recorded as a list on `metadata.wikilinks` when `scan.linkEdges` is on.
+ *
+ * It exists because `metadata.dependsOn` flattens every link into one relation
+ * with one direction, and the field name is what says which direction was meant:
+ * a key listing what leads *to* a note points the opposite way from a link the
+ * author wrote mid-sentence. Once the name is gone no consumer can recover it, so
+ * the scanner keeps it and leaves the interpretation to whoever draws the edges.
+ *
+ * The key is `wikilinks` and not `links` because the scanner's own metadata keys
+ * overwrite the note's frontmatter (`{ ...fm, path, filename, dateSource }`), and
+ * `links:` is a plausible key for a vault to already use.
+ */
+export type ItemLink = {
+  /** The top-level frontmatter key the link sat under; `null` for body prose. */
+  field: string | null;
+  /** The resolved id of the linked item. */
+  target: string;
+};
+
 export type TimelinePhase = {
   id?: string;
   label: string;
@@ -569,8 +590,9 @@ export type ScanConfig = {
   groupFromFolder?: boolean;
   /**
    * Read `[[wikilinks]]` as relations between items, recorded on
-   * `metadata.dependsOn`. Off by default, because in most folders a link is a
-   * reference and not a dependency.
+   * `metadata.dependsOn` and, one entry per link with the frontmatter key it came
+   * from, on `metadata.wikilinks`. Off by default, because in most folders a link
+   * is a reference and not a dependency.
    */
   linkEdges?: boolean;
 };

@@ -121,7 +121,7 @@
         },
         "linkEdges": {
           "type": "boolean",
-          "description": "Read `[[wikilinks]]` as relations between items, recorded on `metadata.dependsOn`. Off by default, because in most folders a link is a reference and not a dependency."
+          "description": "Read `[[wikilinks]]` as relations between items, recorded on `metadata.dependsOn` and, one entry per link with the frontmatter key it came from, on `metadata.wikilinks`. Off by default, because in most folders a link is a reference and not a dependency."
         }
       },
       "additionalProperties": false,

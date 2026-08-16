@@ -355,3 +355,70 @@ describe('scanDirectory: wikilinks as relations', () => {
     assert.deepEqual(dependsOn(await scanDirectory(dir), 'aaa'), ['zzz']);
   });
 });
+
+// `dependsOn` flattens every link into one relation with one direction, and the
+// field a link sat under is what says which direction was meant. These pin down
+// that the scanner keeps the name without acting on it.
+describe('scanDirectory: where a wikilink came from', () => {
+  const wikilinks = (file: Awaited<ReturnType<typeof scanDirectory>>, id: string) =>
+    file.items.find((i) => i.id === id)?.metadata?.wikilinks;
+  const dependsOn = (file: Awaited<ReturnType<typeof scanDirectory>>, id: string) =>
+    file.items.find((i) => i.id === id)?.metadata?.dependsOn;
+
+  test('a frontmatter link carries its key, a body link carries null', async () => {
+    const dir = await fresh('wl-field', { scan: { linkEdges: true, dateFields: [] } });
+    await note(dir, 'a.md', 'Revelations:\n  - "[[Ziel]]"', 'Vgl. [[Hinweis]].');
+    await note(dir, 'Ziel.md', 'title: Ziel');
+    await note(dir, 'Hinweis.md', 'title: Hinweis');
+    assert.deepEqual(wikilinks(await scanDirectory(dir), 'a'), [
+      { field: 'Revelations', target: 'Ziel' },
+      { field: null, target: 'Hinweis' },
+    ]);
+  });
+
+  // The case the whole key exists for: two fields naming one note is what a
+  // direction-aware consumer has to be able to tell apart.
+  test('one target under two fields is two entries and one dependency', async () => {
+    const dir = await fresh('wl-two', { scan: { linkEdges: true, dateFields: [] } });
+    await note(dir, 'a.md', 'Revelations:\n  - "[[Ziel]]"\nHints:\n  - "[[Ziel]]"');
+    await note(dir, 'Ziel.md', 'title: Ziel');
+    const file = await scanDirectory(dir);
+    assert.deepEqual(wikilinks(file, 'a'), [
+      { field: 'Revelations', target: 'Ziel' },
+      { field: 'Hints', target: 'Ziel' },
+    ]);
+    assert.deepEqual(dependsOn(file, 'a'), ['Ziel']);
+  });
+
+  test('one field naming a target twice is one entry', async () => {
+    const dir = await fresh('wl-dup', { scan: { linkEdges: true, dateFields: [] } });
+    await note(dir, 'a.md', 'Revelations:\n  - "[[Ziel]]"\n  - "[[Ziel|anders genannt]]"');
+    await note(dir, 'Ziel.md', 'title: Ziel');
+    assert.deepEqual(wikilinks(await scanDirectory(dir), 'a'), [{ field: 'Revelations', target: 'Ziel' }]);
+  });
+
+  // A sub-key is not a field of its own: „which field links this" is a statement
+  // about the top-level key, which is the one a reader sees and selects.
+  test('a nested value reports the top-level key it hangs under', async () => {
+    const dir = await fresh('wl-nested', { scan: { linkEdges: true, dateFields: [] } });
+    await note(dir, 'a.md', 'Struktur:\n  spaeter:\n    - "[[Ziel]]"');
+    await note(dir, 'Ziel.md', 'title: Ziel');
+    assert.deepEqual(wikilinks(await scanDirectory(dir), 'a'), [{ field: 'Struktur', target: 'Ziel' }]);
+  });
+
+  test('a link inside a code fence appears in neither key', async () => {
+    const dir = await fresh('wl-fence', { scan: { linkEdges: true, dateFields: [] } });
+    await note(dir, 'a.md', '', '```\n[[Ziel]]\n```\n');
+    await note(dir, 'Ziel.md', 'title: Ziel');
+    const file = await scanDirectory(dir);
+    assert.equal(wikilinks(file, 'a'), undefined);
+    assert.equal(dependsOn(file, 'a'), undefined);
+  });
+
+  test('nothing is recorded unless edges are declared', async () => {
+    const dir = await fresh('wl-off', { scan: { dateFields: [] } });
+    await note(dir, 'a.md', 'Revelations:\n  - "[[Ziel]]"');
+    await note(dir, 'Ziel.md', 'title: Ziel');
+    assert.equal(wikilinks(await scanDirectory(dir), 'a'), undefined);
+  });
+});
