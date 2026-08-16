@@ -8,7 +8,9 @@ import {
   LEGACY_PREF_KEYS,
   legacyViewPrefs,
   parseViewPrefsStore,
+  storedEdges,
   viewPrefsFor,
+  withEdgeSelection,
   withViewPrefs,
   type ViewPrefsStore,
 } from './viewPrefs';
@@ -308,4 +310,32 @@ test('a legacy mode is carried over unparsed, so the registry can resolve it', (
 
 test('a malformed legacy value list carries over as no selection', () => {
   assert.deepEqual(legacyViewPrefs(get({ [LEGACY_PREF_KEYS.filterValues]: '{oops' })), null);
+});
+
+// The edge selection is the timeline's rather than one presentation's, so it has
+// a store and a save of its own. These pin the two ways that could go wrong: a
+// grouping change clearing it, and a default selection outliving its usefulness
+// as an entry nobody needs.
+test('the edge selection survives a save of the presentation beside it', () => {
+  const store = withEdgeSelection({}, 'src:buch', { Hints: 'off', Body: 'out' });
+  const after = withViewPrefs(store, 'src:buch', { mode: 'graph', groupBy: 'tag', filters: {} });
+  assert.deepEqual(storedEdges(after, 'src:buch'), { Hints: 'off', Body: 'out' });
+});
+
+test('a selection back at the default leaves no entry behind', () => {
+  const store = withEdgeSelection({}, 'src:buch', { Hints: 'off' });
+  assert.deepEqual(storedEdges(store, 'src:buch'), { Hints: 'off' });
+  const cleared = withEdgeSelection(store, 'src:buch', { Hints: 'in' });
+  assert.equal('src:buch' in cleared, false);
+});
+
+test('one timeline’s edges are not another’s', () => {
+  const store = withEdgeSelection({}, 'src:a', { Hints: 'out' });
+  assert.deepEqual(storedEdges(store, 'src:b'), {});
+  assert.deepEqual(storedEdges(store, null), {});
+});
+
+test('a malformed stored direction reads as absent', () => {
+  const store = parseViewPrefsStore(JSON.stringify({ 'src:a': { edges: { Hints: 'sideways', P: 'out' } } }));
+  assert.deepEqual(storedEdges(store, 'src:a'), { P: 'out' });
 });

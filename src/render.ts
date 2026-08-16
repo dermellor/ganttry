@@ -30,6 +30,7 @@ import {
 } from './grouping';
 import { syncDerivedFieldControls } from './customFields';
 import { syncFilterControl } from './filterControl';
+import { syncEdgeControl } from './edgeControl';
 import { syncSavedViewsControl } from './savedViewsControl';
 import { GROUP_DIM } from './listGrouping';
 import { DependencyArrows } from './arrows';
@@ -285,6 +286,7 @@ function computeDisplay(): { items: TimelineItem[]; groups: TimelineGroup[] } {
   const { dim, options } = resolveGrouping(entries);
   syncGroupByControl(options, dim);
   syncFilterControl();
+  syncEdgeControl();
   // Every repaint, so the trigger's asterisk follows a grouping or filter change
   // made in the two controls beside it. Cheap: the panel is a list of commands
   // rebuilt from state, not something anybody is mid-way through ticking.
@@ -404,7 +406,7 @@ export function filterBuildForDisplay(build: BuildResult): {
 
 export function rebuildAndApply(prebuilt?: BuildResult): void {
   if (!state.activeView || !state.activeSourceFile || !timeline) return;
-  const built = prebuilt ?? buildFromJson(state.activeView, state.activeSourceFile);
+  const built = prebuilt ?? buildFromJson(state.activeView, state.activeSourceFile, state.edges);
   state.activeBuild = built;
   applyBuildToDataSets();
   // buildFromJson packs lanes with zero-width points; restore the label-width
@@ -438,7 +440,7 @@ export async function refreshActiveSourceInPlace(view: View): Promise<boolean> {
 
   const file = loaded.file;
   ensureItemIds(file); // assigned in memory only — saved on first edit
-  const built = buildFromJson(view, file);
+  const built = buildFromJson(view, file, state.edges);
 
   // The overlays are created once per timeline instance, and the ribbon also
   // needs the container's phase-band padding. Making one appear or disappear is
@@ -650,7 +652,7 @@ export async function renderTimeline(view: View) {
     if (ensureItemIds(sourceFile)) {
       // assigned ids in memory only — saved on first edit
     }
-    built = buildFromJson(view, sourceFile);
+    built = buildFromJson(view, sourceFile, state.edges);
   }
   state.activeBuild = built;
   state.activeView = view;
@@ -1515,6 +1517,24 @@ export function applyGrouping(): void {
 // Filter change: only the visible item set changes, so a plain display refresh
 // is enough (grouping dimension and editability are untouched).
 export function applyFilter(): void {
+  refreshDisplay();
+}
+
+/**
+ * Edge-selection change: unlike a filter or a grouping change this alters the
+ * dependency map itself, which is computed during the build — so the build has to
+ * be redone before anything is repainted. `refreshDisplay` then publishes it to
+ * the arrows, the graph and the status line from the one place they all read.
+ *
+ * One thing it deliberately does not do is make the arrow overlay appear on a
+ * timeline that loaded without a single dependency: that overlay is created by the
+ * full render path, the same limit `refreshActiveSourceInPlace` falls back on. It
+ * takes turning every field off and one back on to reach, and the next view switch
+ * resolves it.
+ */
+export function applyEdgeSelection(): void {
+  if (!state.activeView || !state.activeSourceFile) return;
+  state.activeBuild = buildFromJson(state.activeView, state.activeSourceFile, state.edges);
   refreshDisplay();
 }
 

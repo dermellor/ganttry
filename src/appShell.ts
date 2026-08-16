@@ -76,6 +76,9 @@ export type AppShellElements = {
   filterControl: HTMLElement;
   filterToggle: HTMLButtonElement;
   filterMenu: HTMLElement;
+  edgeControl: HTMLElement;
+  edgeToggle: HTMLButtonElement;
+  edgeMenu: HTMLElement;
   switcherBtn: HTMLButtonElement;
   switcherControl: HTMLElement;
   switcherSearch: HTMLInputElement;
@@ -506,6 +509,28 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     children: ToolbarAnchor({ children: [filterToggle, filterMenu] }),
   });
 
+  // Which link fields become edges. Hidden unless the open source recorded any,
+  // which is why it can sit in the bar unconditionally: a JSON or database
+  // timeline states its dependencies outright and never offers this.
+  const edgeToggle = Button({
+    label: t('edges.all'),
+    variant: 'trigger',
+    attrs: { id: 'edge-toggle', 'aria-haspopup': 'true', 'aria-expanded': 'false', hidden: true },
+  });
+  const edgeMenu = Popover({
+    role: 'group',
+    ariaLabel: t('edges.label'),
+    scroll: true,
+    hidden: true,
+    attrs: { id: 'edge-menu' },
+  });
+  const edgeControl = ToolbarControl({
+    labelled: false,
+    label: t('edges.label'),
+    attrs: { id: 'edge-control' },
+    children: ToolbarAnchor({ children: [edgeToggle, edgeMenu] }),
+  });
+
   // The presentation level, in one bar and in the order the three actions happen:
   // a presentation is *chosen*, a perspective is *set*, an extent is *narrowed* —
   // then the one thing you *do* to what is on screen, pushed to the far end.
@@ -535,7 +560,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       // Split this way the bar is at most two rows — which presentation on the
       // first, how it is bundled and narrowed on the second.
       ToolbarGroup({ children: [modeToggle, pluginViewBar] }),
-      ToolbarGroup({ children: [savedViewsControl, groupByControl, filterControl] }),
+      ToolbarGroup({ children: [savedViewsControl, groupByControl, filterControl, edgeControl] }),
       ToolbarGroup({ end: true, children: [addBtn] }),
     ],
   });
@@ -637,6 +662,9 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       filterControl,
       filterToggle,
       filterMenu,
+      edgeControl,
+      edgeToggle,
+      edgeMenu,
       switcherBtn,
       switcherControl,
       switcherSearch,

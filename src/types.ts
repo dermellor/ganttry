@@ -463,6 +463,19 @@ export type SavedView = {
   groupBy?: string;
   /** Selected values per filter dimension; the shape `FilterSelection` describes. */
   filters?: Record<string, string[]>;
+  /**
+   * Which recorded link fields become edges, and which way they point (see
+   * src/linkEdges.ts). Only fields deviating from the default are stored, so an
+   * absent value means „every field incoming" — which is what every view saved
+   * before this existed was showing.
+   *
+   * Round-trips through a **local** source, whose saved views are stored as this
+   * JSON. The database path enumerates its columns and has no `edges` one, so a
+   * DB-backed view drops it — deliberately, because only a directory scan records
+   * the link origins this acts on, and the control never appears without them. A
+   * DB source that ever records them needs the migration before it needs this.
+   */
+  edges?: Record<string, 'off' | 'in' | 'out'>;
   /** The address of whoever created it. Empty on a source with no identity. */
   owner?: string;
   /** Defaults to `private` when absent, which is what an older file spells. */

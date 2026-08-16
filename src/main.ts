@@ -62,6 +62,7 @@ import { hideDetail, pluginPanelBackend, showDetailForId } from './detailPanel';
 import { renderListView, setupListView } from './listView';
 import { renderGraphView, syncGraphSelection } from './graphView';
 import { setupFilterControl } from './filterControl';
+import { setupEdgeControl } from './edgeControl';
 import {
   applySavedView,
   setupSavedViewsControl,
@@ -475,6 +476,7 @@ async function bootstrap() {
   }
   setupListView();
   setupFilterControl();
+  setupEdgeControl();
   // The presentation switch is handed over rather than reimplemented: applying a
   // view may enter a plugin view, which needs the mode resolved against this
   // timeline's plugins and its chunk loaded.

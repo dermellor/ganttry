@@ -348,11 +348,22 @@ The key is `wikilinks` rather than `links` because the scanner's metadata keys
 overwrite the note's own frontmatter (`{ ...fm, path, filename, dateSource }`), and
 `links:` is a key a vault plausibly already uses.
 
-The scanner still records no opinion about direction. Choosing which fields become
-edges and which way they point is
-<https://github.com/zeitlines/zeitlines/issues/159>, and it belongs to the view
-rather than to the scan: `scan` says how the directory was *read* and is spent by
-the time there are items, so a choice that changes per view cannot live there.
+The scanner still records no opinion about direction. That is the „Beziehungen"
+control in the presentation bar ([`src/edgeControl.ts`](../src/edgeControl.ts)),
+over the rule in [`src/linkEdges.ts`](../src/linkEdges.ts): one row per field found
+in the data, each off, incoming or outgoing, with everything incoming as the
+default so a timeline nobody configured draws exactly the edges it drew before.
+
+It belongs to the view rather than to the scan, and the `scan` block is why:
+it says how the directory was *read* and is spent by the time there are items, so a
+choice that changes per reader cannot live there. Two more consequences follow from
+the same place. The folder may be read-only — pointing an instance at a vault
+somebody writes prose in is what `TIMELINES_LOCAL_READONLY` exists for — so a
+setting only reachable by writing to the source would be unreachable exactly there.
+And the answer is not one per folder: the same notes are read for the plan and for
+the chain of reveals, which are different pictures of one directory. A named one is
+a saved view („Gespeicherte Ansichten", [`editing.md`](editing.md)), which stores
+the selection with the timeline and hands it to the next reader.
 
 ## What this removed
 

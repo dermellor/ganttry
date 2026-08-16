@@ -170,6 +170,18 @@
           },
           "description": "Selected values per filter dimension; the shape `FilterSelection` describes."
         },
+        "edges": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "off",
+              "in",
+              "out"
+            ]
+          },
+          "description": "Which recorded link fields become edges, and which way they point (see src/linkEdges.ts). Only fields deviating from the default are stored, so an absent value means „every field incoming\" — which is what every view saved before this existed was showing.\n\nRound-trips through a **local** source, whose saved views are stored as this JSON. The database path enumerates its columns and has no `edges` one, so a DB-backed view drops it — deliberately, because only a directory scan records the link origins this acts on, and the control never appears without them. A DB source that ever records them needs the migration before it needs this."
+        },
         "owner": {
           "type": "string",
           "description": "The address of whoever created it. Empty on a source with no identity."

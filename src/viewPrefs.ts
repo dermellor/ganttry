@@ -22,6 +22,7 @@
 
 import { filterSelectionFromPair, isFilterSelectionActive, type FilterSelection } from './filterRule';
 import { GROUP_DIM, TYPE_DIM } from './listGrouping';
+import { DEFAULT_EDGE_DIRECTION, sanitizeEdgeSelection, type EdgeSelection } from './linkEdges';
 
 /** What one presentation of one timeline remembers. */
 export type StoredPresentationPrefs = {
@@ -65,6 +66,17 @@ export type StoredViewPrefs = {
    * selection and never written again.
    */
   milestonesOnly?: boolean;
+  /**
+   * Which recorded link fields become edges, and which way they point.
+   *
+   * At the timeline level rather than per presentation, unlike grouping and the
+   * filter: those describe how one presentation bundles and narrows, while this
+   * decides which relations *exist* at all. The Gantt arrows and the graph read
+   * one dependency map, so a per-presentation answer would let the two disagree
+   * about what depends on what — which reads as a bug in one of them rather than
+   * as a setting.
+   */
+  edges?: EdgeSelection;
 };
 
 /** Perspective and extent resolved for one presentation. */
@@ -163,6 +175,8 @@ function sanitize(raw: unknown): StoredViewPrefs {
   const values = stringList(rec.filterValues);
   if (values) out.filterValues = values;
   if (typeof rec.milestonesOnly === 'boolean') out.milestonesOnly = rec.milestonesOnly;
+  const edges = sanitizeEdgeSelection(rec.edges);
+  if (Object.keys(edges).length) out.edges = edges;
   return out;
 }
 
@@ -207,6 +221,41 @@ function storedSelection(stored: StoredViewPrefs | undefined): FilterSelection {
 export function storedMode(store: ViewPrefsStore, viewId: string | null | undefined): string {
   const stored = viewId ? store[viewId] : undefined;
   return stored?.mode ?? DEFAULT_VIEW_PREFS.mode;
+}
+
+/** Which link fields a timeline draws edges from. Empty means „every field, incoming". */
+export function storedEdges(store: ViewPrefsStore, viewId: string | null | undefined): EdgeSelection {
+  const stored = viewId ? store[viewId] : undefined;
+  return { ...(stored?.edges ?? {}) };
+}
+
+/**
+ * The store with `viewId`'s edge selection replaced. Separate from `withViewPrefs`
+ * because the two are saved by different controls at different moments, and
+ * folding this into that one would make every grouping change rewrite the edges.
+ */
+export function withEdgeSelection(
+  store: ViewPrefsStore,
+  viewId: string,
+  edges: EdgeSelection,
+): ViewPrefsStore {
+  const next: ViewPrefsStore = { ...store };
+  const entry: StoredViewPrefs = { ...store[viewId] };
+  // Only what deviates is written, and a selection back at the default drops the
+  // key: the same reason the presentation entry is deleted rather than stored
+  // empty, otherwise the store grows a key per timeline anybody ever opened.
+  const kept: EdgeSelection = {};
+  for (const [field, dir] of Object.entries(edges)) {
+    if (dir !== DEFAULT_EDGE_DIRECTION) kept[field] = dir;
+  }
+  if (Object.keys(kept).length) entry.edges = kept;
+  else delete entry.edges;
+  if (!Object.keys(entry).length) {
+    delete next[viewId];
+    return next;
+  }
+  next[viewId] = entry;
+  return next;
 }
 
 /**
@@ -287,6 +336,9 @@ export function withViewPrefs(
   if (previous?.filterDim != null) entry.filterDim = previous.filterDim;
   if (previous?.filterValues) entry.filterValues = [...previous.filterValues];
   if (previous?.milestonesOnly) entry.milestonesOnly = true;
+  // Carried over rather than rebuilt: the edge selection belongs to the timeline
+  // and has a save of its own, so a grouping change must not clear it.
+  if (previous?.edges) entry.edges = { ...previous.edges };
 
   if (!Object.keys(entry).length) {
     delete next[viewId];
