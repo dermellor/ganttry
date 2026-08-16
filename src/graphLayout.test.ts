@@ -615,6 +615,18 @@ describe('edgePath: which side an edge leaves and enters', () => {
     assert.equal(n[0], n[6], 'and the line is vertical: one x for both ends');
   });
 
+  // A feeder can sit below the feeder it points into, so the connector has to be
+  // order-aware: it leaves the lower box's top and enters the upper box's bottom,
+  // instead of always leaving the source's bottom and looping back up.
+  test('a vertical connector whose source is below its target attaches at the facing edges', () => {
+    const n = edgePath(node(100, 200, 40), node(100, 0, 40), WIDTH, true).match(/-?[\d.]+/g)!.map(Number);
+    const midX = 100 + NODE_W / 2;
+    assert.equal(n[0], midX, 'leaves the source’s top middle');
+    assert.equal(n[1], 200, 'at its top edge');
+    assert.equal(n[6], midX, 'enters the target’s bottom middle');
+    assert.equal(n[7], 40, 'at its bottom edge (0 + 40)');
+  });
+
   test('each end is attached at its own vertical middle, not a shared constant', () => {
     const d = edgePath(node(100, 0, 40), node(500, 300, 90), WIDTH);
     const n = d.match(/-?[\d.]+/g)!.map(Number);
@@ -732,7 +744,7 @@ describe('same-column relations become indented units', () => {
 
 describe('the chain layout (single column)', () => {
   // A single grouping bucket frees the x-axis, so a connected band is drawn as its
-  // longest directed path stacked vertically — arrows down — with the nodes that
+  // heaviest directed path stacked vertically — arrows down — with the nodes that
   // feed into it hanging off to the left. See „the chain layout" at the top of the
   // module. The reveal chains of a manuscript are the case it was built for.
   const xOf = (out: ReturnType<typeof layoutGraph>, id: string) => nodeById(out, id).x;
@@ -830,7 +842,75 @@ describe('the chain layout (single column)', () => {
     assert.ok(bottom.y >= top.y + top.height, 'and they do not overlap');
   });
 
-  test('the spine is the longest directed path; a short branch becomes a feeder', () => {
+  // Feeders stacked in one column, where one leads to the next, join straight down
+  // the shared middle when they are directly adjacent — the same connector a spine
+  // step gets. A same-column edge that skips over a box keeps the side bulge, because
+  // a straight line would run through the box between its ends.
+  test('an adjacent same-column feeder edge is a straight connector; a skip edge keeps the bulge', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: ['s1', 's2', 's3', 's4', 'f1', 'f2', 'f3'].map((id) => ({ id, column: 'rev' })),
+        edges: [
+          // Spine — its own weight keeps the fork at s3 on the backbone.
+          { from: 's1', to: 's2', kind: 'depends' },
+          { from: 's2', to: 's3', kind: 'depends' },
+          { from: 's3', to: 's4', kind: 'depends' },
+          // Three feeders into s3, so they share one column, stacked f1/f2/f3.
+          { from: 'f1', to: 's3', kind: 'depends' },
+          { from: 'f2', to: 's3', kind: 'depends' },
+          { from: 'f3', to: 's3', kind: 'depends' },
+          // f1→f2 are adjacent; f1→f3 skips f2.
+          { from: 'f1', to: 'f2', kind: 'depends' },
+          { from: 'f1', to: 'f3', kind: 'depends' },
+        ],
+      }),
+    );
+    const fx = nodeById(out, 'f1').x;
+    assert.equal(nodeById(out, 'f2').x, fx, 'the feeders share a column');
+    assert.equal(nodeById(out, 'f3').x, fx);
+    assert.ok(fx < Math.max(...out.nodes.map((n) => n.x)), 'left of the spine');
+    assert.ok(
+      nodeById(out, 'f1').y < nodeById(out, 'f2').y && nodeById(out, 'f2').y < nodeById(out, 'f3').y,
+      'stacked f1, f2, f3',
+    );
+    const e12 = out.edges.find((e) => e.from === 'f1' && e.to === 'f2');
+    const e13 = out.edges.find((e) => e.from === 'f1' && e.to === 'f3');
+    assert.ok(e12?.vertical === true, 'the adjacent pair joins straight down the middle');
+    assert.ok(!e13?.vertical, 'the pair with f2 between them keeps the side bulge');
+    // The feeder→spine edges cross columns and stay ordinary arrows.
+    assert.ok(!out.edges.find((e) => e.from === 'f1' && e.to === 's3')?.vertical);
+    // And the spine steps are still straight connectors.
+    assert.ok(out.edges.find((e) => e.from === 's1' && e.to === 's2')?.vertical === true);
+  });
+
+  // A feeder that is itself a chain reads top-to-bottom like the spine: the source
+  // on top, the arrow pointing down into what it leads to. Left in file order the
+  // earlier clue could sit below the one it feeds and the connector pointed up.
+  test('a feeder sub-chain is ordered source-on-top, not in file order', () => {
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: ['s1', 's2', 's3', 's4', 'a', 'b'].map((id) => ({ id, column: 'rev' })),
+        edges: [
+          { from: 's1', to: 's2', kind: 'depends' },
+          { from: 's2', to: 's3', kind: 'depends' },
+          { from: 's3', to: 's4', kind: 'depends' },
+          // a and b both feed s3, so they share a column; b feeds a, but a is listed
+          // first — file order would stack a above b and point the b→a arrow up.
+          { from: 'a', to: 's3', kind: 'depends' },
+          { from: 'b', to: 's3', kind: 'depends' },
+          { from: 'b', to: 'a', kind: 'depends' },
+        ],
+      }),
+    );
+    assert.equal(nodeById(out, 'a').x, nodeById(out, 'b').x, 'a and b share a column');
+    assert.ok(nodeById(out, 'b').y < nodeById(out, 'a').y, 'the source b sits above the dependent a');
+    const e = out.edges.find((x) => x.from === 'b' && x.to === 'a');
+    assert.ok(e?.vertical === true, 'and joins straight down into it');
+  });
+
+  test('the spine is the heaviest directed path; a short branch becomes a feeder', () => {
     const out = layoutGraph(
       graph({
         columns: columns('rev'),
@@ -848,6 +928,84 @@ describe('the chain layout (single column)', () => {
     const onSpine = out.nodes.filter((n) => n.x === spineX).map((n) => n.id).sort();
     assert.deepEqual(onSpine, ['s1', 's2', 's3', 's4']);
     assert.ok(nodeById(out, 'b').x < spineX, 'the branch is off the spine');
+  });
+
+  // The gap #145 let through: heaviest ≠ longest. The Unterlingen 1 reveal-plan in
+  // miniature — a five-beat main chain (m1…m5) whose middle beat m3 also collects a
+  // three-hop side strand (h1→h2→h3→m3). By hop count the side strand makes the
+  // longest directed path (h1→h2→h3→m3→m4→m5, six nodes) and „longest path" picks it,
+  // stranding the opening beats in the feeders. But m2 carries its own feeders, so at
+  // the fork into m3 the main chain outweighs the strand (mass(m2)=4 > mass(h3)=3) and
+  // „heaviest" recovers the intended main chain as the spine.
+  test('a longer side strand feeding the middle stays a feeder; the main chain is the spine', () => {
+    const strand = ['h1', 'h2', 'h3'];
+    const main = ['m1', 'm2', 'm3', 'm4', 'm5'];
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: [...main, ...strand, 'g1', 'g2'].map((id) => ({ id, column: 'rev' })),
+        edges: [
+          // Main chain first, so at every tie the backbone edge wins the walk-back.
+          { from: 'm1', to: 'm2', kind: 'depends' },
+          { from: 'm2', to: 'm3', kind: 'depends' },
+          { from: 'm3', to: 'm4', kind: 'depends' },
+          { from: 'm4', to: 'm5', kind: 'depends' },
+          // Two feeders into m2, the weight that lets the main chain win the m3 fork.
+          { from: 'g1', to: 'm2', kind: 'depends' },
+          { from: 'g2', to: 'm2', kind: 'depends' },
+          // Side strand: three hops into m3, longer than the main run to m3 (two hops).
+          { from: 'h1', to: 'h2', kind: 'depends' },
+          { from: 'h2', to: 'h3', kind: 'depends' },
+          { from: 'h3', to: 'm3', kind: 'depends' },
+        ],
+      }),
+    );
+    // The main chain is the spine (rightmost column, top→bottom in edge order); the
+    // longer strand hangs off m3 as feeders.
+    const spineX = Math.max(...out.nodes.map((n) => n.x));
+    const onSpine = out.nodes.filter((n) => n.x === spineX).map((n) => n.id).sort();
+    assert.deepEqual(onSpine, main, 'the main chain, not the longer side strand');
+    for (let i = 1; i < main.length; i++) {
+      assert.ok(nodeById(out, main[i - 1]).y < nodeById(out, main[i]).y, 'spine runs down in edge order');
+    }
+    for (const id of strand) {
+      assert.ok(nodeById(out, id).x < spineX, `${id} is a feeder, off the spine`);
+    }
+  });
+
+  // The reason the spacing changed for #154: a beat with more feeders than the spine
+  // is tall must reserve the vertical room for them, so its feeders sit level with it
+  // instead of spilling past the beats below (whose edges then swept the canvas).
+  test('a beat with many feeders reserves room; its feeders stay level with it', () => {
+    const feeders = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6'];
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: ['s1', 's2', 's3', ...feeders].map((id) => ({ id, column: 'rev' })),
+        edges: [
+          { from: 's1', to: 's2', kind: 'depends' },
+          { from: 's2', to: 's3', kind: 'depends' },
+          // Six feeders all into the middle beat s2.
+          ...feeders.map((id) => ({ from: id, to: 's2', kind: 'depends' as const })),
+        ],
+      }),
+    );
+    const centre = (id: string) => nodeById(out, id).y + nodeById(out, id).height / 2;
+    // The feeder block is centred on its beat: the middle of the six feeders lines up
+    // with s2, none of them stranded far below.
+    const fys = feeders.map(centre).sort((a, b) => a - b);
+    const blockCentre = (fys[0] + fys[fys.length - 1]) / 2;
+    assert.ok(Math.abs(blockCentre - centre('s2')) < 1, 'the feeder block is level with its beat');
+    // The next beat starts below the whole feeder block, not level with it: the spine
+    // spread to make room.
+    assert.ok(centre('s3') > fys[fys.length - 1], 's3 sits below s2’s feeder block');
+    // Feeders do not overlap each other.
+    const sorted = feeders
+      .map((id) => nodeById(out, id))
+      .sort((a, b) => a.y - b.y);
+    for (let i = 1; i < sorted.length; i++) {
+      assert.ok(sorted[i].y >= sorted[i - 1].y + sorted[i - 1].height, 'feeders do not overlap');
+    }
   });
 
   // A band with no feeders anchors its spine at the left margin, even when another
@@ -896,7 +1054,7 @@ describe('the chain layout (single column)', () => {
     assert.notEqual(nodeById(out, 'a1').band, nodeById(out, 'b1').band);
   });
 
-  // A cycle is malformed data; the longest-path walk truncates it rather than
+  // A cycle is malformed data; the heaviest-path walk truncates it rather than
   // looping, and every node is still placed exactly once.
   test('a cycle in one column survives, all nodes placed', () => {
     const out = layoutGraph(
