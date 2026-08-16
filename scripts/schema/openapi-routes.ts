@@ -107,7 +107,7 @@ export const ROUTES: RouteDef[] = [
       {
         method: 'PATCH',
         summary: 'Update timeline metadata',
-        description: 'Name, description, groupBy, groupOrder, graph, scan, phases, customFields, plugins. Touches only the keys present in the body.\n\nTwo of them are objects and they are written differently, which the client has to know before it sends one: `graph` is replaced as a unit (send both keys, or `null` to clear it), while `scan` is merged key by key and a `null` inside it deletes that one key. `scan` configures how a folder is *read*, so only a scanned directory source accepts it; a database timeline and a standalone JSON file answer 501 rather than storing a setting nothing would read.',
+        description: 'Name, description, groupBy, phases, customFields, plugins. Touches only the keys present in the body.',
         requestBody: ref('TimelineFile'),
         responses: { '200': { description: 'The updated timeline.', schema: ref('TimelineFile') }, ...commonErrors() },
       },

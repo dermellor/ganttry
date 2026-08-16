@@ -39,8 +39,6 @@ import {
   graphGroupChoices,
   groupByChoices,
   groupOrderChoices,
-  isScannedSource,
-  orderFileFindsNothing,
   timelineMetaDraft,
   timelineMetaPatch,
 } from './timelineMeta';
@@ -124,19 +122,6 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
   );
   referenceGroup.value = current.referenceGroup;
 
-  // Only a scanned folder has a reading to configure, so this one is left out on a
-  // database or JSON source rather than shown disabled. That is the same rule the
-  // four controls above follow, read the other way round: „you may not change this
-  // here" is shown, and „this timeline has no such thing" is not claimed. A folder
-  // that has named no file still gets the control — it carries an empty block, and
-  // that is exactly the folder somebody is here to configure.
-  const scanned = isScannedSource(file);
-  const orderFrom = TextInput({
-    id: 'tl-orderfrom',
-    value: current.orderFrom,
-    disabled: !editable,
-  });
-
   const status = Text({
     as: 'p',
     text: notice,
@@ -159,7 +144,6 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
       groupOrder: groupOrder.value,
       bandRootGroup: bandRootGroup.value,
       referenceGroup: referenceGroup.value,
-      orderFrom: orderFrom.value,
     });
     // „Nothing changed" is said rather than swallowed: a save button that answers a
     // click with silence reads as a save that failed.
@@ -225,24 +209,6 @@ function mountGeneral(root: HTMLElement, notice = ''): void {
         control: referenceGroup,
         htmlFor: 'tl-graph-refs',
       }),
-      scanned && [
-        Heading({ level: 3, text: t('timeline.settings.scan'), className: 'setting-group-title' }),
-        Field({
-          label: t('timeline.settings.scan.orderFrom'),
-          control: orderFrom,
-          htmlFor: 'tl-orderfrom',
-        }),
-        // A fault found in the data, not a note about the control: the file is
-        // named and reaches nothing, which is the one way this setting fails
-        // without saying so. It is drawn from the loaded timeline, so it appears
-        // after a save the same way it appears on open.
-        orderFileFindsNothing(file) &&
-          Callout({
-            tone: 'warning',
-            role: 'note',
-            text: t('warn.orderFileFindsNothing', { file: current.orderFrom }),
-          }),
-      ],
       el('div', { class: 'settings-actions' }, [save, status]),
     ]),
   );

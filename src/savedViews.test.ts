@@ -170,3 +170,36 @@ test('a file whose views are all private loses the key entirely', () => {
   const published = stripSavedViewsForPublication({ savedViews: [view()] });
   assert.equal('savedViews' in published, false);
 });
+
+// The order a view puts its items in, which is the fourth thing a view stores
+// about how the material is read (after the presentation, the grouping and the
+// narrowing) and the second that names something in the timeline itself.
+test('the order round-trips through a stored view', () => {
+  const [only] = sanitizeSavedViews([{ id: 'kette', name: 'Hauptkette', orderFrom: '_Index' }]);
+  assert.equal(only.orderFrom, '_Index');
+});
+
+test('an empty order is dropped rather than stored as one', () => {
+  const [only] = sanitizeSavedViews([{ id: 'a', name: 'A', orderFrom: '' }]);
+  assert.equal('orderFrom' in only, false);
+  const [nonString] = sanitizeSavedViews([{ id: 'b', name: 'B', orderFrom: 7 }]);
+  assert.equal('orderFrom' in nonString, false);
+});
+
+test('a view drifts when the order changes under it', () => {
+  const ordered = { id: 'k', name: 'K', orderFrom: '_Index' };
+  const shown = { mode: 'graph', groupBy: 'group', filters: {} };
+  assert.equal(savedViewMatches(ordered, { ...shown, orderFrom: '_Index' }), true);
+  assert.equal(savedViewMatches(ordered, { ...shown, orderFrom: '_Chrono' }), false);
+  assert.equal(savedViewMatches(ordered, shown), false, 'and when it is cleared');
+});
+
+test('a view saved before this existed matches a timeline showing no order', () => {
+  // Absence is „no order", not „no opinion" — the same reading the filter and the
+  // edges take, so nothing that predates this feature reads as drifted.
+  const plain = { id: 'p', name: 'P' };
+  const shown = { mode: 'timeline', groupBy: 'group', filters: {} };
+  assert.equal(savedViewMatches(plain, shown), true);
+  assert.equal(savedViewMatches(plain, { ...shown, orderFrom: '' }), true);
+  assert.equal(savedViewMatches(plain, { ...shown, orderFrom: '_Index' }), false);
+});

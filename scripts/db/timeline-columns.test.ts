@@ -112,27 +112,6 @@ test('every WRITE to timeline_groups names every mapped column', () => {
   }
 });
 
-// The third shape of the same failure. `scan` is a `TimelineMetaPatch` key with no
-// column behind it, because a database timeline is not read by scanning a folder.
-// Silently dropping it would answer `200` for a setting that was never stored —
-// which is #137 again, one key later. Both drivers therefore refuse it, and this
-// is a source assertion for the reason the two above are: CI has no database.
-test('both drivers refuse a scan patch instead of dropping it', () => {
-  for (const { what, text } of [
-    { what: 'timeline-repo.ts', text: SOURCE },
-    { what: 'timeline-repo-supabase.ts', text: SUPABASE },
-  ]) {
-    const at = text.indexOf('export async function updateMeta');
-    assert.ok(at > 0, `${what} has no updateMeta`);
-    const body = text.slice(at, at + 1800);
-    assert.match(
-      body,
-      /if \('scan' in meta\) throw new NotSupportedError/,
-      `${what} accepts a scan patch it has nowhere to put`,
-    );
-  }
-});
-
 test('replaceTimeline writes every timelines column the file carries', () => {
   const at = SOURCE.indexOf('export async function replaceTimeline');
   const body = SOURCE.slice(at, at + 2600);

@@ -39,8 +39,10 @@ import {
   VIEW_PREFS_KEY,
   presentationPrefsFor,
   storedEdges,
+  storedOrderFrom,
   storedMode,
   withEdgeSelection,
+  withOrderFrom,
   withLegacyFallback,
   withViewPrefs,
   type ViewPrefsStore,
@@ -222,6 +224,10 @@ export interface AppState {
   // above: it decides which relations exist, and the arrows and the graph read
   // one dependency map between them.
   edges: EdgeSelection;
+  // The item whose body wikilinks order this timeline (src/sequence.ts). Beside
+  // `edges` for its reason: an order is a statement about the material rather
+  // than about how one presentation bundles it. '' = no order stated.
+  orderFrom: string;
   // Display state a link asked for, applied on top of what the timeline being
   // opened remembers. Same pattern as pendingItem / pendingWindow above: the URL
   // is read before the view exists, so it waits here until applyView has loaded
@@ -297,6 +303,7 @@ export const state: AppState = {
   groupBy: DEFAULT_VIEW_PREFS.groupBy,
   filters: {},
   edges: {},
+  orderFrom: '',
   pendingPrefs: null,
   activeSavedViewId: null,
   pendingSavedView: null,
@@ -354,6 +361,9 @@ export function loadViewPrefs(viewId: string | null): void {
   // Not in `presentationPrefsFor`: the edge selection is the timeline's, so it is
   // read here and stays put when the presentation changes below.
   state.edges = storedEdges(store, viewId);
+  // Read here and not in `presentationPrefsFor` for the same reason as the edges
+  // above: the order belongs to the timeline, not to the presentation showing it.
+  state.orderFrom = storedOrderFrom(store, viewId);
 }
 
 /**
@@ -390,6 +400,12 @@ export function saveViewPrefs(viewId: string | null = state.activeView?.id ?? nu
 export function saveEdgeSelection(viewId: string | null = state.activeView?.id ?? null): void {
   if (!viewId) return;
   writeViewPrefsStore(withEdgeSelection(readViewPrefsStore(), viewId, state.edges));
+}
+
+/** Write the chosen order back to the timeline it belongs to. Its own call, like the edges'. */
+export function saveOrderFrom(viewId: string | null = state.activeView?.id ?? null): void {
+  if (!viewId) return;
+  writeViewPrefsStore(withOrderFrom(readViewPrefsStore(), viewId, state.orderFrom));
 }
 
 // The whole per-source fold store, `{ [sourceId]: itemId[] }`. A malformed or

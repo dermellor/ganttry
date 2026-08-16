@@ -63,6 +63,7 @@ import { renderListView, setupListView } from './listView';
 import { renderGraphView, syncGraphSelection } from './graphView';
 import { setupFilterControl } from './filterControl';
 import { setupEdgeControl } from './edgeControl';
+import { setupOrderControl } from './orderControl';
 import {
   applySavedView,
   setupSavedViewsControl,
@@ -477,6 +478,9 @@ async function bootstrap() {
   setupListView();
   setupFilterControl();
   setupEdgeControl();
+  // The order changes what the graph draws and nothing else, so a change repaints
+  // through the same path a grouping change does rather than reloading the source.
+  setupOrderControl(() => applyGrouping());
   // The presentation switch is handed over rather than reimplemented: applying a
   // view may enter a plugin view, which needs the mode resolved against this
   // timeline's plugins and its chunk loaded.

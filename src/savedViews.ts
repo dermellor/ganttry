@@ -119,6 +119,7 @@ export type DisplayState = {
   groupBy: string;
   filters: Record<string, string[]>;
   edges?: EdgeSelection;
+  orderFrom?: string;
 };
 
 /**
@@ -162,6 +163,10 @@ export function savedViewMatches(view: SavedView, current: DisplayState): boolea
   if (JSON.stringify(canonicalEdges(view.edges)) !== JSON.stringify(canonicalEdges(current.edges))) {
     return false;
   }
+  // Also compared as an absence rather than as „no opinion", like the two above:
+  // a view saved before this existed states no order, and a timeline showing none
+  // is exactly what it was showing.
+  if ((view.orderFrom ?? '') !== (current.orderFrom ?? '')) return false;
   return true;
 }
 
@@ -227,6 +232,7 @@ export function sanitizeSavedView(raw: unknown): SavedView | null {
       : undefined,
   );
   if (Object.keys(filters).length) out.filters = filters;
+  if (typeof rec.orderFrom === 'string' && rec.orderFrom) out.orderFrom = rec.orderFrom;
   if (typeof rec.owner === 'string' && rec.owner) out.owner = rec.owner;
   out.visibility = rec.visibility === 'instance' ? 'instance' : 'private';
   if (typeof rec.version === 'number' && Number.isFinite(rec.version)) out.version = rec.version;

@@ -31,6 +31,7 @@ import {
 import { syncDerivedFieldControls } from './customFields';
 import { syncFilterControl } from './filterControl';
 import { syncEdgeControl } from './edgeControl';
+import { syncOrderControl } from './orderControl';
 import { syncSavedViewsControl } from './savedViewsControl';
 import { GROUP_DIM } from './listGrouping';
 import { DependencyArrows } from './arrows';
@@ -287,6 +288,7 @@ function computeDisplay(): { items: TimelineItem[]; groups: TimelineGroup[] } {
   syncGroupByControl(options, dim);
   syncFilterControl();
   syncEdgeControl();
+  syncOrderControl();
   // Every repaint, so the trigger's asterisk follows a grouping or filter change
   // made in the two controls beside it. Cheap: the panel is a list of commands
   // rebuilt from state, not something anybody is mid-way through ticking.

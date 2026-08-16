@@ -283,31 +283,22 @@ reasoning that put `groups` and `phases` there.
 | `filenameDatePatterns` | Regexes tried against the filename when no frontmatter date is found. |
 | `groupFromFolder` | Take the group from the subfolder when the frontmatter names none. Off by default: a flat folder has nothing to derive, and subdirectories that are storage rather than meaning would gain groups that say nothing. |
 | `linkEdges` | Read `[[wikilinks]]` as relations. Off by default, because in most folders a link is a reference and not a dependency. |
-| `orderFrom` | A file in the folder whose `[[wikilinks]]`, read top to bottom, are the order its items are meant to be read in. Off by default; a folder without such a file states nothing. |
 
-**The block travels with the scanned `TimelineFile`, and its presence is what
-says „this timeline is a folder".** It used to be stripped, on the grounds that it
-describes how the directory was *read* and is spent by the time there are items.
-That holds for the effect and not for the setting: a reader who wants to name an
-order file has to see the one named now, and a setting the code reads and the
-interface never offers is the gap „Every stored setting is reachable"
-([`information-architecture.md`](information-architecture.md)) is about.
+There used to be a fifth, `orderFrom`, naming the file whose links are the items'
+order. It moved to the saved view — see „An order a view declares" below.
 
-It is always an object, empty when the folder declares nothing. That is what lets
-the settings form tell **„this folder has named no order file"** from **„this
-timeline is not a folder"** — two different answers, and hiding the control on the
-first would hide it on exactly the folder somebody came to configure. A database
-timeline and a standalone JSON file carry no block at all, and both refuse a write
-to one (`501`) rather than storing a key nothing would read.
+**The block travels with the scanned `TimelineFile`, and it did not always.** It
+was stripped, on the grounds that it says how the directory was *read* and is spent
+by the time there are items. That was right about the reader and wrong about the
+writer: the write path takes the scanned file, drops the items and stores the rest
+as the container, so a block that never arrived was a block every write deleted.
+Renaming a timeline silently removed the folder's `dateFields` and `linkEdges` from
+its `timeline.json`, and nothing failed — the next scan simply read the folder by
+the defaults. A scanned directory therefore always carries the block, empty when it
+declares nothing.
 
-What the block carries is what the folder **declared**, never what the scan
-resolved: the caller's defaults are how it ran, and folding them in would show a
-form full of settings nobody wrote, then write them into the file on the first
-save.
-
-Only `orderFrom` has a control so far ([`editing.md`](editing.md) → „The
-timeline's own settings"). The other four are reachable through this seam and not
-yet offered.
+None of the four has a control yet. They are settings of the *source*, and the one
+that reached the interface turned out not to belong to the source at all.
 
 ### Wikilinks as relations
 
@@ -405,7 +396,7 @@ the chain of reveals, which are different pictures of one directory. A named one
 a saved view („Gespeicherte Ansichten", [`editing.md`](editing.md)), which stores
 the selection with the timeline and hands it to the next reader.
 
-### An order file as the items' order
+### An order a view declares
 
 A folder of notes carries no order of its own. The filesystem sorts by name, the
 scan sorts by date, and a folder whose `dateFields` is empty has neither — so
@@ -415,31 +406,49 @@ person who wrote them.
 Stamping an index into every note's frontmatter would be the wrong repair: it has
 to be renumbered on every insert, and it duplicates something a folder with an
 order almost always already keeps by hand — a table of contents, an agenda, a
-running order. `orderFrom` names that file. Every `[[wikilink]]` in it, read top to
-bottom, stamps the next 1-based position on the item it resolves to
-(`metadata.sequence`), through the same resolver the relations use, so a link in the
-order file and the same link in a note cannot land on different items. First
-mention wins, a link out of the folder takes no position with it, and a named file
-that is missing leaves everything unpositioned rather than failing the scan.
+running order. That file is a note like any other, so it is an **item** like any
+other, and the `[[wikilinks]]` in its body are already recorded in the order the
+author wrote them (`linkEdges`). Naming that item is all the setting has to do.
 
-**The reading is blind to markdown structure on purpose.** Every wikilink counts,
-whatever list depth or heading it sits on: a vault's nesting means something to its
-author and nothing to a scanner, so reading it would be guessing, while „where in
-the file the author wrote this link" is a fact. The side effect is the useful one —
-a heading that names a note (`## [[Teil]]`, `### [[Kapitel]]`) lands just ahead of
-what is listed under it, which is where a container of them belongs, and an item
-bound to a chapter rather than to a single entry therefore still gets a position.
-Frontmatter is skipped (the editor's bookkeeping, not the document) and so is
-fenced code (quotation, the same reading `linkEdges` takes of a body).
+**A saved view names it, not the folder** (`SavedView.orderFrom`), and that is the
+correction this section exists to record. It was a folder-level key first, resolved
+by the scan into a 1-based `metadata.sequence` on every item it reached — and a
+scan that stamps one order can only ever draw one picture. The same notes are read
+for the plan and for the chain of reveals; those are different pictures of one
+directory and they want different spines. An order is a way of *looking* at the
+material, so it belongs beside the three other ways a view stores: the
+presentation, the grouping and the narrowing. „Gespeicherte Ansichten"
+([`editing.md`](editing.md)) is where it is chosen.
 
-Only the items the file lists get a position, which is the normal case rather than
-a gap: the file lists the spine of the material, and the rest hangs off a listed
-item by a link. [`src/sequence.ts`](../src/sequence.ts) closes that gap on the read
-side — an unlisted item takes the **lowest** position among the items linking to
-it, one hop only. Lowest because that is where it first becomes relevant; one hop
-because a position that travelled on from a derived one would seep through an
-arbitrarily long chain of references and make everything read as if it happened at
-once.
+Resolving it on the read side is what the move costs and buys.
+[`src/sequence.ts`](../src/sequence.ts) turns the named item's body links into
+positions, so it needs those links recorded — `scan.linkEdges` — where the old
+folder-level key did not. That is a smaller dependency than it looks: the
+derivation below has always needed them, and the only thing reading these positions
+is the relation graph, which is a picture of links. What it buys is a reader who
+can try a different spine without the source being scanned again, which is the
+whole point of the setting sitting on a view.
+
+**Body links only, and the reading is blind to markdown structure on purpose.**
+Every wikilink in the note's prose counts, whatever list depth or heading it sits
+on: a vault's nesting means something to its author and nothing to a scanner, so
+reading it would be guessing, while „where in the note the author wrote this link"
+is a fact. The side effect is the useful one — a heading that names a note
+(`## [[Teil]]`, `### [[Kapitel]]`) lands just ahead of what is listed under it,
+which is where a container of them belongs. A link under a *frontmatter* key is
+left out: that is a relation somebody declared about the note, while the order is
+what the document says. Fenced code never reached the record at all, being
+quotation. First mention wins, and a link out of the folder resolved to nothing and
+was never recorded, so it takes no position with it and leaves no gap that would
+read as a deleted item.
+
+Only the items the note lists get a position, which is the normal case rather than
+a gap: the note lists the spine of the material, and the rest hangs off a listed
+item by a link. `sequence.ts` closes that gap on the read side — an unlisted item
+takes the **lowest** position among the items linking to it, one hop only. Lowest
+because that is where it first becomes relevant; one hop because a position that
+travelled on from a derived one would seep through an arbitrarily long chain of
+references and make everything read as if it happened at once.
 
 The derivation sits there rather than in `graphLayout.ts` for two reasons. It reads
 item metadata and link structure, which is model rather than geometry, and the

@@ -476,6 +476,29 @@ export type SavedView = {
    * DB source that ever records them needs the migration before it needs this.
    */
   edges?: Record<string, 'off' | 'in' | 'out'>;
+  /**
+   * The **item** whose body wikilinks, read top to bottom, are the order this
+   * view puts its items in (`src/sequence.ts`). Absent means the view states no
+   * order, which is what every view saved before this spells.
+   *
+   * It sits on the view and not on the folder, and that is the whole point: the
+   * same notes are read for the plan and for the chain of reveals, which are
+   * different pictures of one directory, and a folder that names one order can
+   * only ever draw one of them. A running order is a way of looking at the
+   * material, so it belongs where the other three ways of looking live — beside
+   * `mode`, `groupBy`, `filters` and `edges`.
+   *
+   * An **item id** rather than a filename, because that is the handle the reader
+   * can resolve with what it already has. The order file is itself a note, so the
+   * scan records its links like any other note's; naming the file instead would
+   * mean the client could not tell whether a name it was handed exists until the
+   * server had scanned it again.
+   *
+   * Round-trips through a local source for the reason `edges` does, and drops on
+   * a database one: only a directory scan records the link origins this reads,
+   * and a DB timeline is not a folder with an order file in it.
+   */
+  orderFrom?: string;
   /** The address of whoever created it. Empty on a source with no identity. */
   owner?: string;
   /** Defaults to `private` when absent, which is what an older file spells. */
@@ -518,20 +541,17 @@ export type TimelineFile = {
    *
    * It used to be stripped before a scanned directory reached the client, on the
    * grounds that it says how the directory was read and is spent by the time
-   * there are items. That is true of its **effect** and false of the **setting**:
-   * somebody who wants to name an order file has to be able to see the one that
-   * is named now, and „a stored setting is reachable in the interface"
-   * (AGENTS.md → Conventions) outranks keeping the payload narrow.
+   * there are items. That reasoning was right about the reader and wrong about
+   * the writer: the write path takes the scanned file, drops the items and stores
+   * the rest as the container, so a block that never arrived was a block every
+   * write deleted. Renaming a timeline silently removed the folder's `dateFields`,
+   * `linkEdges` and `orderFrom` from its `timeline.json`, and nothing failed —
+   * the next scan simply read the folder by the defaults.
    *
-   * Its **presence is the discriminator**: a scanned directory always carries the
-   * block, empty when it declares nothing, and every other source kind carries
-   * none. That is what lets the settings form tell „this folder has not named an
-   * order file" from „this timeline is not a folder", which are different answers
-   * and must not look alike.
-   *
-   * A standalone JSON source may therefore spell it and nothing will read it —
-   * the same latitude the schema already gives a hand-written file for `version`
-   * and the audit stamps, which are equally server-filled.
+   * A scanned directory always carries the block, empty when it declares nothing;
+   * every other source kind carries none. A standalone JSON source may spell it
+   * and nothing will read it, which is the same latitude the schema already gives
+   * a hand-written file for `version` and the audit stamps.
    */
   scan?: ScanConfig;
   /**
@@ -619,25 +639,6 @@ export type ScanConfig = {
    * is a reference and not a dependency.
    */
   linkEdges?: boolean;
-  /**
-   * A file in the folder whose `[[wikilinks]]`, read top to bottom, are the order
-   * the items are meant to be read in. Each resolved link stamps a 1-based
-   * `metadata.sequence` on the item it names; the first mention wins.
-   *
-   * A folder of notes has no inherent order — the filesystem sorts by name and the
-   * scan sorts by date, neither of which is the order the author intended — but a
-   * folder that *has* one usually already writes it down somewhere, as a table of
-   * contents, an agenda, a running order. Naming that file is cheaper and truer
-   * than stamping an index into every note's frontmatter, where it would have to
-   * be renumbered on every insert.
-   *
-   * The whole file is read, headings included: the position of a link is where the
-   * author put it, and this deliberately has no opinion about list nesting or
-   * heading levels, which differ per vault. Frontmatter and fenced code are
-   * skipped, being metadata and quotation rather than the document's own order.
-   * Off by default; a folder without such a file states nothing.
-   */
-  orderFrom?: string;
 };
 
 /**

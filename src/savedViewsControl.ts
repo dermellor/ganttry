@@ -39,7 +39,15 @@ import {
   Separator,
   TextInput,
 } from './design-system';
-import { els, state, saveEdgeSelection, saveViewPrefs, setStatus, syncUrl } from './state';
+import {
+  els,
+  state,
+  saveEdgeSelection,
+  saveOrderFrom,
+  saveViewPrefs,
+  setStatus,
+  syncUrl,
+} from './state';
 import { apiCreateSavedView, apiDeleteSavedView, apiUpdateSavedView } from './editor';
 import {
   canEditSavedView,
@@ -106,6 +114,7 @@ function drifted(view: SavedView): boolean {
     groupBy: state.groupBy,
     filters: state.filters,
     edges: state.edges,
+    orderFrom: state.orderFrom,
   });
 }
 
@@ -140,6 +149,11 @@ export function applySavedView(view: SavedView): void {
   // named reading of a vault's relations shareable at all.
   state.edges = { ...(view.edges ?? {}) };
   saveEdgeSelection();
+  // Unconditional like the two above: a view saved without an order says „no
+  // order", and leaving the previous view's spine standing would draw this one's
+  // chain from a note it never named.
+  state.orderFrom = view.orderFrom ?? '';
+  saveOrderFrom();
   state.activeSavedViewId = view.id;
   // The two above are set BEFORE the switch, and the switch is told to keep them
   // (`keepPrefs` in main.ts): perspective and extent are stored per presentation,
@@ -166,6 +180,7 @@ function currentAsView(name: string): Record<string, unknown> {
     groupBy: state.groupBy,
     filters: state.filters,
     edges: canonicalEdges(state.edges),
+    orderFrom: state.orderFrom,
   };
 }
 

@@ -690,6 +690,16 @@ const savedViewFields = {
         'linked note leads to this one and is the default for a field left out, "out" the reverse. ' +
         'Field names come from the items\' metadata.wikilinks; a source without those ignores this.',
     ),
+  orderFrom: z
+    .string()
+    .optional()
+    .describe(
+      'Directory sources only: the id of the ITEM whose body wikilinks, read top to bottom, are the ' +
+        'order this view puts the timeline in — a table of contents, an agenda, a running order, ' +
+        'which in a folder of notes is a note like any other. The graph starts its chain at the ' +
+        'earliest item the order places. Links under a frontmatter key do not count; only the ' +
+        "note's own prose does. A source that records no wikilinks ignores this.",
+    ),
   owner: z
     .string()
     .optional()

@@ -12,7 +12,6 @@
 
 import type { CustomFieldDef, TimelineFile, View } from './types';
 import { GROUP_DIM } from './listGrouping';
-import { sequencePositions } from './sequence';
 import { t } from './i18n';
 
 /**
@@ -44,14 +43,6 @@ export type TimelineMetaDraft = {
   bandRootGroup: string;
   /** `graph.referenceGroup`: the group listed on the nodes it references. */
   referenceGroup: string;
-  /**
-   * `scan.orderFrom`: the file in the folder whose wikilinks are the items' order.
-   *
-   * Always '' on a source that is not scanned, where the form draws no control for
-   * it — so the diff below sees no change and sends no `scan` key to a store that
-   * would refuse one.
-   */
-  orderFrom: string;
 };
 
 /** The default dimension, spelled out or left empty, as the form's empty option. */
@@ -77,40 +68,7 @@ export function timelineMetaDraft(view: View | null, file: TimelineFile | null):
     groupOrder: file?.groupOrder ?? '',
     bandRootGroup: file?.graph?.bandRootGroup ?? '',
     referenceGroup: file?.graph?.referenceGroup ?? '',
-    orderFrom: file?.scan?.orderFrom ?? '',
   };
-}
-
-/**
- * Is this timeline read by scanning a folder — the question „does the order-file
- * setting apply here at all?"
- *
- * The **presence** of the block answers it, not any value in it: a scanned
- * directory always carries one, empty when it declares nothing (see
- * `scanDirectory`). Reading `orderFrom` instead would hide the control on exactly
- * the folder that has yet to name a file.
- */
-export function isScannedSource(file: TimelineFile | null): boolean {
-  return !!file?.scan;
-}
-
-/**
- * An order file is named and positions nothing.
- *
- * Both ways that happens are silent — the named file is not in the folder, or it
- * holds no wikilink that resolves to an item of this timeline — and both leave
- * every item unpositioned, so the setting looks accepted and does nothing. They
- * are reported as one statement rather than told apart, because telling them apart
- * needs the scanner's view of the folder and the symptom the reader is looking at
- * is the same either way.
- *
- * `sequencePositions` rather than a count of stamped items, so an item that only
- * inherits its position from one that links to it counts as positioned too: the
- * question is whether the order file did anything, not how much of it it did.
- */
-export function orderFileFindsNothing(file: TimelineFile | null): boolean {
-  if (!file?.scan?.orderFrom) return false;
-  return sequencePositions(file.items).size === 0;
 }
 
 /**
@@ -166,14 +124,6 @@ export function timelineMetaPatch(
     // which reads as „configured, to nothing". Cleared is cleared.
     patch.graph = Object.keys(graph).length ? graph : null;
   }
-
-  // `scan` goes the other way from `graph`: the key alone, merged by the store into
-  // whatever else the block holds. The form edits one of its five settings, so a
-  // replacement would clear the four it never showed — `dateFields: []` among them,
-  // whose loss shows up as a folder full of items dated the day they were typed.
-  // Cleared is `null`, which deletes the key rather than storing an empty name.
-  const orderFrom = next.orderFrom.trim();
-  if (orderFrom !== current.orderFrom.trim()) patch.scan = { orderFrom: orderFrom || null };
 
   return Object.keys(patch).length ? patch : null;
 }

@@ -49,6 +49,7 @@ type SavedViewInput = {
   groupBy?: string | null;
   filters?: Record<string, string[]> | null;
   edges?: Record<string, string> | null;
+  orderFrom?: string | null;
   owner?: string;
   visibility?: string;
 };
@@ -89,6 +90,14 @@ function merged(current: SavedView, input: SavedViewInput): SavedView {
     const edges = canonicalEdges(sanitizeEdgeSelection(input.edges ?? {}));
     if (Object.keys(edges).length) next.edges = edges;
     else delete next.edges;
+  }
+  // Named here rather than carried through by a spread, like every field above it:
+  // this function builds the stored view from a whitelist, so a field the client
+  // sends and nobody names is accepted, answered 200, and silently not stored.
+  if (input.orderFrom !== undefined) {
+    const orderFrom = typeof input.orderFrom === 'string' ? input.orderFrom.trim() : '';
+    if (orderFrom) next.orderFrom = orderFrom;
+    else delete next.orderFrom;
   }
   if (input.visibility !== undefined) {
     next.visibility = input.visibility === 'instance' ? 'instance' : 'private';

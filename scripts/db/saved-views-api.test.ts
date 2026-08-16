@@ -174,3 +174,25 @@ test('an edge selection is cleared by an explicit null and untouched when unname
   const cleared = await call(repo, 'PATCH', ALICE, { viewId: 'mine', body: { edges: null } });
   assert.equal('edges' in (cleared.json as SavedView), false);
 });
+
+// The order a view reads its items in, through the same endpoint and with the same
+// two-way rule. It is here because `merged` builds the stored view from a
+// whitelist: a field the client sends and that function does not name is accepted,
+// answered 2xx and silently not stored — which is exactly what this one did on its
+// first run, and what a browser cannot tell from a successful save.
+test('the order a view declares is stored, and whitespace is not a value', async () => {
+  const repo = memoryRepo();
+  const res = await call(repo, 'POST', ALICE, { body: { name: 'Kette', orderFrom: '  _Index  ' } });
+  assert.equal(res.status, 201);
+  assert.equal((res.json as SavedView).orderFrom, '_Index');
+  const blank = await call(repo, 'POST', ALICE, { body: { name: 'Ohne', orderFrom: '   ' } });
+  assert.equal('orderFrom' in (blank.json as SavedView), false);
+});
+
+test('the order is cleared by an explicit null and untouched when unnamed', async () => {
+  const repo = memoryRepo([{ ...mine, orderFrom: '_Index', groupBy: 'status' }]);
+  const kept = await call(repo, 'PATCH', ALICE, { viewId: 'mine', body: { groupBy: 'tag' } });
+  assert.equal((kept.json as SavedView).orderFrom, '_Index', 'an unnamed field survives');
+  const cleared = await call(repo, 'PATCH', ALICE, { viewId: 'mine', body: { orderFrom: null } });
+  assert.equal('orderFrom' in (cleared.json as SavedView), false);
+});

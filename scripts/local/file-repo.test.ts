@@ -454,45 +454,6 @@ describe('directory source: writing', () => {
     assert.equal(container.description, 'Neu');
   });
 
-  // Merged, not replaced: the settings form holds one of the block's five keys, so
-  // a whole-block write would clear the four it never showed — `dateFields: []`
-  // among them, whose loss reads as data rather than as a lost setting.
-  test('an order file is merged into the block, leaving the rest alone', async () => {
-    const dir = await seedDir(
-      'w-scan-merge',
-      { name: 'F', scan: { dateFields: [], linkEdges: true } },
-      { 'a.md': NOTE_A },
-    );
-    await makeFileRepo(dirs).updateMeta('w-scan-merge', { scan: { orderFrom: '_Index.md' } });
-    const container = JSON.parse(await readFile(join(dir, 'timeline.json'), 'utf8'));
-    assert.deepEqual(container.scan, { dateFields: [], linkEdges: true, orderFrom: '_Index.md' });
-  });
-
-  test('a null clears one key, and the last one takes the block with it', async () => {
-    const dir = await seedDir('w-scan-clear', { name: 'F', scan: { orderFrom: '_Index.md' } }, { 'a.md': NOTE_A });
-    const repo = makeFileRepo(dirs);
-    await repo.updateMeta('w-scan-clear', { scan: { orderFrom: null } });
-    const container = JSON.parse(await readFile(join(dir, 'timeline.json'), 'utf8'));
-    // Not `"scan": {}`, which would read as „configured, to nothing" — the same
-    // distinction the graph settings make when both of theirs are cleared.
-    assert.equal('scan' in container, false);
-  });
-
-  test('a folder that declares nothing does not gain an empty block', async () => {
-    const dir = await seedDir('w-scan-none', { name: 'F' }, { 'a.md': NOTE_A });
-    await makeFileRepo(dirs).updateMeta('w-scan-none', { name: 'G' });
-    const container = JSON.parse(await readFile(join(dir, 'timeline.json'), 'utf8'));
-    assert.equal('scan' in container, false, 'the scan ships {} to say „folder", the file does not store it');
-  });
-
-  test('a JSON source refuses a scan patch rather than storing a dead setting', async () => {
-    await seed('w-scan-json');
-    await assert.rejects(
-      () => makeFileRepo(dirs).updateMeta('w-scan-json', { scan: { orderFrom: '_Index.md' } }),
-      NotSupportedError,
-    );
-  });
-
   test('the shared validations apply to a directory too', async () => {
     await seedDir('w-val', {}, { 'a.md': NOTE_A });
     const repo = makeFileRepo(dirs);

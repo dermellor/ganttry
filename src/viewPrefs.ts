@@ -77,6 +77,17 @@ export type StoredViewPrefs = {
    * as a setting.
    */
   edges?: EdgeSelection;
+  /**
+   * The item whose body wikilinks are the order this timeline is read in
+   * (`SavedView.orderFrom`, resolved in src/sequence.ts).
+   *
+   * Beside `edges` and for its reason: it decides what the material *is* rather
+   * than how one presentation bundles it, and the graph is the only thing reading
+   * it today. Stored here as well as on a saved view because a reader who has
+   * chosen an order without saving a view still expects it on the next visit —
+   * exactly what the edge selection needed.
+   */
+  orderFrom?: string;
 };
 
 /** Perspective and extent resolved for one presentation. */
@@ -258,6 +269,36 @@ export function withEdgeSelection(
   return next;
 }
 
+/** Which note's links order this timeline. Empty means „no order stated". */
+export function storedOrderFrom(store: ViewPrefsStore, viewId: string | null | undefined): string {
+  const stored = viewId ? store[viewId] : undefined;
+  return typeof stored?.orderFrom === 'string' ? stored.orderFrom : '';
+}
+
+/**
+ * The store with `viewId`'s order replaced. Its own call for the reason
+ * `withEdgeSelection` is one: a control that fires at its own moment, and folding
+ * it in would make every grouping change rewrite it.
+ */
+export function withOrderFrom(
+  store: ViewPrefsStore,
+  viewId: string,
+  orderFrom: string,
+): ViewPrefsStore {
+  const next: ViewPrefsStore = { ...store };
+  const entry: StoredViewPrefs = { ...store[viewId] };
+  // Nothing chosen drops the key rather than storing '', so the store does not
+  // grow an entry per timeline anybody ever opened.
+  if (orderFrom) entry.orderFrom = orderFrom;
+  else delete entry.orderFrom;
+  if (!Object.keys(entry).length) {
+    delete next[viewId];
+    return next;
+  }
+  next[viewId] = entry;
+  return next;
+}
+
 /**
  * Perspective and extent for one presentation: its own entry, else the timeline's
  * legacy values, else the defaults.
@@ -337,8 +378,12 @@ export function withViewPrefs(
   if (previous?.filterValues) entry.filterValues = [...previous.filterValues];
   if (previous?.milestonesOnly) entry.milestonesOnly = true;
   // Carried over rather than rebuilt: the edge selection belongs to the timeline
-  // and has a save of its own, so a grouping change must not clear it.
+  // and has a save of its own, so a grouping change must not clear it. The chosen
+  // order is here for the same reason and gets forgotten the same way — this
+  // function builds its entry from scratch, so every key with its own save has to
+  // be named again or a grouping change silently drops it.
   if (previous?.edges) entry.edges = { ...previous.edges };
+  if (previous?.orderFrom) entry.orderFrom = previous.orderFrom;
 
   if (!Object.keys(entry).length) {
     delete next[viewId];

@@ -894,10 +894,10 @@ arrows, and an item with no date yet lived in the list and nowhere else.
   sink: of the nodes nothing leads out of, the one that collected the most, where a
   node's weight is itself plus everything that recursively feeds into it. It
   **starts** at the earliest source that can reach that sink — earliest by the order
-  the source declares (`metadata.sequence`, see
-  [local sources](local-sources.md#an-order-file-as-the-items-order)), with a node
-  the order does not place counting as after every node it does, so it can never
-  claim the head. In between, each step forward takes the heaviest successor.
+  the **applied view** declares (`SavedView.orderFrom`, see [local
+  sources](local-sources.md#an-order-a-view-declares)), with a node the order does
+  not place counting as after every node it does, so it can never claim the head. In
+  between, each step forward takes the heaviest successor.
 
   Weight decides the sink and the steps and must not decide the head: at a fork the
   trunk is whichever branch collected more, so a side strand of three nodes
@@ -907,9 +907,11 @@ arrows, and an item with no date yet lived in the list and nowhere else.
   the second station rather than at the book's opening revelation. „Which of these
   comes first" is a question about order, and weight was never an answer to it.
 
-  A source that declares no order has nothing to go by, and the band then falls back
+  A view that declares no order has nothing to go by, and the band then falls back
   to that walk back from the sink, unchanged — which is every JSON and database
-  timeline, and every folder without an order file.
+  timeline, and every view that names no note. Changing the note in the
+  „Reihenfolge" control therefore re-heads the chain without reloading anything,
+  which is what putting the setting on the view was for.
 
 - **Inside a feeder group the order decides the stack.** The feeders of one beat
   share a column, and a dependency among them runs source-first so its arrow points
@@ -1226,6 +1228,7 @@ timelines.viewPrefs = {
   "<viewId>": {
     mode: "list",                                   // which presentation is open
     edges: { "Hints": "off", "": "out" },           // the timeline's, not a presentation's
+    orderFrom: "_Index",                            // ditto: which note states the order
     presentations: {
       "timeline":                   { groupBy: "group" },
       "list":                       { groupBy: "status", filters: { status: ["Open"] } },
@@ -1235,14 +1238,23 @@ timelines.viewPrefs = {
 }
 ```
 
-**One setting deliberately stays at the timeline level: `edges`.** It says which
-of a scanned folder's link fields become dependencies and which way they point
-(„Wikilinks as relations", [`local-sources.md`](local-sources.md)), and the Gantt
-arrows and the graph read one dependency map between them. Per presentation, the
-two could disagree about what depends on what, which reads as a bug in one of them
-rather than as a setting. Only fields deviating from the default are written, and
-the empty key is the note body; a selection back at the default drops the entry
-rather than storing every field as `in`.
+**Two settings deliberately stay at the timeline level: `edges` and `orderFrom`.**
+The first says which of a scanned folder's link fields become dependencies and
+which way they point („Wikilinks as relations",
+[`local-sources.md`](local-sources.md)), and the Gantt arrows and the graph read
+one dependency map between them. Per presentation, the two could disagree about
+what depends on what, which reads as a bug in one of them rather than as a setting.
+Only fields deviating from the default are written, and the empty key is the note
+body; a selection back at the default drops the entry rather than storing every
+field as `in`.
+
+The second names the note whose body links are the order this timeline is read in
+(„An order a view declares", [`local-sources.md`](local-sources.md)). Same level
+for the same reason: it decides what the material *is* rather than how one
+presentation bundles it. Both have a **save of its own**, and that is not
+cosmetic — `withViewPrefs` builds its entry from scratch, so a key with its own
+save that is not named again there is dropped by the next grouping change. That
+went wrong for `orderFrom` on the first run and is pinned by a test.
 
 Lanes and list sections are different mechanisms, so „group by Gruppe on the
 timeline, by Status in the list" is an ordinary wish, and one shared value made it
@@ -1317,8 +1329,8 @@ the clicks.
 
 An **Ansicht** is that combination under a name, stored with the timeline: the
 presentation, the grouping dimension, the filter selection and, on a source that
-scanned wikilinks, the edge selection, plus who it belongs to and whether the
-instance may see it. The control is the first one in the presentation bar
+scanned wikilinks, the edge selection and the note that states the order, plus who
+it belongs to and whether the instance may see it. The control is the first one in the presentation bar
 ([`src/savedViewsControl.ts`](../src/savedViewsControl.ts)), at the head of the
 controls it is a shortcut over.
 
@@ -1331,6 +1343,15 @@ none for it, so a DB-backed view drops it — which is not a gap in practice, be
 only a directory scan records the link origins the setting acts on and the control
 never appears without them. A DB source that ever records them needs the migration
 before it needs this.
+
+**`orderFrom` travels the same road and for the same reasons**, since it reads the
+same link records: local sources round-trip it, the database path drops it, and the
+control is hidden wherever nothing recorded a link. One thing about it is worth
+stating separately, because the write path is a whitelist: `merged` in
+[`saved-views-api.ts`](../scripts/db/saved-views-api.ts) builds the stored view
+field by field, so a field the client sends and that function does not name is
+accepted, answered `201`, and silently not stored. That is exactly what happened on
+the first run of this, and a browser cannot tell it from a successful save.
 
 **It is a mark, not a labelled control, and that was decided against a
 measurement.** With a plugin contributing a control of its own, the bar already
@@ -1519,8 +1540,7 @@ Creating a timeline belongs here too and is not here: there is no create route y
 ## The timeline's own settings
 
 What is true of the timeline as a whole — its name, its description, the dimension it
-opens with, the order of its groups, the two settings the relation graph reads and, on
-a scanned folder, the file its order comes out of — is
+opens with, the order of its groups and the two settings the relation graph reads — is
 edited in its own area, `#timeline-settings=<section>`, reached from
 the gear beside the name ([`src/timelineSettings.ts`](../src/timelineSettings.ts)).
 It shares its frame and its section mechanics with the instance area (see „The second
@@ -1566,34 +1586,6 @@ one a directory source derives from folder names without declaring — would sho
 general rule for anything the code reads (see „Every stored setting is reachable"
 ([`information-architecture.md`](information-architecture.md))). What says so in words
 is the „Nur lesend" badge beside the name, once.
-
-**`scan.orderFrom` is the sixth field, and the only one that is left out rather
-than disabled.** It names the file in a folder whose wikilinks are the items'
-order (see „An order file as the items' order"
-([`local-sources.md`](local-sources.md))), and a folder is the only thing that has
-one: a database timeline and a standalone JSON file are not read by scanning, so
-the setting does not exist for them at all. That is a different statement from
-„you may not change this here", which is what the disabled controls above make,
-and drawing one as the other would claim the product has a concept it does not.
-The **presence of the `scan` block** decides it, never a value in it — a folder
-that has named no file still carries an empty block, and that is precisely the
-folder somebody opened this section to configure. On a read-only folder the field
-is shown disabled like the rest.
-
-It is **merged rather than replaced**, which is where it parts company with
-`graph` one paragraph up. Both of `graph`'s keys have a control, so a save carries
-the pair and replacing is exactly right; `scan` has five keys and one control, so
-replacing would clear `dateFields`, `filenameDatePatterns`, `groupFromFolder` and
-`linkEdges` every time somebody named an order file. `dateFields: []` is the one
-that would hurt: its loss reads as a folder full of items dated the day each note
-was typed, which looks like data rather than like a setting somebody deleted.
-
-**A named file that positions nothing is reported.** Both ways that happens — the
-file is not in the folder, or it holds no wikilink resolving to an item of this
-timeline — leave every item unpositioned, so the setting looks accepted and does
-nothing. They are told as one statement rather than apart, because the reader is
-looking at the same symptom either way and separating them needs the scanner's
-view of the folder rather than the timeline that was loaded.
 
 **The name exists twice, and the open timeline's source wins.** `TimelineFile.name` is
 live and writable; `View.name` is what the build wrote into `config.json` when it

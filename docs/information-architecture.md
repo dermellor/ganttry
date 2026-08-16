@@ -114,7 +114,7 @@ for a different part of the screen to set the same thing.
 | Enabled plugins and their config | a `timeline_plugins` row | 3 | timeline settings; stays an INSERT |
 | Name, description, default grouping | the timeline settings route | 3 | done: `#timeline-settings=general`, written through `PATCH /api/source/<id>` |
 | Group order, the graph's two group settings | the timeline settings route | 3 | done: the same section and the same save, since all five are one PATCH. They were read by the client and settable only by hand-editing a file for two releases — see „Every stored setting is reachable" below |
-| The folder's order file (`scan.orderFrom`) | the timeline settings route | 3 | done: the same section and the same save. Shown only where the source is a scanned folder, because a timeline that is not one has no such setting to refuse — see „Every stored setting is reachable" below |
+| The note stating the order (`SavedView.orderFrom`) | the presentation bar, beside „Beziehungen" | 3, in a saved view | done: a way of *looking* at the material, so it sits with the presentation, grouping and narrowing a view stores rather than on the folder. It was a folder-level key first, and one order per folder can only draw one picture of notes that are read for several |
 | Phases as a set | only the ribbon | 3 | the set is structure of the timeline; one phase is level 5 |
 | Presence avatars | header, trailing edge | 3 | they belong to the open timeline and sit with the instance controls anyway: exactly one timeline is ever open, so no position in this bar can name the wrong one, and the trailing edge is where every other tool puts the people on a document |
 | Darstellung switch (Timeline / Liste / Graph) | the bar | 4 | done: first in the bar, since a presentation is what you choose first |
@@ -192,15 +192,13 @@ control goes, so the argument is had once.
   supported, so the gap between „stored" and „offered" is the product claiming
   something it does not do.
 
-  **„Disabled" is the answer for a setting this source refuses to change, not for
-  one this source does not have.** The two look alike from the code and are
-  opposite statements to a reader. `scan.orderFrom` is only a setting of a folder
-  read by scanning, so on a database timeline or a standalone JSON file it is left
-  out; on a read-only folder it is shown disabled like everything else. The test is
-  whether the code would ever read the value off *this* source: where it would, the
-  control is owed even when it cannot be used, and where it never would, drawing a
-  greyed-out control invents a concept the source does not have and sends the
-  reader looking for the permission that would enable it.
+  **Reaching it is not the same as putting it at the timeline's level.** The order
+  a graph reads its chain in was made reachable in `#timeline-settings=general`
+  first, which satisfied this rule and got the level wrong: a folder has one such
+  setting there, while the same notes are read for the plan and for the chain of
+  reveals. The question to ask before the control is drawn is what the setting is
+  *about* — the document, or one way of looking at it — because a stored setting at
+  the wrong level is reachable and still cannot express what somebody wants.
 - **Every level you can link to is in the address.** Levels 3 to 5 are in the hash
   and level 1 has its route; level 2 has no address because it has no surface yet.
   A level without an address cannot be handed to somebody else, which is what

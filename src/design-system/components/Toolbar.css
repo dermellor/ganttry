@@ -75,6 +75,18 @@
   letter-spacing: 0;
 }
 
+/* A `<select>` in the bar is bounded, for the same reason the caption above may
+   not wrap: a select's intrinsic width is its LONGEST option, and the bar wraps by
+   whole flex items. „Gruppieren" held together by accident while every option was
+   one word; the moment a control offered a note's title („Unterlingen 1 –
+   Manuskript") it took four hundred pixels and pushed itself onto a row of its
+   own. The value truncates instead, which is what the bar does with every other
+   long label it carries. */
+.ds-ToolbarControl .ds-Select {
+  max-width: 220px;
+  text-overflow: ellipsis;
+}
+
 .ds-ToolbarAnchor {
   position: relative;
   display: inline-flex;

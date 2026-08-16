@@ -856,28 +856,6 @@ export function makeFileRepo(dirs: FileRepoDirs): TimelineRepo {
         if (meta[key] === null) delete (next as any)[key];
         else (next as any)[key] = meta[key];
       }
-      // `scan` is merged rather than assigned, for the reason `TimelineMetaPatch`
-      // gives: the form holds one of its five keys, so replacing would clear the
-      // four it never saw. A key sent as null is deleted, and a block left with no
-      // keys is dropped by `containerOf` rather than written as `{}`.
-      if (meta.scan !== undefined) {
-        // A standalone JSON file states its items outright: nothing scans it, so
-        // there is no reading of it to configure. Refused rather than stored,
-        // because a key written into a file that nothing reads is the same dead
-        // setting from the other end.
-        if (!loaded.isDir) {
-          throw new NotSupportedError(`„${id}" is a JSON source and is not read by scanning`);
-        }
-        if (meta.scan === null) delete next.scan;
-        else {
-          const scan: Record<string, unknown> = { ...next.scan };
-          for (const [key, value] of Object.entries(meta.scan)) {
-            if (value === null) delete scan[key];
-            else scan[key] = value;
-          }
-          next.scan = scan;
-        }
-      }
       await persist(loaded, next);
     },
 

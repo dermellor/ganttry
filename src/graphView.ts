@@ -33,8 +33,9 @@ import { computeSections } from './listGrouping';
 import { metaOf, resolveGrouping, sectionContext, syncGroupByControl } from './grouping';
 import { syncFilterControl } from './filterControl';
 import { syncEdgeControl } from './edgeControl';
+import { syncOrderControl } from './orderControl';
 import { displayIdsFor, filterBuildForDisplay } from './render';
-import { sequencePositions } from './sequence';
+import { orderedIds, sequencePositions } from './sequence';
 import { els, state, syncUrl } from './state';
 import {
   edgePath,
@@ -342,6 +343,7 @@ export function renderGraphView(): void {
   syncGroupByControl(options, dim);
   syncFilterControl();
   syncEdgeControl();
+  syncOrderControl();
 
   if (!entries.length) {
     host.appendChild(emptyState(t('view.empty.filtered')));
@@ -362,11 +364,14 @@ export function renderGraphView(): void {
   const referenceLabel =
     build.groups.find((g) => g.id === config.referenceGroup)?.label ?? config.referenceGroup ?? '';
   // From the source file rather than from the build, for the same reason as the two
-  // above: which item the source's order puts first is a property of the timeline,
-  // and the items that carry the order are usually the ones the reader has filtered
-  // away — in „Hauptkette" the scenes are all hidden, and reading the visible set
-  // would leave every revelation unplaced.
-  const sequence = sequencePositions(state.activeSourceFile?.items);
+  // above: which item the order puts first is a property of the timeline, and the
+  // items that carry the order are usually the ones the reader has filtered away —
+  // in „Hauptkette" the scenes are all hidden, and reading the visible set would
+  // leave every revelation unplaced. The note supplying it is this **view's**
+  // choice, so a folder read for the plan and for the chain of reveals can spell a
+  // different spine for each.
+  const sourceItems = state.activeSourceFile?.items;
+  const sequence = sequencePositions(sourceItems, orderedIds(sourceItems, state.orderFrom));
 
   const { sections } = computeSections(entries, dim, options, sectionContext(groups));
   const layout = layoutGraph({

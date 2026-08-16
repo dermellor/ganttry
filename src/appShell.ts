@@ -79,6 +79,8 @@ export type AppShellElements = {
   edgeControl: HTMLElement;
   edgeToggle: HTMLButtonElement;
   edgeMenu: HTMLElement;
+  orderFrom: HTMLSelectElement;
+  orderControl: HTMLElement;
   switcherBtn: HTMLButtonElement;
   switcherControl: HTMLElement;
   switcherSearch: HTMLInputElement;
@@ -536,6 +538,16 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     children: ToolbarAnchor({ children: [edgeToggle, edgeMenu] }),
   });
 
+  // Which note's links state the order. Beside the edge control and hidden by the
+  // same rule: both read the recorded link origins, so a source that has none can
+  // offer neither. See src/orderControl.ts.
+  const orderFrom = Select({ id: 'order-from' });
+  const orderControl = ToolbarControl({
+    label: t('order.label'),
+    attrs: { id: 'order-control', hidden: true },
+    children: orderFrom,
+  });
+
   // The presentation level, in one bar and in the order the three actions happen:
   // a presentation is *chosen*, a perspective is *set*, an extent is *narrowed* —
   // then the one thing you *do* to what is on screen, pushed to the far end.
@@ -565,7 +577,9 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       // Split this way the bar is at most two rows — which presentation on the
       // first, how it is bundled and narrowed on the second.
       ToolbarGroup({ children: [modeToggle, pluginViewBar] }),
-      ToolbarGroup({ children: [savedViewsControl, groupByControl, filterControl, edgeControl] }),
+      ToolbarGroup({
+        children: [savedViewsControl, groupByControl, filterControl, edgeControl, orderControl],
+      }),
       ToolbarGroup({ end: true, children: [addBtn] }),
     ],
   });
@@ -670,6 +684,8 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
       edgeControl,
       edgeToggle,
       edgeMenu,
+      orderFrom,
+      orderControl,
       switcherBtn,
       switcherControl,
       switcherSearch,

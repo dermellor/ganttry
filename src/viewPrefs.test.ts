@@ -9,8 +9,10 @@ import {
   legacyViewPrefs,
   parseViewPrefsStore,
   storedEdges,
+  storedOrderFrom,
   viewPrefsFor,
   withEdgeSelection,
+  withOrderFrom,
   withViewPrefs,
   type ViewPrefsStore,
 } from './viewPrefs';
@@ -338,4 +340,32 @@ test('one timeline’s edges are not another’s', () => {
 test('a malformed stored direction reads as absent', () => {
   const store = parseViewPrefsStore(JSON.stringify({ 'src:a': { edges: { Hints: 'sideways', P: 'out' } } }));
   assert.deepEqual(storedEdges(store, 'src:a'), { P: 'out' });
+});
+
+// The chosen order is the timeline's too, and stored beside the edges for the same
+// reason. These pin the same two failures: a neighbouring save clearing it, and an
+// entry left behind for a timeline that states nothing.
+test('the chosen order survives a save of the presentation beside it', () => {
+  const store = withOrderFrom({}, 'src:buch', '_Index');
+  const after = withViewPrefs(store, 'src:buch', { mode: 'graph', groupBy: 'tag', filters: {} });
+  assert.equal(storedOrderFrom(after, 'src:buch'), '_Index');
+});
+
+test('clearing the order leaves no entry behind', () => {
+  const store = withOrderFrom({}, 'src:buch', '_Index');
+  const cleared = withOrderFrom(store, 'src:buch', '');
+  assert.equal('src:buch' in cleared, false);
+});
+
+test('one timeline’s order is not another’s', () => {
+  const store = withOrderFrom({}, 'src:a', '_Index');
+  assert.equal(storedOrderFrom(store, 'src:b'), '');
+  assert.equal(storedOrderFrom(store, null), '');
+});
+
+test('the order and the edges do not overwrite each other', () => {
+  let store = withEdgeSelection({}, 'src:buch', { Hints: 'off' });
+  store = withOrderFrom(store, 'src:buch', '_Index');
+  assert.deepEqual(storedEdges(store, 'src:buch'), { Hints: 'off' });
+  assert.equal(storedOrderFrom(store, 'src:buch'), '_Index');
 });
