@@ -19,22 +19,32 @@
   padding-left: var(--space-2xs);
 }
 
-/* A chip that is itself the control. The padding matches the span form on both
-   sides, since there is no remove button pulling the trailing edge in. */
-.ds-Chip[data-action] {
+/* A chip whose position is its value. The padding matches on both sides, since
+   there is no remove button pulling the trailing edge in, and the grab cursor is
+   the whole affordance — nothing else on a chip says „you can move this". */
+.ds-Chip[data-movable] {
   padding-right: var(--space-sm);
-  cursor: pointer;
-  font-family: inherit;
-  text-align: left;
+  cursor: grab;
+  user-select: none;
 }
 
-.ds-Chip[data-action]:hover {
+.ds-Chip[data-movable]:active {
+  cursor: grabbing;
+}
+
+.ds-Chip[data-movable]:hover {
   border-color: var(--accent);
 }
 
-.ds-Chip[data-action]:focus-visible {
+.ds-Chip[data-movable]:focus-visible {
   outline: var(--focus-ring);
   outline-offset: 1px;
+}
+
+/* The chip being dragged stays visible in its old group, faded, so the row does
+   not reflow under the pointer mid-drag. */
+.ds-Chip[data-dragging] {
+  opacity: 0.4;
 }
 
 .ds-Chip-code {

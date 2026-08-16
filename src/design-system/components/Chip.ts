@@ -21,13 +21,18 @@ export type ChipOptions = {
   /** Free text from before this field linked to anything. Muted and italic. */
   unlinked?: boolean;
   /**
-   * Makes the whole chip a button rather than a span, for a chip that *is* the
-   * control instead of standing beside one — a value you move by clicking it.
-   * Mutually exclusive with `removable`, whose own button would then nest.
+   * Makes the chip a drag source and puts it in the tab order, for a chip whose
+   * *position* is its value — one you move between the groups of a panel rather
+   * than read. Deliberately not a button: a click on it does nothing, and a
+   * button whose click does nothing is the worse lie of the two.
    */
-  action?: boolean;
-  /** The accessible name of an `action` chip, when the label alone is not it. */
-  actionLabel?: string;
+  movable?: boolean;
+  /**
+   * The accessible name of a `movable` chip. Worth giving: the label alone says
+   * which field this is and not where it currently sits, which is the half a
+   * reader cannot see when focus lands on it.
+   */
+  movableLabel?: string;
   /** Renders the remove button. Wire its click through `onRemove`. */
   removable?: boolean;
   removeLabel?: string;
@@ -44,8 +49,8 @@ export function Chip(options: ChipOptions = {}): HTMLSpanElement {
     mark,
     code,
     unlinked,
-    action,
-    actionLabel,
+    movable,
+    movableLabel,
     removable,
     // Only reached by a `removable` chip; see the note in Panel.ts for why the
     // default is English rather than the German it used to be.
@@ -67,15 +72,18 @@ export function Chip(options: ChipOptions = {}): HTMLSpanElement {
   if (remove && onRemove) remove.addEventListener('click', onRemove);
 
   const node = el(
-    action ? 'button' : 'span',
+    'span',
     {
       class: classes('ds-Chip', className),
-      // A `title` on a button turns into a tooltip on every hover; only the span
-      // form uses it, where it is what reveals a label the box had to clip.
-      title: action ? undefined : (title ?? label),
-      type: action ? 'button' : undefined,
-      'aria-label': action ? actionLabel : undefined,
-      ...data({ unlinked, action }),
+      // The `title` is what reveals a label the box had to clip. A movable chip
+      // gives that slot up: its accessible name has to carry where it sits, and a
+      // tooltip repeating the label on every hover is what the interface-text rule
+      // exists to prevent.
+      title: movable ? undefined : (title ?? label),
+      draggable: movable ? 'true' : undefined,
+      tabindex: movable ? '0' : undefined,
+      'aria-label': movable ? movableLabel : undefined,
+      ...data({ unlinked, movable }),
       ...attrs,
     },
     [

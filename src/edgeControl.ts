@@ -14,9 +14,16 @@
 // thirteen times on the vault this was built against, and the three options
 // started at a different x on every row because the field name sat inside the
 // control. Sections turn the same state into a picture of what the graph is built
-// from, and the words appear once each, as the headings. What it costs is that
-// setting a field is a click that *moves* it: the direction cycles, and the
-// heading it lands under is the confirmation.
+// from, and the words appear once each, as the headings.
+//
+// **A field moves by being dragged into another section**, and that replaced a
+// click that cycled the direction. The cycle was the same mistake in a new shape:
+// a chip looks like a value rather than a control, so nothing said a click would
+// do anything — let alone something different depending on where the chip already
+// sat. Dragging is the one interaction whose meaning is the layout itself.
+// Arrow keys do the same thing for anybody not using a pointer, since a drag has
+// no keyboard equivalent of its own and „only reachable with a mouse" is how a
+// control ends up unusable without any signal that it is.
 //
 // The rule itself is in linkEdges.ts (DOM-free, unit-tested) and the derivation
 // runs in buildFromJson, so the timeline's arrows and the graph read one
@@ -43,11 +50,34 @@ import { t } from './i18n';
  */
 const SECTIONS: EdgeDirection[] = ['in', 'out', 'off'];
 
-const NEXT: Record<EdgeDirection, EdgeDirection> = { in: 'out', out: 'off', off: 'in' };
-
 /** A field's own name is the vault author's word; only the body row is ours to name. */
 function fieldLabel(field: string): string {
   return field === BODY_FIELD ? t('edges.body') : field;
+}
+
+/**
+ * „<field>, <direction>". The chip shows only the field, and where it sits is the
+ * other half of its value — which is exactly the half somebody arriving by
+ * keyboard cannot see.
+ */
+function chipName(field: string, dir: EdgeDirection): string {
+  return `${fieldLabel(field)}, ${t(`edges.${dir}`)}`;
+}
+
+function setDirection(field: string, dir: EdgeDirection): void {
+  if (directionOf(state.edges, field) === dir) return;
+  state.edges = { ...state.edges, [field]: dir };
+  saveEdgeSelection();
+  const fields = linkFieldsIn(state.activeSourceFile?.items);
+  render(fields);
+  els.edgeMenu.dataset.sig = signature(fields);
+  // Focus follows the chip to its new section, so a keyboard user is not left on
+  // a node that no longer exists and dropped back to the top of the panel.
+  els.edgeMenu.querySelector<HTMLElement>(`[data-field="${CSS.escape(field)}"]`)?.focus();
+  updateToggleLabel(fields);
+  // A full rebuild, not a filter pass: the dependency map is computed in
+  // buildFromJson, so the edges only change once the build is redone.
+  applyEdgeSelection();
 }
 
 function updateToggleLabel(fields: string[]): void {
@@ -65,6 +95,10 @@ function closeMenu(): void {
   els.edgeToggle.setAttribute('aria-expanded', 'false');
 }
 
+function signature(fields: string[]): string {
+  return fields.map((f) => `${f}␟${directionOf(state.edges, f)}`).join('§');
+}
+
 function render(fields: string[]): void {
   els.edgeMenu.replaceChildren(
     ...SECTIONS.map((dir) =>
@@ -77,7 +111,8 @@ function render(fields: string[]): void {
           .map((field) =>
             Chip({
               label: fieldLabel(field),
-              action: true,
+              movable: true,
+              movableLabel: chipName(field, dir),
               attrs: { 'data-field': field },
             }),
           ),
@@ -110,7 +145,7 @@ export function syncEdgeControl(): void {
     return;
   }
 
-  const sig = fields.map((f) => `${f}␟${directionOf(state.edges, f)}`).join('§');
+  const sig = signature(fields);
   if (els.edgeMenu.dataset.sig !== sig) {
     render(fields);
     els.edgeMenu.dataset.sig = sig;
@@ -130,30 +165,84 @@ export function setupEdgeControl(): void {
     els.edgeToggle.setAttribute('aria-expanded', String(open));
   });
 
-  els.edgeMenu.addEventListener('click', (e) => {
+  // The field being dragged, kept here as well as in the drag payload: Safari
+  // withholds `dataTransfer.getData` outside the drop handler, so the highlight
+  // that follows the pointer has nothing to read from the event itself.
+  let dragging: string | null = null;
+
+  els.edgeMenu.addEventListener('dragstart', (e) => {
+    const chip = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-field]');
+    if (!chip) return;
+    dragging = chip.dataset.field ?? '';
+    e.dataTransfer?.setData('text/plain', dragging);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+    chip.dataset.dragging = 'true';
+  });
+
+  els.edgeMenu.addEventListener('dragend', () => {
+    dragging = null;
+    for (const node of els.edgeMenu.querySelectorAll<HTMLElement>('[data-dragging], [data-dropping]')) {
+      delete node.dataset.dragging;
+      delete node.dataset.dropping;
+    }
+  });
+
+  els.edgeMenu.addEventListener('dragover', (e) => {
+    const section = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-direction]');
+    if (!section || dragging === null) return;
+    // Without this the browser refuses the drop, and a chip that springs back is
+    // indistinguishable from one the panel would not accept.
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    for (const other of els.edgeMenu.querySelectorAll<HTMLElement>('[data-dropping]')) {
+      if (other !== section) delete other.dataset.dropping;
+    }
+    section.dataset.dropping = 'true';
+  });
+
+  els.edgeMenu.addEventListener('dragleave', (e) => {
+    const section = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-direction]');
+    // `relatedTarget` is where the pointer went; leaving for a child of the same
+    // section is not leaving the section, and clearing on it makes the highlight
+    // flicker across every chip inside.
+    if (section && !section.contains(e.relatedTarget as Node)) delete section.dataset.dropping;
+  });
+
+  els.edgeMenu.addEventListener('drop', (e) => {
+    const section = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-direction]');
+    const dir = section?.dataset.direction;
+    const field = dragging ?? e.dataTransfer?.getData('text/plain') ?? null;
+    dragging = null;
+    if (!section) return;
+    e.preventDefault();
+    delete section.dataset.dropping;
+    if (field === null || (dir !== 'in' && dir !== 'out' && dir !== 'off')) return;
+    setDirection(field, dir);
+  });
+
+  // The keyboard path. A drag has no equivalent of its own, and the arrow keys are
+  // what every reorderable list uses, so a focused chip moves to the neighbouring
+  // section rather than needing a control of its own beside it.
+  els.edgeMenu.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
     const chip = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-field]');
     if (!chip) return;
     const field = chip.dataset.field ?? '';
-    state.edges = { ...state.edges, [field]: NEXT[directionOf(state.edges, field)] };
-    saveEdgeSelection();
-    const fields = linkFieldsIn(state.activeSourceFile?.items);
-    render(fields);
-    els.edgeMenu.dataset.sig = fields.map((f) => `${f}␟${directionOf(state.edges, f)}`).join('§');
-    // Focus follows the chip to its new section, so a keyboard user is not
-    // returned to the top of the panel by their own click.
-    els.edgeMenu.querySelector<HTMLElement>(`[data-field="${CSS.escape(field)}"]`)?.focus();
-    updateToggleLabel(fields);
-    // A full rebuild, not a filter pass: the dependency map is computed in
-    // buildFromJson, so the edges only change once the build is redone.
-    applyEdgeSelection();
+    const at = SECTIONS.indexOf(directionOf(state.edges, field));
+    const next = SECTIONS[at + (e.key === 'ArrowDown' ? 1 : -1)];
+    if (!next) return;
+    // Only once a move is actually possible: swallowing the key at either end
+    // would trap the panel's scroll on the first and last section.
+    e.preventDefault();
+    setDirection(field, next);
   });
 
   document.addEventListener('click', (e) => {
     if (els.edgeMenu.hidden) return;
     const target = e.target as Node;
-    // A chip click rebuilds the sections before this handler runs, so the node
-    // that was clicked is already detached — and a detached node is contained by
-    // nothing, which reads as an outside click and closed the panel on the one
+    // A move rebuilds the sections before this handler runs, so the node that was
+    // clicked may already be detached — and a detached node is contained by
+    // nothing, which reads as an outside click and closes the panel on the one
     // interaction it exists for. The filter panel never hit this because its
     // checkboxes are re-ticked in place rather than replaced.
     if (!target.isConnected) return;

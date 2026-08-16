@@ -359,10 +359,19 @@ three-state control per row the panel repeated „Aus / Eingehend / Ausgehend" o
 per field — thirteen times on the folder this was built against — and because the
 field name sat inside the control, the three options started at a different place
 on every row. Grouping turns the same state into a picture of what the graph is
-built from, and each word appears once, as a heading. What it costs is that setting
-a field is a click that *moves* it: the direction cycles and the heading it lands
-under is the confirmation. An emptied section keeps its heading and its height, so
-the sections below it do not jump under the pointer that just emptied it.
+built from, and each word appears once, as a heading. An emptied section keeps its
+heading and its height, so the sections below it do not jump under the pointer that
+just emptied it.
+
+**A field is moved by dragging it into another section**, and the shape before this
+one was a click that cycled the direction. That was the same mistake in a new form:
+a chip looks like a value rather than a control, so nothing said a click would do
+anything at all — let alone something different depending on which section the chip
+already sat in. Dragging is the one interaction whose meaning *is* the layout.
+Arrow keys move the focused chip between sections for anybody not using a pointer,
+because a drag has no keyboard equivalent of its own, and a chip's accessible name
+carries its section (`Revelations, Eingehend`) since that is the half of its value
+nobody arriving by keyboard can see.
 
 It belongs to the view rather than to the scan, and the `scan` block is why:
 it says how the directory was *read* and is spent by the time there are items, so a

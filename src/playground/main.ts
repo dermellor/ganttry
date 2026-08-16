@@ -422,7 +422,7 @@ const chipSection = section(
       specimen('mit Code', Chip({ code: 'ZT-142', label: 'Rollout vorbereiten', removable: true })),
       specimen('mit Avatar', Chip({ mark: Avatar({ initials: 'AL', hue: 200, size: 'sm' }), label: 'Ada Lovelace', removable: true })),
       specimen('unlinked', Chip({ label: 'a.lovelace (alt)', unlinked: true, removable: true })),
-      specimen('action', Chip({ label: 'Revelations', action: true })),
+      specimen('movable', Chip({ label: 'Revelations', movable: true, movableLabel: 'Revelations, Eingehend' })),
     ),
     stage(
       FormGrid({
@@ -521,8 +521,8 @@ const menuSection = section(
               label: 'Eingehend',
               wrap: true,
               children: [
-                Chip({ label: 'Revelations', action: true }),
-                Chip({ label: 'Hints', action: true }),
+                Chip({ label: 'Revelations', movable: true, movableLabel: 'Revelations, Eingehend' }),
+                Chip({ label: 'Hints', movable: true, movableLabel: 'Hints, Eingehend' }),
               ],
             }),
             MenuSection({ label: 'Ausgehend', wrap: true, children: [] }),

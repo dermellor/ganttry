@@ -84,6 +84,14 @@
   min-height: var(--control-sm);
 }
 
+/* The section a dragged chip would land in. Tinted rather than outlined: an
+   empty section is mostly whitespace, and a border around whitespace reads as a
+   field rather than as a target. */
+.ds-MenuSection[data-dropping] {
+  background: var(--hover);
+  border-radius: var(--radius-sm);
+}
+
 .ds-MenuSection + .ds-MenuSection {
   margin-top: var(--space-3xs);
   padding-top: var(--space-3xs);
