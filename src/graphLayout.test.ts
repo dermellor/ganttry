@@ -973,6 +973,89 @@ describe('the chain layout (single column)', () => {
     }
   });
 
+  // The gap #161 let through: at a fork the trunk is whichever branch collected
+  // more, so a side strand of three outweighs an opening beat that is a lone
+  // source node — and walking back from the sink into the heaviest predecessor
+  // then lands on the wrong head. Unterlingen 1's „Hauptkette" drew a Christa
+  // revelation as the opening instead of „Die vergangenen Expeditionen wurden
+  // sabotiert", the earliest thing in the book of everything that could start the
+  // chain. In miniature: `early` is one node at position 1, `s1→s2→s3` is a heavier
+  // strand starting at position 9, and both feed `mid`.
+  const forkedChain = (sequence: Record<string, number>) =>
+    graph({
+      columns: columns('rev'),
+      nodes: ['early', 's1', 's2', 's3', 'mid', 'end'].map((id) => ({
+        id,
+        column: 'rev',
+        sequence: sequence[id],
+      })),
+      edges: [
+        { from: 'early', to: 'mid', kind: 'depends' as const },
+        { from: 's1', to: 's2', kind: 'depends' as const },
+        { from: 's2', to: 's3', kind: 'depends' as const },
+        { from: 's3', to: 'mid', kind: 'depends' as const },
+        { from: 'mid', to: 'end', kind: 'depends' as const },
+      ],
+    });
+
+  const spineOf = (out: ReturnType<typeof layoutGraph>) => {
+    const spineX = Math.max(...out.nodes.map((n) => n.x));
+    return out.nodes
+      .filter((n) => n.x === spineX)
+      .sort((a, b) => a.y - b.y)
+      .map((n) => n.id);
+  };
+
+  test('the chain starts at the earliest source, not the heaviest one', () => {
+    const out = layoutGraph(forkedChain({ early: 1, s1: 9, s2: 10, s3: 11 }));
+    assert.deepEqual(spineOf(out), ['early', 'mid', 'end'], 'the earliest source heads the chain');
+    const spineX = Math.max(...out.nodes.map((n) => n.x));
+    for (const id of ['s1', 's2', 's3']) {
+      assert.ok(nodeById(out, id).x < spineX, `${id} is a feeder, off the spine`);
+    }
+  });
+
+  test('without any declared order the heaviest strand still heads the chain', () => {
+    const out = layoutGraph(forkedChain({}));
+    assert.deepEqual(spineOf(out), ['s1', 's2', 's3', 'mid', 'end'], 'the walk back from the sink');
+  });
+
+  test('a source the order does not place cannot take the head from one it does', () => {
+    // Only the heavy strand is unplaced. Unplaced sorts last, so the lone placed
+    // source heads the chain even though it is the lighter branch.
+    const out = layoutGraph(forkedChain({ early: 40 }));
+    assert.deepEqual(spineOf(out), ['early', 'mid', 'end']);
+  });
+
+  test('the walk forward from the head takes the heavier successor', () => {
+    // Two ways on from the head, and the order file places neither: `heavy`
+    // collects two feeders, `light` none, so the trunk goes through `heavy`.
+    const out = layoutGraph(
+      graph({
+        columns: columns('rev'),
+        nodes: ['head', 'light', 'heavy', 'f1', 'f2', 'end'].map((id) => ({
+          id,
+          column: 'rev',
+          sequence: id === 'head' ? 1 : undefined,
+        })),
+        edges: [
+          // `light` first, so a tie would hand the step to it and this test would fail.
+          { from: 'head', to: 'light', kind: 'depends' },
+          { from: 'head', to: 'heavy', kind: 'depends' },
+          { from: 'f1', to: 'heavy', kind: 'depends' },
+          { from: 'f2', to: 'heavy', kind: 'depends' },
+          { from: 'heavy', to: 'end', kind: 'depends' },
+          { from: 'light', to: 'end', kind: 'depends' },
+        ],
+      }),
+    );
+    assert.deepEqual(spineOf(out), ['head', 'heavy', 'end']);
+    assert.ok(
+      nodeById(out, 'light').x < Math.max(...out.nodes.map((n) => n.x)),
+      'the lighter branch is a feeder',
+    );
+  });
+
   // The reason the spacing changed for #154: a beat with more feeders than the spine
   // is tall must reserve the vertical room for them, so its feeders sit level with it
   // instead of spilling past the beats below (whose edges then swept the canvas).

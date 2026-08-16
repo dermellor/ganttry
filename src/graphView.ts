@@ -34,6 +34,7 @@ import { metaOf, resolveGrouping, sectionContext, syncGroupByControl } from './g
 import { syncFilterControl } from './filterControl';
 import { syncEdgeControl } from './edgeControl';
 import { displayIdsFor, filterBuildForDisplay } from './render';
+import { sequencePositions } from './sequence';
 import { els, state, syncUrl } from './state';
 import {
   edgePath,
@@ -360,6 +361,12 @@ export function renderGraphView(): void {
   // says what the titles after it are without this file knowing any domain word.
   const referenceLabel =
     build.groups.find((g) => g.id === config.referenceGroup)?.label ?? config.referenceGroup ?? '';
+  // From the source file rather than from the build, for the same reason as the two
+  // above: which item the source's order puts first is a property of the timeline,
+  // and the items that carry the order are usually the ones the reader has filtered
+  // away — in „Hauptkette" the scenes are all hidden, and reading the visible set
+  // would leave every revelation unplaced.
+  const sequence = sequencePositions(state.activeSourceFile?.items);
 
   const { sections } = computeSections(entries, dim, options, sectionContext(groups));
   const layout = layoutGraph({
@@ -375,6 +382,7 @@ export function renderGraphView(): void {
           lines: estimateLines(it.label ?? ''),
           meta: !!it.start,
           reference: !!references.get(it.id)?.length,
+          sequence: sequence.get(it.id),
         })),
     ),
     edges: edgesOf(build.dependencies, build.parents),

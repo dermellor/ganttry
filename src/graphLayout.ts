@@ -43,6 +43,14 @@ export type GraphInput = {
     meta?: boolean;
     /** Does it carry a references line? */
     reference?: boolean;
+    /**
+     * Where the node sits in the order the source declares, if it declares one
+     * (see src/sequence.ts). The chain layout starts its spine at the earliest of
+     * them; absent means „unplaced", and an unplaced node never gets to be the
+     * head. Nothing else in the layout reads it, and a source without any
+     * positions lays out exactly as before.
+     */
+    sequence?: number;
   }[];
   edges: { from: string; to: string; kind: EdgeKind }[];
   /**
@@ -323,6 +331,11 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   // spine plus its feeders; the loose band still just stacks.
   const chain = input.columns.length === 1;
   const plans: (ChainPlan | undefined)[] = [];
+  const sequenceOf = new Map<string, number>();
+  for (const node of input.nodes) {
+    if (node.sequence === undefined || sequenceOf.has(node.id)) continue;
+    if (columnOf.has(node.id)) sequenceOf.set(node.id, node.sequence);
+  }
   // Only for the canvas width: the widest band decides how far left the feeders
   // reach. Each band still anchors its own spine (see `spineUnits`).
   let maxDepth = 0;
@@ -332,7 +345,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
         plans.push(undefined);
         continue;
       }
-      const plan = chainPlan(band.nodeIds, edges);
+      const plan = chainPlan(band.nodeIds, edges, sequenceOf);
       plans.push(plan);
       for (const d of plan.depthOf.values()) maxDepth = Math.max(maxDepth, d);
     }
@@ -481,14 +494,14 @@ function usableEdges(
  * The plan for laying one connected band out as a chain: its spine, and where
  * every other node sits relative to it.
  *
- * The spine is the band's **heaviest directed path**, ordered from the edge source
- * downward, so the arrows read top-to-bottom. Everything else is measured by its
- * undirected distance to the spine — one hop for a node that feeds a spine node
- * directly, two for a node that feeds *that* one, and so on — and hangs off the
- * side at that depth, level with the node it reaches through.
+ * The spine runs from the band's **earliest source** down to its heaviest sink,
+ * so the arrows read top-to-bottom. Everything else is measured by its undirected
+ * distance to the spine — one hop for a node that feeds a spine node directly, two
+ * for a node that feeds *that* one, and so on — and hangs off the side at that
+ * depth, level with the node it reaches through.
  */
 type ChainPlan = {
-  /** The heaviest directed path, source at the top down to the final dependent. */
+  /** The main directed path, source at the top down to the final dependent. */
   spine: string[];
   /** 0 for a spine node, then the number of hops to the spine for the rest. */
   depthOf: Map<string, number>;
@@ -503,7 +516,11 @@ type ChainPlan = {
   childrenOf: Map<string, string[]>;
 };
 
-function chainPlan(nodeIds: string[], edges: PlacedEdge[]): ChainPlan {
+function chainPlan(
+  nodeIds: string[],
+  edges: PlacedEdge[],
+  sequenceOf: Map<string, number>,
+): ChainPlan {
   const inBand = new Set(nodeIds);
   const adj = new Map<string, string[]>(); // directed, from → to
   const pred = new Map<string, string[]>(); // directed, to → from
@@ -550,21 +567,55 @@ function chainPlan(nodeIds: string[], edges: PlacedEdge[]): ChainPlan {
       sink = id;
     }
   }
-  // Walk back from the sink into the heaviest predecessor at each step, then flip
-  // so the spine runs source → sink (arrows down).
+  // The head is the band's **earliest source**: of the nodes nothing leads into,
+  // the one the source's declared order puts first (see src/sequence.ts), among
+  // those that can reach the sink at all.
+  //
+  // Weight decides the sink and the steps in between; it must not decide the head.
+  // At a fork the trunk is whichever branch collected more, and a side strand of
+  // three nodes therefore outweighs an opening beat that is a single source node —
+  // so walking back into the heaviest predecessor reliably ends on the wrong one.
+  // That is what Unterlingen 1's „Hauptkette" showed: the chain began at a Christa
+  // revelation feeding the second station instead of at the opening
+  // „Die vergangenen Expeditionen wurden sabotiert" (#161). Order is the answer to
+  // „which of these comes first", and weight never was.
+  //
+  // Unplaced sorts last, so a node the order file does not mention can never claim
+  // the head from one it does; weight breaks a tie between two equally early ones.
+  const head = earliestSource(nodeIds, adj, pred, sequenceOf, sink, massOf);
   const spine: string[] = [];
   const spineSet = new Set<string>();
-  for (let cur: string | undefined = sink; cur && !spineSet.has(cur); ) {
-    spine.push(cur);
-    spineSet.add(cur);
-    let heaviest: string | undefined;
-    for (const p of pred.get(cur) ?? []) {
-      if (spineSet.has(p)) continue;
-      if (heaviest === undefined || massOf(p) > massOf(heaviest)) heaviest = p;
+  if (head === undefined) {
+    // No order to go by (a source that declares none, which is every JSON and
+    // database timeline) or no source reaches the sink: walk back from the sink
+    // into the heaviest predecessor at each step, exactly as before.
+    for (let cur: string | undefined = sink; cur && !spineSet.has(cur); ) {
+      spine.push(cur);
+      spineSet.add(cur);
+      let heaviest: string | undefined;
+      for (const p of pred.get(cur) ?? []) {
+        if (spineSet.has(p)) continue;
+        if (heaviest === undefined || massOf(p) > massOf(heaviest)) heaviest = p;
+      }
+      cur = heaviest;
     }
-    cur = heaviest;
+    spine.reverse();
+  } else {
+    // Forward from the head into the heaviest successor at each step. Downstream
+    // there is no earlier-or-later to read — the order file places the material,
+    // not the relations between two things it never listed — so weight is the
+    // measure again, with band order breaking a tie.
+    for (let cur: string | undefined = head; cur && !spineSet.has(cur); ) {
+      spine.push(cur);
+      spineSet.add(cur);
+      let heaviest: string | undefined;
+      for (const n of adj.get(cur) ?? []) {
+        if (spineSet.has(n)) continue;
+        if (heaviest === undefined || massOf(n) > massOf(heaviest)) heaviest = n;
+      }
+      cur = heaviest;
+    }
   }
-  spine.reverse();
 
   // Everything off the spine, by undirected distance, breadth-first from the whole
   // spine at once so a node two spine nodes could hang from goes to the nearer one.
@@ -599,6 +650,62 @@ function chainPlan(nodeIds: string[], edges: PlacedEdge[]): ChainPlan {
   for (const [anchor, kids] of childrenOf) childrenOf.set(anchor, orderByFlow(kids, adj));
 
   return { spine, depthOf, anchorOf, childrenOf };
+}
+
+/**
+ * The node the chain should start at: of the band's sources — the nodes nothing
+ * inside the band leads into — the one the declared order puts first, restricted
+ * to those from which the sink is reachable at all.
+ *
+ * `undefined` when the band carries no declared order, and when no source reaches
+ * the sink. Both mean „this rule has nothing to say here", and the caller then
+ * falls back to the walk it did before, so a timeline whose source declares no
+ * order lays out byte for byte as it always has.
+ *
+ * A node the order does not place counts as after every node it does, rather than
+ * as position zero: an unplaced node is one nobody put anywhere, and letting it
+ * open the chain is precisely the wrong reading of that silence.
+ */
+function earliestSource(
+  nodeIds: string[],
+  adj: Map<string, string[]>,
+  pred: Map<string, string[]>,
+  sequenceOf: Map<string, number>,
+  sink: string,
+  massOf: (id: string) => number,
+): string | undefined {
+  if (!nodeIds.some((id) => sequenceOf.has(id))) return undefined;
+
+  // Reachability backwards from the sink, so „can this source get there" is one
+  // traversal rather than one per candidate.
+  const reachesSink = new Set<string>([sink]);
+  const stack = [sink];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    for (const p of pred.get(cur) ?? []) {
+      if (reachesSink.has(p)) continue;
+      reachesSink.add(p);
+      stack.push(p);
+    }
+  }
+
+  let best: string | undefined;
+  for (const id of nodeIds) {
+    if (id === sink) continue; // a one-node chain is not a chain
+    if ((pred.get(id) ?? []).length) continue; // not a source
+    if (!reachesSink.has(id)) continue;
+    if (best === undefined) {
+      best = id;
+      continue;
+    }
+    const a = sequenceOf.get(id) ?? Infinity;
+    const b = sequenceOf.get(best) ?? Infinity;
+    // Earlier wins; equally early (or equally unplaced) falls to the heavier, and
+    // an outright tie to the earlier node in band order, so the spine stays put
+    // across unrelated edits.
+    if (a < b || (a === b && massOf(id) > massOf(best))) best = id;
+  }
+  return best;
 }
 
 /**

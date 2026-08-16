@@ -283,6 +283,7 @@ reasoning that put `groups` and `phases` there.
 | `filenameDatePatterns` | Regexes tried against the filename when no frontmatter date is found. |
 | `groupFromFolder` | Take the group from the subfolder when the frontmatter names none. Off by default: a flat folder has nothing to derive, and subdirectories that are storage rather than meaning would gain groups that say nothing. |
 | `linkEdges` | Read `[[wikilinks]]` as relations. Off by default, because in most folders a link is a reference and not a dependency. |
+| `orderFrom` | A file in the folder whose `[[wikilinks]]`, read top to bottom, are the order its items are meant to be read in. Off by default; a folder without such a file states nothing. |
 
 The block is stripped before the `TimelineFile` reaches the client: it says how
 the directory was *read*, which is spent by the time there are items, and the
@@ -383,6 +384,52 @@ And the answer is not one per folder: the same notes are read for the plan and f
 the chain of reveals, which are different pictures of one directory. A named one is
 a saved view („Gespeicherte Ansichten", [`editing.md`](editing.md)), which stores
 the selection with the timeline and hands it to the next reader.
+
+### An order file as the items' order
+
+A folder of notes carries no order of its own. The filesystem sorts by name, the
+scan sorts by date, and a folder whose `dateFields` is empty has neither — so
+„which of these comes first" has no answer, however obvious the answer is to the
+person who wrote them.
+
+Stamping an index into every note's frontmatter would be the wrong repair: it has
+to be renumbered on every insert, and it duplicates something a folder with an
+order almost always already keeps by hand — a table of contents, an agenda, a
+running order. `orderFrom` names that file. Every `[[wikilink]]` in it, read top to
+bottom, stamps the next 1-based position on the item it resolves to
+(`metadata.sequence`), through the same resolver the relations use, so a link in the
+order file and the same link in a note cannot land on different items. First
+mention wins, a link out of the folder takes no position with it, and a named file
+that is missing leaves everything unpositioned rather than failing the scan.
+
+**The reading is blind to markdown structure on purpose.** Every wikilink counts,
+whatever list depth or heading it sits on: a vault's nesting means something to its
+author and nothing to a scanner, so reading it would be guessing, while „where in
+the file the author wrote this link" is a fact. The side effect is the useful one —
+a heading that names a note (`## [[Teil]]`, `### [[Kapitel]]`) lands just ahead of
+what is listed under it, which is where a container of them belongs, and an item
+bound to a chapter rather than to a single entry therefore still gets a position.
+Frontmatter is skipped (the editor's bookkeeping, not the document) and so is
+fenced code (quotation, the same reading `linkEdges` takes of a body).
+
+Only the items the file lists get a position, which is the normal case rather than
+a gap: the file lists the spine of the material, and the rest hangs off a listed
+item by a link. [`src/sequence.ts`](../src/sequence.ts) closes that gap on the read
+side — an unlisted item takes the **lowest** position among the items linking to
+it, one hop only. Lowest because that is where it first becomes relevant; one hop
+because a position that travelled on from a derived one would seep through an
+arbitrarily long chain of references and make everything read as if it happened at
+once.
+
+The derivation sits there rather than in `graphLayout.ts` for two reasons. It reads
+item metadata and link structure, which is model rather than geometry, and the
+layout is deliberately kept to „which box goes where". And it has to read the
+**unfiltered** source: in Unterlingen 1's „Hauptkette" view every scene is filtered
+away, and the scenes are exactly what carries the order, so deriving from what the
+graph can see would leave every node unplaced.
+
+Who reads it: the graph's chain layout starts its spine at the earliest placed
+source ([`editing.md`](editing.md#graph)).
 
 ## What this removed
 

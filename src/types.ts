@@ -608,6 +608,25 @@ export type ScanConfig = {
    * is a reference and not a dependency.
    */
   linkEdges?: boolean;
+  /**
+   * A file in the folder whose `[[wikilinks]]`, read top to bottom, are the order
+   * the items are meant to be read in. Each resolved link stamps a 1-based
+   * `metadata.sequence` on the item it names; the first mention wins.
+   *
+   * A folder of notes has no inherent order — the filesystem sorts by name and the
+   * scan sorts by date, neither of which is the order the author intended — but a
+   * folder that *has* one usually already writes it down somewhere, as a table of
+   * contents, an agenda, a running order. Naming that file is cheaper and truer
+   * than stamping an index into every note's frontmatter, where it would have to
+   * be renumbered on every insert.
+   *
+   * The whole file is read, headings included: the position of a link is where the
+   * author put it, and this deliberately has no opinion about list nesting or
+   * heading levels, which differ per vault. Frontmatter and fenced code are
+   * skipped, being metadata and quotation rather than the document's own order.
+   * Off by default; a folder without such a file states nothing.
+   */
+  orderFrom?: string;
 };
 
 export type TimelineContainer = Omit<TimelineFile, 'items'> & {

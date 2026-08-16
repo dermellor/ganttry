@@ -881,16 +881,35 @@ arrows, and an item with no date yet lived in the list and nowhere else.
   forty do not, mixing them in loses the three.
 - **A single column switches to the chain layout.** With one bucket the horizontal
   axis carries no grouping information — every node would sit in column 0 — so it is
-  free to mean something else. Each connected band is then drawn as its **longest
-  directed path stacked vertically** (a spine, arrows pointing down), with the nodes
-  that feed into a spine node hung off to its **left** and arrowing in; feeders of
+  free to mean something else. Each connected band is then drawn as **one directed
+  path stacked vertically** (a spine, arrows pointing down), with the nodes that
+  feed into a spine node hung off to its **left** and arrowing in; feeders of
   feeders step one column further out, and separate components stay separate blocks.
   This is what makes a „leads-to" chain (a manuscript's reveal plan is the case it
-  was built for) read as a through-line instead of a diagonal tangle. It is derived
-  purely from the edge topology — no tag, no config, no plugin — and only ever
+  was built for) read as a through-line instead of a diagonal tangle. It only ever
   engages with one column, so every grouped, multi-column graph is untouched. The
   spine geometry lives in `chainPlan`/`spineUnits`
   ([`src/graphLayout.ts`](../src/graphLayout.ts)).
+- **Which path is the spine** is decided at both ends. It **ends** at the heaviest
+  sink: of the nodes nothing leads out of, the one that collected the most, where a
+  node's weight is itself plus everything that recursively feeds into it. It
+  **starts** at the earliest source that can reach that sink — earliest by the order
+  the source declares (`metadata.sequence`, see
+  [local sources](local-sources.md#an-order-file-as-the-items-order)), with a node
+  the order does not place counting as after every node it does, so it can never
+  claim the head. In between, each step forward takes the heaviest successor.
+
+  Weight decides the sink and the steps and must not decide the head: at a fork the
+  trunk is whichever branch collected more, so a side strand of three nodes
+  outweighs an opening beat that is a lone source node, and walking back from the
+  sink into the heaviest predecessor reliably ends on the wrong one. Unterlingen 1's
+  „Hauptkette" showed it: the chain began at a discarded Christa revelation feeding
+  the second station rather than at the book's opening revelation. „Which of these
+  comes first" is a question about order, and weight was never an answer to it.
+
+  A source that declares no order has nothing to go by, and the band then falls back
+  to that walk back from the sink, unchanged — which is every JSON and database
+  timeline, and every folder without an order file.
 
 **Bands can be named, and nodes can carry references.** Both are declared per
 timeline (`graph` in [`src/types.ts`](../src/types.ts)), set in

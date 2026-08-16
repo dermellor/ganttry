@@ -32,9 +32,10 @@ import { t, locale } from './i18n';
 // metadata keys managed by their own dedicated form control (the reserved
 // built-ins handled directly in itemForm) — used to keep them out of the
 // free-form "Other metadata" JSON box. Custom-field keys are added on top.
-// `wikilinks` is here for the opposite reason to the others: it has no control at
-// all, because a directory scan derives it from the note's own links on every
-// read. Editing it in the JSON box would be a change the next scan discards.
+// `wikilinks` and `sequence` are here for the opposite reason to the others: they
+// have no control at all, because a directory scan derives them on every read —
+// from the note's own links, and from the position the folder's order file gives
+// it. Editing either in the JSON box would be a change the next scan discards.
 const RESERVED_META_KEYS = new Set([
   'dependsOn',
   'parent',
@@ -43,6 +44,7 @@ const RESERVED_META_KEYS = new Set([
   'tags',
   'tag',
   'wikilinks',
+  'sequence',
 ]);
 
 const FALLBACK_COLOR = '#64748B';

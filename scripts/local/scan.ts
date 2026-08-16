@@ -283,15 +283,45 @@ function wikilinksInValue(value: unknown, into: string[]): void {
 }
 
 /**
- * Resolve every note's wikilinks to item ids and record them twice: flattened on
- * `metadata.dependsOn`, and one entry per link with its frontmatter key on
- * `metadata.wikilinks`.
+ * Turn a wikilink target into the id of the item it names, or nothing.
  *
  * Two lookups, because a vault links both ways: by bare title (`[[Angebot von
  * Talheim]]`, how a note in the same vault is normally referenced) and by path
  * (`[[Fiction/Book/_Hints/Angebot|Angebot]]`, what Obsidian writes when the title
  * is ambiguous). The basename of a path is tried too, which is what makes a link
  * written from elsewhere in the vault still land.
+ *
+ * One resolver for both readers of links — the relations and the order file — so
+ * that a link the graph draws an edge for and the same link in a table of contents
+ * cannot disagree about which note they mean („Conventions → A rule lives in
+ * exactly one place").
+ */
+function linkResolver(items: TimelineFileItem[]): (raw: string) => string | undefined {
+  const byTitle = new Map<string, string>();
+  const byPath = new Map<string, string>();
+  for (const item of items) {
+    const id = item.id!;
+    const path = String((item.metadata as Record<string, unknown>)?.path ?? id);
+    const stem = path.replace(/\.md$/i, '');
+    byPath.set(normalizeLinkKey(stem), id);
+    // First writer wins for a title, so an ambiguous title resolves to the same
+    // item on every scan rather than to whichever file the walk reached last.
+    const title = stem.includes('/') ? stem.slice(stem.lastIndexOf('/') + 1) : stem;
+    if (!byTitle.has(normalizeLinkKey(title))) byTitle.set(normalizeLinkKey(title), id);
+  }
+  return (raw: string): string | undefined => {
+    const key = normalizeLinkKey(raw.replace(/\.md$/i, ''));
+    const byFullPath = byPath.get(key);
+    if (byFullPath) return byFullPath;
+    const base = key.includes('/') ? key.slice(key.lastIndexOf('/') + 1) : key;
+    return byTitle.get(base);
+  };
+}
+
+/**
+ * Resolve every note's wikilinks to item ids and record them twice: flattened on
+ * `metadata.dependsOn`, and one entry per link with its frontmatter key on
+ * `metadata.wikilinks`.
  *
  * `dependsOn` and not a key of its own: it is the relation the rest of the app
  * already understands — the Gantt arrows and the graph both read it — and a second
@@ -305,26 +335,7 @@ function wikilinksInValue(value: unknown, into: string[]): void {
  * whoever draws the edges can have one.
  */
 function linkItems(items: TimelineFileItem[], bodies: Map<string, string>): void {
-  const byTitle = new Map<string, string>();
-  const byPath = new Map<string, string>();
-  for (const item of items) {
-    const id = item.id!;
-    const path = String((item.metadata as Record<string, unknown>)?.path ?? id);
-    const stem = path.replace(/\.md$/i, '');
-    byPath.set(normalizeLinkKey(stem), id);
-    // First writer wins for a title, so an ambiguous title resolves to the same
-    // item on every scan rather than to whichever file the walk reached last.
-    const title = stem.includes('/') ? stem.slice(stem.lastIndexOf('/') + 1) : stem;
-    if (!byTitle.has(normalizeLinkKey(title))) byTitle.set(normalizeLinkKey(title), id);
-  }
-
-  const resolveTarget = (raw: string): string | undefined => {
-    const key = normalizeLinkKey(raw.replace(/\.md$/i, ''));
-    const byFullPath = byPath.get(key);
-    if (byFullPath) return byFullPath;
-    const base = key.includes('/') ? key.slice(key.lastIndexOf('/') + 1) : key;
-    return byTitle.get(base);
-  };
+  const resolveTarget = linkResolver(items);
 
   for (const item of items) {
     // Per top-level frontmatter key rather than over the whole object at once,
@@ -377,6 +388,72 @@ function linkItems(items: TimelineFileItem[], bodies: Map<string, string>): void
   }
 }
 
+// ---------------------------------------------------------------------------
+// the order file
+//
+// A folder of notes carries no order of its own. `orderFrom` names a file in it
+// whose wikilinks, read top to bottom, are that order — the table of contents a
+// folder that has an order almost always already keeps by hand.
+
+/** The metadata key the order file writes: the item's 1-based position. */
+export const SEQUENCE_KEY = 'sequence';
+
+/**
+ * Stamp `metadata.sequence` on every item the order file names, in the order it
+ * names them.
+ *
+ * Deliberately blind to markdown structure: every wikilink in the document
+ * counts, whatever list depth or heading it sits on. A vault's nesting means
+ * something to its author and nothing to a scanner, so reading it would be
+ * guessing — while „where in the file the author wrote this link" is a fact.
+ * The side effect is the useful one: a heading that names a note (`## [[Part]]`)
+ * lands just ahead of the notes listed under it, which is where a container of
+ * them belongs.
+ *
+ * The first mention wins, so a note listed again later keeps the position it
+ * first had rather than being pushed to the end by a cross-reference.
+ *
+ * Frontmatter is skipped because it is the editor's bookkeeping rather than the
+ * document, and fenced code because it is quotation — the same reading `linkItems`
+ * takes of a note's body.
+ */
+async function sequenceItems(
+  dir: string,
+  orderFrom: string,
+  items: TimelineFileItem[],
+): Promise<void> {
+  let raw: string;
+  try {
+    raw = await readFile(join(dir, orderFrom), 'utf8');
+  } catch {
+    // A named-but-missing order file leaves every item unpositioned rather than
+    // failing the scan: the folder still has notes, and they are still worth
+    // showing without the order they were going to be shown in.
+    return;
+  }
+  let body: string;
+  try {
+    body = matter(raw).content;
+  } catch {
+    body = raw;
+  }
+  const resolveTarget = linkResolver(items);
+  const byId = new Map(items.map((item) => [item.id!, item]));
+  let position = 0;
+  const placed = new Set<string>();
+  for (const link of wikilinkTargets(body.replace(CODE_FENCE, ''))) {
+    const id = resolveTarget(link);
+    // A link out of the folder names nothing here and takes no position with it:
+    // counting it would leave gaps that read as items somebody deleted.
+    if (!id || placed.has(id)) continue;
+    const item = byId.get(id);
+    if (!item) continue;
+    placed.add(id);
+    position += 1;
+    (item.metadata ??= {})[SEQUENCE_KEY] = position;
+  }
+}
+
 /**
  * The effective scan settings: what the folder declares wins over what the caller
  * passed. The folder is the more specific statement, and it travels with the data.
@@ -391,6 +468,9 @@ function resolveScan(container: Partial<TimelineContainer>, opts: ScanOptions): 
       declared.filenameDatePatterns ?? opts.filenameDatePatterns ?? DEFAULT_FILENAME_PATTERNS,
     groupFromFolder: declared.groupFromFolder ?? opts.groupFromFolder ?? false,
     linkEdges: declared.linkEdges ?? opts.linkEdges ?? false,
+    // The empty string is „no order file", so that `Required<ScanOptions>` stays a
+    // shape without nulls in it like the other four settings.
+    orderFrom: declared.orderFrom ?? opts.orderFrom ?? '',
   };
 }
 
@@ -461,6 +541,9 @@ export async function scanDirectory(dir: string, opts: ScanOptions = {}): Promis
   // After the walk, because a link can point at a note the walk has not reached
   // yet: resolving as we go would make an edge depend on directory order.
   if (resolved.linkEdges) linkItems(items, bodies);
+  // Independent of `linkEdges`: an order file states where an item sits, not what
+  // it relates to, and a folder can want the one without the other.
+  if (resolved.orderFrom) await sequenceItems(dir, resolved.orderFrom, items);
 
   items.sort((a, b) => {
     // Date-less items last, then by start, then by id — a stable order so a

@@ -422,3 +422,85 @@ describe('scanDirectory: where a wikilink came from', () => {
     assert.equal(wikilinks(await scanDirectory(dir), 'a'), undefined);
   });
 });
+
+describe('scanDirectory: an order file as the items\' sequence', () => {
+  const sequence = (file: Awaited<ReturnType<typeof scanDirectory>>, id: string) =>
+    file.items.find((i) => i.id === id)?.metadata?.sequence;
+
+  /** A folder whose notes are listed by `_Index.md`, plus one the index skips. */
+  async function ordered(name: string, index: string, scan: object = {}): Promise<string> {
+    const dir = await fresh(name, { scan: { dateFields: [], orderFrom: '_Index.md', ...scan } });
+    await writeFile(join(dir, '_Index.md'), index, 'utf8');
+    for (const title of ['Erste', 'Zweite', 'Dritte', 'Ungenannte']) {
+      await note(dir, `_Scenes/${title}.md`, `title: ${title}`);
+    }
+    return dir;
+  }
+
+  test('the links of the order file number the items, top to bottom', async () => {
+    const file = await scanDirectory(await ordered('seq', '- [[Zweite]]\n- [[Erste]]\n'));
+    assert.equal(sequence(file, '_Scenes/Zweite'), 1);
+    assert.equal(sequence(file, '_Scenes/Erste'), 2);
+  });
+
+  // The reading is deliberately blind to markdown structure: a heading naming a
+  // note takes a position where it stands, which puts a part or a chapter just
+  // ahead of what is listed under it.
+  test('a heading and a nested bullet count like any other link', async () => {
+    const file = await scanDirectory(
+      await ordered('seq-shape', '## [[Erste]]\n\n- [[Zweite]]\n\t- [[Dritte]]\n'),
+    );
+    assert.deepEqual(
+      ['Erste', 'Zweite', 'Dritte'].map((t) => sequence(file, `_Scenes/${t}`)),
+      [1, 2, 3],
+    );
+  });
+
+  test('a second mention does not move an item, and takes no position with it', async () => {
+    const file = await scanDirectory(await ordered('seq-again', '- [[Erste]]\n- [[Erste]]\n- [[Zweite]]\n'));
+    assert.equal(sequence(file, '_Scenes/Erste'), 1);
+    assert.equal(sequence(file, '_Scenes/Zweite'), 2);
+  });
+
+  test('a link out of the folder is skipped rather than counted', async () => {
+    const file = await scanDirectory(await ordered('seq-outside', '- [[Woanders]]\n- [[Erste]]\n'));
+    assert.equal(sequence(file, '_Scenes/Erste'), 1);
+  });
+
+  test('an item the order file never names carries no position', async () => {
+    const file = await scanDirectory(await ordered('seq-unnamed', '- [[Erste]]\n'));
+    assert.equal(sequence(file, '_Scenes/Ungenannte'), undefined);
+  });
+
+  test('frontmatter and fenced code are not part of the order', async () => {
+    const file = await scanDirectory(
+      await ordered('seq-fence', '---\nlist:\n  - "[[Dritte]]"\n---\n```\n[[Zweite]]\n```\n- [[Erste]]\n'),
+    );
+    assert.equal(sequence(file, '_Scenes/Erste'), 1);
+    assert.equal(sequence(file, '_Scenes/Zweite'), undefined);
+    assert.equal(sequence(file, '_Scenes/Dritte'), undefined);
+  });
+
+  // Two independent settings: an order says where an item sits, a link says what it
+  // relates to, and a folder can want either without the other.
+  test('positions are recorded without linkEdges, and links without an order file', async () => {
+    const withOrder = await scanDirectory(await ordered('seq-no-edges', '- [[Erste]]\n'));
+    assert.equal(sequence(withOrder, '_Scenes/Erste'), 1);
+    assert.equal(withOrder.items.find((i) => i.id === '_Scenes/Erste')?.metadata?.dependsOn, undefined);
+
+    const dir = await fresh('seq-none', { scan: { dateFields: [], linkEdges: true } });
+    await note(dir, 'a.md', '', 'Vgl. [[Ziel]].');
+    await note(dir, 'Ziel.md', 'title: Ziel');
+    const noOrder = await scanDirectory(dir);
+    assert.deepEqual(noOrder.items.find((i) => i.id === 'a')?.metadata?.dependsOn, ['Ziel']);
+    assert.equal(sequence(noOrder, 'Ziel'), undefined);
+  });
+
+  test('a named but missing order file leaves the items unpositioned', async () => {
+    const dir = await fresh('seq-missing', { scan: { dateFields: [], orderFrom: '_Nope.md' } });
+    await note(dir, 'a.md', 'title: A');
+    const file = await scanDirectory(dir);
+    assert.equal(file.items.length, 1);
+    assert.equal(sequence(file, 'a'), undefined);
+  });
+});

@@ -122,6 +122,10 @@
         "linkEdges": {
           "type": "boolean",
           "description": "Read `[[wikilinks]]` as relations between items, recorded on `metadata.dependsOn` and, one entry per link with the frontmatter key it came from, on `metadata.wikilinks`. Off by default, because in most folders a link is a reference and not a dependency."
+        },
+        "orderFrom": {
+          "type": "string",
+          "description": "A file in the folder whose `[[wikilinks]]`, read top to bottom, are the order the items are meant to be read in. Each resolved link stamps a 1-based `metadata.sequence` on the item it names; the first mention wins.\n\nA folder of notes has no inherent order — the filesystem sorts by name and the scan sorts by date, neither of which is the order the author intended — but a folder that *has* one usually already writes it down somewhere, as a table of contents, an agenda, a running order. Naming that file is cheaper and truer than stamping an index into every note's frontmatter, where it would have to be renumbered on every insert.\n\nThe whole file is read, headings included: the position of a link is where the author put it, and this deliberately has no opinion about list nesting or heading levels, which differ per vault. Frontmatter and fenced code are skipped, being metadata and quotation rather than the document's own order. Off by default; a folder without such a file states nothing."
         }
       },
       "additionalProperties": false,

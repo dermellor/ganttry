@@ -49,8 +49,8 @@ export function fieldTypeRows(
  * second editor for the same value, and the item form already renders the built-in
  * (see `RESERVED_META_KEYS` in customFields.ts, which this deliberately mirrors:
  * the list is short, stable and worth stating where the rule that needs it lives).
- * `wikilinks` is owned by the directory scanner rather than by a control: a field
- * of that name would be overwritten on every read.
+ * `wikilinks` and `sequence` are owned by the directory scanner rather than by a
+ * control: a field of either name would be overwritten on every read.
  */
 export const RESERVED_FIELD_KEYS = [
   'dependsOn',
@@ -60,6 +60,7 @@ export const RESERVED_FIELD_KEYS = [
   'tags',
   'tag',
   'wikilinks',
+  'sequence',
 ];
 
 /** A key has to be usable as a JSON object key without quoting surprises. */
