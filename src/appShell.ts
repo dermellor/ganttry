@@ -521,6 +521,11 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     role: 'group',
     ariaLabel: t('edges.label'),
     scroll: true,
+    // Wide enough that the chips wrap two or three to a row: at the trigger's own
+    // width every field took a line of its own, which pushed the two sections
+    // below „Eingehend" out of sight — and where a chip lands is the answer the
+    // panel is supposed to give.
+    minWidth: 320,
     hidden: true,
     attrs: { id: 'edge-menu' },
   });

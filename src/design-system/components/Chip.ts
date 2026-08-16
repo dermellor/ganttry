@@ -20,6 +20,14 @@ export type ChipOptions = {
   code?: string;
   /** Free text from before this field linked to anything. Muted and italic. */
   unlinked?: boolean;
+  /**
+   * Makes the whole chip a button rather than a span, for a chip that *is* the
+   * control instead of standing beside one — a value you move by clicking it.
+   * Mutually exclusive with `removable`, whose own button would then nest.
+   */
+  action?: boolean;
+  /** The accessible name of an `action` chip, when the label alone is not it. */
+  actionLabel?: string;
   /** Renders the remove button. Wire its click through `onRemove`. */
   removable?: boolean;
   removeLabel?: string;
@@ -36,6 +44,8 @@ export function Chip(options: ChipOptions = {}): HTMLSpanElement {
     mark,
     code,
     unlinked,
+    action,
+    actionLabel,
     removable,
     // Only reached by a `removable` chip; see the note in Panel.ts for why the
     // default is English rather than the German it used to be.
@@ -57,8 +67,17 @@ export function Chip(options: ChipOptions = {}): HTMLSpanElement {
   if (remove && onRemove) remove.addEventListener('click', onRemove);
 
   const node = el(
-    'span',
-    { class: classes('ds-Chip', className), title: title ?? label, ...data({ unlinked }), ...attrs },
+    action ? 'button' : 'span',
+    {
+      class: classes('ds-Chip', className),
+      // A `title` on a button turns into a tooltip on every hover; only the span
+      // form uses it, where it is what reveals a label the box had to clip.
+      title: action ? undefined : (title ?? label),
+      type: action ? 'button' : undefined,
+      'aria-label': action ? actionLabel : undefined,
+      ...data({ unlinked, action }),
+      ...attrs,
+    },
     [
       mark,
       code != null && el('span', { class: 'ds-Chip-code' }, code),

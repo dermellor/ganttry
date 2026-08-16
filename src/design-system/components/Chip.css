@@ -19,6 +19,24 @@
   padding-left: var(--space-2xs);
 }
 
+/* A chip that is itself the control. The padding matches the span form on both
+   sides, since there is no remove button pulling the trailing edge in. */
+.ds-Chip[data-action] {
+  padding-right: var(--space-sm);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.ds-Chip[data-action]:hover {
+  border-color: var(--accent);
+}
+
+.ds-Chip[data-action]:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
 .ds-Chip-code {
   font-weight: var(--weight-semibold);
   color: var(--accent);

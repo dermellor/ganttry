@@ -87,12 +87,20 @@ export type MenuSectionOptions = {
    * each belongs to. Labels the group too, so `ariaLabel` is not needed with it.
    */
   label?: string;
+  /**
+   * Flow the children as a wrapping row instead of stacking them, for a section
+   * holding chips rather than full-width rows. The caption still takes a line of
+   * its own. An empty one keeps its caption and its height, because a section
+   * that vanishes when it empties makes the remaining ones jump under the pointer
+   * that just emptied it.
+   */
+  wrap?: boolean;
   className?: string;
   attrs?: Attrs;
 };
 
 export function MenuSection(options: MenuSectionOptions = {}): HTMLDivElement {
-  const { children, ariaLabel, label, className, attrs } = options;
+  const { children, ariaLabel, label, wrap, className, attrs } = options;
   const caption = label
     ? el('div', { class: 'ds-MenuSection-label', 'aria-hidden': 'true' }, label)
     : undefined;
@@ -102,6 +110,7 @@ export function MenuSection(options: MenuSectionOptions = {}): HTMLDivElement {
       class: classes('ds-MenuSection', className),
       role: 'group',
       'aria-label': ariaLabel ?? label,
+      ...data({ wrap }),
       ...attrs,
     },
     caption ? [caption, children] : children,

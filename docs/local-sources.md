@@ -350,9 +350,19 @@ overwrite the note's own frontmatter (`{ ...fm, path, filename, dateSource }`), 
 
 The scanner still records no opinion about direction. That is the „Beziehungen"
 control in the presentation bar ([`src/edgeControl.ts`](../src/edgeControl.ts)),
-over the rule in [`src/linkEdges.ts`](../src/linkEdges.ts): one row per field found
-in the data, each off, incoming or outgoing, with everything incoming as the
+over the rule in [`src/linkEdges.ts`](../src/linkEdges.ts): the fields found in the
+data, grouped under the direction they draw in, with everything incoming as the
 default so a timeline nobody configured draws exactly the edges it drew before.
+
+**Sections rather than a switch per field**, which is what it was first. With a
+three-state control per row the panel repeated „Aus / Eingehend / Ausgehend" once
+per field — thirteen times on the folder this was built against — and because the
+field name sat inside the control, the three options started at a different place
+on every row. Grouping turns the same state into a picture of what the graph is
+built from, and each word appears once, as a heading. What it costs is that setting
+a field is a click that *moves* it: the direction cycles and the heading it lands
+under is the confirmation. An emptied section keeps its heading and its height, so
+the sections below it do not jump under the pointer that just emptied it.
 
 It belongs to the view rather than to the scan, and the `scan` block is why:
 it says how the directory was *read* and is spent by the time there are items, so a
