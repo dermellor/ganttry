@@ -910,6 +910,79 @@ describe('the chain layout (single column)', () => {
     assert.ok(e?.vertical === true, 'and joins straight down into it');
   });
 
+  // The gap #162 let through: the feeders of one beat usually have no edges between
+  // them, so the topological sort above says nothing about them and the stack fell to
+  // the order the data source happened to emit the nodes in. That is not when a thing
+  // happens in the material. Unterlingen 1's „Hauptkette" stacked the three feeders of
+  // one beat as scene 86, 69, 73; the book has them 69, 73, 86.
+  //
+  // A spine (s1→s2→s3) with its feeders hanging off the middle beat. The spine
+  // carries positions of its own so the head is still s1 — a feeder placed earlier
+  // than every spine node would otherwise take the head, which is `earliestSource`'s
+  // business and not what these tests are about.
+  const feederGroup = (
+    feeders: string[],
+    sequence: Record<string, number>,
+    extra: { from: string; to: string; kind: 'depends' }[] = [],
+  ) =>
+    graph({
+      columns: columns('rev'),
+      nodes: ['s1', 's2', 's3', ...feeders].map((id) => ({
+        id,
+        column: 'rev',
+        sequence: sequence[id],
+      })),
+      edges: [
+        { from: 's1', to: 's2', kind: 'depends' as const },
+        { from: 's2', to: 's3', kind: 'depends' as const },
+        ...feeders.map((id) => ({ from: id, to: 's2', kind: 'depends' as const })),
+        ...extra,
+      ],
+    });
+
+  /** The named nodes top to bottom, asserting first that they do share a column. */
+  const stackedTopDown = (out: ReturnType<typeof layoutGraph>, ids: string[]) => {
+    const placed = ids.map((id) => nodeById(out, id));
+    for (const node of placed) assert.equal(node.x, placed[0].x, `${node.id} shares the column`);
+    return [...placed].sort((a, b) => a.y - b.y).map((n) => n.id);
+  };
+
+  test('feeders with no edges between them stack in the declared order', () => {
+    const out = layoutGraph(
+      feederGroup(['sc86', 'sc69', 'sc73'], { s1: 1, s2: 2, s3: 3, sc86: 86, sc69: 69, sc73: 73 }),
+    );
+    assert.deepEqual(
+      stackedTopDown(out, ['sc86', 'sc69', 'sc73']),
+      ['sc69', 'sc73', 'sc86'],
+      'the book order, not the order the source emitted them in',
+    );
+  });
+
+  test('a dependency between two feeders outranks their declared order', () => {
+    // `a` leads to `b` and is placed *after* it. That is a fault in the material, and
+    // resorting it into position order would draw a sound picture over an unsound
+    // book. The source keeps the top and the arrow points down, as it always did.
+    const out = layoutGraph(
+      feederGroup(['a', 'b'], { s1: 1, s2: 2, s3: 3, a: 90, b: 10 }, [
+        { from: 'a', to: 'b', kind: 'depends' },
+      ]),
+    );
+    assert.deepEqual(stackedTopDown(out, ['a', 'b']), ['a', 'b'], 'the source stays on top');
+  });
+
+  test('a feeder the order does not place sorts behind the ones it does', () => {
+    // Listed first by the source, and unplaced sorts last all the same: nobody put it
+    // anywhere, and reading that silence as „first" is backwards (see `earliestSource`).
+    const out = layoutGraph(feederGroup(['loose', 'placed'], { s1: 1, s2: 2, s3: 3, placed: 20 }));
+    assert.deepEqual(stackedTopDown(out, ['loose', 'placed']), ['placed', 'loose']);
+  });
+
+  test('without any declared order the feeders keep the order the source gave them', () => {
+    // Every JSON and database timeline, and every folder without an order file.
+    const out = layoutGraph(feederGroup(['c', 'a', 'b'], {}));
+    assert.deepEqual(stackedTopDown(out, ['c', 'a', 'b']), ['c', 'a', 'b']);
+  });
+
   test('the spine is the heaviest directed path; a short branch becomes a feeder', () => {
     const out = layoutGraph(
       graph({

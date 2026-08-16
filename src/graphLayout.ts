@@ -45,10 +45,10 @@ export type GraphInput = {
     reference?: boolean;
     /**
      * Where the node sits in the order the source declares, if it declares one
-     * (see src/sequence.ts). The chain layout starts its spine at the earliest of
-     * them; absent means „unplaced", and an unplaced node never gets to be the
-     * head. Nothing else in the layout reads it, and a source without any
-     * positions lays out exactly as before.
+     * (see src/sequence.ts). The chain layout reads it twice: it starts its spine
+     * at the earliest source, and it stacks each feeder group in declared order
+     * where the dependencies leave a choice. Absent means „unplaced", which sorts
+     * last in both, and a source without any positions lays out exactly as before.
      */
     sequence?: number;
   }[];
@@ -511,7 +511,8 @@ type ChainPlan = {
    * The feeders anchored to each node, already in the order they should stack top
    * to bottom: a dependency sub-chain among siblings runs source-first, so it reads
    * downward like the spine instead of in file order (which can put a clue below the
-   * clue it leads to, pointing the connector backwards).
+   * clue it leads to, pointing the connector backwards), and siblings the
+   * dependencies leave unordered stack in the order the source declares.
    */
   childrenOf: Map<string, string[]>;
 };
@@ -640,14 +641,15 @@ function chainPlan(
   for (const id of nodeIds) if (!depthOf.has(id)) depthOf.set(id, 1);
 
   // The feeders of each node, grouped in section order, then reordered so a
-  // dependency sub-chain among siblings runs source-first (see `orderByFlow`).
+  // dependency sub-chain among siblings runs source-first and the rest follow the
+  // source's declared order (see `orderByFlow`).
   const childrenOf = new Map<string, string[]>();
   for (const id of nodeIds) {
     const anchor = anchorOf.get(id);
     if (anchor === undefined) continue;
     (childrenOf.get(anchor) ?? childrenOf.set(anchor, []).get(anchor)!).push(id);
   }
-  for (const [anchor, kids] of childrenOf) childrenOf.set(anchor, orderByFlow(kids, adj));
+  for (const [anchor, kids] of childrenOf) childrenOf.set(anchor, orderByFlow(kids, adj, sequenceOf));
 
   return { spine, depthOf, anchorOf, childrenOf };
 }
@@ -710,16 +712,41 @@ function earliestSource(
 
 /**
  * One anchor's feeders, ordered so a dependency runs source before dependent —
- * a stable topological sort with section order breaking ties. The feeders of a
+ * a stable topological sort with the declared order breaking ties. The feeders of a
  * spine node share a column, and among them a clue can lead to the next clue; left
  * in file order the earlier clue can sit *below* the one it feeds, so the connector
  * points up, backwards from the spine's downward flow. Ordering source-first puts
  * the earlier clue on top and the arrow points down, matching the spine.
  *
+ * **Dependency first, position second, and that order is the point.** Among
+ * siblings nothing connects — the common case, since feeders of one beat usually
+ * have no edges between them — the topological sort says nothing at all, and what
+ * decided the stack until #162 was the order the source happened to emit the nodes
+ * in. That has nothing to do with when a thing happens in the material, so
+ * Unterlingen 1's „Hauptkette" stacked three unrelated feeders as 86, 69, 73. The
+ * declared position (see src/sequence.ts) is the answer to „which of these comes
+ * first" and now breaks the tie.
+ *
+ * A sibling that leads to another still stands above it even when its position is
+ * later. That combination is a fault in the material — a clue placed after the clue
+ * it leads to — and quietly resorting it into position order would draw a sound
+ * picture over an unsound book, which is the one thing the layout must not do. It
+ * shows as an arrow running against the flow, where the author can see it.
+ *
+ * A sibling the order does not place sorts after every one it does, for the reason
+ * `earliestSource` gives: nobody put it anywhere, and reading that silence as
+ * „first" is backwards. With no positions at all — every JSON and database source,
+ * and every folder without an order file — every candidate ties and the emission
+ * order decides, exactly as before.
+ *
  * Cycle-safe: a malformed cycle among siblings leaves some with a residual
  * in-degree, and the rest are emitted in section order rather than looping forever.
  */
-function orderByFlow(sibs: string[], adj: Map<string, string[]>): string[] {
+function orderByFlow(
+  sibs: string[],
+  adj: Map<string, string[]>,
+  sequenceOf: Map<string, number>,
+): string[] {
   if (sibs.length < 2) return sibs;
   const set = new Set(sibs);
   const indeg = new Map(sibs.map((s) => [s, 0]));
@@ -727,8 +754,19 @@ function orderByFlow(sibs: string[], adj: Map<string, string[]>): string[] {
   const placed = new Set<string>();
   const out: string[] = [];
   while (out.length < sibs.length) {
-    // The earliest sibling in section order that nothing still-unplaced leads into.
-    const next = sibs.find((s) => !placed.has(s) && indeg.get(s) === 0);
+    // Of the siblings nothing still-unplaced leads into, the one the declared order
+    // puts first; unplaced counts as last, and an outright tie falls to section
+    // order, which is what the strict `<` and the scan over `sibs` preserve.
+    let next: string | undefined;
+    let earliest = Infinity;
+    for (const s of sibs) {
+      if (placed.has(s) || indeg.get(s) !== 0) continue;
+      const position = sequenceOf.get(s) ?? Infinity;
+      if (next === undefined || position < earliest) {
+        next = s;
+        earliest = position;
+      }
+    }
     if (next === undefined) {
       for (const s of sibs) if (!placed.has(s)) out.push(s);
       break;
