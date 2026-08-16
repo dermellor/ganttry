@@ -428,8 +428,9 @@ layout is deliberately kept to „which box goes where". And it has to read the
 away, and the scenes are exactly what carries the order, so deriving from what the
 graph can see would leave every node unplaced.
 
-Who reads it: the graph's chain layout starts its spine at the earliest placed
-source ([`editing.md`](editing.md#graph)).
+Who reads it: the graph's chain layout, twice — it starts its spine at the earliest
+placed source, and it stacks each group of feeders in declared order where the
+dependencies between them leave a choice ([`editing.md`](editing.md#graph)).
 
 ## What this removed
 

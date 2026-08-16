@@ -911,6 +911,17 @@ arrows, and an item with no date yet lived in the list and nowhere else.
   to that walk back from the sink, unchanged — which is every JSON and database
   timeline, and every folder without an order file.
 
+- **Inside a feeder group the order decides the stack.** The feeders of one beat
+  share a column, and a dependency among them runs source-first so its arrow points
+  down like the spine. Usually there are no such edges, though, and that tie fell to
+  the order the data source emitted the nodes in, which says nothing about when a
+  thing happens: Unterlingen 1's „Hauptkette" stacked three feeders of one beat as
+  scene 86, 69, 73, where the book has 69, 73, 86. The declared order breaks the tie
+  now, unplaced sorting last, and with no positions anywhere the emission order still
+  decides. A dependency still outranks the position — a clue placed after the clue it
+  leads to is a fault in the material, and resorting it quietly would draw a sound
+  picture over an unsound book.
+
 **Bands can be named, and nodes can carry references.** Both are declared per
 timeline (`graph` in [`src/types.ts`](../src/types.ts)), set in
 `#timeline-settings=general` or through the `set_layout` agent tool, and both name a
