@@ -14,6 +14,16 @@ For where a plugin's *data* lives, read
 | **Installed** | `installed_plugins` (migration 0020) | this instance has the plugin's code and granted it capabilities |
 | **Enabled** | `timeline_plugins` (migration 0012) | this one timeline uses it, with this config |
 
+**Enabling is a control now, not a row somebody writes** (#85). Timeline settings
+carry a „Plugins" section listing what the instance installed, what each one
+declares — version, capabilities, views — and a switch per timeline. It lists from
+the **installed** set rather than from the client registry, and the difference
+matters: `register()` refuses a manifest whose contract range the host cannot
+satisfy, so a plugin that is installed and unrunnable never reaches the registry.
+Listing from there would answer „which plugins work" with silence about the ones
+that do not, which is the case somebody opens that section to understand. Such a
+plugin is shown with its reason and no switch.
+
 A plugin has to be installed before it can be enabled anywhere, and disabling it
 on a timeline says nothing about the install. Keeping them apart is what makes
 „switch this off here" a cheap, reversible act and „remove this from the
