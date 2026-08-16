@@ -492,6 +492,63 @@ Three rules that repository enforces and this one has to respect:
 - **No JavaScript, no third-party request, no image work.** A plugin page is prose,
   tables and an FAQ; the `preview.png` from phase 4 stays in the catalogue here.
 
+### The shape, measured rather than felt
+
+Four rewrites of the sprints page were rejected for reading as documentation
+before anybody measured a real one. Seventeen were then read and counted: add-on
+listings (Figma, Slack, Shopify, VS Code, Linear, Notion), feature pages from this
+domain (Linear, Jira, Basecamp, Asana, GitHub) and feature pages written soberly
+(Stripe, Figma, Vercel, Notion, Linear, Plausible). Write against these numbers,
+not against a sense of what a good page sounds like.
+
+| | Measured |
+| --- | --- |
+| Body prose | 172 to 1,200 words, median 681. A listing's authored prose is 100 to 300 |
+| The repeating unit | a heading, 15 to 60 words, and **one** visual. Never two paragraphs in a row |
+| Sentences | 10 to 13 words on average. The longest in the whole corpus was 36 |
+| Headings | the heading carries the **outcome**, the body carries the mechanism. Asana repeats that fifteen times on one page |
+| Call to action | names its destination („Add to Linear"), appears at most twice |
+
+**What appears on none of them**, and each of these was in our own outline before
+it was measured:
+
+- **A requirements section.** Zero of five feature pages have one, and in listings
+  a prerequisite is always a single inline sentence. This is the corpus's most
+  absolute rule.
+- **A worked example with arithmetic.** One concrete scenario in 3,571 words, and
+  it was a time of day. A page that computes something is documentation.
+- **An enumeration of internal states in prose.** Linear has three project states
+  and shows them inside a screenshot. Jira breaks the rule with a glossary and is
+  the most documentation-like block in the corpus, with the longest sentences.
+- **A caveat in the main flow.** Limits live in the FAQ and nowhere else, which is
+  the genre's quarantine for anything true and unflattering. Stripe has our
+  caveats and demotes every one to a footnote so the claim sentence stays clean.
+
+Three sentence-level moves get a draft from the first register to the second:
+
+1. **Put the reader in the subject slot.** Half of all body sentences in the
+   corpus begin with a verb the reader performs; the product arrives at the end as
+   a prepositional phrase.
+2. **One claim per sentence, then stop.** Write the claim, then delete the
+   „because", „so that" or „which means" clause after it. What survives is the
+   page sentence; what you deleted is the documentation sentence.
+3. **Put evidence where the explanation was.** That slot holds a number, a named
+   product, or nothing. Figma, Vercel and Linear leave it empty on roughly two
+   thirds of their cards.
+
+**One block earns its place from a measurement rather than a habit.** The install
+mechanics get their own heading about two thirds down, the way Linear and Notion
+do it. On the Figma Unsplash listing, 17 of 121 comments ask how to install the
+plugin, because the steps sit below the fold in the register of a licensing note.
+While enabling a plugin needs an MCP call or a line in the timeline file
+([#85](https://github.com/zeitlines/zeitlines/issues/85)), a page without that
+block will earn the same question.
+
+**And one block is written for answer engines:** a self-contained paragraph under
+the lede that survives being quoted without the page around it, carrying the words
+somebody searches with and the named products they compare against. The FAQ is the
+second half of that, since it already renders as `FAQPage` data.
+
 The page is not a copy of the README. The README documents a plugin for somebody who has
 it; the page answers why anybody would want it, in the words they would search with —
 which is what phase 1.3 harvested, and the reason that phase runs before the naming.
@@ -724,4 +781,5 @@ And on **every later change that alters what a reader sees** (5.5):
 [ ] The page's claims re-read against the code, not against the old page
 [ ] npm run shots  +  npm run plugins:preview -- <folder>, against the example data
 [ ] status still matching reality
+[ ] body prose still inside the measured band (5.4), one visual per block
 ```
