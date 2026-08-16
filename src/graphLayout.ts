@@ -469,52 +469,65 @@ type ChainPlan = {
 function chainPlan(nodeIds: string[], edges: PlacedEdge[]): ChainPlan {
   const inBand = new Set(nodeIds);
   const adj = new Map<string, string[]>(); // directed, from → to
+  const pred = new Map<string, string[]>(); // directed, to → from
   const near = new Map<string, string[]>(); // undirected
   const push = (m: Map<string, string[]>, a: string, b: string) =>
     (m.get(a) ?? m.set(a, []).get(a)!).push(b);
   for (const e of edges) {
     if (!inBand.has(e.from) || !inBand.has(e.to)) continue;
     push(adj, e.from, e.to);
+    push(pred, e.to, e.from);
     push(near, e.from, e.to);
     push(near, e.to, e.from);
   }
 
-  // Longest directed path, memoised, and cycle-safe: a node already on the walk's
-  // own stack is treated as a dead end, so a malformed cycle (a `dependsOn` can
-  // express one) truncates the path instead of recursing forever.
-  const memo = new Map<string, { len: number; next?: string }>();
+  // The spine is the band's **heaviest** directed path, not its longest. `mass(n)`
+  // is n plus everything that (recursively) feeds into it, so at every fork the
+  // trunk is the branch that itself collects the most — a short-but-busy main chain
+  // wins over a long-but-thin side strand. Memoised and cycle-safe: a node already
+  // on the walk's own stack counts as weightless, so a malformed cycle (a
+  // `dependsOn` can express one) stops the recursion instead of looping forever.
+  const mass = new Map<string, number>();
   const onStack = new Set<string>();
-  const walk = (u: string): { len: number; next?: string } => {
-    const cached = memo.get(u);
-    if (cached) return cached;
-    if (onStack.has(u)) return { len: 0 };
+  const massOf = (u: string): number => {
+    const cached = mass.get(u);
+    if (cached !== undefined) return cached;
+    if (onStack.has(u)) return 0;
     onStack.add(u);
-    let best: { len: number; next?: string } = { len: 0 };
-    for (const v of adj.get(u) ?? []) {
-      const r = walk(v);
-      if (r.len + 1 > best.len) best = { len: r.len + 1, next: v };
-    }
+    let total = 1;
+    for (const p of pred.get(u) ?? []) total += massOf(p);
     onStack.delete(u);
-    memo.set(u, best);
-    return best;
+    mass.set(u, total);
+    return total;
   };
-  // Start from the node that reaches furthest. Ties fall to the earlier node in
-  // section order, which is what keeps the spine stable across unrelated edits.
-  let start = nodeIds[0];
-  let bestLen = -1;
+  for (const id of nodeIds) massOf(id);
+  // The chain ends at the heaviest sink (a node nothing leads out of — the final
+  // revelation). Ties fall to the earlier node in section order, keeping the spine
+  // stable across unrelated edits.
+  let sink = nodeIds[0];
+  let bestMass = -1;
   for (const id of nodeIds) {
-    const len = walk(id).len;
-    if (len > bestLen) {
-      bestLen = len;
-      start = id;
+    if ((adj.get(id) ?? []).length) continue; // not a sink
+    if (massOf(id) > bestMass) {
+      bestMass = massOf(id);
+      sink = id;
     }
   }
+  // Walk back from the sink into the heaviest predecessor at each step, then flip
+  // so the spine runs source → sink (arrows down).
   const spine: string[] = [];
   const spineSet = new Set<string>();
-  for (let cur: string | undefined = start; cur && !spineSet.has(cur); cur = memo.get(cur)?.next) {
+  for (let cur: string | undefined = sink; cur && !spineSet.has(cur); ) {
     spine.push(cur);
     spineSet.add(cur);
+    let heaviest: string | undefined;
+    for (const p of pred.get(cur) ?? []) {
+      if (spineSet.has(p)) continue;
+      if (heaviest === undefined || massOf(p) > massOf(heaviest)) heaviest = p;
+    }
+    cur = heaviest;
   }
+  spine.reverse();
 
   const steps = new Set<string>();
   for (let i = 0; i + 1 < spine.length; i++) steps.add(`${spine[i]}␟${spine[i + 1]}`);
