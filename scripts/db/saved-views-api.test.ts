@@ -153,3 +153,24 @@ test('the timeline payload is filtered by who asked', async () => {
   // cannot tell „none for you" from „this timeline has none".
   assert.equal('savedViews' in withVisibleSavedViews({ savedViews: [theirs] }, ALICE), false);
 });
+
+// The edge selection an agent may set, so a named reading of a folder's relations
+// is reachable without a browser. Canonicalised on the way in like `filters`:
+// a field back at the default direction is dropped rather than stored, or the view
+// would read as drifted against a display that matches it exactly.
+test('an edge selection is stored, and the default direction is dropped', async () => {
+  const repo = memoryRepo();
+  const res = await call(repo, 'POST', ALICE, {
+    body: { name: 'Kette', edges: { Blocks: 'out', Hints: 'in', Junk: 'sideways' } },
+  });
+  assert.equal(res.status, 201);
+  assert.deepEqual((res.json as SavedView).edges, { Blocks: 'out' });
+});
+
+test('an edge selection is cleared by an explicit null and untouched when unnamed', async () => {
+  const repo = memoryRepo([{ ...mine, edges: { Blocks: 'out' }, groupBy: 'status' }]);
+  const kept = await call(repo, 'PATCH', ALICE, { viewId: 'mine', body: { groupBy: 'tag' } });
+  assert.deepEqual((kept.json as SavedView).edges, { Blocks: 'out' }, 'an unnamed field survives');
+  const cleared = await call(repo, 'PATCH', ALICE, { viewId: 'mine', body: { edges: null } });
+  assert.equal('edges' in (cleared.json as SavedView), false);
+});

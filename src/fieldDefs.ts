@@ -45,12 +45,22 @@ export function fieldTypeRows(
 }
 
 /**
- * Metadata keys with a control of their own. A field on one of these would be a
+ * Metadata keys the product already owns. A field on one of these would be a
  * second editor for the same value, and the item form already renders the built-in
  * (see `RESERVED_META_KEYS` in customFields.ts, which this deliberately mirrors:
  * the list is short, stable and worth stating where the rule that needs it lives).
+ * `wikilinks` is owned by the directory scanner rather than by a control: a field
+ * of that name would be overwritten on every read.
  */
-export const RESERVED_FIELD_KEYS = ['dependsOn', 'parent', 'owner', 'jira', 'tags', 'tag'];
+export const RESERVED_FIELD_KEYS = [
+  'dependsOn',
+  'parent',
+  'owner',
+  'jira',
+  'tags',
+  'tag',
+  'wikilinks',
+];
 
 /** A key has to be usable as a JSON object key without quoting surprises. */
 const KEY_SHAPE = /^[A-Za-z][A-Za-z0-9_-]*$/;

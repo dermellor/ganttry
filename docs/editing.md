@@ -1195,6 +1195,7 @@ presentation:
 timelines.viewPrefs = {
   "<viewId>": {
     mode: "list",                                   // which presentation is open
+    edges: { "Hints": "off", "": "out" },           // the timeline's, not a presentation's
     presentations: {
       "timeline":                   { groupBy: "group" },
       "list":                       { groupBy: "status", filters: { status: ["Open"] } },
@@ -1203,6 +1204,15 @@ timelines.viewPrefs = {
   }
 }
 ```
+
+**One setting deliberately stays at the timeline level: `edges`.** It says which
+of a scanned folder's link fields become dependencies and which way they point
+(„Wikilinks as relations", [`local-sources.md`](local-sources.md)), and the Gantt
+arrows and the graph read one dependency map between them. Per presentation, the
+two could disagree about what depends on what, which reads as a bug in one of them
+rather than as a setting. Only fields deviating from the default are written, and
+the empty key is the note body; a selection back at the default drops the entry
+rather than storing every field as `in`.
 
 Lanes and list sections are different mechanisms, so „group by Gruppe on the
 timeline, by Status in the list" is an ordinary wish, and one shared value made it
@@ -1276,10 +1286,21 @@ each time, and there was no way to hand one to somebody else except by describin
 the clicks.
 
 An **Ansicht** is that combination under a name, stored with the timeline: the
-presentation, the grouping dimension and the filter selection, plus who it belongs
-to and whether the instance may see it. The control is the first one in the
-presentation bar ([`src/savedViewsControl.ts`](../src/savedViewsControl.ts)), at
-the head of the two controls it is a shortcut over.
+presentation, the grouping dimension, the filter selection and, on a source that
+scanned wikilinks, the edge selection, plus who it belongs to and whether the
+instance may see it. The control is the first one in the presentation bar
+([`src/savedViewsControl.ts`](../src/savedViewsControl.ts)), at the head of the
+controls it is a shortcut over.
+
+The edge selection round-trips through a **local** source, whose saved views are
+stored as the JSON this describes, and it is settable through the API and the MCP
+server (`edges` on `create_saved_view` / `update_saved_view`) — which is the only
+way an agent can reach the setting at all: the unnamed selection is one person's
+browser state and has no address. The database path enumerates its columns and has
+none for it, so a DB-backed view drops it — which is not a gap in practice, because
+only a directory scan records the link origins the setting acts on and the control
+never appears without them. A DB source that ever records them needs the migration
+before it needs this.
 
 **It is a mark, not a labelled control, and that was decided against a
 measurement.** With a plugin contributing a control of its own, the bar already

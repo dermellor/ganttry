@@ -17,7 +17,13 @@ import { existsSync } from 'node:fs';
 import { basename, extname, join, relative } from 'node:path';
 import matter from 'gray-matter';
 
-import type { ScanConfig, TimelineContainer, TimelineFile, TimelineFileItem } from '../../src/types';
+import type {
+  ItemLink,
+  ScanConfig,
+  TimelineContainer,
+  TimelineFile,
+  TimelineFileItem,
+} from '../../src/types';
 
 /** The container file that carries a directory's timeline-level data. */
 export const CONTAINER_FILE = 'timeline.json';
@@ -277,8 +283,9 @@ function wikilinksInValue(value: unknown, into: string[]): void {
 }
 
 /**
- * Resolve every note's wikilinks to item ids and record them on
- * `metadata.dependsOn`.
+ * Resolve every note's wikilinks to item ids and record them twice: flattened on
+ * `metadata.dependsOn`, and one entry per link with its frontmatter key on
+ * `metadata.wikilinks`.
  *
  * Two lookups, because a vault links both ways: by bare title (`[[Angebot von
  * Talheim]]`, how a note in the same vault is normally referenced) and by path
@@ -289,6 +296,13 @@ function wikilinksInValue(value: unknown, into: string[]): void {
  * `dependsOn` and not a key of its own: it is the relation the rest of the app
  * already understands — the Gantt arrows and the graph both read it — and a second
  * edge key would have to be taught to each of them.
+ *
+ * `wikilinks` beside it because `dependsOn` cannot say where a link came from, and
+ * that is what decides its direction: a frontmatter key meaning „these lead to me"
+ * points the opposite way from a link written mid-sentence, and flattening both
+ * onto one key with one direction silently reverses half of them. The scanner
+ * still records no opinion about which is which — it keeps the field name so that
+ * whoever draws the edges can have one.
  */
 function linkItems(items: TimelineFileItem[], bodies: Map<string, string>): void {
   const byTitle = new Map<string, string>();
@@ -313,26 +327,52 @@ function linkItems(items: TimelineFileItem[], bodies: Map<string, string>): void
   };
 
   for (const item of items) {
-    const raw: string[] = [];
-    wikilinksInValue(item.metadata, raw);
+    // Per top-level frontmatter key rather than over the whole object at once,
+    // because the key is the half `dependsOn` throws away. Nested values still
+    // report the key they hang under: „which field links this" is a statement
+    // about the field, and a sub-key of one is not a field of its own.
+    const found: { field: string | null; raw: string }[] = [];
+    const meta = (item.metadata ?? {}) as Record<string, unknown>;
+    for (const [field, value] of Object.entries(meta)) {
+      const raw: string[] = [];
+      wikilinksInValue(value, raw);
+      for (const link of raw) found.push({ field, raw: link });
+    }
     const body = bodies.get(item.id!);
     // Fenced code is quoted text, not a reference: a snippet showing `[[Foo]]`
     // would otherwise become an edge.
-    if (body) raw.push(...wikilinkTargets(body.replace(CODE_FENCE, '')));
+    if (body) {
+      for (const link of wikilinkTargets(body.replace(CODE_FENCE, ''))) {
+        found.push({ field: null, raw: link });
+      }
+    }
 
     const seen = new Set<string>();
+    const seenPerField = new Set<string>();
     const targets: string[] = [];
-    for (const link of raw) {
-      const id = resolveTarget(link);
+    const links: ItemLink[] = [];
+    for (const { field, raw } of found) {
+      const id = resolveTarget(raw);
       // A link to something outside this folder resolves to nothing and is
       // dropped rather than recorded: a dangling id would draw an edge to a node
       // that does not exist, and every consumer would have to filter it again.
-      if (!id || id === item.id || seen.has(id)) continue;
+      if (!id || id === item.id) continue;
+      // One entry per field per target: a field naming the same note twice is one
+      // relation, while two fields naming it are two — that second case is the
+      // whole point of keeping the field, so deduplicating by target alone would
+      // throw the answer away again.
+      const pair = `${field ?? ''}␟${id}`;
+      if (!seenPerField.has(pair)) {
+        seenPerField.add(pair);
+        links.push({ field, target: id });
+      }
+      if (seen.has(id)) continue;
       seen.add(id);
       targets.push(id);
     }
     if (targets.length) {
-      (item.metadata as Record<string, unknown>).dependsOn = targets;
+      meta.dependsOn = targets;
+      meta.wikilinks = links;
     }
   }
 }

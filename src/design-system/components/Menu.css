@@ -64,6 +64,49 @@
   gap: 1px;
 }
 
+/* A section holding chips: they flow as a wrapping row, and the caption breaks
+   the line by claiming the full width. `min-height` keeps an emptied section in
+   place — one that collapsed would move every section below it under the pointer
+   that just emptied it. */
+.ds-MenuSection[data-wrap] {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+  /* Inset on all four sides, unlike a section of full-width rows: a chip has a
+     border of its own, so one sitting flush against the popover's edge reads as
+     a box inside a box. */
+  padding: var(--space-2xs) var(--space-xs) var(--space-xs);
+}
+
+.ds-MenuSection[data-wrap] > .ds-MenuSection-label {
+  flex: 0 0 100%;
+}
+
+.ds-MenuSection[data-wrap]::after {
+  content: '';
+  min-height: var(--control-sm);
+}
+
+/* Every section a chip could be dropped into, marked from the moment one is
+   picked up. Without it the only target that ever looks like one is the section
+   already under the pointer, which is the section the chip came from — so the
+   panel says „you can put it back" and nothing about the other two. A dashed
+   outline rather than a fill: it has to read as an empty place to put something,
+   next to the solid tint below that says „this one". */
+.ds-MenuSection[data-droppable] {
+  outline: 1px dashed var(--border);
+  outline-offset: -1px;
+  border-radius: var(--radius-sm);
+}
+
+/* The section a dragged chip would land in right now. Tinted rather than
+   outlined: an empty section is mostly whitespace, and a second border around
+   whitespace reads as a field rather than as a target. */
+.ds-MenuSection[data-dropping] {
+  background: var(--hover);
+  border-radius: var(--radius-sm);
+}
+
 .ds-MenuSection + .ds-MenuSection {
   margin-top: var(--space-3xs);
   padding-top: var(--space-3xs);

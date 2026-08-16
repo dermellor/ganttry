@@ -15,6 +15,9 @@
 // exhaustively.
 
 import type { SavedView, SavedViewVisibility } from './types';
+// `.ts` because this module is reachable from an edge function, where Deno
+// resolves an extensionless specifier to nothing (see scripts/ci/edge-imports.test.ts).
+import { DEFAULT_EDGE_DIRECTION, isEdgeDirection, type EdgeSelection } from './linkEdges.ts';
 
 /** What one caller may do, as the runtime that authenticated them resolved it. */
 export type SavedViewCaller = {
@@ -115,7 +118,23 @@ export type DisplayState = {
   mode: string;
   groupBy: string;
   filters: Record<string, string[]>;
+  edges?: EdgeSelection;
 };
+
+/**
+ * The edge selection in one comparable form: fields at the default direction are
+ * dropped, so „said nothing about Hints" and „set Hints back to incoming" are one
+ * value. Without it the drift marker would appear for a round trip that changed
+ * nothing on screen.
+ */
+export function canonicalEdges(edges: EdgeSelection | undefined): EdgeSelection {
+  const out: EdgeSelection = {};
+  for (const key of Object.keys(edges ?? {}).sort()) {
+    const dir = edges?.[key];
+    if (isEdgeDirection(dir) && dir !== DEFAULT_EDGE_DIRECTION) out[key] = dir;
+  }
+  return out;
+}
 
 /**
  * Does the view still describe what is on screen?
@@ -135,6 +154,12 @@ export function savedViewMatches(view: SavedView, current: DisplayState): boolea
   // empty selection is therefore a statement — „no restriction" — rather than an
   // absence, which is also what somebody saving an unfiltered view means.
   if (JSON.stringify(canonicalFilters(view.filters)) !== JSON.stringify(canonicalFilters(current.filters))) {
+    return false;
+  }
+  // Compared like the filter and for the same reason: an absent selection is the
+  // default one, not „no opinion". A view saved before this existed therefore
+  // matches a timeline drawing every field incoming, which is what it was showing.
+  if (JSON.stringify(canonicalEdges(view.edges)) !== JSON.stringify(canonicalEdges(current.edges))) {
     return false;
   }
   return true;

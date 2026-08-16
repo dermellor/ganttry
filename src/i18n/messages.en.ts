@@ -203,6 +203,17 @@ export const EN = {
   'filter.count.one': '1 value',
   'filter.count.other': '{count} values',
   'filter.emptyBucket': 'Without {field}',
+  // The link fields a timeline draws edges from. A field's own name is the vault
+  // author's word and is never translated — only these frames are.
+  'edges.label': 'Relations',
+  'edges.all': 'All fields',
+  'edges.count.one': '1 field',
+  'edges.count.other': '{count} fields',
+  // A link written in the note's text rather than in a frontmatter field.
+  'edges.body': 'Body text',
+  'edges.off': 'Off',
+  'edges.in': 'Incoming',
+  'edges.out': 'Outgoing',
   'group.default': 'Group (default)',
   // „No group is named here", the empty option of a setting that names one.
   'group.none': 'None',

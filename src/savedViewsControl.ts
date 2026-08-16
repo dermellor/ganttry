@@ -39,11 +39,12 @@ import {
   Separator,
   TextInput,
 } from './design-system';
-import { els, state, saveViewPrefs, setStatus, syncUrl } from './state';
+import { els, state, saveEdgeSelection, saveViewPrefs, setStatus, syncUrl } from './state';
 import { apiCreateSavedView, apiDeleteSavedView, apiUpdateSavedView } from './editor';
 import {
   canEditSavedView,
   canPublishSavedView,
+  canonicalEdges,
   savedViewMatches,
   sortSavedViews,
   visibilityOf,
@@ -104,6 +105,7 @@ function drifted(view: SavedView): boolean {
     mode: state.viewMode,
     groupBy: state.groupBy,
     filters: state.filters,
+    edges: state.edges,
   });
 }
 
@@ -131,6 +133,13 @@ export function applySavedView(view: SavedView): void {
   // empty selection rather than „leave the filter alone" (see `savedViewMatches`),
   // so applying a view somebody saved without a narrowing has to clear one.
   state.filters = { ...(view.filters ?? {}) };
+  // Unconditional for the same reason as `filters`: an absent selection is the
+  // default one, so applying a view saved without an opinion has to restore
+  // „every field incoming" rather than leave the previous timeline's choice in
+  // place. Saved with the timeline rather than in a browser, this is what makes a
+  // named reading of a vault's relations shareable at all.
+  state.edges = { ...(view.edges ?? {}) };
+  saveEdgeSelection();
   state.activeSavedViewId = view.id;
   // The two above are set BEFORE the switch, and the switch is told to keep them
   // (`keepPrefs` in main.ts): perspective and extent are stored per presentation,
@@ -156,6 +165,7 @@ function currentAsView(name: string): Record<string, unknown> {
     mode: state.viewMode,
     groupBy: state.groupBy,
     filters: state.filters,
+    edges: canonicalEdges(state.edges),
   };
 }
 

@@ -9,6 +9,7 @@ import { CLONE_SEP } from './cloneId';
 import { orderGroups } from './groupOrder';
 import { BACKGROUND_LABEL_CLASS } from './backgroundItemDisplay';
 import { derivedValuesFor } from './pluginHost/derived';
+import { dependenciesFromLinks, hasLinkFields, type EdgeSelection } from './linkEdges';
 
 export const UNGROUPED = '_ungrouped';
 
@@ -818,7 +819,7 @@ function extractDependsOn(meta: unknown): string[] {
   return [];
 }
 
-export function buildFromJson(view: View, file: TimelineFile): BuildResult {
+export function buildFromJson(view: View, file: TimelineFile, edges?: EdgeSelection): BuildResult {
   const items: TimelineItem[] = [];
   const groupSet = new Map<string, TimelineGroup>();
   const details = new Map<string, DetailNote>();
@@ -898,6 +899,23 @@ export function buildFromJson(view: View, file: TimelineFile): BuildResult {
         UNGROUPED,
       )
     : [];
+
+  // A source that recorded where each of its links came from gets its edges
+  // derived here instead of read off `dependsOn`, because only the reader can say
+  // what a link field means (see src/linkEdges.ts). `dependsOn` on those items was
+  // written by the scan out of those very links, so replacing it changes nothing
+  // under the default selection — and an item without recorded links keeps
+  // whatever it states, which is what a hand-written dependency stays.
+  if (hasLinkFields(file.items)) {
+    const derived = dependenciesFromLinks(file.items, edges ?? {});
+    for (const raw of file.items) {
+      if (raw.id && (raw.metadata as Record<string, unknown>)?.wikilinks) dependencies.delete(raw.id);
+    }
+    for (const [id, deps] of derived) {
+      const kept = dependencies.get(id) ?? [];
+      dependencies.set(id, [...kept, ...deps.filter((d) => !kept.includes(d))]);
+    }
+  }
 
   // Resolved against the ids that survived the loop above, so a link to an item
   // that was dropped (no `content`) or deleted goes with it instead of leaving a

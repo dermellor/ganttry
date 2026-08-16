@@ -38,12 +38,15 @@ import {
   parseViewPrefsStore,
   VIEW_PREFS_KEY,
   presentationPrefsFor,
+  storedEdges,
   storedMode,
+  withEdgeSelection,
   withLegacyFallback,
   withViewPrefs,
   type ViewPrefsStore,
 } from './viewPrefs';
 import type { FilterSelection } from './filterRule';
+import type { EdgeSelection } from './linkEdges';
 
 // The frame is built rather than looked up: `index.html` carries no markup any
 // more, because `src/export.ts` needs the same frame and two hand-kept copies of
@@ -214,6 +217,11 @@ export interface AppState {
   // dimensions and OR within one (see src/filterRule.ts). An empty record means
   // no restriction. Independent of the grouping dimension.
   filters: FilterSelection;
+  // Which recorded link fields become edges, and which way they point (see
+  // src/linkEdges.ts). Per timeline rather than per presentation, unlike the two
+  // above: it decides which relations exist, and the arrows and the graph read
+  // one dependency map between them.
+  edges: EdgeSelection;
   // Display state a link asked for, applied on top of what the timeline being
   // opened remembers. Same pattern as pendingItem / pendingWindow above: the URL
   // is read before the view exists, so it waits here until applyView has loaded
@@ -288,6 +296,7 @@ export const state: AppState = {
   viewMode: 'timeline',
   groupBy: DEFAULT_VIEW_PREFS.groupBy,
   filters: {},
+  edges: {},
   pendingPrefs: null,
   activeSavedViewId: null,
   pendingSavedView: null,
@@ -342,6 +351,9 @@ export function loadViewPrefs(viewId: string | null): void {
   const prefs = presentationPrefsFor(store, viewId, state.viewMode);
   state.groupBy = prefs.groupBy;
   state.filters = prefs.filters;
+  // Not in `presentationPrefsFor`: the edge selection is the timeline's, so it is
+  // read here and stays put when the presentation changes below.
+  state.edges = storedEdges(store, viewId);
 }
 
 /**
@@ -367,6 +379,17 @@ export function saveViewPrefs(viewId: string | null = state.activeView?.id ?? nu
       filters: state.filters,
     }),
   );
+}
+
+/**
+ * Write the edge selection back to the timeline it belongs to. Its own call
+ * rather than a field of `saveViewPrefs`, because the two are set by different
+ * controls: folding them together would make every grouping change rewrite the
+ * edges, and every edge change rewrite the presentation's entry.
+ */
+export function saveEdgeSelection(viewId: string | null = state.activeView?.id ?? null): void {
+  if (!viewId) return;
+  writeViewPrefsStore(withEdgeSelection(readViewPrefsStore(), viewId, state.edges));
 }
 
 // The whole per-source fold store, `{ [sourceId]: itemId[] }`. A malformed or

@@ -2320,6 +2320,12 @@ components:
         filters:
           "$ref": "#/components/schemas/Recordstringstring"
           description: "Selected values per filter dimension; the shape `FilterSelection` describes."
+        edges:
+          "$ref": "#/components/schemas/Recordstringoffinout"
+          description: |-
+              Which recorded link fields become edges, and which way they point (see src/linkEdges.ts). Only fields deviating from the default are stored, so an absent value means „every field incoming" — which is what every view saved before this existed was showing.
+
+              Round-trips through a **local** source, whose saved views are stored as this JSON. The database path enumerates its columns and has no `edges` one, so a DB-backed view drops it — deliberately, because only a directory scan records the link origins this acts on, and the control never appears without them. A DB source that ever records them needs the migration before it needs this.
         owner:
           type: string
           description: "The address of whoever created it. Empty on a source with no identity."
@@ -2353,6 +2359,14 @@ components:
         type: array
         items:
           type: string
+    Recordstringoffinout:
+      type: object
+      additionalProperties:
+        type: string
+        enum:
+          - off
+          - in
+          - out
     SavedViewVisibility:
       type: string
       enum:
@@ -2394,9 +2408,9 @@ components:
       additionalProperties:
         "$ref": "#/components/schemas/PluginCollectionData"
     PluginCollectionData:
-      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-15005-16181-src_types.ts-0-285311108268078"
+      "$ref": "#/components/schemas/Recordstringdef-alias-src_types.ts-16012-17188-src_types.ts-0-303781108268078"
       description: "A plugin's collections, keyed by the collection id its manifest declares."
-    Recordstringdef-alias-src_types.ts-15005-16181-src_types.ts-0-285311108268078:
+    Recordstringdef-alias-src_types.ts-16012-17188-src_types.ts-0-303781108268078:
       type: object
       additionalProperties:
         type: array

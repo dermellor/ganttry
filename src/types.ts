@@ -169,6 +169,27 @@ export type TimelineFileItem = {
   updatedBy?: string;
 };
 
+/**
+ * One wikilink a directory scan found on a note, with the frontmatter key it sat
+ * under. Recorded as a list on `metadata.wikilinks` when `scan.linkEdges` is on.
+ *
+ * It exists because `metadata.dependsOn` flattens every link into one relation
+ * with one direction, and the field name is what says which direction was meant:
+ * a key listing what leads *to* a note points the opposite way from a link the
+ * author wrote mid-sentence. Once the name is gone no consumer can recover it, so
+ * the scanner keeps it and leaves the interpretation to whoever draws the edges.
+ *
+ * The key is `wikilinks` and not `links` because the scanner's own metadata keys
+ * overwrite the note's frontmatter (`{ ...fm, path, filename, dateSource }`), and
+ * `links:` is a plausible key for a vault to already use.
+ */
+export type ItemLink = {
+  /** The top-level frontmatter key the link sat under; `null` for body prose. */
+  field: string | null;
+  /** The resolved id of the linked item. */
+  target: string;
+};
+
 export type TimelinePhase = {
   id?: string;
   label: string;
@@ -442,6 +463,19 @@ export type SavedView = {
   groupBy?: string;
   /** Selected values per filter dimension; the shape `FilterSelection` describes. */
   filters?: Record<string, string[]>;
+  /**
+   * Which recorded link fields become edges, and which way they point (see
+   * src/linkEdges.ts). Only fields deviating from the default are stored, so an
+   * absent value means „every field incoming" — which is what every view saved
+   * before this existed was showing.
+   *
+   * Round-trips through a **local** source, whose saved views are stored as this
+   * JSON. The database path enumerates its columns and has no `edges` one, so a
+   * DB-backed view drops it — deliberately, because only a directory scan records
+   * the link origins this acts on, and the control never appears without them. A
+   * DB source that ever records them needs the migration before it needs this.
+   */
+  edges?: Record<string, 'off' | 'in' | 'out'>;
   /** The address of whoever created it. Empty on a source with no identity. */
   owner?: string;
   /** Defaults to `private` when absent, which is what an older file spells. */
@@ -569,8 +603,9 @@ export type ScanConfig = {
   groupFromFolder?: boolean;
   /**
    * Read `[[wikilinks]]` as relations between items, recorded on
-   * `metadata.dependsOn`. Off by default, because in most folders a link is a
-   * reference and not a dependency.
+   * `metadata.dependsOn` and, one entry per link with the frontmatter key it came
+   * from, on `metadata.wikilinks`. Off by default, because in most folders a link
+   * is a reference and not a dependency.
    */
   linkEdges?: boolean;
 };

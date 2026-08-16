@@ -32,6 +32,7 @@ import { showDetailForId } from './detailPanel';
 import { computeSections } from './listGrouping';
 import { metaOf, resolveGrouping, sectionContext, syncGroupByControl } from './grouping';
 import { syncFilterControl } from './filterControl';
+import { syncEdgeControl } from './edgeControl';
 import { displayIdsFor, filterBuildForDisplay } from './render';
 import { els, state, syncUrl } from './state';
 import {
@@ -339,6 +340,7 @@ export function renderGraphView(): void {
   const { dim, options } = resolveGrouping(entries);
   syncGroupByControl(options, dim);
   syncFilterControl();
+  syncEdgeControl();
 
   if (!entries.length) {
     host.appendChild(emptyState(t('view.empty.filtered')));

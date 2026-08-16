@@ -20,6 +20,19 @@ export type ChipOptions = {
   code?: string;
   /** Free text from before this field linked to anything. Muted and italic. */
   unlinked?: boolean;
+  /**
+   * Makes the chip a drag source and puts it in the tab order, for a chip whose
+   * *position* is its value — one you move between the groups of a panel rather
+   * than read. Deliberately not a button: a click on it does nothing, and a
+   * button whose click does nothing is the worse lie of the two.
+   */
+  movable?: boolean;
+  /**
+   * The accessible name of a `movable` chip. Worth giving: the label alone says
+   * which field this is and not where it currently sits, which is the half a
+   * reader cannot see when focus lands on it.
+   */
+  movableLabel?: string;
   /** Renders the remove button. Wire its click through `onRemove`. */
   removable?: boolean;
   removeLabel?: string;
@@ -36,6 +49,8 @@ export function Chip(options: ChipOptions = {}): HTMLSpanElement {
     mark,
     code,
     unlinked,
+    movable,
+    movableLabel,
     removable,
     // Only reached by a `removable` chip; see the note in Panel.ts for why the
     // default is English rather than the German it used to be.
@@ -58,7 +73,19 @@ export function Chip(options: ChipOptions = {}): HTMLSpanElement {
 
   const node = el(
     'span',
-    { class: classes('ds-Chip', className), title: title ?? label, ...data({ unlinked }), ...attrs },
+    {
+      class: classes('ds-Chip', className),
+      // The `title` is what reveals a label the box had to clip. A movable chip
+      // gives that slot up: its accessible name has to carry where it sits, and a
+      // tooltip repeating the label on every hover is what the interface-text rule
+      // exists to prevent.
+      title: movable ? undefined : (title ?? label),
+      draggable: movable ? 'true' : undefined,
+      tabindex: movable ? '0' : undefined,
+      'aria-label': movable ? movableLabel : undefined,
+      ...data({ unlinked, movable }),
+      ...attrs,
+    },
     [
       mark,
       code != null && el('span', { class: 'ds-Chip-code' }, code),
