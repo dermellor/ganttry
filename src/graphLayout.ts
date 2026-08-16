@@ -15,7 +15,7 @@
 // spine needs the x-axis to mean „on the spine versus feeding in from the side"
 // instead — the two readings cannot both hold, so the spine may only repurpose x
 // when the grouping axis carries nothing: one bucket, every node in column 0.
-// There it stacks each connected component's longest directed path as a vertical
+// There it stacks each connected component's heaviest directed path as a vertical
 // spine (arrows down) and hangs the nodes that feed into it off to the left. With
 // two or more buckets the old column-and-barycenter path runs unchanged, so no
 // grouped graph view moves. See `chainPlan` and `spineUnits`.
@@ -102,9 +102,11 @@ export type PlacedEdge = {
   to: string;
   kind: EdgeKind;
   /**
-   * A step down the spine of a chain band: the two ends sit in the same column,
-   * directly above each other, so the edge is drawn as a straight vertical
-   * connector rather than the side bulge a same-column edge gets everywhere else.
+   * Two ends in the same column with no box between them, so the edge is drawn as a
+   * straight vertical connector down the shared middle rather than the side bulge a
+   * same-column edge gets otherwise. A spine step is the common case; a feeder
+   * chained straight above the feeder it points into is the other. A same-column
+   * edge that skips over a box is not marked, so it keeps the bulge.
    */
   vertical?: boolean;
 };
@@ -213,14 +215,18 @@ export function nodeHeight(node: { lines?: number; meta?: boolean; reference?: b
  * case where the relation matters most.
  *
  * An edge inside one column is the third case and gets neither: both ends sit on
- * the right, so it bulges out and comes back. Mirroring it would loop it around the
- * entire column instead.
+ * the right, so it bulges out and comes back. That is the right picture only when a
+ * box sits *between* the two ends — a straight line would then run through it — so
+ * the caller keeps the bulge for a same-column edge that skips over a neighbour.
  *
- * A spine step is the fourth case, asked for with `vertical`: the two ends share a
- * column and sit one directly above the other, so the line runs straight down the
- * middle from the source's bottom to the target's top. The bulge would be wrong
- * here — a chain drawn as a stack of little side-loops reads as anything but a
- * chain, which is the whole point of the spine.
+ * A same-column edge between two **adjacent** boxes is the fourth case, asked for
+ * with `vertical`: with nothing between them the line runs straight through the
+ * shared column centre, from the facing edge of one box to the facing edge of the
+ * other. A spine step is one instance of this; a feeder chained straight above the
+ * feeder it points into is another. The bulge would be wrong here — a stack of
+ * little side-loops reads as anything but a chain. Order-aware: the source may sit
+ * below the target (a feeder can), and then it leaves its *top* edge and enters the
+ * target's *bottom*, so the connector never leaves the wrong side and loops back.
  *
  * Control points are clamped into the canvas. Unclamped, an edge near either border
  * pulls its control point outside and the curve that explains the arrowhead is cut
@@ -244,15 +250,20 @@ export function edgePath(
   const clamp = (x: number) => Math.min(width - edge, Math.max(edge, x));
 
   if (vertical) {
-    // Bottom-centre of the source down to the top-centre of the target. The two
-    // share a column, so the x values are equal and the line is vertical; the
-    // slight bezier keeps the join smooth where the boxes are close.
+    // Straight through the shared column centre, from the facing edge of one box to
+    // the facing edge of the other. The two share a column, so the x values are
+    // equal and the line is vertical; the slight bezier keeps the join smooth where
+    // the boxes are close. Order-aware: when the source sits below the target it
+    // leaves its top and enters the target's bottom, so the sign of the lift follows
+    // the gap rather than assuming the source is always on top.
     const cx = from.x + fromW / 2;
     const tcx = to.x + toW / 2;
-    const sBottom = from.y + from.height;
-    const tTop = to.y;
-    const lift = Math.max(MIN_PULL, (tTop - sBottom) / 2);
-    return `M ${cx} ${sBottom} C ${cx} ${sBottom + lift}, ${tcx} ${tTop - lift}, ${tcx} ${tTop}`;
+    const fromAbove = from.y <= to.y;
+    const sEdge = fromAbove ? from.y + from.height : from.y;
+    const tEdge = fromAbove ? to.y : to.y + to.height;
+    const gap = tEdge - sEdge;
+    const lift = Math.sign(gap || 1) * Math.max(MIN_PULL, Math.abs(gap) / 2);
+    return `M ${cx} ${sEdge} C ${cx} ${sEdge + lift}, ${tcx} ${tEdge - lift}, ${tcx} ${tEdge}`;
   }
 
   if (to.x === from.x) {
@@ -312,7 +323,6 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   // spine plus its feeders; the loose band still just stacks.
   const chain = input.columns.length === 1;
   const plans: (ChainPlan | undefined)[] = [];
-  const steps = new Set<string>();
   // Only for the canvas width: the widest band decides how far left the feeders
   // reach. Each band still anchors its own spine (see `spineUnits`).
   let maxDepth = 0;
@@ -325,7 +335,6 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       const plan = chainPlan(band.nodeIds, edges);
       plans.push(plan);
       for (const d of plan.depthOf.values()) maxDepth = Math.max(maxDepth, d);
-      for (const step of plan.steps) steps.add(step);
     }
   }
 
@@ -405,13 +414,36 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   // the width is the spine's column plus one per feeder level; everywhere else it
   // is just the declared columns.
   const usedColumns = chain ? maxDepth + 1 : columns.length;
+
+  // A same-column edge is drawn as a straight vertical connector when the two boxes
+  // are directly adjacent — nothing of the same column sitting between them. That is
+  // the reading the spine already had (consecutive spine nodes), extended to any
+  // adjacent same-column pair, so a feeder chained straight above the feeder it
+  // feeds joins it down the shared middle instead of bulging into the channel. An
+  // edge that *skips* a box keeps the bulge (a straight line would cross that box),
+  // and grouped views (more than one column) are left untouched, where a
+  // same-column relation is nesting rather than a drawn line. See `edgePath`.
+  const placedById = new Map(placed.map((n) => [n.id, n]));
+  const isVertical = (e: PlacedEdge): boolean => {
+    if (!chain) return false;
+    const a = placedById.get(e.from);
+    const b = placedById.get(e.to);
+    if (!a || !b || a.x !== b.x) return false;
+    const upper = a.y <= b.y ? a : b;
+    const lower = a.y <= b.y ? b : a;
+    for (const n of placed) {
+      if (n.band !== a.band || n.id === a.id || n.id === b.id || n.x !== a.x) continue;
+      if (n.y > upper.y && n.y < lower.y) return false; // a box sits between them
+    }
+    return true;
+  };
   return {
     columns,
     nodes: placed,
     bands: placedBands,
     edges: edges
       .filter((e) => !nested.has(`${e.from}␟${e.to}`) && !nested.has(`${e.to}␟${e.from}`))
-      .map((e) => (steps.has(`${e.from}␟${e.to}`) ? { ...e, vertical: true } : e)),
+      .map((e) => (isVertical(e) ? { ...e, vertical: true } : e)),
     width: usedColumns ? MARGIN + usedColumns * COL_PITCH - COL_GAP + MARGIN : 0,
     // No band means no content; the empty state is the view's business, but a
     // height of `top` would still reserve the header strip for headers that have
@@ -449,21 +481,26 @@ function usableEdges(
  * The plan for laying one connected band out as a chain: its spine, and where
  * every other node sits relative to it.
  *
- * The spine is the band's **longest directed path**, ordered from the edge source
+ * The spine is the band's **heaviest directed path**, ordered from the edge source
  * downward, so the arrows read top-to-bottom. Everything else is measured by its
  * undirected distance to the spine — one hop for a node that feeds a spine node
  * directly, two for a node that feeds *that* one, and so on — and hangs off the
  * side at that depth, level with the node it reaches through.
  */
 type ChainPlan = {
-  /** The longest directed path, source at the top down to the final dependent. */
+  /** The heaviest directed path, source at the top down to the final dependent. */
   spine: string[];
   /** 0 for a spine node, then the number of hops to the spine for the rest. */
   depthOf: Map<string, number>;
   /** For a non-spine node, the neighbour one hop nearer the spine it hangs from. */
   anchorOf: Map<string, string>;
-  /** Consecutive spine pairs `${a}␟${b}`, the edges drawn as vertical connectors. */
-  steps: Set<string>;
+  /**
+   * The feeders anchored to each node, already in the order they should stack top
+   * to bottom: a dependency sub-chain among siblings runs source-first, so it reads
+   * downward like the spine instead of in file order (which can put a clue below the
+   * clue it leads to, pointing the connector backwards).
+   */
+  childrenOf: Map<string, string[]>;
 };
 
 function chainPlan(nodeIds: string[], edges: PlacedEdge[]): ChainPlan {
@@ -529,9 +566,6 @@ function chainPlan(nodeIds: string[], edges: PlacedEdge[]): ChainPlan {
   }
   spine.reverse();
 
-  const steps = new Set<string>();
-  for (let i = 0; i + 1 < spine.length; i++) steps.add(`${spine[i]}␟${spine[i + 1]}`);
-
   // Everything off the spine, by undirected distance, breadth-first from the whole
   // spine at once so a node two spine nodes could hang from goes to the nearer one.
   const depthOf = new Map<string, number>(spine.map((id) => [id, 0]));
@@ -554,19 +588,69 @@ function chainPlan(nodeIds: string[], edges: PlacedEdge[]): ChainPlan {
   // dropped from the picture.
   for (const id of nodeIds) if (!depthOf.has(id)) depthOf.set(id, 1);
 
-  return { spine, depthOf, anchorOf, steps };
+  // The feeders of each node, grouped in section order, then reordered so a
+  // dependency sub-chain among siblings runs source-first (see `orderByFlow`).
+  const childrenOf = new Map<string, string[]>();
+  for (const id of nodeIds) {
+    const anchor = anchorOf.get(id);
+    if (anchor === undefined) continue;
+    (childrenOf.get(anchor) ?? childrenOf.set(anchor, []).get(anchor)!).push(id);
+  }
+  for (const [anchor, kids] of childrenOf) childrenOf.set(anchor, orderByFlow(kids, adj));
+
+  return { spine, depthOf, anchorOf, childrenOf };
+}
+
+/**
+ * One anchor's feeders, ordered so a dependency runs source before dependent —
+ * a stable topological sort with section order breaking ties. The feeders of a
+ * spine node share a column, and among them a clue can lead to the next clue; left
+ * in file order the earlier clue can sit *below* the one it feeds, so the connector
+ * points up, backwards from the spine's downward flow. Ordering source-first puts
+ * the earlier clue on top and the arrow points down, matching the spine.
+ *
+ * Cycle-safe: a malformed cycle among siblings leaves some with a residual
+ * in-degree, and the rest are emitted in section order rather than looping forever.
+ */
+function orderByFlow(sibs: string[], adj: Map<string, string[]>): string[] {
+  if (sibs.length < 2) return sibs;
+  const set = new Set(sibs);
+  const indeg = new Map(sibs.map((s) => [s, 0]));
+  for (const u of sibs) for (const v of adj.get(u) ?? []) if (set.has(v)) indeg.set(v, indeg.get(v)! + 1);
+  const placed = new Set<string>();
+  const out: string[] = [];
+  while (out.length < sibs.length) {
+    // The earliest sibling in section order that nothing still-unplaced leads into.
+    const next = sibs.find((s) => !placed.has(s) && indeg.get(s) === 0);
+    if (next === undefined) {
+      for (const s of sibs) if (!placed.has(s)) out.push(s);
+      break;
+    }
+    out.push(next);
+    placed.add(next);
+    for (const v of adj.get(next) ?? []) if (set.has(v)) indeg.set(v, indeg.get(v)! - 1);
+  }
+  return out;
 }
 
 /**
  * The units of one chain band: its spine in the band's own rightmost column,
- * feeders to the left, each level anchored to the vertical middle of the node it
- * hangs from.
+ * feeders to the left, each spine node's feeders grouped into a compact block
+ * level with it.
  *
  * The depth is the band's *own* deepest feeder, not the graph's — so every band is
  * anchored at the left margin and its spine sits just right of the feeders it
  * actually has. Aligning all the spines to one global column instead left a band
  * with no feeders stranded at the far right with an empty half-canvas beside it,
  * and separate components are separate blocks anyway (see the author's sketch).
+ *
+ * A spine node reserves as much vertical room as its **whole feeder subtree** needs,
+ * not a flat row: a beat with eight feeders is eight rows tall here, and the next
+ * beat starts below that block. Stacking the spine at a flat `ROW_GAP` was the bug
+ * in #145 — a beat with more feeders than the spine was tall could not fit them
+ * beside itself, so they spilled past the beats below and their edges swept
+ * diagonally across the whole canvas. Reserving the room keeps every feeder level
+ * with the beat it points into and every cross-link short.
  */
 function spineUnits(
   nodeIds: string[],
@@ -577,38 +661,72 @@ function spineUnits(
   const maxLocal = Math.max(0, ...plan.depthOf.values());
   const cols: Unit[][] = Array.from({ length: maxLocal + 1 }, () => []);
   const yOf = new Map<string, number>();
-  const centre = (id: string) => yOf.get(id)! + heightOf.get(id)! / 2;
+  const heightAt = (id: string) => heightOf.get(id)!;
 
-  // The spine, stacked straight down from the band's top.
+  // The feeders of each node, already ordered so a dependency sub-chain reads top to
+  // bottom (see `ChainPlan.childrenOf`). A depth-2 feeder hangs off a depth-1 feeder,
+  // so this is a tree and the height of a block has to be summed over it.
+  const childrenOf = plan.childrenOf;
+
+  // How tall a node's feeder block is — the sum of its children's own subtrees with
+  // a gap between them — and how tall the node plus that block is. Memoised: the two
+  // call each other, and the spine reads `subtreeHeight` for every node.
+  const feederBlock = new Map<string, number>();
+  const subtree = new Map<string, number>();
+  const subtreeHeight = (id: string): number => {
+    const cached = subtree.get(id);
+    if (cached !== undefined) return cached;
+    const kids = childrenOf.get(id) ?? [];
+    let block = 0;
+    for (const k of kids) block += subtreeHeight(k);
+    if (kids.length > 1) block += ROW_GAP * (kids.length - 1);
+    feederBlock.set(id, block);
+    const total = Math.max(heightAt(id), block);
+    subtree.set(id, total);
+    return total;
+  };
+
+  // Place a node's children as a block centred on the node, then recurse — a beat's
+  // feeders sit level with it, a feeder's own feeders level with the feeder. Each
+  // child is centred inside its own reserved subtree, so a child with many feeders
+  // of its own claims the room they need without pushing its siblings off-centre.
+  const placeChildren = (id: string) => {
+    const kids = childrenOf.get(id) ?? [];
+    if (!kids.length) return;
+    const nodeCentre = yOf.get(id)! + heightAt(id) / 2;
+    let cur = nodeCentre - (feederBlock.get(id) ?? 0) / 2;
+    for (const k of kids) {
+      const room = subtreeHeight(k);
+      yOf.set(k, cur + room / 2 - heightAt(k) / 2);
+      placeChildren(k);
+      cur += room + ROW_GAP;
+    }
+  };
+
+  // The spine, each node reserving room for its own feeder block and centred in it.
   let cursor = baseY;
   for (const id of plan.spine) {
-    yOf.set(id, cursor);
-    cursor += heightOf.get(id)! + ROW_GAP;
+    const room = subtreeHeight(id);
+    yOf.set(id, cursor + room / 2 - heightAt(id) / 2);
+    placeChildren(id);
+    cursor += room + ROW_GAP;
   }
 
-  // Then each feeder level in turn — a level can only be placed once the one it
-  // hangs from has a y, so depth 1 (anchored to the spine) comes before depth 2.
-  for (let d = 1; d <= maxLocal; d++) {
-    const wanted = nodeIds
-      .filter((id) => plan.depthOf.get(id) === d)
-      .map((id) => {
-        const anchor = plan.anchorOf.get(id);
-        return { id, want: anchor ? centre(anchor) : baseY, height: heightOf.get(id)! };
-      });
-    // Order by where each wants to be, then lay the column out in that order so a
-    // feeder sits beside its anchor unless a neighbour already needs that row.
-    wanted.sort((a, b) => a.want - b.want);
-    let cur = -Infinity;
-    for (const u of wanted) {
-      const top = cur === -Infinity ? u.want - u.height / 2 : Math.max(cur, u.want - u.height / 2);
-      yOf.set(u.id, top);
-      cur = top + u.height + ROW_GAP;
-    }
+  // A node the spine walk never reached (only when the band and the drawn edge set
+  // disagree, so `anchorOf` has no path to it) still gets placed rather than dropped
+  // from the picture — stacked below the spine in its own column.
+  const tail = new Map<number, number>();
+  for (const id of nodeIds) {
+    if (yOf.has(id)) continue;
+    const column = maxLocal - plan.depthOf.get(id)!;
+    const at = Math.max(cursor, tail.get(column) ?? baseY);
+    yOf.set(id, at);
+    tail.set(column, at + heightAt(id) + ROW_GAP);
   }
 
   for (const id of nodeIds) {
     const column = maxLocal - plan.depthOf.get(id)!;
-    const height = heightOf.get(id)!;
+    const height = heightAt(id);
     cols[column].push({
       members: [{ id, indent: 0, height, width: NODE_W, dy: 0 }],
       height,
