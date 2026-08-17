@@ -44,7 +44,7 @@ export type GraphInput = {
     /** Does it carry a references line? */
     reference?: boolean;
     /**
-     * Where the node sits in the order the source declares, if it declares one
+     * Where the node sits in the order the applied view declares, if it declares one
      * (see src/sequence.ts). The chain layout reads it twice: it starts its spine
      * at the earliest source, and it stacks each feeder group in declared order
      * where the dependencies leave a choice. Absent means „unplaced", which sorts
@@ -581,13 +581,13 @@ function chainPlan(
   // „Die vergangenen Expeditionen wurden sabotiert" (#161). Order is the answer to
   // „which of these comes first", and weight never was.
   //
-  // Unplaced sorts last, so a node the order file does not mention can never claim
-  // the head from one it does; weight breaks a tie between two equally early ones.
+  // Unplaced sorts last, so a node the order does not name can never claim the head
+  // from one it does; weight breaks a tie between two equally early ones.
   const head = earliestSource(nodeIds, adj, pred, sequenceOf, sink, massOf);
   const spine: string[] = [];
   const spineSet = new Set<string>();
   if (head === undefined) {
-    // No order to go by (a source that declares none, which is every JSON and
+    // No order to go by (a view that declares none, which is every JSON and
     // database timeline) or no source reaches the sink: walk back from the sink
     // into the heaviest predecessor at each step, exactly as before.
     for (let cur: string | undefined = sink; cur && !spineSet.has(cur); ) {
@@ -603,8 +603,8 @@ function chainPlan(
     spine.reverse();
   } else {
     // Forward from the head into the heaviest successor at each step. Downstream
-    // there is no earlier-or-later to read — the order file places the material,
-    // not the relations between two things it never listed — so weight is the
+    // there is no earlier-or-later to read — the order names the spine of the
+    // material, not the relations between two things it never listed — so weight is the
     // measure again, with band order breaking a tie.
     for (let cur: string | undefined = head; cur && !spineSet.has(cur); ) {
       spine.push(cur);
@@ -736,8 +736,8 @@ function earliestSource(
  * A sibling the order does not place sorts after every one it does, for the reason
  * `earliestSource` gives: nobody put it anywhere, and reading that silence as
  * „first" is backwards. With no positions at all — every JSON and database source,
- * and every folder without an order file — every candidate ties and the emission
- * order decides, exactly as before.
+ * and every view that names no order — every candidate ties and the emission order
+ * decides, exactly as before.
  *
  * Cycle-safe: a malformed cycle among siblings leaves some with a residual
  * in-degree, and the rest are emitted in section order rather than looping forever.
