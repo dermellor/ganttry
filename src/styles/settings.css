@@ -246,3 +246,26 @@ body.settings-open .ds-Toolbar[data-tone='footer'] {
 .settings .account-language .ds-SegmentedControl {
   width: fit-content;
 }
+
+/* ---- one row per installed plugin ------------------------------------------- */
+
+/* A row rather than a card: a plugin here carries a name, a switch and one line of
+   what its manifest declares, which is less than a field definition and does not
+   earn a border of its own.
+
+   The gaps are the whole content of these two rules, and they exist because the
+   first version of this section shipped with these class names and no stylesheet
+   at all. The name and its checkbox then rendered flush against each other
+   („Product☐ Enabled") and the meta line floated below with nothing holding it.
+   Inline elements have no spacing until something says so. */
+.settings .plugin-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.settings .plugin-row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}

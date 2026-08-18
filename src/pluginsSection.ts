@@ -31,12 +31,15 @@ function row(
   entry: PluginRow,
   opts: { editable: boolean; onToggle: (id: string, on: boolean) => void },
 ): HTMLElement {
+  // A colon after each label, because the values carry colons of their own
+  // („items:read", „data:own") and without one the line reads as a single run:
+  // „Capabilities items:read, fields, views Pricing".
   const meta = [
-    `${t('plugins.version')} ${entry.version}`,
+    `${t('plugins.version')}: ${entry.version}`,
     entry.capabilities.length
-      ? `${t('plugins.capabilities')} ${entry.capabilities.join(', ')}`
+      ? `${t('plugins.capabilities')}: ${entry.capabilities.join(', ')}`
       : null,
-    entry.views.length ? `${t('plugins.views')} ${entry.views.join(', ')}` : null,
+    entry.views.length ? `${t('plugins.views')}: ${entry.views.join(', ')}` : null,
   ].filter(Boolean) as string[];
 
   return el('div', { class: 'plugin-row' }, [
