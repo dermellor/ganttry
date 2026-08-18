@@ -283,10 +283,13 @@ view: its views arrive and go together, because enablement is per plugin.
 which with five plugins is not an answer.
 
 **Accessories are declared per control, and the host asks every presentation the
-same way.** `accessories: { grouping?, filter?, create? }` says whether the
-perspective control, the extent control and „+ Eintrag" apply; all default to
+same way.** `accessories: { grouping?, filter?, edges?, create? }` says whether the
+perspective control, the extent control, the relations control and „+ Eintrag"
+apply; all default to
 false, so a view that renders something other than the item list gets a bar with
-nothing inert on it. `create` joined the list when that action moved into the
+nothing inert on it. `edges` joined in `HOST_API_VERSION` 1.8, because the
+relations panel steers `build.dependencies` and only a presentation that draws
+those edges can show what a chip moved there did. `create` joined the list when that action moved into the
 presentation's own bar (`HOST_API_VERSION` 1.2): standing in a view's bar,
 „+ Eintrag" would create an item that view cannot show. `export` joined it in the
 same version and has since gone inert — the HTML export belongs to the timeline
@@ -299,10 +302,12 @@ which is why `main.ts` no longer asks „is this a plugin view?" and a second pl
 view needs no change there.
 
 It takes the built-in mode by name because „built-in" stopped being one answer.
-Timeline and list are two renderings of the item list and take everything; the
-**graph** takes the perspective (its columns *are* the grouping dimension), the
-extent and „+ Eintrag" (an item with no date is what it can show and the other two
-cannot). Had the function kept answering „all of them" for anything built in, the
+Timeline and list are two renderings of the item list and agree on everything
+except the relations control, which the **list** does not get: it draws sections
+and a hierarchy and never reads the dependency map. The **graph** takes the
+perspective (its columns *are* the grouping dimension), the extent, the relations
+(the edges are what it draws) and „+ Eintrag" (an item with no date is what it can
+show and the other two cannot). Had the function kept answering „all of them" for anything built in, the
 graph's bar would have carried an export that exports the timeline instead — the
 failure that made the declaration per-accessory in the first place, one level up
 from where it was first fixed.

@@ -50,7 +50,14 @@
 // keeps showing the one language it was written in, which is the behaviour every
 // plugin had before this existed. A plugin whose text should follow the reader
 // says `^1.7`, because on an older host `pluginMessages` is not there to import.
-export const HOST_API_VERSION = { major: 1, minor: 7 } as const;
+// 1.8 added the `edges` accessory, when the relations control stopped being handed
+// to every built-in presentation: it steers `build.dependencies`, which the list
+// never reads, so there the panel was a control whose every move left the screen
+// as it was. Additive — an existing declaration does not claim it — but a plugin
+// view that draws those edges has to say `^1.8`, because on an older host `edges`
+// is an unknown accessory and the whole manifest is refused rather than the key
+// ignored.
+export const HOST_API_VERSION = { major: 1, minor: 8 } as const;
 
 export type ApiVersion = { major: number; minor: number };
 

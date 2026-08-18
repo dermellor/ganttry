@@ -121,7 +121,7 @@ for a different part of the screen to set the same thing.
 | Plugin views | the bar, one control per plugin | 4 | done: each plugin's views sit in its own control, its name inside on the left; the control marks itself while one of its views is active |
 | „Gruppieren" | the bar | 4, perspective | done |
 | „Filter" | the bar | 4, extent | done: beside the switch, holding every narrowing |
-| „Beziehungen" | the bar | 4, perspective | done: which recorded link fields become edges and which way they point, for a source that scanned wikilinks. Perspective rather than extent — it changes what the relations *are*, not which items show — and stored per timeline rather than per presentation, since the arrows and the graph read one dependency map. The fields sit as chips under the direction they draw in, moved by dragging them between the sections (arrow keys for the keyboard), rather than as a three-state switch per field, which repeated the three words once per row. Hidden on every source that states its dependencies outright. See „Wikilinks as relations" (docs/local-sources.md) |
+| „Beziehungen" | the bar | 4, perspective | done: which recorded link fields become edges and which way they point, for a source that scanned wikilinks. Perspective rather than extent — it changes what the relations *are*, not which items show — and stored per timeline rather than per presentation, since the arrows and the graph read one dependency map. The fields sit as chips under the direction they draw in, moved by dragging them between the sections (arrow keys for the keyboard), rather than as a three-state switch per field, which repeated the three words once per row. Hidden on every source that states its dependencies outright, and in the **list**, which draws no arrows: the choice reaches the screen as `build.dependencies`, so a presentation that never reads it left the panel moving chips over an unchanged screen. That is a declared accessory (`edges`) rather than a check on the mode, for the reason every other one is. See „Wikilinks as relations" (docs/local-sources.md) |
 | „Ansicht" (saved views) | the bar, first of its group | 3 | done: a named bundle of the presentation, the perspective and the extent, stored with the timeline and shareable with the instance. A **mark** rather than a labelled control: the bar wraps below ~1000px with a plugin present, and a third caption moved that to ~1200px |
 | „Nur Meilensteine" | gone | 4, extent | done: a value of the type dimension in the filter |
 | Time window (zoom, pan) | the chart | 4, extent | stays a gesture, counts as extent, travels with it |
@@ -167,9 +167,11 @@ control goes, so the argument is had once.
   extent dimensions apply to it. Otherwise every further plugin view adds another
   special case to the host, and the host is the part that must not know plugin ids.
   This holds for the **built-in** presentations too, and the graph is what proved
-  it: „built-in" had been shorthand for „a rendering of the item list, so all four
-  apply", and the first built-in presentation that is not one would otherwise have
-  inherited an export action it cannot perform.
+  it: „built-in" had been shorthand for „a rendering of the item list, so all of
+  them apply", and the first built-in presentation that is not one would otherwise
+  have inherited an export action it cannot perform. The list proved the other
+  direction: it *is* a rendering of the item list and still had a control too many,
+  because the relations panel changes the dependency map and the list draws none.
 - **A control states its behaviour at N, and where N is owned by installed plugins,
   N decides the form.** This chapter assigned every control a level and never asked
   how many of each there would be, which is how the presentation switch ended up with

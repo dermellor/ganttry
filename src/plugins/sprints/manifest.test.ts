@@ -282,7 +282,13 @@ test('the one view claims none of the item list\'s controls', () => {
   // says „all of them" by accident.
   assert.equal(view.accessories, undefined);
   assert.equal(view.toolbar, undefined);
-  assert.deepEqual(viewAccessories(view), { grouping: false, filter: false, create: false, export: false });
+  assert.deepEqual(viewAccessories(view), {
+    grouping: false,
+    filter: false,
+    edges: false,
+    create: false,
+    export: false,
+  });
   assert.equal(sprintsManifest.capabilities?.includes('views'), true);
 });
 

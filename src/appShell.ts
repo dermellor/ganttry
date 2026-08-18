@@ -511,9 +511,12 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     children: ToolbarAnchor({ children: [filterToggle, filterMenu] }),
   });
 
-  // Which link fields become edges. Hidden unless the open source recorded any,
-  // which is why it can sit in the bar unconditionally: a JSON or database
-  // timeline states its dependencies outright and never offers this.
+  // Which link fields become edges. Hidden unless the open source recorded any and
+  // the presentation draws them, which is why it can sit in the bar
+  // unconditionally: a JSON or database timeline states its dependencies outright
+  // and never offers this, and the list draws no arrows to steer. It starts hidden
+  // and is shown by the first sync, so the bar does not flash a caption during
+  // bootstrap that the next frame takes away.
   const edgeToggle = Button({
     label: t('edges.all'),
     variant: 'trigger',
@@ -534,7 +537,7 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
   const edgeControl = ToolbarControl({
     labelled: false,
     label: t('edges.label'),
-    attrs: { id: 'edge-control' },
+    attrs: { id: 'edge-control', hidden: true },
     children: ToolbarAnchor({ children: [edgeToggle, edgeMenu] }),
   });
 

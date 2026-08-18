@@ -366,6 +366,11 @@ over the rule in [`src/linkEdges.ts`](../src/linkEdges.ts): the fields found in 
 data, grouped under the direction they draw in, with everything incoming as the
 default so a timeline nobody configured draws exactly the edges it drew before.
 
+It stands in the bar of the two presentations that draw those edges, the timeline's
+arrows and the graph, and is absent from the **list** — declared as the `edges`
+accessory (see „Accessories" in [`architecture.md`](architecture.md)) rather than
+asked about the mode.
+
 **Sections rather than a switch per field**, which is what it was first. With a
 three-state control per row the panel repeated „Aus / Eingehend / Ausgehend" once
 per field — thirteen times on the folder this was built against — and because the

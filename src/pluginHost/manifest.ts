@@ -48,6 +48,13 @@ export type ViewAccessories = {
   /** The extent control: the value filter. */
   filter?: boolean;
   /**
+   * „Beziehungen": which link fields of a scanned folder become edges, and in
+   * which direction. Only a presentation that *draws* those edges may offer it —
+   * the choice reaches the screen through `build.dependencies`, which the list
+   * never reads, so there the panel moved chips around and nothing happened.
+   */
+  edges?: boolean;
+  /**
    * „+ Eintrag": creating a timeline item from this presentation. A view that does
    * not show items has no business offering it — the object would be created
    * somewhere the user cannot see it. A plugin's own rows get their own
@@ -65,7 +72,7 @@ export type ViewAccessories = {
   export?: boolean;
 };
 
-export const ACCESSORY_KEYS = ['grouping', 'filter', 'create', 'export'] as const;
+export const ACCESSORY_KEYS = ['grouping', 'filter', 'edges', 'create', 'export'] as const;
 
 export type ManifestView = {
   id: string;
@@ -100,13 +107,19 @@ const BUILTIN_ACCESSORIES: Record<BuiltinViewMode, Required<ViewAccessories>> = 
   // the way it is drawn. The values below say what each presentation *would*
   // offer, which is what makes the day somebody re-introduces a per-presentation
   // export cheap; the retired key is documented on `ViewAccessories`.
-  timeline: { grouping: true, filter: true, create: true, export: true },
-  list: { grouping: true, filter: true, create: true, export: true },
+  timeline: { grouping: true, filter: true, edges: true, create: true, export: true },
+  // No `edges`: the list has sections and a hierarchy and never touches
+  // `build.dependencies`, so the panel was a control whose every move left the
+  // screen exactly as it was.
+  list: { grouping: true, filter: true, edges: false, create: true, export: true },
   graph: {
     // The grouping dimension *is* the graph's columns, so the perspective is not
     // merely allowed here, it is what the presentation is built on.
     grouping: true,
     filter: true,
+    // The edges *are* the picture here, so this is the presentation the control
+    // was written for.
+    edges: true,
     // An item with no date is exactly what this presentation can show, and the
     // other two cannot — so creating one from here is the point rather than a
     // concession.
@@ -135,14 +148,21 @@ export function viewAccessories(
     return {
       grouping: !!declared.grouping,
       filter: !!declared.filter,
+      edges: !!declared.edges,
       create: !!declared.create,
       export: !!declared.export,
     };
   }
   // The retired boolean spoke about the grouping/filter bar and about nothing else,
-  // so it must not be read as permission to create or export: a plugin declaring it
-  // never said anything about those.
-  return { grouping: !!view.toolbar, filter: !!view.toolbar, create: false, export: false };
+  // so it must not be read as permission to draw edges, to create or to export: a
+  // plugin declaring it never said anything about those.
+  return {
+    grouping: !!view.toolbar,
+    filter: !!view.toolbar,
+    edges: false,
+    create: false,
+    export: false,
+  };
 }
 
 /** A set of rows the plugin owns, stored generically by the host (#12). */

@@ -293,6 +293,8 @@ export function updatePluginViews(): void {
   const builtin = viewAccessories();
   els.groupByControl.hidden = !builtin.grouping;
   els.filterControl.hidden = !builtin.filter;
+  // Hide-only, for the reason spelled out at the other call of this pair.
+  if (!builtin.edges) els.edgeControl.hidden = true;
   setModeButtons('timeline');
   if (!pluginAppliesTo(state.activeSourceFile, current.pluginId)) {
     state.viewMode = 'timeline';
@@ -353,6 +355,12 @@ function applyViewMode(
   const accessories = viewAccessories(target?.view ?? (plugin ? null : (mode as BuiltinViewMode)));
   els.groupByControl.hidden = !accessories.grouping;
   els.filterControl.hidden = !accessories.filter;
+  // Hides, and never shows: whether the relations control *applies* is decided
+  // here, but whether it has anything to offer depends on the source's link fields,
+  // and that half lives in syncEdgeControl. A plain assignment showed a caption
+  // with no trigger on every JSON and database timeline — this line runs after the
+  // render that had just hidden it.
+  if (!accessories.edges) els.edgeControl.hidden = true;
   // Editability is the other half and stays where it is (render.ts): a presentation
   // may allow creating an item while this source does not.
   els.addBtn.hidden = !accessories.create || !isEditableView();

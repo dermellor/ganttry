@@ -108,22 +108,25 @@ test('viewAccessories answers for built-in and declared views alike', () => {
   assert.deepEqual(viewAccessories(), {
     grouping: true,
     filter: true,
+    edges: true,
     create: true,
     export: true,
   });
-  // Timeline and list are two renderings of the item list, so both take all four.
   assert.deepEqual(viewAccessories('timeline'), viewAccessories());
-  assert.deepEqual(viewAccessories('list'), viewAccessories());
+  // Timeline and list are two renderings of the item list and agree on everything
+  // the list can act on — the arrows are the one thing it does not draw.
+  assert.deepEqual(viewAccessories('list'), { ...viewAccessories(), edges: false });
   // A declared view gets nothing it did not ask for.
   assert.deepEqual(viewAccessories({ id: 'a', label: 'x', icon: 'i' }), {
     grouping: false,
     filter: false,
+    edges: false,
     create: false,
     export: false,
   });
   assert.deepEqual(
     viewAccessories({ id: 'a', label: 'x', icon: 'i', accessories: { filter: true } }),
-    { grouping: false, filter: true, create: false, export: false },
+    { grouping: false, filter: true, edges: false, create: false, export: false },
   );
 });
 
@@ -135,19 +138,21 @@ test('the retired toolbar boolean speaks about the bar and nothing else', () => 
   assert.deepEqual(viewAccessories({ id: 'a', label: 'x', icon: 'i', toolbar: true }), {
     grouping: true,
     filter: true,
+    edges: false,
     create: false,
     export: false,
   });
   assert.deepEqual(viewAccessories({ id: 'a', label: 'x', icon: 'i', toolbar: false }), {
     grouping: false,
     filter: false,
+    edges: false,
     create: false,
     export: false,
   });
   // An explicit declaration wins over the old spelling beside it.
   assert.deepEqual(
     viewAccessories({ id: 'a', label: 'x', icon: 'i', toolbar: true, accessories: { grouping: true } }),
-    { grouping: true, filter: false, create: false, export: false },
+    { grouping: true, filter: false, edges: false, create: false, export: false },
   );
 });
 
@@ -334,6 +339,8 @@ test('the graph declares its own accessories rather than inheriting the list’s
     // The grouping dimension is what the columns are.
     grouping: true,
     filter: true,
+    // The edges are the picture, so this is where the control belongs.
+    edges: true,
     // An item with no date is exactly what this presentation can show.
     create: true,
     // Nothing renders a graph to HTML yet.

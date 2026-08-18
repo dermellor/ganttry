@@ -30,6 +30,8 @@
 // dependency map rather than each computing their own.
 
 import { Chip, MenuSection } from './design-system';
+import { viewAccessories } from './pluginHost/manifest';
+import { isBuiltinViewMode } from './pluginHost/viewMode';
 import { state, els, saveEdgeSelection } from './state';
 import { applyEdgeSelection } from './render';
 import {
@@ -152,11 +154,25 @@ export function syncEdgeControl(): void {
   if (!els.edgeMenu) return;
   const fields = linkFieldsIn(state.activeSourceFile?.items);
 
+  // Two conditions, and the second is the presentation's own answer rather than a
+  // second opinion about it: `viewAccessories` is what main.ts asks on a view
+  // switch, and it has to be asked again here because every repaint of a built-in
+  // view lands in this function — reading only the fields would put the control
+  // back into the list on the next render.
+  //
   // A source that records no link origins has nothing to choose between: JSON and
   // database timelines state their dependencies outright, and a folder read
   // without `linkEdges` has none. The control says so by disappearing rather than
   // by opening an empty panel.
-  const offerable = fields.length > 0;
+  //
+  // The caption goes with the trigger. Hiding only the button left „Beziehungen"
+  // standing alone in the bar of every JSON and database timeline, which reads as
+  // a control that failed to load rather than as one that does not apply.
+  const applies = isBuiltinViewMode(state.viewMode)
+    ? viewAccessories(state.viewMode).edges
+    : false;
+  const offerable = applies && fields.length > 0;
+  els.edgeControl.hidden = !offerable;
   els.edgeToggle.hidden = !offerable;
   if (!offerable) {
     closeMenu();
