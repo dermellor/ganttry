@@ -24,6 +24,7 @@ import { manifestText } from './messages';
 import { viewLoader } from './viewLoaders';
 import { productRoadmapDescriptor } from '../plugins/product-roadmap/descriptor';
 import { sprintsDescriptor } from '../plugins/sprints/descriptor';
+import { lifecycleDescriptor } from '../plugins/lifecycle/descriptor';
 import type { HostApi } from './hostApi';
 
 /**
@@ -168,9 +169,15 @@ export function pluginViews(plugin: PluginDescriptor): PluginView[] {
 // loaded at runtime (src/pluginHost/loader.ts). Nothing about product-roadmap is
 // decided here any more.
 register(productRoadmapDescriptor);
-// The second in-tree plugin, and the first with no view: its raster is a derived
-// field, so grouping by it is the rendering (src/plugins/sprints/README.md).
+// The second in-tree plugin. It shipped without a view — its raster is a derived
+// field, so grouping by it was the rendering — and gained one once a sprint became a
+// row with a goal and a frozen result (src/plugins/sprints/README.md).
 register(sprintsDescriptor);
+// The third, and the one that actually has no view: everything it computes is a
+// derived field or a verb, so grouping by the support window is the rendering
+// (src/plugins/lifecycle/README.md). It is therefore the plugin to read first when
+// asking what the contract costs without a chunk of view code.
+register(lifecycleDescriptor);
 
 /** Every registered plugin, in registration order. */
 /**

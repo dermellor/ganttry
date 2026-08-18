@@ -27,6 +27,22 @@ Sprints as rows with a goal, a capacity and a frozen result: membership is assig
 | Views | Sprint |
 | Agent tools | `plan_sprint`, `roll_over`, `sprint_status` |
 
+## lifecycle-management
+
+### [Lifecycle](src/plugins/lifecycle/README.md)
+
+Dates a migration backwards from a vendor’s end-of-support date: the latest possible start, a cutover that avoids the freeze windows, and a parallel run that keeps its minimum.
+
+![Lifecycle](src/plugins/lifecycle/preview.png)
+
+| | |
+| --- | --- |
+| Id | `dev.zeitlines.lifecycle` |
+| Version | 0.1.0 |
+| Keywords | end of life, EOL, end of support, extended support, migration planning, cutover, freeze window, change freeze, parallel run, decommission, legacy migration |
+| Example | [`src:example-eol-migration`](data/example-eol-migration.json) |
+| Agent tools | `plan_cutover`, `check_eol_risk`, `shift_out_of_freeze` |
+
 ## product
 
 ### [Product](src/plugins/product-roadmap/README.md)

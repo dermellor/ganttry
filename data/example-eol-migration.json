@@ -1,0 +1,186 @@
+{
+  "$schema": "../schema/timeline.schema.json",
+  "name": "End-of-life migrations (lifecycle plan)",
+  "description": "Example for the „Lifecycle\" plugin: seven systems whose migrations are dated backwards from a vendor's end-of-support date. The systems are invented on purpose — shipping real vendors' EOL dates would be a data set that is stale the week after it is written. Two freeze windows are rows of their own (year-end and peak season), the minimum parallel run is 30 days and the default lead time is 180. Every state the rules distinguish is present once: a plan that holds, one that starts after its latest possible start, one whose cutover sits inside the year-end freeze, one running on bought extended support, one whose shutdown falls after end of support, one with no vendor date at all, and one whose parallel run is six days. Group by „Lifecycle · Support window\" to see the last three separate out.",
+  "plugins": [
+    {
+      "id": "dev.zeitlines.lifecycle",
+      "public": true,
+      "config": {
+        "minParallelRunDays": 30,
+        "defaultLeadTimeDays": 180
+      }
+    }
+  ],
+  "pluginData": {
+    "dev.zeitlines.lifecycle": {
+      "freezes": [
+        {
+          "id": "freeze-peak",
+          "data": {
+            "name": "Peak season",
+            "from": "2026-11-15",
+            "to": "2026-12-05"
+          }
+        },
+        {
+          "id": "freeze-year-end",
+          "data": {
+            "name": "Year-end freeze",
+            "from": "2026-12-20",
+            "to": "2027-01-10"
+          }
+        }
+      ]
+    }
+  },
+  "savedViews": [
+    {
+      "id": "nach-support-fenster",
+      "name": "By support window",
+      "groupBy": "cf:supportWindow",
+      "visibility": "instance"
+    },
+    {
+      "id": "nach-system",
+      "name": "By system",
+      "groupBy": "cf:system",
+      "visibility": "instance"
+    }
+  ],
+  "groups": [
+    {
+      "id": "finance",
+      "content": "Finance"
+    },
+    {
+      "id": "operations",
+      "content": "Operations"
+    },
+    {
+      "id": "workplace",
+      "content": "Workplace"
+    }
+  ],
+  "items": [
+    {
+      "id": "M-1",
+      "start": "2026-09-01",
+      "end": "2027-03-31",
+      "content": "Migrate Groupware 12",
+      "group": "workplace",
+      "status": "Doing",
+      "icon": "build",
+      "body": "## The plan that holds\n\nStarted before the latest possible start, cutover exactly 30 days before the shutdown, and the old system is off on the day support ends. Nothing to report.",
+      "metadata": {
+        "owner": "Workplace team",
+        "system": "Groupware 12",
+        "endOfSupport": "2027-03-31",
+        "leadTimeDays": "180",
+        "cutover": "2027-03-01",
+        "shutdown": "2027-03-31"
+      }
+    },
+    {
+      "id": "M-2",
+      "start": "2026-09-15",
+      "end": "2026-12-31",
+      "content": "Migrate Payroll (legacy)",
+      "group": "finance",
+      "status": "Open",
+      "icon": "build",
+      "body": "## Started too late, and undated\n\nThis one carries no cutover and no shutdown yet, which is what `plan_cutover` is for. Its lead time no longer fits before the vendor's date, so the verb places the dates and says so in the same answer.",
+      "metadata": {
+        "owner": "Finance IT",
+        "system": "Payroll (legacy)",
+        "endOfSupport": "2026-12-31",
+        "leadTimeDays": "180"
+      }
+    },
+    {
+      "id": "M-3",
+      "start": "2026-06-01",
+      "end": "2027-01-27",
+      "content": "Migrate Warehouse DB 9",
+      "group": "operations",
+      "status": "Doing",
+      "icon": "build",
+      "body": "## A cutover inside the year-end freeze\n\nSomebody planned the switch for the 28th of December, which is inside the year-end freeze. `shift_out_of_freeze` moves it to the 11th of January and reports what that costs the parallel run — the shutdown stays where it is, because that date is the vendor's.",
+      "metadata": {
+        "owner": "Operations",
+        "system": "Warehouse DB 9",
+        "endOfSupport": "2027-06-30",
+        "leadTimeDays": "240",
+        "cutover": "2026-12-28",
+        "shutdown": "2027-01-27"
+      }
+    },
+    {
+      "id": "M-4",
+      "start": "2026-08-01",
+      "end": "2028-06-30",
+      "content": "Migrate Core banking adapter",
+      "group": "finance",
+      "status": "Doing",
+      "icon": "research",
+      "body": "## Running on bought extended support\n\nStandard support ended in June 2026. Extended support was bought to June 2028, and the plugin takes that as a date rather than deriving one: how long extended support runs, and whether it can be bought at all, differs per vendor.",
+      "metadata": {
+        "owner": "Finance IT",
+        "system": "Core banking adapter",
+        "endOfSupport": "2026-06-30",
+        "extendedUntil": "2028-06-30",
+        "leadTimeDays": "365",
+        "cutover": "2028-05-31",
+        "shutdown": "2028-06-30"
+      }
+    },
+    {
+      "id": "M-5",
+      "start": "2026-10-01",
+      "end": "2027-04-14",
+      "content": "Migrate Reporting stack 4",
+      "group": "operations",
+      "status": "Open",
+      "icon": "build",
+      "body": "## Planned past its own end of life\n\nThe shutdown falls 45 days after support ends, so the old system runs unsupported for that stretch. Nothing here is wrong with the arithmetic: it is a decision somebody has to make knowingly, which is why the plugin reports it rather than moving a date.",
+      "metadata": {
+        "owner": "Operations",
+        "system": "Reporting stack 4",
+        "endOfSupport": "2027-02-28",
+        "leadTimeDays": "120",
+        "cutover": "2027-03-15",
+        "shutdown": "2027-04-14"
+      }
+    },
+    {
+      "id": "M-6",
+      "start": "2026-09-01",
+      "content": "Migrate Intranet CMS",
+      "group": "workplace",
+      "status": "Open",
+      "icon": "research",
+      "body": "## No vendor date at all\n\nNobody has found out when this dies. `check_eol_risk` names it rather than passing over it: a timeline where the dates are missing must not read as a timeline with no risk.",
+      "metadata": {
+        "owner": "Workplace team",
+        "system": "Intranet CMS"
+      }
+    },
+    {
+      "id": "M-7",
+      "start": "2026-11-01",
+      "end": "2027-05-31",
+      "content": "Migrate File shares",
+      "group": "workplace",
+      "status": "Open",
+      "icon": "build",
+      "body": "## Six days of parallel run\n\nThe cutover and the shutdown are almost the same weekend, so there is no room to compare the two systems before the old one goes off. The minimum on this timeline is 30 days.",
+      "metadata": {
+        "owner": "Workplace team",
+        "system": "File shares",
+        "endOfSupport": "2027-05-31",
+        "cutover": "2027-05-25",
+        "shutdown": "2027-05-31"
+      }
+    }
+  ]
+}

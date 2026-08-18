@@ -24,6 +24,7 @@ import type { PluginManifest } from '../../src/pluginHost/manifest';
 import { manifestOf, pluginStatus } from '../../src/pluginHost/installed.ts';
 import { productRoadmapManifest } from '../../src/plugins/product-roadmap/manifest.ts';
 import { sprintsManifest } from '../../src/plugins/sprints/manifest.ts';
+import { lifecycleManifest } from '../../src/plugins/lifecycle/manifest.ts';
 import type { TimelineRepo } from './repo.ts';
 
 /**
@@ -43,7 +44,7 @@ import type { TimelineRepo } from './repo.ts';
  * is `scripts/ci/check-server-bundle.mjs`, not this paragraph: the registry *is*
  * reachable from the server, and what it may drag along is what is checked.
  */
-const BUILT_IN: PluginManifest[] = [productRoadmapManifest, sprintsManifest];
+const BUILT_IN: PluginManifest[] = [productRoadmapManifest, sprintsManifest, lifecycleManifest];
 
 /** Every manifest the build ships, whatever the registry says. */
 export function builtInManifests(): PluginManifest[] {
