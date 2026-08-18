@@ -58,7 +58,10 @@ one for two additions, which is why it is not a number any more.)
   [`docs/plugin-authoring.md`](docs/plugin-authoring.md).
 - **A stored setting is reachable in the interface, editable or read-only.**
   Anything the code reads off a timeline, a source or the instance gets a control
-  at its own level; where the source refuses writes, the control is shown disabled
+  at its own level — and which level that is, is the question rather than a
+  formality: a setting can be reachable and still be at the wrong one, which is
+  reachable and still unable to say what somebody means. Where the source refuses
+  writes, the control is shown disabled
   rather than left out, because „you may not change this here" and „this does not
   exist" must not look the same. Adding a field to `TimelineFile`, to a settings
   declaration or to a repo's meta patch is therefore not finished until it can be
