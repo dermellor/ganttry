@@ -44,6 +44,7 @@ import {
 } from './timelineMeta';
 import { apiUpdateMeta } from './editor';
 import { mountFieldsSection, unmountFields } from './fieldsSection';
+import { mountPluginsSection } from './pluginsSection';
 import { filterBuildForDisplay, renderTimeline, timelineItems } from './render';
 import { UNGROUPED } from './buildItems';
 import { t } from './i18n';
@@ -53,7 +54,7 @@ import { t } from './i18n';
  * English like every other key in the hash, though the labels beside them are
  * German.
  */
-export type TimelineSection = 'general' | 'fields' | 'export';
+export type TimelineSection = 'general' | 'fields' | 'plugins' | 'export';
 
 const handle = createAreaHandle<TimelineSection>();
 
@@ -296,6 +297,7 @@ function sections(): readonly AreaSection<TimelineSection>[] {
   return [
     { id: 'general', label: t('timeline.settings.general'), mount: mountGeneral },
     { id: 'fields', label: t('timeline.settings.fields'), mount: mountFieldsSection, unmount: unmountFields },
+    { id: 'plugins', label: t('timeline.settings.plugins'), mount: mountPluginsSection },
     { id: 'export', label: t('timeline.settings.export.section'), mount: mountExport },
   ];
 }

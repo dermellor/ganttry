@@ -135,20 +135,62 @@
             "carried": 0,
             "unit": "points",
             "series": [
-              { "day": "2026-01-05", "remaining": 13 },
-              { "day": "2026-01-06", "remaining": 13 },
-              { "day": "2026-01-07", "remaining": 13 },
-              { "day": "2026-01-08", "remaining": 13 },
-              { "day": "2026-01-09", "remaining": 13 },
-              { "day": "2026-01-10", "remaining": 13 },
-              { "day": "2026-01-11", "remaining": 13 },
-              { "day": "2026-01-12", "remaining": 13 },
-              { "day": "2026-01-13", "remaining": 13 },
-              { "day": "2026-01-14", "remaining": 8 },
-              { "day": "2026-01-15", "remaining": 8 },
-              { "day": "2026-01-16", "remaining": 8 },
-              { "day": "2026-01-17", "remaining": 8 },
-              { "day": "2026-01-18", "remaining": 0 }
+              {
+                "day": "2026-01-05",
+                "remaining": 13
+              },
+              {
+                "day": "2026-01-06",
+                "remaining": 13
+              },
+              {
+                "day": "2026-01-07",
+                "remaining": 13
+              },
+              {
+                "day": "2026-01-08",
+                "remaining": 13
+              },
+              {
+                "day": "2026-01-09",
+                "remaining": 13
+              },
+              {
+                "day": "2026-01-10",
+                "remaining": 13
+              },
+              {
+                "day": "2026-01-11",
+                "remaining": 13
+              },
+              {
+                "day": "2026-01-12",
+                "remaining": 13
+              },
+              {
+                "day": "2026-01-13",
+                "remaining": 13
+              },
+              {
+                "day": "2026-01-14",
+                "remaining": 8
+              },
+              {
+                "day": "2026-01-15",
+                "remaining": 8
+              },
+              {
+                "day": "2026-01-16",
+                "remaining": 8
+              },
+              {
+                "day": "2026-01-17",
+                "remaining": 8
+              },
+              {
+                "day": "2026-01-18",
+                "remaining": 0
+              }
             ]
           }
         },
@@ -162,20 +204,62 @@
             "carried": 0,
             "unit": "points",
             "series": [
-              { "day": "2026-01-19", "remaining": 18 },
-              { "day": "2026-01-20", "remaining": 18 },
-              { "day": "2026-01-21", "remaining": 18 },
-              { "day": "2026-01-22", "remaining": 18 },
-              { "day": "2026-01-23", "remaining": 18 },
-              { "day": "2026-01-24", "remaining": 18 },
-              { "day": "2026-01-25", "remaining": 18 },
-              { "day": "2026-01-26", "remaining": 18 },
-              { "day": "2026-01-27", "remaining": 18 },
-              { "day": "2026-01-28", "remaining": 18 },
-              { "day": "2026-01-29", "remaining": 18 },
-              { "day": "2026-01-30", "remaining": 18 },
-              { "day": "2026-01-31", "remaining": 18 },
-              { "day": "2026-02-01", "remaining": 0 }
+              {
+                "day": "2026-01-19",
+                "remaining": 18
+              },
+              {
+                "day": "2026-01-20",
+                "remaining": 18
+              },
+              {
+                "day": "2026-01-21",
+                "remaining": 18
+              },
+              {
+                "day": "2026-01-22",
+                "remaining": 18
+              },
+              {
+                "day": "2026-01-23",
+                "remaining": 18
+              },
+              {
+                "day": "2026-01-24",
+                "remaining": 18
+              },
+              {
+                "day": "2026-01-25",
+                "remaining": 18
+              },
+              {
+                "day": "2026-01-26",
+                "remaining": 18
+              },
+              {
+                "day": "2026-01-27",
+                "remaining": 18
+              },
+              {
+                "day": "2026-01-28",
+                "remaining": 18
+              },
+              {
+                "day": "2026-01-29",
+                "remaining": 18
+              },
+              {
+                "day": "2026-01-30",
+                "remaining": 18
+              },
+              {
+                "day": "2026-01-31",
+                "remaining": 18
+              },
+              {
+                "day": "2026-02-01",
+                "remaining": 0
+              }
             ]
           }
         }

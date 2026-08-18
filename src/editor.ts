@@ -162,6 +162,65 @@ export async function apiUpdateMeta(
   );
 }
 
+/**
+ * Whether a plugin is switched on for this timeline, and what it was given.
+ *
+ * A GET rather than a read off the loaded file, because the answer includes two
+ * facts the file does not carry: whether the instance has the plugin installed at
+ * all, and whether the instance has it enabled. A timeline can only switch on what
+ * the instance offers (docs/plugin-lifecycle.md).
+ */
+export async function apiGetPlugin(
+  sourceId: string,
+  pluginId: string,
+): Promise<{
+  installed: boolean;
+  instanceEnabled: boolean;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  public: boolean;
+}> {
+  return apiJson(
+    await fetch(`/api/source/${sourceId}/plugin/${encodeURIComponent(pluginId)}`),
+  );
+}
+
+/**
+ * Switch a plugin on for this timeline, or write its config again.
+ *
+ * The same call for both, because the row is the enablement: writing it is an
+ * upsert on `timeline_plugins` and there is no separate „enabled" flag to toggle.
+ */
+export async function apiEnablePlugin(
+  sourceId: string,
+  pluginId: string,
+  config: Record<string, unknown> = {},
+): Promise<void> {
+  await apiJson(
+    await fetch(`/api/source/${sourceId}/plugin/${encodeURIComponent(pluginId)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ config }),
+    }),
+  );
+}
+
+/**
+ * Switch a plugin off for this timeline.
+ *
+ * Deletes the row and nothing else. The rows the plugin owns stay where they are,
+ * so switching it on again finds its data — see „What an uninstall does to the
+ * data" (docs/plugin-lifecycle.md). Destroying that data is a separate, explicit
+ * operation and deliberately not reachable from here.
+ */
+export async function apiDisablePlugin(sourceId: string, pluginId: string): Promise<void> {
+  await apiJson(
+    await fetch(`/api/source/${sourceId}/plugin/${encodeURIComponent(pluginId)}`, {
+      method: 'DELETE',
+    }),
+  );
+}
+
 export async function apiPutPhases(sourceId: string, phases: TimelinePhase[]): Promise<void> {
   await apiJson(
     await fetch(`/api/source/${sourceId}/phases`, {

@@ -273,6 +273,17 @@ export const EN = {
   'timeline.settings.general': 'General',
   'timeline.settings.fields': 'Fields',
   'timeline.settings.export.section': 'Export',
+  // The plugins a timeline carries (#85). „Installed" is the instance's answer and
+  // lives in the instance area; these labels are about the timeline only.
+  'timeline.settings.plugins': 'Plugins',
+  'plugins.enabled': 'Enabled',
+  'plugins.version': 'Version',
+  'plugins.capabilities': 'Capabilities',
+  'plugins.views': 'Views',
+  'plugins.none': 'No plugin is available on this instance.',
+  'refusal.plugin.disabled': 'Switched off for this instance.',
+  'refusal.plugin.apiVersion': 'Built for a different host version, so it cannot run here.',
+  'refusal.plugin.invalidManifest': 'Its manifest does not validate, so the host refuses to run it.',
   'timeline.none': 'No timeline loaded.',
   'timeline.noChange': 'No change.',
   'timeline.saved': 'Saved.',
