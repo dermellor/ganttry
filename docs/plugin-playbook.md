@@ -212,7 +212,8 @@ These are binding, not stylistic:
 
 - A category comparison is fine: "an alternative to X for teams that want to
   self-host". A claim about a competitor's features needs a **source and a date**,
-  or it does not get written.
+  or it does not get written. Where they go on a published page is 5.4's business,
+  and the answer is not inside the claim sentence.
 - Use other products' names descriptively. Never in a way that suggests an
   affiliation, endorsement or a shared origin.
 - No invented numbers, no invented user counts, no comparison table whose other
@@ -445,6 +446,19 @@ home of a plugin fact.** Applied to `product-roadmap`, it left
 `docs/architecture.md` almost untouched while the field table in `docs/items.md`
 moved out entirely.
 
+**Do not run the uninstall against the committed example.** An uninstall does
+exactly what it promises: it strips the plugin's `plugins` entry, its config and
+its `metadataKeys` off every item. Run it on the file the examples live in and the
+example is gone, in the working tree, silently — no test fails, because the file is
+data. A later session found `example-eol-migration.json` in that state, enabling
+`sprints` instead of `lifecycle` with one item's six fields stripped, and had to
+reconstruct from `git show` which half was the plugin and which was the wreckage.
+
+Use a throwaway copy, or `git checkout --` the example the moment the test is done,
+and check `git status` before committing the branch. The example is what the
+screenshots and the field table on the website stand on, so a broken one takes
+phase 5.4 with it.
+
 The same question has a code half, and that one is checked mechanically:
 `node scripts/ci/check-plugin-isolation.mjs` refuses a core file that imports
 from a plugin folder, names a plugin id as a literal, adds a plugin-specific
@@ -478,8 +492,9 @@ on how:
 
 | Where | What |
 | --- | --- |
-| `src/data/plugins.ts` | one `PluginEntry`: slug, id, title, `seoTitle`, description, domain, what it contributes, `status`, lane. It feeds the catalogue index, the footer and `llms.txt`, so a plugin missing from it is missing from all three |
+| `src/data/plugins.ts` | one `PluginEntry`. Read the type there rather than a list here, which went stale twice: the entry feeds the catalogue index, the footer and `llms.txt`, so a plugin missing from it is missing from all three |
 | `src/pages/plugins/<slug>.astro` | the page, through the `Doc` layout, with an **FAQ** — those entries become `FAQPage` structured data, so the questions have to be the ones people ask |
+| `src/data/shots.ts` | one entry per screenshot: a path against a running Zeitlines, a viewport, and an `expect` string. See the screenshot rule below |
 
 Three rules that repository enforces and this one has to respect:
 
@@ -489,8 +504,11 @@ Three rules that repository enforces and this one has to respect:
 - **Every claim has to be true of the software today**, checked against this repository
   rather than against an earlier version of the site. No invented numbers, and nothing
   in the present tense that is still an open issue.
-- **No JavaScript, no third-party request, no image work.** A plugin page is prose,
-  tables and an FAQ; the `preview.png` from phase 4 stays in the catalogue here.
+- **No JavaScript and no third-party request.** A page is prose, tables, an FAQ and
+  screenshots taken by that repository's own script. This rule used to end „and no
+  image work", which contradicted the screenshot rule two screens below and was
+  written before that script existed. `preview.png` from phase 4 is a different
+  artefact and stays in the catalogue here.
 
 ### The shape, measured rather than felt
 
@@ -540,9 +558,12 @@ Three sentence-level moves get a draft from the first register to the second:
 mechanics get their own heading about two thirds down, the way Linear and Notion
 do it. On the Figma Unsplash listing, 17 of 121 comments ask how to install the
 plugin, because the steps sit below the fold in the register of a licensing note.
-While enabling a plugin needs an MCP call or a line in the timeline file
-([#85](https://github.com/zeitlines/zeitlines/issues/85)), a page without that
-block will earn the same question.
+Enabling is a control now, a checkbox per plugin under the timeline's own settings
+([#85](https://github.com/zeitlines/zeitlines/issues/85), closed), shown disabled
+where the source refuses writes. A plugin's **config** still has none, so a value
+like a minimum or a default reaches a timeline over MCP or as a line in the file.
+Read both off the code before writing the steps: this paragraph kept telling page
+authors that enabling needs an MCP call for as long as it took somebody to check.
 
 **And one block is written for answer engines:** a self-contained paragraph under
 the lede that survives being quoted without the page around it, carrying the words
@@ -573,6 +594,12 @@ wrong:
   leaving them in the repository means writing a weaker version later from memory. The
   claim rules from 1.7 govern every line, so a statement about another product carries
   its source and its date or it does not get written.
+
+  **The date goes with the source, not into the sentence making the claim.** The site
+  has a `Sources` section under the FAQ for exactly this: linked titles, one read date
+  for the list. Satisfying 1.7 inline produces „(leanix.net, read 2026-08-18)" in the
+  middle of a paragraph, which is a citation wearing the costume of an aside and a URL
+  refusing to be a link. That draft shipped twice before somebody said it out loud.
 - **The language decision is recorded.** If the harvest produced German questions and
   the site is English, that gap is a decision somebody made, not something to discover
   later from a missing page.
