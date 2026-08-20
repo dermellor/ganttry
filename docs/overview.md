@@ -74,10 +74,14 @@ Deno edge bundle depends on that, and
 [`edge-imports.test.ts`](../scripts/ci/edge-imports.test.ts) guards the import
 graph against a regression.
 
-## One type, three shapes
+## One type, three stores
 
 A timeline is one type, `TimelineFile` in [`src/types.ts`](../src/types.ts).
 Nothing downstream of a repo knows which store it came from.
+
+Three stores, two environments: „Self-hosting" (self-hosting.md) groups the two
+file stores together as the filesystem, because what an operator decides is
+whether a database is involved, not which file format is on disk.
 
 ```mermaid
 flowchart LR

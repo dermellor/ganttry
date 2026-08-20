@@ -1,45 +1,59 @@
 # Self-hosting
 
-Running Zeitlines on your own machine: the three deployment shapes, what each one
-can do, and what you have to decide.
+Running Zeitlines on your own machine: the two environments a timeline can live
+in, what each one can do, and what you have to decide.
 
 Part of the Zeitlines documentation; [`AGENTS.md`](../AGENTS.md) holds the index,
 the conventions and the commands. References in „quotes" name a section, with
 its file when it lives in another chapter.
 
-## Three shapes, one question
+## Two environments, one question
 
-Everything follows from one decision: **should people edit timelines in the
-browser?** Editing needs a process that can write, which is the only reason the
-second and third shapes exist.
+A timeline's data lives in one of two places, and everything follows from one
+decision: **should people edit timelines in the browser?**
 
-| | Files only | Self-hosted with Postgres | Netlify |
-| --- | --- | --- | --- |
-| Runs on | any static host | one Node process | the host's edge |
-| Data in | `data/*.json`, committed | your Postgres | Supabase or your Postgres |
-| Editable | no | yes | yes |
-| Login | whatever fronts it | a proxy you put in front | built-in (Google OAuth) |
-| Start with | `npm run build` | `npm start` | `netlify build` |
+| | Filesystem | Database |
+| --- | --- | --- |
+| Data in | `data/*.json`, or a folder of Markdown notes | PostgreSQL, yours or a Supabase project |
+| Editable in the browser | on the dev server only | yes |
+| Edited by | you, in the file: an editor, Git, the MCP server | anyone with access, live |
+| Needs | Node.js | Node.js and a database |
 
-Read-only is not a lesser shape. A roadmap that a team reads and one person
-maintains in Git is a legitimate setup, and it is the one with nothing to
-operate.
+**Who serves the API is a variant inside each**, not a third environment. That
+distinction used to be the top level here, as three „deployment shapes", and it
+mixed the two axes: „Files only" named where the data lived, „Netlify" named who
+answered the requests, and the middle one named both. No set of three names for
+that ever read as parallel, because they were not three things of one kind.
 
-## Files only
+| Serving it | What that gives you | Start with |
+| --- | --- | --- |
+| an uploaded build | any static host, nothing to operate, no writes | `npm run build` |
+| one Node process | the API from the same process that serves the build | `npm start` |
+| a host's functions | no process to keep alive, a built-in sign-in gate | `netlify build` |
+
+A filesystem timeline is read-only in all three, because none of them writes
+files: the dev server is the one runtime that does, and it is not a deployment.
+That is not a lesser setup.
+A roadmap that a team reads and one person maintains in Git is a legitimate one,
+and it is the only one with nothing to operate.
+
+## Filesystem
 
 ```bash
 npm install
 npm run build
 ```
 
-Drop a `*.json` into `data/`, and the build registers it as a view and copies it
-into `dist/`. Upload `dist/` anywhere. No database, no server, no configuration.
+A timeline here is one `*.json` in `data/`, or a folder holding one Markdown note
+per item — see „Local sources" (local-sources.md), which also covers pointing the
+root at a directory you already own. Drop a `*.json` into `data/`, and the build
+registers it as a view and copies it into `dist/`. Upload `dist/` anywhere. No database, no server, no configuration.
 
 The shape of those files is described in [`docs/data-model.md`](data-model.md);
 adding `"$schema": "../schema/timeline.schema.json"` at the top gets you
 completion and validation in an editor.
 
-## Self-hosted with your own Postgres
+## Database
 
 ### One command
 
@@ -142,7 +156,9 @@ implementation would, and one is already in the picture for the gate.
 
 ## What the three runtimes share
 
-The API is served by the Vite dev middleware, the Netlify edge functions and
+A different three from the table above, and worth saying so: those were ways to
+serve a deployment, these are the three code paths that implement the API. The
+API is served by the Vite dev middleware, the Netlify edge functions and
 `npm start`. Routing, optimistic locking, the live-mode header and the error
 mapping are **one module**
 ([`scripts/db/http.ts`](../scripts/db/http.ts)), so the three cannot answer

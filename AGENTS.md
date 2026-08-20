@@ -19,7 +19,7 @@ get a change reviewed, [`CONTRIBUTING.md`](CONTRIBUTING.md).
 | [`docs/editing.md`](docs/editing.md) | Editing in the interface: the item rail, the milestone rail, the context menu, drag and form behaviour, the two view modes, URL state. |
 | [`docs/database.md`](docs/database.md) | Postgres as the data source: schema, the two drivers, optimistic locking, live updates, presence. |
 | [`docs/users.md`](docs/users.md) | Who belongs to an instance: roles, invitations, the switch that turns membership into authorization, and the order to roll it out in. |
-| [`docs/self-hosting.md`](docs/self-hosting.md) | Running it yourself: the three deployment shapes, the one-command container, and the access gate. |
+| [`docs/self-hosting.md`](docs/self-hosting.md) | Running it yourself: the two environments a timeline lives in, who can serve the API, the one-command container, and the access gate. |
 | [`docs/local-sources.md`](docs/local-sources.md) | Files the user owns as a source: a JSON file or a directory of Markdown. Editability is decided by the runtime, not by the format. |
 | [`docs/plugin-storage.md`](docs/plugin-storage.md) | The generic store for the rows a plugin owns, on every source kind, and the rules the host enforces in place of columns and foreign keys. |
 | [`docs/plugin-lifecycle.md`](docs/plugin-lifecycle.md) | Installed (instance) versus enabled (timeline), who may install, version pinning, and what an uninstall does to the data. |

@@ -51,7 +51,7 @@ Two orthogonal extension axes keep it flexible:
 
 One command, if you have Docker: `docker compose up --build` starts a Postgres,
 applies the migrations and serves on <http://localhost:3120>. The full picture —
-the three deployment shapes and the access gate — is in
+the two environments a timeline can live in and the access gate — is in
 [`docs/self-hosting.md`](docs/self-hosting.md). By hand:
 
 ```bash
