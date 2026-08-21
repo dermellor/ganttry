@@ -646,12 +646,20 @@ export function AppShell(): { nodes: HTMLElement[]; els: AppShellElements } {
     ariaLabel: t('app.plugins.state'),
     attrs: { id: 'plugins-btn', 'aria-haspopup': 'true', 'aria-expanded': 'false' },
   });
-  const pluginsPanel = el('div', {
-    id: 'plugins-panel',
-    class: 'plugin-panel',
+  // `side: 'top'` is the whole reason this had a stylesheet of its own: the footer
+  // is the last row on screen, so a surface opening downwards lands outside the
+  // viewport. Everything else it used to restate — surface, border, shadow, the
+  // stacking layer — is the component's.
+  const pluginsPanel = Popover({
+    side: 'top',
+    alignEnd: true,
+    scroll: true,
+    minWidth: 280,
+    maxWidth: 420,
     role: 'group',
-    'aria-label': 'Plugins',
+    ariaLabel: 'Plugins',
     hidden: true,
+    attrs: { id: 'plugins-panel' },
   });
   // The panel is absolutely positioned above its button, so it needs a
   // positioned ancestor of its own: anchored to the footer instead, it would sit

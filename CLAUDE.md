@@ -36,8 +36,11 @@ touches it.
   Dritte Falle: der In-App-Browser cacht pro Origin und ignoriert dabei
   `Cache-Control: no-cache`. Nach einer CSS-/JS-Änderung liefert er das alte
   Modul weiter, auch nach Hard-Reload und in einem frischen Tab — was wie ein
-  nicht angewendeter Fix aussieht, während `curl` auf dieselbe URL die neue
-  Datei zeigt. Was hilft, ist ein Neustart auf einem anderen `WT_PORT`. Und die
+  nicht angewendeter Fix aussieht. `curl` trennt die Fälle nicht: der
+  Vite-Server selbst kann dieselbe alte Datei ausliefern, während die Datei auf
+  der Platte die Änderung längst trägt. Der Vergleich, der trägt, ist Platte
+  gegen `curl`; sind beide alt, war es nie der Browser. In beiden Fällen hilft
+  ein Neustart auf einem anderen `WT_PORT`. Und die
   Prüfung „greift meine Regel?" gehört an den berechneten Stil
   (`getComputedStyle`), nicht an das `hidden`-Property: das ist auch dann
   gesetzt, wenn eine `display`-Regel es überstimmt.

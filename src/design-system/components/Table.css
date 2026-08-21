@@ -21,6 +21,14 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Only the width behaviour lives on the class; everything else a head cell looks
+   like comes from the `thead th` rule above, so a head built from `columns` and one
+   built from `TableHeadCell`s cannot drift apart. */
+.ds-TableHeadCell[data-shrink] {
+  width: 1%;
+  white-space: nowrap;
+}
+
 .ds-TableRow[data-interactive] {
   cursor: pointer;
   transition: background 0.08s ease;
@@ -60,6 +68,45 @@
   font-weight: var(--weight-medium);
 }
 
+/* The cell that names its row. A `<th>`, so it inherits the UA's bold and centre:
+   both are undone here, because it is read as the row's label and not as a heading
+   above a column. */
+.ds-TableCell[data-header] {
+  text-align: left;
+  font-weight: var(--weight-medium);
+}
+
+/* ---- matrix layout ----------------------------------------------------------- */
+
+/* A cross-tab. The value cells answer „this row, this column", so they centre and
+   sit on the row's middle rather than starting at its top-left like a record's
+   fields do. */
+.ds-Table[data-layout='matrix'] .ds-TableCell {
+  text-align: center;
+  vertical-align: middle;
+}
+
+/* …except the one that names the row, which is still prose — and the corner cell
+   above that column, which has to agree with it or the first column reads as two
+   different alignments stacked. */
+.ds-Table[data-layout='matrix'] .ds-TableCell[data-header],
+.ds-Table[data-layout='matrix'] .ds-TableHeadCell[data-corner] {
+  text-align: left;
+}
+
+/* The column heads are the subjects being compared — tier names — rather than
+   captions for what sits under them, so they keep the headline voice at reading
+   size instead of the uppercase micro-caption a list's header uses. */
+.ds-Table[data-layout='matrix'] thead th {
+  text-align: center;
+  font-family: var(--font-headline);
+  font-weight: var(--headline-weight);
+  font-size: var(--text-base);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--fg);
+}
+
 /* One indent step per level. `.ds-TableRow` in the selector so this outweighs
    the cell padding above rather than fighting it. */
 .ds-TableRow .ds-TableCell[data-indented] {
@@ -89,7 +136,7 @@
   height: 100%;
   padding: 0;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: inherit;
   cursor: pointer;
@@ -142,6 +189,18 @@
   text-transform: none;
   color: var(--fg);
   border-bottom: 1px solid var(--border);
+}
+
+/* The quiet form: a tinted band with a small uppercase label, for a dense grid
+   where a group divides rows rather than introducing a section of the page. */
+.ds-TableGroupRow[data-dense] th {
+  gap: var(--space-md);
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  background: var(--hover);
 }
 
 .ds-TableGroupRow-title {

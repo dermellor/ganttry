@@ -148,7 +148,7 @@ it is the one that will be argued about:
 | --- | --- |
 | [`src/styles/timeline.css`](../src/styles/timeline.css) | vis-timeline's own furniture as this app dresses it: `.vis-item`, the item rail, the phase band, the dependency arrows. Not components — a third-party chart's internals. It spends tokens like everything else. |
 | [`src/styles/wysiwyg.css`](../src/styles/wysiwyg.css) | The frame around the Markdown editor. What the text inside it looks like is the `Prose` component, which the reading view uses too. |
-| [`src/styles/app.css`](../src/styles/app.css) | App composition that is not a component: how the host frames a plugin's view, the timeline switcher, the saved-view rows. The bar is deliberately high, and the file states it at the top — two call sites and it becomes a component. It has drifted past that bar once already and carries a popover surface it should not ([#149](https://github.com/zeitlines/zeitlines/issues/149)). |
+| [`src/styles/app.css`](../src/styles/app.css) | App composition that is not a component: how the host frames a plugin's view, the timeline switcher, the saved-view rows. The bar is deliberately high, and the file states it at the top — two call sites and it becomes a component. |
 | [`src/styles/graph.css`](../src/styles/graph.css) | The „Graph" presentation's chart furniture: the pan/zoom viewport, the band frames, the column heads, the edges. The node box itself is the `GraphNode` component. Same split as `timeline.css`. |
 | [`src/styles/members.css`](../src/styles/members.css) | How the „Benutzer" section arranges components it does not own. Imported by `memberAdmin.ts`, so an instance where nobody opens it never downloads it. |
 | [`src/styles/settings.css`](../src/styles/settings.css) | The same, for the settings area around it: two columns, and which chrome steps aside while the area is open. Imported by `settingsArea.ts`. |
@@ -160,6 +160,44 @@ generic component, and it should not become one to satisfy a rule. What the
 contract asks of them is that their colours are named and their spacing comes from
 the scale — which is the half of this the checker can see, so it is also the half
 that a new plugin gets held to on its first commit.
+
+### Where the line runs, on the hardest case
+
+The pricing matrix is the case that decides what „build it from the components"
+means, because it is a table and the layer has one. It was ~150 lines of its own
+table CSS beside `Table`. The split that came out of migrating it:
+
+- **The component owns what makes it a table.** Cell padding and borders, the
+  sticky header, the row-header cell (`TableCell({ header: true })` → a real
+  `<th scope="row">`), the column head (`TableHeadCell`), the group heading. A
+  cross-tab is a `layout` on `Table`: the value cells centre on their row, and the
+  column heads read as the *subjects* being compared rather than as captions for
+  what sits under them.
+- **The plugin owns what makes it a *pricing* cross-tab.** The framed scrolling
+  wrapper, the tinted price row and the measured offset it pins at, the cell
+  states, the work column's indicator.
+
+Two things are worth carrying forward from it. A variant is often the *absence* of
+a rule: three of the four properties the tag pill overrode inside a timeline bar
+were the component's own defaults a fraction off, so the „missing size variant"
+turned out to be a deletion. And when a plugin's rule has to beat a component's,
+specificity is load-bearing and belongs in a comment — `.ds-Table thead th` is
+(0,1,2), so `.pm-price-row th` at (0,1,1) loses and the price row silently takes
+the head row's offset, landing on top of it.
+
+### What a host overlay and a popover each own
+
+A plugin's floating layer comes from the host
+([`pluginHost/overlay.ts`](../src/pluginHost/overlay.ts)): it is `position: fixed`,
+carries the plugin stacking level, and has its coordinates computed. The *surface*
+inside it is a `Popover` with `placement: 'static'` — no position of its own. Both
+halves used to restate the other's job, and nesting a `fixed` popover in a `fixed`
+layer does not merely double up: it resolves against the viewport from its own
+static position, so the surface walks out of the layer that was placed for it.
+
+`placement: 'static'` was also, for a while, a class in the playground forcing
+`position: static` back off so a popover could be seen at rest. Two call sites
+working around the same gap is what a missing variant looks like from the outside.
 
 **One thing belongs here and is not here yet: the Markdown editor.**
 [`src/wysiwyg.ts`](../src/wysiwyg.ts) is a control the item form uses and plugins

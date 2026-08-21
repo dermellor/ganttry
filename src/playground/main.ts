@@ -70,6 +70,7 @@ import {
   TableCell,
   TableGroupRow,
   TableHead,
+  TableHeadCell,
   TabPanel,
   TableRow,
   Tabs,
@@ -197,6 +198,9 @@ const typographySection = section(
     Text({ as: 'p', text: 'Text, md — die Größe der Formularfelder.', size: 'md' }),
     Text({ as: 'p', text: 'Text, sm, muted — Sekundärangaben.', size: 'sm', tone: 'muted' }),
     Text({ as: 'p', text: 'Text, danger — eine abgelehnte Eingabe.', size: 'sm', tone: 'danger' }),
+    Text({ as: 'p', text: 'Text, semibold — der Gegenstand einer Zeile.', weight: 'semibold' }),
+    Text({ as: 'p', text: 'Text, medium', weight: 'medium' }),
+    Text({ as: 'p', text: '2.1.0', mono: true, tone: 'muted', size: 'sm' }),
     Text({ as: 'p', text: 'Kein Wert hinterlegt', placeholder: true }),
     Label({ text: 'Label', hint: 'mit Hinweis' }),
     el('p', {}, [
@@ -279,6 +283,10 @@ const inputSection = section(
       specimen('readonly', TextInput({ value: 'aus der Quelle', readonly: true, block: false })),
       specimen('invalid', TextInput({ value: 'Ende vor Start', invalid: true, block: false })),
       specimen('disabled', TextInput({ value: 'gesperrt', disabled: true, block: false })),
+      specimen(
+        'mono',
+        TextInput({ value: '/invite/8f3a-91c2-4de7', readonly: true, mono: true, block: false }),
+      ),
     ),
     row(
       specimen(
@@ -349,6 +357,13 @@ const marksSection = section(
       specimen('Badge', Badge({ label: 'Eingeladen' })),
       specimen('Badge, accent', Badge({ label: 'Aktiv', tone: 'accent' })),
       specimen('Badge, muted', Badge({ label: 'Gesperrt', tone: 'muted' })),
+    ),
+    // The three that ride inside a dense row. `sm` next to `sm caps` is the pair
+    // worth seeing together: it is why caps is not part of the size.
+    row(
+      specimen('Badge, sm', Badge({ label: 'ab 1.0', size: 'sm', tone: 'muted' })),
+      specimen('Badge, sm caps', Badge({ label: 'Modified', size: 'sm', caps: true, tone: 'accent' })),
+      specimen('Badge, sm caps filled', Badge({ label: 'Neu', size: 'sm', caps: true, filled: true })),
     ),
     row(
       specimen('Avatar md', Avatar({ initials: 'AM', hue: 260 })),
@@ -497,9 +512,7 @@ const menuSection = section(
       'Menu mit Sektionen',
       el('div', { class: 'pg-MenuHost' }, [
         Menu({
-          placement: 'fixed',
-          layer: 'popover',
-          className: 'pg-StaticPopover',
+          placement: 'static',
           children: [
             MenuSection({
               ariaLabel: 'Status',
@@ -534,9 +547,7 @@ const menuSection = section(
       'Sektionen mit Titel (Facetten)',
       el('div', { class: 'pg-MenuHost' }, [
         Popover({
-          placement: 'fixed',
-          layer: 'popover',
-          className: 'pg-StaticPopover',
+          placement: 'static',
           children: [
             MenuSection({
               label: 'Status',
@@ -558,8 +569,7 @@ const menuSection = section(
       'PickerGrid',
       el('div', { class: 'pg-MenuHost' }, [
         Popover({
-          placement: 'fixed',
-          className: 'pg-StaticPopover',
+          placement: 'static',
           children: PickerGrid({
             children: TIMELINE_ICON_KEYS.slice(0, 12).map((key) =>
               MenuItem({
@@ -577,8 +587,7 @@ const menuSection = section(
       'PickerList',
       el('div', { class: 'pg-MenuHost' }, [
         Popover({
-          placement: 'fixed',
-          className: 'pg-StaticPopover',
+          placement: 'static',
           children: PickerList({
             children: [
               MenuItem({ label: 'Zeitraum', mark: el('span', {}, '▬'), selected: true }),
@@ -586,6 +595,53 @@ const menuSection = section(
             ],
           }),
         }),
+      ]),
+    ),
+    // The tooltip case: no position of its own (a host overlay layer places it) and
+    // roomy padding, because at the menu's hairline a sentence sits on the border.
+    specimen(
+      'placement: static · pad: roomy',
+      Popover({
+        placement: 'static',
+        pad: 'roomy',
+        maxWidth: 320,
+        children: Text({ text: 'Die Fläche einer Kurzinfo, ohne eigene Positionierung.' }),
+      }),
+    ),
+    // The only two specimens on this page that are really anchored: every other
+    // popover here is forced to `position: static` so it can be seen at rest, which
+    // is exactly what hides a wrong offset. `side` is an offset, so it has to be
+    // shown attached to a trigger or it is not shown at all.
+    specimen(
+      'side: bottom · side: top',
+      el('div', { class: 'pg-AnchorRow' }, [
+        el('div', { class: 'pg-Anchor' }, [
+          Button({ label: 'nach unten', variant: 'outline' }),
+          Popover({
+            side: 'bottom',
+            minWidth: 180,
+            children: PickerList({
+              children: [
+                MenuItem({ label: 'Zeitraum', mark: el('span', {}, '▬') }),
+                MenuItem({ label: 'Zeitpunkt', mark: el('span', {}, '◆') }),
+              ],
+            }),
+          }),
+        ]),
+        el('div', { class: 'pg-Anchor' }, [
+          Button({ label: 'nach oben', variant: 'outline' }),
+          Popover({
+            side: 'top',
+            alignEnd: true,
+            minWidth: 180,
+            children: PickerList({
+              children: [
+                MenuItem({ label: 'Zeitraum', mark: el('span', {}, '▬') }),
+                MenuItem({ label: 'Zeitpunkt', mark: el('span', {}, '◆') }),
+              ],
+            }),
+          }),
+        ]),
       ]),
     ),
   ),
@@ -799,6 +855,43 @@ const tableSection = section(
               TableCell({ nowrap: true, muted: true, children: 'Zeitpunkt' }),
               TableCell({ nowrap: true, muted: true, children: [StatusDot({ status: 'Open' }), ' Open'] }),
               TableCell({ nowrap: true, muted: true, children: Text({ text: 'nicht gesetzt', placeholder: true }) }),
+            ],
+          }),
+        ]),
+      ],
+    }),
+    // The cross-tab layout beside the list one, because the pair is the point: the
+    // same components, with the cells centred on their row and the column heads
+    // reading as the subjects being compared rather than as captions.
+    Table({
+      layout: 'matrix',
+      children: [
+        TableHead({
+          children: [
+            el('tr', {}, [
+              TableHeadCell({ children: 'Feature', corner: true }),
+              TableHeadCell({ children: 'Free' }),
+              TableHeadCell({ children: 'Scale' }),
+              TableHeadCell({ children: 'Arbeit', shrink: true }),
+            ]),
+          ],
+        }),
+        el('tbody', {}, [
+          TableGroupRow({ title: 'Plattform', colspan: 4, dense: true }),
+          TableRow({
+            children: [
+              TableCell({ header: true, children: 'Single Sign-on' }),
+              TableCell({ children: '–' }),
+              TableCell({ children: '✓' }),
+              TableCell({ children: StatusDot({ status: 'Doing' }) }),
+            ],
+          }),
+          TableRow({
+            children: [
+              TableCell({ header: true, children: 'Audit-Log' }),
+              TableCell({ children: '–' }),
+              TableCell({ children: [Badge({ label: 'ab 2.0', size: 'sm', tone: 'muted' })] }),
+              TableCell({ children: StatusDot({ status: 'Open' }) }),
             ],
           }),
         ]),
